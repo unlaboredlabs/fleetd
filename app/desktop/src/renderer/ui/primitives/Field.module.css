@@ -44,6 +44,21 @@
   height: var(--field);
   padding: 0 var(--space-3);
 }
+/* A secret's field, its eye inside the end of it. */
+.secret {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+.secret .input {
+  padding-inline-end: 32px;
+}
+.reveal {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 2px;
+  margin-block: auto;
+}
 .textarea {
   display: block;
   padding: var(--space-2) var(--space-3);

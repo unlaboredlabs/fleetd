@@ -7,7 +7,7 @@
 import { Ellipsis } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { TextTone } from "../../ui";
-import { Button, cx, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text } from "../../ui";
+import { Button, Menu, MenuContent, MenuItem, MenuTrigger, SecretInput, Text } from "../../ui";
 import { errorText } from "./hub";
 import { SettingsRow, type Mark } from "./parts";
 import { keyOf } from "./sandboxModel";
@@ -154,15 +154,12 @@ export function ConnectKey(props: {
         void submit();
       }}
     >
-      <Input
+      <SecretInput
         mono
         aria-label={`${props.name} API key`}
-        className={cx(s.secretValue, s.keyField)}
-        data-secret=""
+        className={s.keyField}
         value={key}
         placeholder={`${props.name} API key`}
-        autoComplete="off"
-        spellCheck={false}
         autoFocus
         disabled={busy}
         onChange={(e) => setKey(e.target.value)}

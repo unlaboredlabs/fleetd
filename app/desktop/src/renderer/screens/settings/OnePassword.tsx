@@ -12,7 +12,7 @@ import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { when } from "../live/when";
 import { vaultServed } from "./vaultModel";
-import { Button, Field, InlineCode, Input, Text } from "../../ui";
+import { Button, Field, InlineCode, SecretInput, Text } from "../../ui";
 import { sealedLine } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, useMachines } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -128,7 +128,7 @@ function ServiceAccount({ token, hint }: { token: OnePasswordToken | undefined; 
         </Button>
       </div>
       <Field label="Token">
-        <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={value} disabled={busy} autoComplete="off" spellCheck={false} placeholder="ops_…" onChange={(e) => setValue(e.target.value)} />
+        <SecretInput mono aria-label="Token" value={value} disabled={busy} placeholder="ops_…" onChange={(e) => setValue(e.target.value)} />
       </Field>
       <div className={s.inline}>
         <Button variant="primary" disabled={busy || value.trim() === ""} onClick={() => void save()}>

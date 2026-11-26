@@ -7,7 +7,7 @@
 import { Check, Plus, Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ANTHROPIC_ENDPOINT, endpointToSave, tailnetLine } from "../../../shared/claudeEndpoint";
-import { Bot, Button, copyText, cx, Field, Input, Segmented, StateGlyph, Text } from "../../ui";
+import { Bot, Button, copyText, cx, Field, Input, SecretInput, Segmented, StateGlyph, Text } from "../../ui";
 import { KEY_PLACEHOLDER } from "../settings/claudeModel";
 import {
   botOf,
@@ -425,7 +425,7 @@ function ClaudeKey({ state, tailnet, tailscale, actions }: { state: KeyState | u
         </span>
       )}
       <Field label="API key">
-        <Input mono aria-label="API key" data-secret="" type="password" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
+        <SecretInput mono aria-label="API key" value={key} disabled={busy} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
       </Field>
       {state?.error === undefined ? null : (
         <span role="alert">

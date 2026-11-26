@@ -1,7 +1,8 @@
 import { Checkbox as CheckboxPrimitive, RadioGroup as RadioPrimitive, Switch as SwitchPrimitive } from "radix-ui";
-import { Check, Minus } from "lucide-react";
-import { createContext, useContext, useId, type ComponentProps, type ReactNode } from "react";
+import { Check, Eye, EyeOff, Minus } from "lucide-react";
+import { createContext, useContext, useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cx } from "../lib/cx";
+import { Button } from "./Button";
 import s from "./Field.module.css";
 
 interface FieldIds {
@@ -62,6 +63,24 @@ export interface InputProps extends ComponentProps<"input"> {
 
 export function Input({ className, mono, ...rest }: InputProps) {
   return <input className={cx(s.input, mono && s.mono, className)} spellCheck={false} {...useFieldProps(rest)} {...rest} />;
+}
+
+/**
+ * A secret's one line (an API key, a token, a client secret): a password field, so the page, a screen recording and
+ * a browser's text of it show dots, with an eye that shows it while the person checks what they pasted. `className`
+ * sizes the field and its eye together; its aria-label names the eye ("Show API key").
+ */
+export function SecretInput({ className, ...rest }: Omit<InputProps, "type">) {
+  const [shown, setShown] = useState(false);
+  const name = rest["aria-label"] ?? "value";
+  return (
+    <span className={cx(s.secret, className)}>
+      <Input data-secret="" autoComplete="off" spellCheck={false} {...rest} type={shown ? "text" : "password"} />
+      <Button variant="quiet" iconOnly aria-label={`${shown ? "Hide" : "Show"} ${name}`} aria-pressed={shown} className={s.reveal} onClick={() => setShown((v) => !v)}>
+        {shown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+      </Button>
+    </span>
+  );
 }
 
 export interface TextareaProps extends ComponentProps<"textarea"> {
