@@ -77,9 +77,24 @@ test("refused: a name the bot has, a bad or reserved name, a value not sealed to
   expect((await refused(store({ name: "WRONG_KEY", sealed: sealed("x", elsewhere) }))).message).toContain("wasn't sealed to this workspace's key");
   expect((await refused(store({ name: "BIG", sealed: sealed("x".repeat(64 * 1024 + 1)) }))).code).toBe("invalid");
   expect((await refused(store({ name: "BINARY", sealed: sealed(new Uint8Array([0xff, 0xfe])) }))).message).toContain("UTF-8");
+  // Names that run code in later sessions: refused even for the box key, so nothing is sealed for them.
+  for (const risky of ["LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "BASH_ENV", "ENV", "NODE_OPTIONS", "PYTHONSTARTUP", "GIT_SSH_COMMAND", "GIT_CONFIG_GLOBAL", "PROMPT_COMMAND"]) {
+    expect((await refused(store({ name: risky }))).message).toBe(`${risky} changes what later sessions run: an agent can't store it.`);
+  }
+  expect((await refused(store({ name: "PATH" }))).message).toContain("fleetd's or claude's own");
+  // A plain name that merely starts like one is fine.
+  expect((await store({ name: "GITHUB_TOKEN" })).sealTo).toBeString();
   const shell = await refused(store({ name: "MINE", sealed: sealed("x") }, { ...task, agent: { kind: "person" } }));
   expect(shell.code).toBe("forbidden");
   expect(k.v.store.select("kind = 'env' AND env_name IN ('1BAD', 'WRONG_KEY', 'BIG', 'BINARY', 'MINE')", [])).toHaveLength(0);
+});
+
+test("the value is worked out of the file's bytes: one leading BOM and one trailing newline go", async () => {
+  const out = await store({ name: "WITH_BOM", sealed: sealed(`\uFEFF${VALUE}\n`) });
+  expect(out.fingerprint).toBe(fp(VALUE));
+  expect(k.v.store.open(k.v.store.get(String(out.itemId))!).value).toBe(VALUE);
+  expect((await refused(store({ name: "ONLY_NEWLINE", sealed: sealed("\n") }))).message).toBe("The value is empty.");
+  expect((await refused(store({ name: "NUL", sealed: sealed("a\0b") }))).message).toContain("NUL");
 });
 
 test("a lead stores too, audited with no task", async () => {

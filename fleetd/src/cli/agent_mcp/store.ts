@@ -1,19 +1,21 @@
 // `vault_store`: a secret the agent holds, saved as its bot's vault variable without the value entering the
 // transcript. The agent writes it to a 0600 file and names the file; this server (fleetd's, in the session, not the
 // model) reads it, seals it to the workspace's box key, sends only the sealed value, then overwrites and deletes the
-// file. The agent gets back the name and a fingerprint. Nothing hands the value back to an agent.
-import { createHash } from "node:crypto";
+// file. The agent gets back the name and a fingerprint. Nothing hands the value back to an agent. A lead's file must be
+// in its TMPDIR: its working directory is the person's own checkout, whose files it must never wipe.
 import { closeSync, constants, fstatSync, fsyncSync, openSync, readSync, realpathSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, sep } from "node:path";
+import { checkStoreName, fingerprintOf, STORE_MAX_BYTES, storedValue } from "../../hub/vault/fields.ts";
+import { ToolError } from "../../shared/errors.ts";
 import { seal } from "../../shared/sealed_box.ts";
 import { type LeadDeps, sendCall } from "./index.ts";
 import { at } from "./json.ts";
 import { errorResult, toolResult, type ToolResult } from "./results.ts";
 import { callerCwd, osError } from "./socket.ts";
+import type { Role } from "./tools.ts";
 
-/** The largest file `vault_store` takes. */
-export const STORE_MAX_BYTES = 64 * 1024;
+export { STORE_MAX_BYTES } from "../../hub/vault/fields.ts";
 
 type Call = Record<string, unknown>;
 
@@ -27,14 +29,14 @@ function real(path: string): string | undefined {
   }
 }
 
-/** The file's text, once it passes every check; thrown, why not. The fd is opened without following a symlink and
- * checked as opened, so the file read is the file checked. */
-export function readSecretFile(path: string, roots: string[]): Buffer {
+/** The file's bytes, once it passes every check; thrown, why not. The fd is opened without following a symlink and
+ * checked as opened, so the file read is the file checked. `where` names the roots in the refusal. */
+export function readSecretFile(path: string, roots: string[], where = "your worktree and TMPDIR"): Buffer {
   if (!path.startsWith("/")) throw `${path} isn't an absolute path.`;
   const dir = real(dirname(path));
   const allowed = roots.map(real).filter((r): r is string => r !== undefined);
   if (dir === undefined || !allowed.some((root) => inside(dir, root))) {
-    throw `${path} is outside your worktree and TMPDIR: write the file in one of them.`;
+    throw `${path} is outside ${where}: write the file there.`;
   }
   let fd: number;
   try {
@@ -47,6 +49,8 @@ export function readSecretFile(path: string, roots: string[]): Buffer {
     if (!st.isFile()) throw `${path} isn't a regular file.`;
     if ((st.mode & 0o777) !== 0o600) throw `${path} is mode ${(st.mode & 0o777).toString(8).padStart(3, "0")}: make it 0600 (chmod 600) first.`;
     if (process.getuid !== undefined && st.uid !== process.getuid()) throw `${path} isn't yours.`;
+    // Another name for the same bytes (a hard link to a key elsewhere) would be wiped with it.
+    if (st.nlink !== 1) throw `${path} has ${st.nlink} hard links: write the value to a file of its own.`;
     if (st.size === 0) throw `${path} is empty.`;
     if (st.size > STORE_MAX_BYTES) throw `${path} is over ${STORE_MAX_BYTES / 1024} KB.`;
     const bytes = Buffer.alloc(st.size);
@@ -60,20 +64,6 @@ export function readSecretFile(path: string, roots: string[]): Buffer {
   } finally {
     closeSync(fd);
   }
-}
-
-/** The variable's value: the file's UTF-8 text, one trailing newline dropped (as `$(cat file)` would). */
-export function valueOf(bytes: Buffer): string {
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-  } catch {
-    throw "The file isn't UTF-8 text: a variable holds text (base64 a binary key first).";
-  }
-  if (text.includes("\0")) throw "The file holds a NUL byte, which no variable can.";
-  text = text.endsWith("\r\n") ? text.slice(0, -2) : text.endsWith("\n") ? text.slice(0, -1) : text;
-  if (text === "") throw "The file holds only a newline.";
-  return text;
 }
 
 /** Overwrites the file with zeros, flushes, then deletes it. */
@@ -90,21 +80,23 @@ export function shred(path: string): void {
   unlinkSync(path);
 }
 
-/** `vault_store`: checks the file, asks the workspace for its box key, sends the sealed value, shreds the file. */
-export async function storeSecret(call: Call, deps: LeadDeps): Promise<ToolResult> {
+/** `vault_store`: checks the name and the file, asks the workspace for its box key, sends the file's bytes sealed,
+ * shreds the file. */
+export async function storeSecret(call: Call, deps: LeadDeps, role: Role = "worker"): Promise<ToolResult> {
   const name = String(call.name);
   const file = String(call.file);
-  const roots = [callerCwd(deps.pwd, deps.cwd), deps.cwd, deps.tmp ?? tmpdir()];
+  const tmp = deps.tmp ?? tmpdir();
+  const [roots, where] = role === "lead" ? [[tmp], "your TMPDIR"] : [[callerCwd(deps.pwd, deps.cwd), deps.cwd, tmp], "your worktree and TMPDIR"];
   let bytes: Buffer;
-  let value: string;
+  let fingerprint: string;
   try {
-    bytes = readSecretFile(file, roots);
-    value = valueOf(bytes);
+    checkStoreName(name);
+    bytes = readSecretFile(file, roots, where);
+    // The value as the workspace will work it out from the same bytes, so the fingerprints agree.
+    fingerprint = fingerprintOf(storedValue(bytes));
   } catch (why) {
-    return errorResult(`Not stored: ${String(why)}`);
+    return errorResult(`Not stored: ${why instanceof ToolError ? [why.message, why.fix].filter(Boolean).join(" ") : String(why)}`);
   }
-  const plain = Buffer.from(value, "utf8");
-  const fingerprint = createHash("sha256").update(plain).digest("hex").slice(0, 8);
   const kept = (answer: Record<string, unknown>) =>
     errorResult(`${String(toolResult(answer).content[0]!.text)}\n${file} is kept: fix it and try again, or delete it.`);
   try {
@@ -115,7 +107,7 @@ export async function storeSecret(call: Call, deps: LeadDeps): Promise<ToolResul
       if (!("result" in answer)) return kept(answer);
       const sealTo = at(answer.result, "sealTo");
       if (typeof sealTo !== "string") return errorResult(`Not stored: the workspace sent no key to seal to. ${file} is kept.`);
-      const sealed = Buffer.from(seal(new Uint8Array(Buffer.from(sealTo, "base64")), plain)).toString("base64");
+      const sealed = Buffer.from(seal(new Uint8Array(Buffer.from(sealTo, "base64")), bytes)).toString("base64");
       answer = await sendCall({ op: "vault_store", name, sealed, ...(typeof call.note === "string" ? { note: call.note } : {}) }, deps);
     } catch (unreachable) {
       return errorResult(`Not stored: ${String(unreachable)}. ${file} is kept: try again.`);
@@ -125,7 +117,6 @@ export async function storeSecret(call: Call, deps: LeadDeps): Promise<ToolResul
       return errorResult(`The workspace stored ${name} with another fingerprint than the file's: ${file} is kept. Say so in your result.`);
     }
   } finally {
-    plain.fill(0);
     bytes.fill(0);
   }
   try {

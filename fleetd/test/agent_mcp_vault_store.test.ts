@@ -5,6 +5,7 @@ import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, statSync, sym
 import { join } from "node:path";
 import { handle, type LeadDeps } from "../src/cli/agent_mcp/index.ts";
 import { shred, STORE_MAX_BYTES } from "../src/cli/agent_mcp/store.ts";
+import { storedValue } from "../src/hub/vault/fields.ts";
 import { openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
 import { tempHome } from "./helpers.ts";
 
@@ -43,7 +44,8 @@ const deps = (): LeadDeps => ({
     const call = frame.call as Record<string, unknown>;
     if (answer) return answer(call);
     if (call.sealed === undefined) return { result: { op: "vault_store", name: call.name, sealTo: Buffer.from(publicKeyOf(hubSecret)).toString("base64") } };
-    stored = Buffer.from(openSealed(hubSecret, new Uint8Array(Buffer.from(String(call.sealed), "base64")))!).toString("utf8");
+    // The workspace works the value out of the file's bytes as agent_store.ts does.
+    stored = storedValue(openSealed(hubSecret, new Uint8Array(Buffer.from(String(call.sealed), "base64")))!);
     return { result: { op: "vault_store", name: call.name, fingerprint: fp(stored), bytes: stored.length } };
   },
 });
@@ -75,8 +77,22 @@ test("stored: sealed on the wire, the value never in the answer, the file shredd
     expect(JSON.stringify(f)).not.toContain(VALUE);
     expect(JSON.stringify(f)).not.toContain(file);
   }
-  // A lead has the tool too, from its own working directory.
-  const lead = secretFile(worktree, "lead.key", "lead-value");
+  // A leading BOM goes on both ends alike, so the fingerprints agree and the file goes.
+  const bom = secretFile(tmp, "bom.key", `\uFEFF${VALUE}\r\n`);
+  expect(await call({ name: "WITH_BOM", file: bom })).toEqual({
+    isError: false,
+    text: `Stored WITH_BOM in this bot's vault (fingerprint ${fp(VALUE)}); ${bom} is shredded and deleted.`,
+  });
+  expect(stored).toBe(VALUE);
+  expect(existsSync(bom)).toBe(false);
+});
+
+test("a lead stores only from its TMPDIR, never from its working directory (the person's checkout)", async () => {
+  const checkout = secretFile(worktree, ".env", "PERSON_KEY=keep-me");
+  expect((await call({ name: "LEAD_KEY", file: checkout }, "lead")).text).toBe(`Not stored: ${checkout} is outside your TMPDIR: write the file there.`);
+  expect(readFileSync(checkout, "utf8")).toBe("PERSON_KEY=keep-me");
+  expect(frames).toEqual([]);
+  const lead = secretFile(tmp, "lead.key", "lead-value");
   expect((await call({ name: "LEAD_KEY", file: lead }, "lead")).isError).toBe(false);
   expect(stored).toBe("lead-value");
 });
@@ -108,7 +124,20 @@ test("refused, nothing sent and the file kept: not 0600, not a regular file, a s
   const binary = secretFile(tmp, "binary", Buffer.from([0xff, 0xfe]));
   expect((await call({ name: "A", file: binary })).text).toContain("isn't UTF-8 text");
   const outside = secretFile(home.dir, "outside", VALUE);
-  expect((await call({ name: "A", file: outside })).text).toBe(`Not stored: ${outside} is outside your worktree and TMPDIR: write the file in one of them.`);
+  expect((await call({ name: "A", file: outside })).text).toBe(`Not stored: ${outside} is outside your worktree and TMPDIR: write the file there.`);
+  // A hard link to a key elsewhere (~/.ssh/id_ed25519) would be stored and then wiped through the shared bytes.
+  const key = secretFile(home.dir, "id_ed25519", "PRIVATE KEY");
+  const linked = join(tmp, "linked");
+  linkSync(key, linked);
+  expect((await call({ name: "A", file: linked })).text).toBe(`Not stored: ${linked} has 2 hard links: write the value to a file of its own.`);
+  expect(readFileSync(key, "utf8")).toBe("PRIVATE KEY");
+  // A name that would run code in every later session is refused before the file is read.
+  for (const risky of ["LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "BASH_ENV", "ENV", "NODE_OPTIONS", "PYTHONSTARTUP", "GIT_SSH_COMMAND", "npm_config_script_shell"]) {
+    expect((await call({ name: risky, file: target })).text).toBe(
+      `Not stored: ${risky} changes what later sessions run: an agent can't store it. Store it under a plain name; a person may set it in the bot's Vault.`,
+    );
+  }
+  expect((await call({ name: "PATH", file: target })).text).toContain("fleetd's or claude's own");
   // A worktree path that leads out through a symlinked folder is outside too.
   symlinkSync(home.dir, join(worktree, "up"));
   expect((await call({ name: "A", file: join(worktree, "up", "outside") })).text).toContain("is outside your worktree and TMPDIR");

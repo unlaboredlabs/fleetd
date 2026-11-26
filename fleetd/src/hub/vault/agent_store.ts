@@ -2,17 +2,15 @@
 // asks here for the box key (a call with no `sealed`, which stores nothing), seals the value to it and sends that.
 // The hub opens it, saves a secret variable of the caller's bot with no ask (the person dislikes them), writes the
 // audit row with the task that stored it, and answers the name and fingerprint. No call hands the value to an agent:
-// only a person reveals it, on their own device. A variable a person set is never replaced.
+// only a person reveals it, on their own device. A variable a person set is never replaced, and no name that runs
+// code in later sessions (LD_PRELOAD, BASH_ENV, GIT_SSH_COMMAND) is taken.
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { LeadCall, LeadCaller } from "../lead_calls/index.ts";
 import { hubSealTo } from "./aliases.ts";
-import { checkEnvName } from "./fields.ts";
+import { checkStoreName, storedValue } from "./fields.ts";
 import { type Viewer, vault } from "./index.ts";
 import { openRawToHub, saveItem } from "./items.ts";
-
-/** The largest value an agent stores, as its tool server caps the file. */
-export const STORE_MAX_BYTES = 64 * 1024;
 
 export function storeCall(hub: Hub, caller: LeadCaller, call: LeadCall): Record<string, unknown> {
   const agent = caller.agent;
@@ -20,7 +18,7 @@ export function storeCall(hub: Hub, caller: LeadCaller, call: LeadCall): Record<
     throw new ToolError("forbidden", "vault_store is an agent's: a person saves variables in the app.", "Settings › Vault, or the bot's Vault tab.");
   }
   const name = String(call.name ?? "");
-  checkEnvName(name);
+  checkStoreName(name);
   const vt = vault(hub);
   vt.requireOpen();
   const r = caller.projectRef;
@@ -29,15 +27,11 @@ export function storeCall(hub: Hub, caller: LeadCaller, call: LeadCall): Record<
     throw new ToolError("invalid", `This bot has a variable ${name} already.`, "Store it under another name; only a person replaces or deletes a variable.");
   }
   if (call.sealed === undefined) return { name, sealTo: hubSealTo(hub) };
+  // The file's bytes as the agent's tool server read them: both ends work out the value the same way.
   const bytes = openRawToHub(hub, String(call.sealed));
   let value: string;
   try {
-    if (bytes.length === 0 || bytes.length > STORE_MAX_BYTES) throw new ToolError("invalid", `A stored value is 1 byte to ${STORE_MAX_BYTES / 1024} KB.`);
-    try {
-      value = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      throw new ToolError("invalid", "A stored value is UTF-8 text.");
-    }
+    value = storedValue(bytes);
   } finally {
     bytes.fill(0);
   }

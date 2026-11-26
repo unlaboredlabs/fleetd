@@ -164,7 +164,7 @@ async function toolCall(role: Role, params: unknown, deps: LeadDeps) {
     return errorResult(String(why));
   }
   if (call.op === "attachment_read") return saveAttachment(call, deps);
-  if (call.op === "vault_store") return storeSecret(call, deps);
+  if (call.op === "vault_store") return storeSecret(call, deps, role);
   let answer: Record<string, unknown>;
   try {
     answer = await sendCall(call, deps);
