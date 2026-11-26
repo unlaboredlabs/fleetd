@@ -1,5 +1,5 @@
-// An agent that isn't at work now, as the hub has it (task_get): its title, how it ended, its order, its PR or branch,
-// and its last words. Where an agent's chip or link lands once the agent has finished, so the link never opens on an
+// An agent that isn't at work now, as the hub has it (task_get): its title, how it ended, its order, its PR and its
+// last words. Where an agent's chip or link lands once the agent has finished, so the link never opens on an
 // empty page. Read-only: there is nothing to steer or stop.
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
@@ -33,7 +33,6 @@ export function FinishedAgent({ project, taskId }: { project: ProjectKey; taskId
   }
   const result = task.result;
   const pr = prOfUrl(task.pr ?? result?.prUrl);
-  const branch = result?.branch ?? task.branch;
   return (
     <section className={s.workBody} aria-label={task.title} data-screen="agents.work.finished">
       <div className={s.workHead}>
@@ -48,17 +47,14 @@ export function FinishedAgent({ project, taskId }: { project: ProjectKey; taskId
         <Text as="h2" size="md" strong>
           {task.title}
         </Text>
-        <span className={s.meta}>
-          {pr !== undefined ? (
+        {/* Its PR, not its branch: a branch's name carries the agent's id. */}
+        {pr === undefined ? null : (
+          <span className={s.meta}>
             <Button variant="secondary" size="sm" onClick={() => navigate(panelRoute(project, { tab: "prs", pr }))}>
               {`PR #${String(pr.number)}`}
             </Button>
-          ) : branch !== undefined ? (
-            <Text size="xs" tone="quiet" mono>
-              {branch}
-            </Text>
-          ) : null}
-        </span>
+          </span>
+        )}
       </div>
       <div className={s.lastWords}>
         {result === undefined || result.tail.trim() === "" ? (
