@@ -82,6 +82,25 @@ function mayUndo(hub: Hub, caller: Caller, item: RememberedItem): void {
 }
 
 /**
+ * An Undo of a bot's line as the change it makes, when it loosens what asks or merges and the caller isn't an owner
+ * or admin (hold_rules.ts): undoing a "Forgot" puts its line back, undoing a "Remembered" takes its line out (and puts
+ * back the one it replaced). That change is held for an admin as a forget or a remember would be, and nothing is
+ * undone yet. Undefined: the Undo goes ahead.
+ */
+function heldUndo(hub: Hub, caller: Caller, r: ProjectRef, item: RememberedItem): RememberedItem | undefined {
+  if (item.scope !== "project" || mayChangeBot(hub, caller, r.machineId) || !anyAdmin(hub.db)) return undefined;
+  const added = item.forgotten === true ? item.text : item.replaced;
+  const removed = item.forgotten === true ? undefined : item.text;
+  if (!holdsForAdmin(changeLoosens(added, undefined, removed), false, true)) return undefined;
+  const topic = item.topic === undefined ? {} : { topic: item.topic };
+  if (item.forgotten === true) return { scope: "project", ...topic, text: item.text };
+  if (item.replaced !== undefined) return { scope: "project", ...topic, text: item.replaced, replaced: item.text };
+  return { scope: "project", ...topic, text: item.text, forgotten: true };
+}
+
+const UNDO_HELD = "That Undo loosens what asks or merges, so it waits for an admin's OK; memory stays as it is until then.";
+
+/**
  * Undo on a "Memory refreshed" line: the change at `index`, or every change not yet undone, newest first. Each one
  * undone is marked, even when a later one can't be: that one says why. Undo all of a tidy's line whose person's memory
  * is still as the tidy left it puts it back exactly as the tidy found it.
@@ -120,6 +139,7 @@ function undoRefreshed(
   const memory = Memory.of(hub);
   let failed: unknown;
   let done = 0;
+  let waiting = 0;
   for (const i of picked) {
     const item = items[i] as RememberedItem;
     let allowed = true;
@@ -130,6 +150,12 @@ function undoRefreshed(
     }
     // Undo all leaves another person's memory alone.
     if (item.undone === true || !allowed) continue;
+    const waits = heldUndo(hub, caller, r, item);
+    if (waits) {
+      hold(hub, r, waits, caller.person);
+      waiting += 1;
+      continue;
+    }
     try {
       memory.undo(r, item);
     } catch (error) {
@@ -145,6 +171,7 @@ function undoRefreshed(
     shown(listed(items));
   }
   if (failed !== undefined) throw failed;
+  if (waiting > 0) return { ok: true as const, next: waiting === 1 ? UNDO_HELD : `${waiting} of these Undos loosen what asks or merges, so they wait for an admin's OK.` };
   return { ok: true as const, ...(done === 0 ? { next: "Already undone." } : {}) };
 }
 
@@ -331,6 +358,11 @@ export function register(tools: Registry): void {
     }
     if (item.hold === "dropped") return { ok: true, next: "It was never kept." };
     mayUndo(hub, caller, item);
+    const waits = heldUndo(hub, caller, r, item);
+    if (waits) {
+      hold(hub, r, waits, caller.person);
+      return { ok: true, next: UNDO_HELD };
+    }
     Memory.of(hub).undo(r, item);
     changed(hub, item.scope === "project" ? r : undefined, item.topic, caller.name);
     chat(hub).setRemembered(message, { ...item, undone: true });

@@ -212,3 +212,61 @@ test("the nightly refresh's loosening line is the lead's, and held", () => {
   expect(core()).toBe("");
   expect(lines().at(-1)?.remembered?.by).toBeUndefined();
 });
+
+test("a member's Undo that loosens waits for an admin, as a forget or a remember would; an admin's applies", async () => {
+  const { hub, turnFor, leadCall, ok, core, lines } = setup();
+  turnFor(ADA);
+  leadCall("remember", { scope: "project", effect: "none", text: "Always ask before deploying." });
+  leadCall("remember", { scope: "project", effect: "loosens", text: "Deploy straight to production." });
+  leadCall("forget", { scope: "project", entry: "Deploy straight" });
+  expect(core()).toBe("- Always ask before deploying.\n");
+  const [taught, , forgot] = lines();
+  // Undo of "Remembered" takes a gate line out; Undo of "Forgot" puts a loosening line back: both wait.
+  expect((await ok(member, "memory_undo", { projectRef: PROJECT, messageId: taught!.messageId })).next).toContain("waits for an admin's OK");
+  expect((await ok(member, "memory_undo", { projectRef: PROJECT, messageId: forgot!.messageId })).next).toContain("waits for an admin's OK");
+  expect(core()).toBe("- Always ask before deploying.\n");
+  const waiting = lines().filter((m) => m.remembered?.hold === "waiting");
+  expect(waiting.map((m) => [m.text, m.remembered?.by?.name])).toEqual([
+    ["Waiting for an admin's OK to forget: Always ask before deploying.", "Bea"],
+    ["Waiting for an admin's OK: Deploy straight to production.", "Bea"],
+  ]);
+  // The lines undone are as they were until an admin answers.
+  expect(lines().filter((m) => m.remembered?.undone === true)).toEqual([]);
+  expect(chat(hub).state(PROJECT, false).needsYouFor?.sort()).toEqual(["p-ada", "p-ola"]);
+  // Kept, each does what the Undo would have.
+  for (const m of waiting) await ok(admin, "memory_hold_answer", { projectRef: PROJECT, messageId: m.messageId, keep: true });
+  expect(core()).toBe("- Deploy straight to production.\n");
+  // An admin's own Undo applies at once.
+  leadCall("remember", { scope: "project", effect: "none", text: "Ask before every send." });
+  await ok(admin, "memory_undo", { projectRef: PROJECT, messageId: lines().at(-1)!.messageId });
+  expect(core()).toBe("- Deploy straight to production.\n");
+});
+
+test("a member's Undo of a nightly refresh's change that loosens waits for an admin too", async () => {
+  const { hub, ok, core, lines } = setup();
+  // Last night's refresh took out a gate line and added one: Bea undoes them all.
+  Memory.of(hub).set(projectTarget(PROJECT), "- Use pnpm.\n");
+  const { message } = chat(hub).add(PROJECT, {
+    author: "system",
+    text: "Memory refreshed: +1 −1",
+    memoryRefreshed: {
+      items: [
+        { scope: "project", text: "Use pnpm." },
+        { scope: "project", text: "Always ask before deploying.", forgotten: true },
+      ],
+    },
+  });
+  const out = await ok(member, "memory_undo", { projectRef: PROJECT, messageId: message.messageId });
+  // Taking "Use pnpm." out loosens nothing: undone. Putting the gate line back tightens: undone too.
+  expect(out.next).toBeUndefined();
+  expect(core()).toBe("- Always ask before deploying.\n");
+  // A refresh that had forgotten a loosening line: putting it back waits.
+  const again = chat(hub).add(PROJECT, {
+    author: "system",
+    text: "Memory refreshed: −1",
+    memoryRefreshed: { items: [{ scope: "project", text: "Merge without review.", forgotten: true }] },
+  }).message;
+  expect((await ok(member, "memory_undo", { projectRef: PROJECT, messageId: again.messageId })).next).toContain("waits for an admin's OK");
+  expect(core()).toBe("- Always ask before deploying.\n");
+  expect(lines().filter((m) => m.remembered?.hold === "waiting").map((m) => m.remembered?.text)).toEqual(["Merge without review."]);
+});
