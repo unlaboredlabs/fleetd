@@ -14,6 +14,7 @@ import { isAgentsMac, tool } from "./mac.ts";
 import { entry, rolesOn, runners, setRoles, setToolOn } from "./places.ts";
 import { register as registerScreens } from "./screens.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { SIMS_MAX } from "../../node/mac_tool/protocol.ts";
 
 export function register(tools: Registry): void {
   tools.add("machine_roles", machineRoles);
@@ -44,7 +45,15 @@ function machineRoles(hub: Hub, caller: Caller) {
 function machineRolesSet(
   hub: Hub,
   caller: Caller,
-  input: { machineId: string; roles?: MachineRole[]; maxSessions?: number; autoSessions?: boolean; macTool?: boolean },
+  input: {
+    machineId: string;
+    roles?: MachineRole[];
+    maxSessions?: number;
+    autoSessions?: boolean;
+    macTool?: boolean;
+    maxSims?: number;
+    autoSims?: boolean;
+  },
 ) {
   const m = input.machineId;
   requireRole(caller, "admin", m);
@@ -67,6 +76,9 @@ function machineRolesSet(
   if (input.maxSessions !== undefined && (!Number.isInteger(input.maxSessions) || input.maxSessions < 1 || input.maxSessions > 64)) {
     throw new ToolError("invalid", "maxSessions: 1 to 64.");
   }
+  if (input.maxSims !== undefined && (!Number.isInteger(input.maxSims) || input.maxSims < 1 || input.maxSims > SIMS_MAX)) {
+    throw new ToolError("invalid", `maxSims: 1 to ${SIMS_MAX}.`);
+  }
   const [before, after] = hub.db.transaction((c) => {
     if (input.macTool !== undefined) setToolOn(c, input.macTool);
     const was = rolesOn(c, m);
@@ -77,6 +89,8 @@ function machineRolesSet(
     }
     if (input.maxSessions !== undefined) next.maxSessions = input.maxSessions;
     if (input.autoSessions === true) next.maxSessions = undefined;
+    if (input.maxSims !== undefined) next.maxSims = input.maxSims;
+    if (input.autoSims === true) delete next.maxSims;
     setRoles(c, m, next);
     return [was, next] as const;
   });

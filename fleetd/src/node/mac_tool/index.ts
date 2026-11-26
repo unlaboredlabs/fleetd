@@ -1,18 +1,24 @@
 // The agents' Mac on a node: on the agents' Mac itself (node.json
 // `agentsMac`), the hub's `mac_call`s go to the host and their answers back as `mac_result`; on every other node, an
 // agent's `fleetd mac` (the local call `mac`) goes to the client, from the agent's worktree.
-import { rmSync } from "node:fs";
+//
+// A Mac that runs agents (`ownMac`) is both: its agents' `mac` goes to the client, which the hub sends back to this
+// same node's host (hub/machine_roles/mac.ts `macFor`), so they get its simulators and Xcode through the same steps,
+// their jobs in their own worktrees. It makes its golden simulator only once an agent first asks for one.
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
 import type { MacCallFrame } from "../../shared/screens_wire.ts";
-import { CAP_AGENTS_MAC, CAP_MAC_TOOL, CAP_SCREEN_CONTROL } from "../../shared/screens_wire.ts";
+import { CAP_AGENTS_MAC, CAP_MAC_TOOL, CAP_OWN_MAC, CAP_SCREEN_CONTROL } from "../../shared/screens_wire.ts";
 import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame, ScreenControlFrame } from "../../shared/screens_wire.ts";
 import type { HostCheck, SimModels } from "../../shared/contracts.ts";
 import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
-import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
+import { findGolden } from "../device/ios/pool.ts";
+import { heldPath, MacSims, SIM_IDLE } from "../device/ios/sims.ts";
+import { installNode, nodeBin } from "../agents_mac/tools.ts";
 import { SimScreens, simctlTools } from "../device/ios/sim_screen.ts";
 import { iosDir } from "../device/ios/wrapper.ts";
 import { macDir } from "../desktop/mac/agent_desktop.ts";
@@ -27,6 +33,9 @@ export { worktreeOf } from "./client.ts";
 
 /** Whether this node is the agents' Mac (agents_mac/mod.rs `is_agents_mac`). */
 export const isAgentsMac = (node: Node) => (node.config as { agentsMac?: boolean }).agentsMac === true;
+/** Whether this node is a Mac that runs agents and lends them its own `mac` tool: any Mac but the agents' Mac and the
+ * hub's runner. */
+export const isOwnMac = (node: Node, platform = process.platform) => platform === "darwin" && !isAgentsMac(node) && node.config.runner !== true;
 
 /** The folder the node started a session in, from its record; undefined where the node has no sessions. */
 export function startedIn(node: Node, session: string): string | undefined {
@@ -38,9 +47,12 @@ export function startedIn(node: Node, session: string): string | undefined {
 }
 
 // Agents' folders live in `~/work` as node/mod.rs's: a switch between the builds keeps their pushes, mirrors and cache.
+// A Mac that runs agents keeps them under its node's home instead: `~/work` there is the person's own. So is Xcode's
+// own DerivedData, which only the agents' Mac sweeps (`xcodeData`): on a person's Mac its builds are theirs.
 export const host = (node: Node, given?: Host) =>
   node.area("mac_tool.host", (n) => {
     if (given) return given;
+    if (!isAgentsMac(n)) return new Host(join(n.home, "mac", "work"), loadOrCreateBoxKey(n.home));
     const h = new Host(join(homeDir(), "work"), loadOrCreateBoxKey(n.home));
     h.xcodeData = join(homeDir(), "Library", "Developer", "Xcode", "DerivedData");
     return h;
@@ -57,15 +69,12 @@ export function start(node: Node): void {
     const h = host(node);
     // The agents' Mac lends iOS simulators while its tool is on (agents_mac.rs `ios_config`: opted in).
     const ios = { ...((node.config.ios ?? {}) as IosConfig), enabled: true };
-    const setting = Number((node.config.mac as { simulators?: unknown } | undefined)?.simulators);
-    if (simulatorsHere() && !h.sims) startSims(node, h, new Simulators(node.home, ios), Number.isInteger(setting) && setting > 0 ? setting : undefined);
-    onHub(node, "mac_call", (f) => {
-      const frame = f as unknown as MacCallFrame;
-      void h.answer(frame).then((answer) => toHub(node, { t: "mac_result", ...answer }));
-    });
+    if (simulatorsHere() && !h.sims) startSims(node, h, new Simulators(node.home, ios), simSetting(node));
+    answerCalls(node, h);
     startHousekeeping(node, h);
     return;
   }
+  if (isOwnMac(node)) startOwnMac(node);
   // Every agent session here gets `mac` first on its PATH, and the forwarding agent-device while it holds a simulator.
   try {
     installShim(node.home, self(node));
@@ -85,6 +94,61 @@ export function start(node: Node): void {
       return { error: e instanceof ToolError ? e.toJSON() : { code: "failed", message: (e as Error).message } };
     }
   });
+}
+
+/** node.json's `mac.simulators`, where an older setup set it: the machine's screens settings come first. */
+const simSetting = (node: Node) => {
+  const setting = Number((node.config.mac as { simulators?: unknown } | undefined)?.simulators);
+  return Number.isInteger(setting) && setting > 0 ? setting : undefined;
+};
+
+/** The hub's `mac_call`s to the host, their answers back as `mac_result`. */
+function answerCalls(node: Node, h: Host): void {
+  onHub(node, "mac_call", (f) => {
+    const frame = f as unknown as MacCallFrame;
+    void h.answer(frame).then((answer) => toHub(node, { t: "mac_result", ...answer }));
+  });
+}
+
+/**
+ * A Mac that runs agents lends them its own tool: the hub sends its agents' steps back here (`own_mac`), their jobs
+ * run in their worktrees, and its simulators start with the first `mac sim start`, or at once where a golden or a held
+ * simulator is there from before. agent-device runs on the node's PATH's Node.js, else on a pinned one it installs.
+ */
+function startOwnMac(node: Node): void {
+  node.area("caps").contribute(() => [CAP_OWN_MAC, CAP_SCREEN_CONTROL]);
+  const h = host(node);
+  h.own = node.config.machineId;
+  let making: Promise<MacSims | undefined> | undefined;
+  const make = () =>
+    (making ??= simulatorsHere()
+      ? withNode(node.home).then(() => startSims(node, h, new Simulators(node.home, { ...((node.config.ios ?? {}) as IosConfig), enabled: true }), simSetting(node)))
+      : Promise.resolve(undefined));
+  h.simsWanted = make;
+  if (findGolden(node.home) || existsSync(heldPath(node.home))) void make().then((sims) => (h.sims ??= sims));
+  answerCalls(node, h);
+  startHousekeeping(node, h, false);
+}
+
+/** Node.js for agent-device: the node's own PATH's where it has one, else the pinned one (agents_mac/tools.ts),
+ * installed once and put last on the node's PATH. */
+const nodeReady = new Map<string, Promise<void>>();
+function withNode(home: string): Promise<void> {
+  let ready = nodeReady.get(home);
+  if (!ready) {
+    ready = (async () => {
+      const pinned = nodeBin(home);
+      if (!(process.env.PATH ?? "").split(":").includes(pinned)) process.env.PATH = `${process.env.PATH ?? "/usr/bin:/bin"}:${pinned}`;
+      if (Bun.which("node")) return;
+      try {
+        await installNode(home);
+      } catch (e) {
+        console.warn(`${new Date().toISOString()} WARN Node.js for agent-device was not installed {"error":${JSON.stringify(String(e))}}`);
+      }
+    })();
+    nodeReady.set(home, ready);
+  }
+  return ready;
 }
 
 /** Gives the host its simulators, ending those nobody used for SIM_IDLE while the node runs. */
@@ -193,11 +257,11 @@ const housekeeping = new WeakMap<Host, Timer[]>();
 /** The Mac's own upkeep while the node runs (host.rs `Host::start`): old folders and builds swept, and caches freed
  * while the disk is short, now and every SWEEP_EVERY; what agents do on it written for the menu bar whenever it
  * changes (activity.rs). */
-function startHousekeeping(node: Node, h: Host): void {
+function startHousekeeping(node: Node, h: Host, macScreen = true): void {
   // What a node before left that no one can use now: its jobs' logs, and its Mac screen sessions' folders (neither
   // outlives the node).
   h.forgetJobs();
-  rmSync(join(macDir(node.home), "sessions"), { recursive: true, force: true });
+  if (macScreen) rmSync(join(macDir(node.home), "sessions"), { recursive: true, force: true });
   // One sweep at a time (host.ts `housekeep`): a slow one (a big build's folder, a mirror's gc) is never started again under itself.
   const clean = () => {
     h.housekeep()
@@ -220,7 +284,7 @@ export async function ended(node: Node, action: NodeAction): Promise<NodeActionR
 
 /** Every job on the Mac ends with its node; the simulators it lent run on, for the next node to take over. */
 export async function stop(node: Node): Promise<void> {
-  if (!isAgentsMac(node)) return;
+  if (!isAgentsMac(node) && !isOwnMac(node)) return;
   const h = host(node);
   h.stop();
   clearInterval(sweeps.get(h));

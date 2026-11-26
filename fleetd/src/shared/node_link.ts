@@ -114,6 +114,7 @@ export const CAP_PROJECT_SIGNINS = "project_signins";
 export const CAP_ONE_LEAD_MODE = "one_lead_mode";
 export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
+export const CAP_OWN_MAC = "own_mac";
 export const CAP_LINK_DEFLATE = "link_deflate";
 export const CAP_GATED_RESUME = "gated_resume";
 /** Takes `SessionLaunch.ahead`: claude starts with no run, and the launch's prompt goes in with the first send. */

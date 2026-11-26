@@ -536,7 +536,7 @@ it("says an iPhone needs the agents' Mac, with its one fix", async () => {
   await settle();
   act(() => button("iPhone")?.click());
   await settle();
-  expect(document.querySelector("[data-off-reason='add']")?.textContent).toContain("iPhone simulators need a Mac joined as the agents’ Mac.");
+  expect(document.querySelector("[data-off-reason='add']")?.textContent).toContain("iPhone simulators need a Mac: one that runs agents, or one joined as the agents’ Mac.");
   expect(button("Add machine")).toBeDefined();
   expect(document.querySelector("[aria-label='Model']")).toBeNull();
 });

@@ -5130,11 +5130,13 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const mac = page.locator("[data-screens]");
       await mac.scrollIntoViewIfNeeded();
-      await mac.getByRole("region", { name: "At once" }).waitFor();
+      await mac.getByRole("region", { name: "At once", exact: true }).waitFor();
       await expect(mac.getByRole("switch")).toHaveCount(0);
       await expect(mac.locator("[data-screens-needs]")).toHaveCount(0);
       // How soon an idle one ends is the hint of its At once row.
-      await expect(mac.getByRole("region", { name: "At once" })).toContainText("An idle Mac screen ends after 5 minutes");
+      await expect(mac.getByRole("region", { name: "At once", exact: true })).toContainText("An idle Mac screen ends after 5 minutes");
+      // How many simulators it runs at once: its default, 2, until a person picks a number.
+      await expect(mac.getByRole("region", { name: "iOS simulators at once" }).getByRole("combobox")).toContainText("Default (2)");
     },
   },
   // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Hub › Machines.

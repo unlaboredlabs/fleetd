@@ -1,8 +1,13 @@
 // The agents' Mac (D298) as the hub sees it: the machine whose node lists
 // `agents_mac` (a tool, never a runner), the admin's "Agents may use this Mac" switch, and where agents' `mac` calls
-// go: `macMachine`. Every project's agents may use it; projects never.
+// go: `macFor`. Every project's agents may use it; projects never.
+//
+// A Mac that runs agents (its node lists `own_mac`) lends its own agents its tool too, and only them: an agent there
+// uses that Mac, whatever else joined; an agent on any other machine uses the agents' Mac, as before. So a workspace
+// whose only machine is a Mac gets simulators and Xcode builds with no second Mac, and no machine's agents reach
+// another's own Mac.
 import type { MacTool } from "../../shared/contracts.ts";
-import { CAP_MAC_TOOL } from "../../shared/screens_wire.ts";
+import { CAP_MAC_TOOL, CAP_OWN_MAC } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
 import { link } from "../link/index.ts";
 import { store } from "../store/hub_store.ts";
@@ -21,6 +26,20 @@ export function macMachine(hub: Hub): string | undefined {
     .filter((m) => m.agentsMac === true && m.status !== "offline")
     .map((m) => m.machineId)
     .find((m) => link(hub).can(m, CAP_MAC_TOOL));
+}
+
+/** Whether `m` is a Mac that runs agents and lends them its tool: online, not the agents' Mac, its node lists `own_mac`. */
+export function isOwnMac(hub: Hub, m: string): boolean {
+  const machine = store(hub).machineGet(m);
+  return machine !== undefined && machine.agentsMac !== true && machine.status !== "offline" && link(hub).can(m, CAP_OWN_MAC);
+}
+
+/** Where the `mac` calls of an agent on machine `origin` go: that machine itself when it is a Mac that lends its
+ * tool (`here`), else the agents' Mac; undefined when neither is there. */
+export function macFor(hub: Hub, origin: string): { machineId: string; here: boolean } | undefined {
+  if (isOwnMac(hub, origin)) return { machineId: origin, here: true };
+  const mac = macMachine(hub);
+  return mac === undefined ? undefined : { machineId: mac, here: false };
 }
 
 const clip = (text: string, max: number) => ([...text].length <= max ? text : `${[...text].slice(0, max - 1).join("")}…`);

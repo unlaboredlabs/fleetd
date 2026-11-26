@@ -424,7 +424,13 @@ export class Pool {
     readonly golden: Golden,
     private readonly size: number,
     private readonly runner: RunnerStarter = startRunner,
+    /** Whether another simulator may boot now, given how many of the pool's are booted or booting (the one being
+     * lent too): the warm one counts in the Mac's simulators at once. */
+    private readonly room: (pooled: number) => boolean = () => true,
   ) {}
+
+  /** A warm clone being lent, not yet its agent's: it counts until then. */
+  private outgoing = 0;
 
   /**
    * The golden's clone, or none when the pool was drained while simctl cloned: that clone is deleted unbooted. A drain
@@ -497,7 +503,10 @@ export class Pool {
    */
   take(): { lent: Lent } | { waiting: Waiting } {
     const warm = this.warmClones.shift();
+    // The refill asks for room at once, before the clone lent is its agent's.
+    if (warm) this.outgoing++;
     this.refill();
+    if (warm) this.outgoing--;
     return warm ? { lent: warm } : { waiting: this.refills.wait(Date.now()) };
   }
 
@@ -507,7 +516,7 @@ export class Pool {
     this.filling = true;
     void (async () => {
       try {
-        while (this.warmClones.length < this.size && !this.closed) {
+        while (this.warmClones.length < this.size && !this.closed && this.room(this.warmClones.length + this.booting.size + this.outgoing)) {
           if (!this.refills.mayBoot(Date.now())) return;
           this.refills.started(Date.now());
           let lent: Lent | undefined;

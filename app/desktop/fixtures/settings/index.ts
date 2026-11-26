@@ -358,7 +358,8 @@ function machines(from: Fixture): Fixture {
 
 /**
  * Settings › Hub › Machines › Screens with the fleet's second machine as the agents' Mac, ready and on a current
- * fleetd: the hub lists only its own screen there, and it needs no one, so its Screens part is At once alone.
+ * fleetd: the hub lists only its own screen there, and it needs no one, so its Screens part is At once and how many
+ * iOS simulators it runs at once (the default, 2).
  */
 function agentsMac(from: Fixture): Fixture {
   const f = Fixture.from(from, "settings-agents-mac", "The fleet's second machine is the agents' Mac, ready: its Screens part needs no one");
@@ -368,7 +369,7 @@ function agentsMac(from: Fixture): Fixture {
     if (!isObject(out) || !Array.isArray(out["machines"])) return out;
     const machines = out["machines"].filter(isObject).map((m, i): JsonObject => {
       if (i !== 1) return m;
-      return { ...m, roles: ["sessions"], mac: { on: true, ready: true }, hosts: [mac] };
+      return { ...m, roles: ["sessions"], mac: { on: true, ready: true }, hosts: [mac], sims: { max: 2 } };
     });
     return { ...out, machines };
   });

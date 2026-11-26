@@ -53,8 +53,8 @@ export type Done =
   /** `path`: a screenshot, in the agent's folder on the Mac. */
   | { step: "sim_control"; device: string; path?: string; width?: number; height?: number };
 
-/** What goes inside the sealed box. */
-export type Envelope = { thread: string; atMs: number; nonce: string; answerKey: string; step: Step };
+/** What goes inside the sealed box. `worktree`: on the agent's own Mac, the worktree its jobs run in (no push). */
+export type Envelope = { thread: string; atMs: number; nonce: string; answerKey: string; step: Step; worktree?: string };
 export type Answer = { done?: Done; error?: McpToolError };
 
 const encoder = new TextEncoder();
@@ -113,3 +113,8 @@ export function safePart(name: string): string | undefined {
 
 /** iOS simulators agents may have booted at once: about 3 GB each, the Mac keeping 8 GB for itself, at least 1. */
 export const simBudget = (memBytes: number) => Math.max(Math.floor(Math.max(Math.floor(memBytes / 2 ** 30) - 8, 0) / 3), 1);
+/** Simulators a Mac runs at once unless its screens settings say otherwise: a person's own Mac stays usable, and four
+ * made the agents' Mac sluggish enough to time agents out. A small Mac runs fewer (`simBudget`). */
+export const SIMS_DEFAULT = 2;
+/** The most its screens settings may set. */
+export const SIMS_MAX = 8;

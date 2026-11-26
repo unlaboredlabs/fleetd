@@ -4823,6 +4823,16 @@ export type MachineRolesEntry = {
   roles: MachineRole[];
   /** Its sessions live now, its own agents' and other machines'. */
   sessionsLive: number;
+  /** A Mac that lends iOS simulators (the agents' Mac, or one that runs agents): how many at once. */
+  sims?: MachineSims;
+};
+
+/** How many iOS simulators a Mac runs at once. */
+export type MachineSims = {
+  /** How many run at once: a person's setting, else the default. */
+  max: number;
+  /** A person's setting; absent: the default. */
+  set?: number;
 };
 
 export type MachineRolesInput = { [key: string]: unknown };
@@ -4843,11 +4853,15 @@ export type MachineRolesOutput = {
 export type MachineRolesSetInput = {
   /** Drop the session cap: it hosts what it fits again. */
   autoSessions?: boolean;
+  /** Drop the simulator setting: the Mac runs its default number at once again. */
+  autoSims?: boolean;
   /** The agents' Mac only: "Agents may use this Mac", for every project's agents (leads never). */
   macTool?: boolean;
   machineId: MachineId;
   /** The most sessions it hosts at once, in place of what it fits. */
   maxSessions?: number;
+  /** On a Mac that lends iOS simulators: how many run at once, in place of its default (2). */
+  maxSims?: number;
   roles?: MachineRole[];
 };
 

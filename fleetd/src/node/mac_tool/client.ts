@@ -10,6 +10,9 @@
 // It runs where the worktree is: on the agent's node (./index.ts), or in a hosted box, where fleetd's computers keep
 // it, as the box's own `fleetd mac` (cli/mac_tool.ts), its hub calls up the box's node.sock.
 //
+// On a Mac that runs agents, `mac_where` names that Mac itself (`here`): each step names the worktree, where its jobs
+// run, and a push sends nothing. Every answer says which Mac it is (`mac`), for the line `fleetd mac` prints.
+//
 // TODO(bun): the action log of the session's runs, and following a background run to its end.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readdirSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -39,7 +42,8 @@ export type MacCall =
   | { step: "sim_control"; control: ScreenControl; value?: string; to?: string }
   | { step: "sim_end" };
 
-type Mac = { machineId: string; key: Uint8Array };
+/** The Mac the agent's steps go to; `here`: the machine the agent runs on, `name` as people know it. */
+type Mac = { machineId: string; key: Uint8Array; here: boolean; name: string };
 
 /** Where the client runs: the folder its scratch files and forwarders go in, and its session's lead call to the hub. */
 export type MacSide = {
@@ -195,13 +199,21 @@ export class MacClient {
     const r = await this.side.call("mac_where", {}, { threadId: thread, cwd, waitMs: SEND_WAIT });
     const key = Buffer.from(String(r.boxPubKey ?? ""), "base64");
     if (key.length !== 32) throw failed("the Mac's key is not 32 bytes");
-    return { machineId: String(r.machineId), key };
+    const machineId = String(r.machineId);
+    return { machineId, key, here: r.here === true, name: typeof r.name === "string" ? r.name : machineId };
   }
 
   /** One step, sealed to the Mac, and its answer opened, with the raw bytes after it. */
   private async send(thread: string, cwd: string, mac: Mac, step: Step, raw: Uint8Array = new Uint8Array()): Promise<[Done, Uint8Array]> {
     const answerKey = crypto.getRandomValues(new Uint8Array(32));
-    const envelope: Envelope = { thread, atMs: Date.now(), nonce: b64(crypto.getRandomValues(new Uint8Array(16))), answerKey: b64(answerKey), step };
+    const envelope: Envelope = {
+      thread,
+      atMs: Date.now(),
+      nonce: b64(crypto.getRandomValues(new Uint8Array(16))),
+      answerKey: b64(answerKey),
+      step,
+      ...(mac.here ? { worktree: cwd } : {}),
+    };
     const sealed = sealStep(mac.key, envelope, raw);
     // A simulator start goes with the screen the hub makes for it: the simulator it lends is the agent's screen.
     const sim = step.step === "sim_start" ? { sim: true } : {};
@@ -242,6 +254,11 @@ export class MacClient {
   /** The agent's `fleetd mac` call, for its session `thread`, from its worktree `worktree`. */
   async call(thread: string, worktree: string, call: MacCall): Promise<Record<string, unknown>> {
     const mac = await this.find(thread, worktree);
+    const said = { mac: { name: mac.name, ...(mac.here ? { here: true } : {}) } };
+    return { ...(await this.step(thread, worktree, mac, call)), ...said };
+  }
+
+  private async step(thread: string, worktree: string, mac: Mac, call: MacCall): Promise<Record<string, unknown>> {
     const one = async <S extends Done["step"]>(step: Step, want: S) => {
       const [done] = await this.send(thread, worktree, mac, step);
       if (done.step !== want) throw failed(`the Mac answered ${want} with another step's`);
@@ -305,6 +322,8 @@ export class MacClient {
   }
 
   private async push(thread: string, worktree: string, mac: Mac): Promise<Record<string, unknown>> {
+    // The agent's own Mac runs its jobs in the worktree itself: nothing to copy.
+    if (mac.here) return { step: "push", folder: worktree, sentBytes: 0 };
     const scratch = this.scratch(thread);
     const [have] = await this.sendAgain(thread, worktree, mac, { step: "have" });
     if (have.step !== "have") throw failed("the Mac answered have with another step's");

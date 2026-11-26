@@ -49,8 +49,10 @@ interface HostChoice {
   readonly full: boolean;
 }
 
-/** The agents' Mac offers only Apple's kinds, whatever an older hub or node of it says it has ready; an iPhone is only its. */
-const offers = (m: Pick<MachineRolesEntry, "mac">, kind: ScreenKind): boolean => (kind === "ios" ? m.mac !== undefined : kind === "mac" || m.mac === undefined);
+/** The agents' Mac offers only Apple's kinds, whatever an older hub or node of it says it has ready; an iPhone is only
+ * a Mac's that lends simulators (it, or a Mac that runs agents). */
+const offers = (m: Pick<MachineRolesEntry, "mac" | "sims">, kind: ScreenKind): boolean =>
+  kind === "ios" ? m.mac !== undefined || m.sims !== undefined : kind === "mac" || m.mac === undefined;
 
 const ready = (m: MachineRolesEntry, kind: ScreenKind): boolean =>
   offers(m, kind) && m.roles.includes("sessions") && m.hostsOthers && (m.hosts ?? []).some((h) => h.host === HOST[kind] && h.ready);
@@ -106,7 +108,7 @@ const LOWER: Readonly<Record<ScreenKind, string>> = { ...PLURAL, browser: "brows
 /** What a kind needs, where no machine can run it at all. */
 const NEEDS: Readonly<Record<ScreenKind, string>> = {
   browser: "Browser screens need a machine that hosts screens.",
-  ios: "iPhone simulators need a Mac joined as the agents’ Mac.",
+  ios: "iPhone simulators need a Mac: one that runs agents, or one joined as the agents’ Mac.",
   android: "Android emulators need a Linux x86_64 machine with KVM, and none here hosts screens.",
   linux_desktop: "Linux desktops need a Linux machine, and none here hosts screens.",
   mac: "The agents’ Mac screen needs a Mac joined as the agents’ Mac.",
@@ -192,7 +194,7 @@ export const adminWho = (admins: readonly string[]): string => {
 /** The machine a kind no machine here can run needs. */
 const ADD: Readonly<Record<ScreenKind, string>> = {
   browser: "a machine",
-  ios: "a Mac set aside for agents",
+  ios: "a Mac",
   android: "a Linux machine",
   linux_desktop: "a Linux machine",
   mac: "a Mac set aside for agents",

@@ -4,7 +4,8 @@
 // own screen, and the hub places a kind a machine can't run elsewhere. The at-once limit is machine_roles_set. An idle
 // screen ends after the node's timeout (30 minutes; the agents' Mac's own screen, 5), said in a line. On Hub ›
 // Machines, how long the hub keeps recordings: browser_retention_set, for every bot: the app sets only the days, and
-// the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it.
+// the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it. A Mac that lends iOS
+// simulators (the agents' Mac, or a Mac that runs agents) says how many run at once: machine_roles_set maxSims.
 import { useState, type ReactNode } from "react";
 import type { MachineRolesEntry, ToolInput } from "../../../shared/contracts";
 import { useHub, useToolQuery } from "../../src/data/react";
@@ -14,7 +15,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { RunOn } from "../setup/Guide";
 import { GroupNote, SettingsRow } from "./parts";
 import { capChoices, hostsNote, sessionsWhy } from "./machinesModel";
-import { daysChoices, idleLine, needsLines } from "./screensModel";
+import { daysChoices, idleLine, needsLines, simChoices } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -66,6 +67,7 @@ export function useMachineSet<T extends MachineTool>(tool: T, machineId: string)
  */
 export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
   const cap = useMachineSet("machine_roles_set", m.machineId);
+  const sims = useMachineSet("machine_roles_set", m.machineId);
   const note = hostsNote(m);
   return (
     <div data-screens={m.machineId}>
@@ -98,6 +100,24 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
         )}
       </SettingsRow>
       {cap.echo}
+      {m.sims === undefined ? null : (
+        <SettingsRow
+          title="iOS simulators at once"
+          hint="How many iPhone and iPad simulators agents and people run on this Mac at once. Each takes about 3 GB of memory."
+          data={{ "data-screens-sims": "" }}
+          control={
+            <Select
+              aria-label={`iOS simulators ${m.name} runs at once`}
+              className={s.machineCap}
+              value={m.sims.set === undefined ? "default" : String(m.sims.set)}
+              options={simChoices()}
+              disabled={sims.disabled}
+              onValueChange={(v) => sims.set(v === "default" ? { autoSims: true } : { maxSims: Number(v) })}
+            />
+          }
+        />
+      )}
+      {sims.echo}
     </div>
   );
 }

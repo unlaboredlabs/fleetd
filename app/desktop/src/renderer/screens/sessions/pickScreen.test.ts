@@ -110,11 +110,17 @@ describe("an iPhone (D652)", () => {
     expect(hostsFor([studio], "mac").map(slotLine)).toEqual(["0 of 1 in use"]);
   });
 
+  it("opens on a Mac that runs agents too, which lends its own simulators", () => {
+    const laptop = machine("laptop", ["browser"], { sims: { max: 2 }, hosts: [{ host: "browser", ready: true, detail: "as tested" }, { host: "ios", ready: true, detail: "as tested", sims }] });
+    expect(hostsFor([laptop], "ios").map(slotLine)).toEqual(["Full · 2 of 2 in use"]);
+    expect(hostsFor([laptop], "browser").map((h) => h.machineId)).toEqual(["laptop"]);
+  });
+
   it("says why without an agents' Mac, or with one too old to start them", () => {
-    expect(whyOff(MACHINES, "ios")).toEqual({ why: "iPhone simulators need a Mac joined as the agents’ Mac.", short: "Needs a Mac", fix: "add" });
+    expect(whyOff(MACHINES, "ios")).toEqual({ why: "iPhone simulators need a Mac: one that runs agents, or one joined as the agents’ Mac.", short: "Needs a Mac", fix: "add" });
     const older = machine("studio", ["mac"], { mac: { on: true, ready: true } });
     expect(whyOff([older], "ios")).toMatchObject({ short: "Needs an update", fix: "update" });
-    expect(askLine({ why: "", short: "", fix: "add" }, "ios", ["Sam"])).toBe("Ask Sam to add a Mac set aside for agents.");
+    expect(askLine({ why: "", short: "", fix: "add" }, "ios", ["Sam"])).toBe("Ask Sam to add a Mac.");
   });
 
   it("lists iPhones, then foldables, then iPads, and starts on the first", () => {

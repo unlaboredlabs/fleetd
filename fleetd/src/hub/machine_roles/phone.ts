@@ -23,10 +23,10 @@ import type { Caller } from "../api/registry.ts";
 import { asRead, changeControl } from "../browser/tools.ts";
 import { get } from "../browser/store.ts";
 import { link } from "../link/index.ts";
-import { SEND_WAIT } from "../mac_tool/index.ts";
+import { SEND_WAIT, sims } from "../mac_tool/index.ts";
 import { store } from "../store/hub_store.ts";
 import { request } from "./calls.ts";
-import { macMachine } from "./mac.ts";
+import { isOwnMac, macMachine } from "./mac.ts";
 import { endPlace, newKey, type Place, runnerOf, runners, simPlace } from "./places.ts";
 import { WAIT_MS } from "./screen_rules.ts";
 
@@ -49,9 +49,9 @@ export const START_WAIT = 300_000;
 export function modelOf(models: SimModel[] | undefined, sim: ScreenSim | undefined): { model?: SimModel; runtime?: string } {
   if (!sim) return {};
   const model = models?.find((m) => m.id === sim.model || m.name === sim.model);
-  if (!model) throw new ToolError("invalid", `The agents' Mac has no ${sim.model} simulator.`, "Pick one of the models the Mac lists.");
+  if (!model) throw new ToolError("invalid", `The Mac has no ${sim.model} simulator.`, "Pick one of the models the Mac lists.");
   if (sim.runtime !== undefined && !model.runtimes.some((r) => r.id === sim.runtime || r.name === sim.runtime)) {
-    throw new ToolError("invalid", `${model.name} doesn't run ${sim.runtime} on the agents' Mac.`, `Pick one of: ${model.runtimes.map((r) => r.name).join(", ")}.`);
+    throw new ToolError("invalid", `${model.name} doesn't run ${sim.runtime} on the Mac.`, `Pick one of: ${model.runtimes.map((r) => r.name).join(", ")}.`);
   }
   return { model, ...(sim.runtime === undefined ? {} : { runtime: model.runtimes.find((r) => r.id === sim.runtime || r.name === sim.runtime)!.id }) };
 }
@@ -88,11 +88,12 @@ async function macStep(hub: Hub, s: SimStart, step: Step, waitMs = SEND_WAIT): P
         caller: { machineId: s.origin.machineId, projectId: s.origin.projectId, threadId: s.place.originThread },
         sealed,
         screen: { hostKey: s.place.key, sessionId: s.place.sessionId! },
+        ...sims(hub, s.mac),
       },
       waitMs,
     );
   } catch (e) {
-    throw new ToolError("machine_offline", `The agents' Mac did not answer: ${(e as Error).message}.`, "Try again shortly.");
+    throw new ToolError("machine_offline", `The Mac did not answer: ${(e as Error).message}.`, "Try again shortly.");
   }
   if (answer.error) throw new ToolError(answer.error.code, answer.error.message, answer.error.fix);
   const opened = answer.sealed === undefined ? undefined : openAnswer(answerKey, answer.sealed);
@@ -107,12 +108,12 @@ async function macStep(hub: Hub, s: SimStart, step: Step, waitMs = SEND_WAIT): P
 export type SimOpened = { session: BrowserSession } | { queued: { place: number; why: string } };
 
 /**
- * A person's iPhone on the agents' Mac `machineId` for project `r`, checked and given its place: what `followSim` then
- * starts. A Mac that can't (not the agents' Mac, too old, not ready) or a model it doesn't list is refused here, before
- * anything starts.
+ * A person's iPhone on the agents' Mac `machineId` (or a Mac that runs agents) for project `r`, checked and given its
+ * place: what `followSim` then starts. A Mac that can't (neither, too old, not ready) or a model it doesn't list is
+ * refused here, before anything starts.
  */
 export function prepareSim(hub: Hub, caller: Caller, r: ProjectRef, person: PersonRef, machineId: string, sim: ScreenSim | undefined): SimStart {
-  const mac = macMachine(hub);
+  const mac = isOwnMac(hub, machineId) ? machineId : macMachine(hub);
   if (!mac || mac !== machineId) {
     throw new ToolError(
       "invalid",
@@ -122,12 +123,12 @@ export function prepareSim(hub: Hub, caller: Caller, r: ProjectRef, person: Pers
   }
   requireRole(caller, "read", mac);
   if (!link(hub).can(mac, CAP_SCREEN_CONTROL)) {
-    throw new ToolError("failed", "The agents' Mac runs an older fleetd: it starts no iPhone for a person yet.", "An admin updates fleetd on the Mac.");
+    throw new ToolError("failed", "The Mac runs an older fleetd: it starts no iPhone for a person yet.", "An admin updates fleetd on the Mac.");
   }
   const runner = runners(hub).find((m) => m.runner.machineId === mac)?.runner;
   const ios = runner?.hosts?.find((h) => h.host === "ios");
   if (!runner?.online || !ios?.ready) {
-    throw new ToolError("failed", `The agents' Mac can't start an iPhone now: ${ios?.detail ?? "it hasn't said why"}.`, "Try again shortly.");
+    throw new ToolError("failed", `The Mac can't start an iPhone now: ${ios?.detail ?? "it hasn't said why"}.`, "Try again shortly.");
   }
   const { model, runtime } = modelOf(ios.sims?.models, sim);
   const thread = `screen-${newKey().slice(1)}`;

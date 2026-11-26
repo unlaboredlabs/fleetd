@@ -344,6 +344,8 @@ export const machineUsage = () => `${MACHINE_ADD_USAGE}${MACHINE_SET_USAGE}`;
 
 /** `mac --help`. */
 export const MAC_HELP = `mac: the agents' Mac, from wherever you run (fleetd's shared Mac for builds and iOS simulators).
+On a Mac that runs agents, mac is that same Mac: no push needed, mac run runs in your worktree, and mac sim start
+gives you one of its own simulators. mac run, mac push and mac sim start say on stderr which Mac they use.
 
   mac push                         your worktree as it is now (commits, changes, new files) becomes your folder on
                                    the Mac; only what changed goes across
