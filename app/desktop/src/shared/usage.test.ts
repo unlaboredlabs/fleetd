@@ -44,10 +44,10 @@ describe("the Usage page's figures", () => {
     expect(change(2, 9, "up", "count")).toEqual({ text: "down from 9", tone: "danger", plain: true });
     expect(change(4, 4, "up", "count")).toEqual({ text: "same as 4", tone: "quiet", plain: true });
     expect(change(0, 0, "up", "count")).toBeUndefined();
-    expect(against(change(133, 1, "none", "count")!, 30)).toBe("up from 1 in the 30 days before");
+    expect(against({ text: "up from 1", tone: "quiet", plain: true }, 30)).toBe("up from 1 in the 30 days before");
     // Ten or more before: a share as ever.
     expect(change(1289, 169, "none", "count")).toEqual({ text: "↑ 663%", tone: "quiet" });
-    expect(against(change(1289, 169, "none", "count")!, 30)).toBe("↑ 663% against the 30 days before");
+    expect(against({ text: "↑ 663%", tone: "quiet" }, 30)).toBe("↑ 663% against the 30 days before");
   });
 
   it("draws a column a day up to a month, and a week a column past it", () => {
