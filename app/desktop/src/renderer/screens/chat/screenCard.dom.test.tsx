@@ -25,6 +25,7 @@ const row = (sessionId: string, more: Record<string, unknown>) => ({
 });
 let sessions: unknown[] = [];
 let controls: unknown[] = [];
+let sent: unknown[] = [];
 let thumbs: boolean[] = [];
 let host: HTMLDivElement;
 let root: Root | undefined;
@@ -32,6 +33,7 @@ let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
 
 beforeEach(() => {
   controls = [];
+  sent = [];
   thumbs = [];
   vi.stubGlobal("fleetd", {
     platform: "darwin",
@@ -63,6 +65,10 @@ const mount = async (node: React.ReactNode) => {
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
+      if (tool === "browser_download_send") {
+        sent.push(input);
+        return Promise.resolve({ ok: true, output: { attachmentId: "F9", messageId: "m9" } });
+      }
       if (tool === "browser_control") {
         controls.push(input);
         const id = (input as { sessionId: string }).sessionId;
@@ -142,4 +148,23 @@ it("once ended: how long it ran and Replay, no pictures asked for; the strip say
   expect(buttons()).toEqual(["Replay"]);
   expect(host.querySelector("[data-screen-ask]")).toBeNull();
   expect(thumbs).toEqual([]);
+});
+
+it("once ended, lists what its browser downloaded that the chat doesn't have, each with Send to chat", async () => {
+  const downloads = [
+    { name: "dummy.pdf", bytes: 13_264, at: "2026-10-19T10:01:00.000Z" },
+    { name: "summary.md", bytes: 900, at: "2026-10-19T10:01:30.000Z" },
+  ];
+  // An hour ago: its machine keeps its downloads a day.
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  sessions = [row("bs-done", { state: "recorded", endedAt: ago(60), startedAt: ago(62), files: [{ file: "actions", bytes: 1 }], downloads })];
+  await mount(<ScreenCard project={project} sessionId="bs-done" inChat={["summary.md"]} />);
+  const list = host.querySelector("ul[aria-label='Downloaded on this screen']");
+  expect(list?.textContent).toContain("dummy.pdf");
+  expect(list?.textContent).not.toContain("summary.md");
+  const send = [...(list?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Send to chat");
+  act(() => send?.click());
+  await settle();
+  expect(sent).toEqual([{ sessionId: "bs-done", name: "dummy.pdf" }]);
+  expect(list?.textContent).toContain("Sending…");
 });

@@ -104,6 +104,7 @@ export const SESSION_CALLS = [
   "put_file",
   "has_file",
   "read_image",
+  "read_download",
 ] as const;
 export type SessionCallOp = (typeof SESSION_CALLS)[number];
 

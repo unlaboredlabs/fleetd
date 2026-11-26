@@ -390,7 +390,7 @@ export class Executors {
   }
 
   private async ask(machineId: MachineId, operation: NodeOperation, call: SessionCall, waitMs: number, patienceMs: number): Promise<SessionOutput> {
-    const session = "sessionId" in call && call.op !== "launch" && call.op !== "read_image" && call.op !== "window" && call.op !== "release" && call.op !== "withdraw"
+    const session = "sessionId" in call && call.op !== "launch" && call.op !== "read_image" && call.op !== "read_download" && call.op !== "window" && call.op !== "release" && call.op !== "withdraw"
       ? call.sessionId
       : undefined;
     const slot = this.machines.get(machineId);

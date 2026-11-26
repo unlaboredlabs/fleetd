@@ -52,6 +52,7 @@ import type { ScreenHooks, SessionsArea } from "../api.ts";
 import { CAP_VAULT_FILL } from "../../shared/node_link.ts";
 import { ensureFfmpeg } from "../device/sdk.ts";
 import { liveEncoder } from "../screen/x264.ts";
+import { Downloads, downloadsDir, sweepDownloads } from "./downloads.ts";
 
 export { type BoxedFor, drivesBrowser, type KeptInBox } from "./broker.ts";
 export { NO_VIDEO } from "./record.ts";
@@ -394,6 +395,8 @@ function nodeHost(node: Node, broker: () => Broker): BrokerHost {
     vaultFor: vaultFor(home),
     // What a held session's snapshot holds changed: kept again, so even a node that dies takes it over at its start.
     changed: (thread) => broker().keepHeld(thread),
+    downloads: (sessionId) => new Downloads(downloadsDir(home, sessionId)),
+    sweepDownloads: (live, now) => sweepDownloads(home, live, now),
   };
 }
 

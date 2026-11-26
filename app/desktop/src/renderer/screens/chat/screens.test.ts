@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import type { BrowserSession, SessionState } from "../sessions/model";
 import { chatRows, type Row } from "./model";
-import { askStrip, cardView } from "./screens";
+import { askStrip, cardView, DOWNLOADS_KEPT_MS, unsent } from "./screens";
 import { withScreens } from "./screenRows";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
@@ -88,5 +88,28 @@ describe("the strip over the composer", () => {
 
   it("is gone while nothing asks", () => {
     expect(askStrip([session("a", "running"), session("b", "ended")], "grokdemo")).toBeUndefined();
+  });
+});
+
+describe("an ended screen's downloads", () => {
+  const files = [{ name: "dummy.pdf" }, { name: "report.csv" }];
+  const ended = { endedAt: at(19, 9) };
+
+  it("offers the ones the chat doesn't have since the screen opened, by name", () => {
+    expect(unsent(files, ["report.csv"], ended, Date.parse(at(19, 10)))).toEqual([{ name: "dummy.pdf" }]);
+    expect(unsent(files, [], ended, Date.parse(at(19, 10)))).toEqual(files);
+  });
+
+  it("offers none once its machine no longer keeps them, a day after it ended", () => {
+    expect(unsent(files, [], ended, Date.parse(at(19, 9)) + DOWNLOADS_KEPT_MS)).toEqual([]);
+  });
+
+  it("names the chat's files since the screen opened on its row: a person's attachments and the lead's file cards", () => {
+    const withFiles = [
+      { ...item("a", "human", at(19, 8)), attachments: [{ attachmentId: "F1", name: "old.pdf", mime: "application/pdf", bytes: 1 }] },
+      { ...item("b", "lead", at(19, 10)), message: { parts: [{ start: 0, end: 1, block: { v: 1, kind: "file", attachmentId: "F2", name: "dummy.pdf" } }] } as never },
+    ] as ChatItem[];
+    const out = withScreens(rows(withFiles), [{ id: "s1", at: at(19, 9), live: false }], { hasOlder: false, newer: false });
+    expect(out.find((r) => r.kind === "screen")).toMatchObject({ kind: "screen", inChat: ["dummy.pdf"] });
   });
 });

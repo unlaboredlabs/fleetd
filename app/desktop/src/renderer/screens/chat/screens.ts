@@ -86,3 +86,17 @@ export const askStrip = (sessions: readonly BrowserSession[], bot: string): AskS
   // Short, beside what the lead waits on: the card in the chat and the tooltip say why.
   return { session: first, title: `${agentName(first, bot)} needs you`, more: asking.length - 1 };
 };
+
+/** How long a screen's machine keeps what its browser downloaded after it ends (node/browser/downloads.ts). */
+export const DOWNLOADS_KEPT_MS = 24 * 60 * 60_000;
+
+/**
+ * An ended screen's downloads to offer: the ones the chat doesn't have yet (`inChat`, by name: the agent sent it, or a
+ * person did), while its machine still keeps them.
+ */
+export const unsent = <D extends { readonly name: string }>(downloads: readonly D[], inChat: readonly string[], x: Pick<BrowserSession, "endedAt">, now: number): readonly D[] => {
+  const ended = parseMs(x.endedAt);
+  if (ended !== undefined && now - ended >= DOWNLOADS_KEPT_MS) return [];
+  const there = new Set(inChat);
+  return downloads.filter((d) => !there.has(d.name));
+};

@@ -1442,6 +1442,20 @@ export type BrowserControlOutput = {
   truncated?: boolean;
 };
 
+/** A file a screen's browser downloaded, by its name in the session's `downloads`. */
+export type BrowserDownloadSendInput = {
+  name: string;
+  sessionId: BrowserSessionId;
+};
+
+/** The file put in the project's chat, as a file card the lead's message holds. */
+export type BrowserDownloadSendOutput = {
+  attachmentId: AttachmentId;
+  messageId: ChatMessageId;
+  next?: string;
+  truncated?: boolean;
+};
+
 /**
  * Who should drive a live session: `human` takes it over from the agent; `agent` hands it back, and the session is
  * `handing_back` until the agent's next command, which sees the page as the person left it.
@@ -1619,6 +1633,13 @@ export type BrowserRetentionSetOutput = {
   truncated?: boolean;
 };
 
+/** A file a screen's browser downloaded, as its machine keeps it: its name, its size and when it finished. */
+export type ScreenDownload = {
+  at: Timestamp;
+  bytes: number;
+  name: string;
+};
+
 /** One session as the hub keeps it. */
 export type BrowserSession = {
   /** Light or dark, on a phone screen whose device has the setting (an iOS simulator's); absent where it can't. */
@@ -1637,6 +1658,11 @@ export type BrowserSession = {
   controls?: ScreenControl[];
   /** How many logins the node filled from 1Password; never their values. */
   credentialsFilled?: number;
+  /**
+   * What its browser downloaded, newest last, while its machine keeps the files (a day after the screen ends):
+   * `browser_download_send` puts one in the chat. Absent on other screens and from older nodes.
+   */
+  downloads?: ScreenDownload[];
   endedAt?: Timestamp;
   /** The recording's files on the hub; empty until it is recorded, and again once it expired. */
   files?: BrowserRecordingEntry[];
@@ -11437,6 +11463,7 @@ export interface ToolMap {
   automation_runs: { input: AutomationRunsInput; output: AutomationRunsOutput };
   automation_update: { input: AutomationUpdateInput; output: AutomationUpdateOutput };
   browser_control: { input: BrowserControlInput; output: BrowserControlOutput };
+  browser_download_send: { input: BrowserDownloadSendInput; output: BrowserDownloadSendOutput };
   browser_recording_get: { input: BrowserRecordingGetInput; output: BrowserRecordingGetOutput };
   browser_retention_set: { input: BrowserRetentionSetInput; output: BrowserRetentionSetOutput };
   browser_sessions: { input: BrowserSessionsInput; output: BrowserSessionsOutput };

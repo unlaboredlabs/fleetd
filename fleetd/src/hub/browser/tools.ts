@@ -1,5 +1,5 @@
-// browser_sessions, browser_recording_get, browser_control, browser_retention_set and screens_count:
-// the app's Sessions view, its replay and its takeover.
+// browser_sessions, browser_recording_get, browser_control, browser_download_send, browser_retention_set and
+// screens_count: the app's Sessions view, its replay, its takeover and a download put in the chat.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import type { BrowserControl, BrowserControlTo, BrowserSession } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -19,6 +19,7 @@ import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { closesAtOn, get, list, liveSessions, filePath, retentionOn, setRetention } from "./store.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { browserDownloadSend } from "./downloads.ts";
 
 /** How long browser_control waits for the node to say it acted. */
 const CONTROL_WAIT = 5_000;
@@ -27,6 +28,7 @@ export function register(tools: Registry): void {
   tools.add("browser_sessions", browserSessions);
   tools.add("browser_recording_get", browserRecordingGet);
   tools.add("browser_control", browserControl);
+  tools.add("browser_download_send", browserDownloadSend);
   tools.add("browser_retention_set", browserRetentionSet);
   tools.add("screens_count", screensCount);
 }

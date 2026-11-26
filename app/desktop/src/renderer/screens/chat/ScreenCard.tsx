@@ -2,11 +2,15 @@
 // picture, a few a minute while it is live (sessions/feed.ts), whose it is and its state, and one line under them, what
 // it does now. While its agent asks for you the card says why in the warning's colour, with Take over, which takes it
 // and opens it in the panel already yours. Once it ended it says how long it ran, with Replay. The picture and words
-// open it in the panel (Watch). And the strip over the composer while one asks: who needs you, and Take over.
-import { Globe, Hand, Laptop, Monitor, Play, Smartphone } from "lucide-react";
+// open it in the panel (Watch). Once it ended, what its browser downloaded that the chat doesn't have yet is listed under
+// it, each with Send to chat, for the day its machine keeps them. And the strip over the composer while one asks: who
+// needs you, and Take over.
+import { FileText, Globe, Hand, Laptop, Monitor, Play, Smartphone } from "lucide-react";
 import { useState } from "react";
-import { Button, StateGlyph, Text, Tooltip, Truncate, cx } from "../../ui";
-import { useData, useDataLayer } from "../../src/data/react";
+import type { ScreenDownload } from "../../../shared/contracts";
+import { Button, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { fmtBytes } from "./attachments";
 import { projectKey } from "../../src/data/store";
 import { useNow } from "../live";
 import { setControl } from "../sessions/live";
@@ -15,7 +19,7 @@ import { useSessions } from "../sessions/hub";
 import { useScreenFeed, useThumb } from "../sessions/feed";
 import { navigate } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
-import { askStrip, cardView } from "./screens";
+import { askStrip, cardView, unsent } from "./screens";
 import s from "./screenCard.module.css";
 import v from "./view.module.css";
 
@@ -39,8 +43,17 @@ function useTakeOver(x: BrowserSession | undefined): { readonly busy: boolean; r
   return { busy, run };
 }
 
-export function ScreenCard({ project, sessionId }: { project: ProjectKey; sessionId: string }) {
+const NO_DOWNLOADS: readonly ScreenDownload[] = [];
+
+/** What its browser downloaded, as the hub lists it with the session. */
+const useDownloads = (project: ProjectKey, sessionId: string): readonly ScreenDownload[] =>
+  useToolQuery("browser_sessions", { projectRef: { machineId: project.machineId, projectId: project.projectId } }).data?.sessions.find((r) => r.sessionId === sessionId)?.downloads ??
+  NO_DOWNLOADS;
+
+/** `inChat`: the files the chat has had since the screen opened, by name. */
+export function ScreenCard({ project, sessionId, inChat = [] }: { project: ProjectKey; sessionId: string; inChat?: readonly string[] }) {
   const x = useSessions(project).find((one) => one.id === sessionId);
+  const downloads = useDownloads(project, sessionId);
   const live = x !== undefined && isLive(x);
   useScreenFeed(live);
   const bot = useBotTitle(project);
@@ -50,50 +63,88 @@ export function ScreenCard({ project, sessionId }: { project: ProjectKey; sessio
   const thumb = useThumb(sessionId);
   if (x === undefined) return null;
   const card = cardView(x, bot, now);
+  const offered = card.live ? [] : unsent(downloads, inChat, x, now);
   const href = toHash(sessionRoute(x));
   const phone = x.kind === "ios" || x.kind === "android";
   return (
     <div className={v.quietRow} data-entry="screen">
       <div className={cx(s.card, card.asking && s.asking, !card.live && s.ended)} data-screen-card={x.id} data-state={x.state}>
-        <a className={s.open} href={href} aria-label={`${card.action === "replay" ? "Replay" : "Watch"} ${card.title}: ${card.line}`}>
-          <span className={cx(s.picture, phone && s.phone, thumb === undefined && s.blank)} data-kind={x.kind ?? "browser"}>
-            {thumb === undefined ? <KindIcon kind={x.kind} /> : <img src={thumb} alt="" draggable={false} />}
-            {card.asking ? (
-              <span className={s.hand} aria-hidden>
-                <Hand />
-              </span>
-            ) : null}
-          </span>
-          <span className={s.words}>
-            <span className={s.head}>
-              <span className={s.title}>{card.title}</span>
-              <span className={s.state}>
-                {card.live && !card.asking ? <StateGlyph state={glyphOf(x.state)} label={card.state} size="sm" phase={x.id.length % 4} /> : null}
-                <Text size="xs" tone={card.tone} strong={card.asking} tabular>
-                  {card.state}
-                </Text>
-              </span>
+        <div className={s.main}>
+          <a className={s.open} href={href} aria-label={`${card.action === "replay" ? "Replay" : "Watch"} ${card.title}: ${card.line}`}>
+            <span className={cx(s.picture, phone && s.phone, thumb === undefined && s.blank)} data-kind={x.kind ?? "browser"}>
+              {thumb === undefined ? <KindIcon kind={x.kind} /> : <img src={thumb} alt="" draggable={false} />}
+              {card.asking ? (
+                <span className={s.hand} aria-hidden>
+                  <Hand />
+                </span>
+              ) : null}
             </span>
-            <Truncate size="xs" tone={card.asking ? "default" : "quiet"} lines={2} expand="none">
-              {card.line}
-            </Truncate>
-          </span>
-        </a>
-        {card.action === "takeOver" ? (
-          <Button variant="primary" size="sm" icon={<Hand aria-hidden />} disabled={take.busy} onClick={take.run}>
-            Take over
-          </Button>
-        ) : card.action === "watch" ? (
-          <Button variant="secondary" size="sm" onClick={() => navigate(sessionRoute(x))}>
-            {x.state === "yours" ? "Open" : "Watch"}
-          </Button>
-        ) : card.action === "replay" ? (
-          <Button variant="secondary" size="sm" icon={<Play aria-hidden />} onClick={() => navigate(sessionRoute(x))}>
-            Replay
-          </Button>
-        ) : null}
+            <span className={s.words}>
+              <span className={s.head}>
+                <span className={s.title}>{card.title}</span>
+                <span className={s.state}>
+                  {card.live && !card.asking ? <StateGlyph state={glyphOf(x.state)} label={card.state} size="sm" phase={x.id.length % 4} /> : null}
+                  <Text size="xs" tone={card.tone} strong={card.asking} tabular>
+                    {card.state}
+                  </Text>
+                </span>
+              </span>
+              <Truncate size="xs" tone={card.asking ? "default" : "quiet"} lines={2} expand="none">
+                {card.line}
+              </Truncate>
+            </span>
+          </a>
+          {card.action === "takeOver" ? (
+            <Button variant="primary" size="sm" icon={<Hand aria-hidden />} disabled={take.busy} onClick={take.run}>
+              Take over
+            </Button>
+          ) : card.action === "watch" ? (
+            <Button variant="secondary" size="sm" onClick={() => navigate(sessionRoute(x))}>
+              {x.state === "yours" ? "Open" : "Watch"}
+            </Button>
+          ) : card.action === "replay" ? (
+            <Button variant="secondary" size="sm" icon={<Play aria-hidden />} onClick={() => navigate(sessionRoute(x))}>
+              Replay
+            </Button>
+          ) : null}
+        </div>
+        {offered.length === 0 ? null : (
+          <ul className={s.downloads} aria-label="Downloaded on this screen">
+            {offered.map((d) => (
+              <DownloadRow key={d.name} sessionId={x.id} download={d} />
+            ))}
+          </ul>
+        )}
       </div>
     </div>
+  );
+}
+
+/** A file the screen's browser downloaded: its name and size, and Send to chat, which posts it as the lead's file card. */
+function DownloadRow({ sessionId, download: d }: { sessionId: string; download: ScreenDownload }) {
+  const layer = useDataLayer();
+  const [sending, setSending] = useState(false);
+  const send = () => {
+    setSending(true);
+    void layer.call("browser_download_send", { sessionId, name: d.name }).then((out) => {
+      // Sent, it leaves the list as its message comes in; until then it says it is on its way.
+      if (!out.ok) {
+        setSending(false);
+        toast({ title: `Couldn’t send ${d.name}`, description: out.error.message, key: `download:${sessionId}:${d.name}` });
+      }
+    });
+  };
+  return (
+    <li className={s.download}>
+      <FileText aria-hidden className={s.fileIcon} />
+      <span className={s.fileName}>{d.name}</span>
+      <Text size="xs" tone="quiet" tabular>
+        {fmtBytes(d.bytes)}
+      </Text>
+      <Button variant="link" disabled={sending} onClick={send} aria-label={`Send ${d.name} to the chat`}>
+        {sending ? "Sending…" : "Send to chat"}
+      </Button>
+    </li>
   );
 }
 

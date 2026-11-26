@@ -36,7 +36,7 @@ import { boxChrome, reattachChrome, type ScreenBox, timing } from "../place/box_
 import { type Meta, type Recording, type RecordingStore, Steps } from "./recording.ts";
 import { requestSignIn } from "./sign_in.ts";
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting, waitingKey } from "./secure_input.ts";
-import { Session, type SessionState } from "./session.ts";
+import { Session, type DownloadList, type SessionState } from "./session.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 import type { MakeEncoder } from "../screen/live.ts";
 
@@ -116,6 +116,10 @@ export type BrokerHost = {
   idleMinutes?: () => number;
   /** A session changed in what its `snapshot` holds (it started, filled a value, changed hands, ended). */
   changed?: (thread: string) => void;
+  /** Where a session's browser on this machine saves what it downloads, and their list (downloads.ts); none: Chrome's own folder. */
+  downloads?: (sessionId: string) => DownloadList;
+  /** Removes the downloads of ended sessions once they are a day old. */
+  sweepDownloads?: (live: string[], now: number) => void;
 };
 
 /** What carries a session to another holder (`BrowserBroker.snapshot`, `adopt`): plain JSON, its filled values in it,
@@ -345,6 +349,13 @@ export class BrowserBroker {
         await browser.close?.().catch(() => {});
         await entry.release?.().catch(() => {});
         throw new ToolError("failed", `The browser didn't start: ${(e as Error).message}`);
+      }
+      // A browser on this machine saves its downloads where the person can have them put in the chat; a hosted box's
+      // keeps them in the box.
+      const downloads = inside ? undefined : this.host.downloads?.(session.id);
+      if (downloads !== undefined) {
+        session.onDownload = () => void this.report(session, "live");
+        await session.downloadTo(downloads).catch((e: unknown) => console.warn(`browser ${session.id}: its downloads aren't kept: ${(e as Error).message}`));
       }
       await this.report(session, "live");
       return { sessionId: session.id, cdp: this.proxy.url(thread), startMs: Math.round(performance.now() - started) };
@@ -706,6 +717,7 @@ export class BrowserBroker {
     }
     const live = [...this.sessions.values()].map((o) => o.session.id).concat([...this.ending]);
     await this.host.recordings.sweep?.(live, now);
+    this.host.sweepDownloads?.(live, now);
   }
 
   /** A finished thread item of `thread`'s: an `agent-browser` command is a step of its live session. */
@@ -743,6 +755,7 @@ export class BrowserBroker {
             startedAt: session.startedAt,
             files: [],
             credentialsFilled: session.credentialsFilled,
+            ...(session.downloads === undefined || session.downloads.list().length === 0 ? {} : { downloads: session.downloads.list() }),
             ...extra,
           },
           { threadId: session.threadId },

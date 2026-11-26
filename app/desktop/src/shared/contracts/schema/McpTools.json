@@ -2764,6 +2764,44 @@
       ],
       "type": "object"
     },
+    "BrowserDownloadSendInput": {
+      "properties": {
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BrowserDownloadSendOutput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "messageId"
+      ],
+      "type": "object"
+    },
     "BrowserControlTo": {
       "description": "Who should drive a live session: `human` takes it over from the agent; `agent` hands it back, and the session is\n`handing_back` until the agent's next command, which sees the page as the person left it.",
       "enum": [
@@ -2945,6 +2983,15 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "downloads": {
+          "default": [],
+          "description": "What its browser downloaded, newest last, while its machine keeps the files (a day after the screen ends): `browser_download_send` puts one in the chat. Absent on other screens and from older nodes.",
+          "items": {
+            "$ref": "#/$defs/ScreenDownload"
+          },
+          "maxItems": 32,
+          "type": "array"
         },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -12201,6 +12248,12 @@
         "browser_control.output": {
           "$ref": "#/$defs/BrowserControlOutput"
         },
+        "browser_download_send.input": {
+          "$ref": "#/$defs/BrowserDownloadSendInput"
+        },
+        "browser_download_send.output": {
+          "$ref": "#/$defs/BrowserDownloadSendOutput"
+        },
         "browser_recording_get.input": {
           "$ref": "#/$defs/BrowserRecordingGetInput"
         },
@@ -13501,6 +13554,8 @@
         "automation_update.output",
         "browser_control.input",
         "browser_control.output",
+        "browser_download_send.input",
+        "browser_download_send.output",
         "browser_recording_get.input",
         "browser_recording_get.output",
         "browser_retention_set.input",
@@ -21317,6 +21372,30 @@
           "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "ScreenDownload": {
+      "description": "A file the screen's browser downloaded, as its machine keeps it: its name, its size and when it finished.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "bytes",
+        "at"
+      ],
       "type": "object"
     },
     "ScreenEndInput": {
