@@ -25,8 +25,9 @@ import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "
 import { Pacer } from "../browser/fit.ts";
 import type { Meta, Recording, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
-import { type Encoded, fpsFor, HARDWARE_FPS, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, MAX_KBPS, Pace, type StreamFrame, type StreamRun } from "../screen/live.ts";
+import { capBy, type Encoded, fpsFor, HARDWARE_FPS, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, MAX_KBPS, Pace, type StreamFrame, type StreamRun } from "../screen/live.ts";
 import { Nv12 } from "../screen/nv12.ts";
+import * as perf from "../screen/perf.ts";
 import type { BrowserRtcFrame } from "../../shared/screens_wire.ts";
 import type { App, Launched, Lent, LiveFrame, PeerReport, PictureRun, Raw, Screen, Target, VideoFrame, VideoKind, Watching } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
@@ -425,19 +426,27 @@ export class Session {
       if (!f.key) return;
       this.keyWanted = false;
     }
+    if (f.ms !== undefined) perf.encoded(this.id, f.ms);
     w.send({ sessionId: this.id, seq: ++this.liveSeq, width, height, control: this.controlNow, h264B64: Buffer.from(f.data).toString("base64"), key: f.key });
   }
 
   /** The least time between frames now (fpsFor's rules). */
   private frameGap(): number {
     const w = this.watcher;
-    return 1000 / fpsFor(w ? LIVE_FPS : RECORD_FPS, this.liveH264() ? kbpsFor(w!.kbps) : undefined, this.load(), w?.fps);
+    const max = w ? LIVE_FPS : RECORD_FPS;
+    const kbps = this.liveH264() ? kbpsFor(w!.kbps) : undefined;
+    const load = this.load();
+    const fps = fpsFor(max, kbps, load, w?.fps);
+    if (w) perf.note(this.id, { encoder: this.liveH264() ? "x264" : "jpeg", capFps: fps, capBy: capBy(max, kbps, load, w.fps) });
+    return 1000 / fps;
   }
 
   /** The frame rate for the screen's stream's H.264 (hardware: up to 60). */
   private streamFps(): number {
     const w = this.watcher;
-    return fpsFor(HARDWARE_FPS, kbpsFor(w?.kbps), this.load(), w?.fps);
+    const fps = fpsFor(HARDWARE_FPS, kbpsFor(w?.kbps), this.load(), w?.fps);
+    perf.note(this.id, { encoder: "hardware", capFps: fps, capBy: capBy(HARDWARE_FPS, kbpsFor(w?.kbps), this.load(), w?.fps) });
+    return fps;
   }
 
   /** The screen's stream, where it has one, for as long as someone watches; the grabs' frames if it can't run. */
@@ -796,6 +805,7 @@ export class Session {
    * finished, its action log scrubbed once more whole with every secret known. Returns the recording's files there are.
    */
   async close(): Promise<[string, number][]> {
+    perf.forget(this.id);
     if (this.closed) return this.closedFiles;
     this.closed = true;
     this.watcher = undefined;

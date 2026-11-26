@@ -39,6 +39,7 @@ import { Hands, type Live, type Ran, type Runner, Shooter, type Shoot } from "./
 import type { Simctl } from "./simctl.ts";
 import type { SimDevice } from "./controls.ts";
 import { iosDir } from "./wrapper.ts";
+import * as perf from "../../screen/perf.ts";
 
 /** The start of a result's text the action log keeps. */
 const RESULT_CHARS = 500;
@@ -576,6 +577,8 @@ export class SimScreens {
       return;
     }
     const pump = new Pump(screen.id, () => screen.control(), (f) => this.link.send({ t: "browser_frame", ...f }), frame.kbps);
+    // The Mac's VideoToolbox makes a simulator's H.264 (../../screen/perf.ts).
+    if (frame.video) perf.note(screen.id, { encoder: "hardware" });
     const stop = screen.watch((f) => pump.offer(f));
     this.pumps.set(screen.id, { pump, stop });
   }

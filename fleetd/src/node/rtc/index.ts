@@ -17,11 +17,13 @@
 // person takes it over, and the screen itself still refuses input it doesn't take). Each peer ends with its app's socket (the hub's close) and with the link,
 // because the hub that let it in can't take it back after that.
 import { RTCPeerConnection } from "werift";
-import { RTC_CHUNK, RTC_HB_MS, RTC_STUN, type BrowserFrame, type BrowserInput, type RtcFromApp, type RtcFromNode } from "../../shared/contracts.ts";
+import { RTC_CHUNK, RTC_HB_MS, RTC_STUN, type BrowserFrame, type BrowserInput, type RtcFromApp, type RtcFromNode, type ScreenPerf } from "../../shared/contracts.ts";
 import { RTC_INPUT_EVERY_MS, type BrowserControlFrame, type BrowserRtcFrame, type BrowserRtcReport, type BrowserWatchFrame } from "../../shared/screens_wire.ts";
 import { FrameSender } from "../../hub/browser/flow.ts";
 import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
 import type { Node } from "../api.ts";
+import { stamp } from "../screen/perf.ts";
+import { machineNow } from "../screen/perf_machine.ts";
 
 /** Peers open on this node at once: a person's few windows, with room to spare. */
 export const MAX_PEERS = 8;
@@ -70,6 +72,8 @@ class Peer {
   /** Its frames, paced to the app's acks; it starts at a whole picture. */
   readonly sender: FrameSender<BrowserFrame>;
   private last: number | undefined;
+  /** The newest measures not sent yet: they go, with this peer's link's, on the next frame that does. */
+  private perf: ScreenPerf | undefined;
   private hb: ReturnType<typeof setInterval> | undefined;
   private openTimer: ReturnType<typeof setTimeout> | undefined;
   private downTimer: ReturnType<typeof setTimeout> | undefined;
@@ -154,15 +158,18 @@ class Peer {
   offer(frame: BrowserFrame): void {
     if (!this.open || this.last === frame.seq) return;
     this.last = frame.seq;
+    if (frame.perf !== undefined) this.perf = frame.perf;
     this.sender.offer({ seq: frame.seq, bytes: bytesOf(frame), h264: frame.h264B64 !== undefined, key: frame.key === true, data: frame });
   }
 
   private send(frame: BrowserFrame): void {
     const ch = this.frames;
     if (!ch || ch.readyState !== "open") return;
-    const { h264B64, jpegB64, ...head } = frame;
+    const { h264B64, jpegB64, perf: _perf, ...head } = frame;
     const data = Buffer.from(h264B64 ?? jpegB64 ?? "", "base64");
-    ch.send(JSON.stringify({ ...head, t: "frame", kind: h264B64 === undefined ? "jpeg" : "h264", bytes: data.length } satisfies RtcFromNode));
+    const perf = this.perf === undefined ? undefined : { ...this.perf, link: this.sender.stats() };
+    this.perf = undefined;
+    ch.send(JSON.stringify({ ...head, ...(perf === undefined ? {} : { perf }), t: "frame", kind: h264B64 === undefined ? "jpeg" : "h264", bytes: data.length } satisfies RtcFromNode));
     for (let at = 0; at < data.length; at += RTC_CHUNK) ch.send(data.subarray(at, at + RTC_CHUNK));
   }
 
@@ -215,6 +222,8 @@ export class Peers {
   /** A screen's frame on its way to the hub: to its session's peers. False: the link needn't carry it. */
   frame(frame: BrowserFrame): boolean {
     const id = frame.sessionId;
+    // Every kind's frames pass here: the second's measures go on the next of each screen's (../screen/perf.ts).
+    stamp(frame, performance.now(), machineNow);
     this.newest.set(id, frame);
     this.toldControl.delete(id);
     let open = false;

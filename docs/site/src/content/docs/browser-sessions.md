@@ -44,6 +44,36 @@ to tap, drag to swipe.
 
 The recording notes that you took over, never what you typed.
 
+## Performance {#performance}
+
+To see whether a live screen keeps up, and if not, why:
+
+- **Desktop:** click the pulse button in the screen's top line, or press ⌘⇧P (Ctrl+Shift+P). The panel opens beside the
+  screen, or under it when the view is narrow.
+- **Phone:** tap the pulse button in the bar. A slim strip shows under it, over the top of the page. Tap the strip for
+  every measure, and tap outside to close them.
+
+It's closed until you open it, and stays open or closed for every screen after that. It never covers the page's
+controls or takes your clicks.
+
+Its first line says how the stream is doing:
+
+- **Smooth:** you see the frames the screen sends.
+- **Still:** nothing changed on the screen. This isn't lag.
+- **Slowed by the machine:** the machine is busy, so the screen sends fewer frames.
+- **Slowed on the way:** frames are skipped on the way to you, or only a few get through.
+- **Slowed here:** frames reach this computer or phone but aren't drawn.
+
+Under it, a graph of frames shown over the last minute, against those sent. Gaps are filled in, so a dip shows at a glance.
+
+The measures under the graph are grouped:
+
+- **Stream:** frames shown and sent a second, picture size, data rate, and whether frames come straight from the machine or through the workspace.
+- **Delay:** round trip, encode time on the machine (x264), decode time here.
+- **The machine:** its CPU and memory.
+
+A measure the screen doesn't report isn't shown.
+
 ## Open one yourself {#yours}
 
 1. Click **New screen** (the **+** beside **Screens** in a bot's Agents tab, or on the Screens page).

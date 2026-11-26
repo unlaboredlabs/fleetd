@@ -51,6 +51,7 @@ export type RtcFromNode = {
   height: number;
   key?: boolean;
   kind: "h264" | "jpeg";
+  perf?: ScreenPerf;
   seq: number;
   sessionId: BrowserSessionId;
   t: "frame";
@@ -1430,9 +1431,62 @@ export type BrowserFrame = {
   sessionId: BrowserSessionId;
   /** The page the frame shows, when the node knows it. */
   url?: string;
+  /** The second's measures, on at most one frame a second: the performance panel's. */
+  perf?: ScreenPerf;
   /** The screen's size in pixels, which the picture is shown at (it may be smaller): `browser_input` coordinates are
    * in it. */
   width: number;
+};
+
+/** How a screen's frames are made: H.264 by x264 on the machine's CPU, by the machine's hardware (VideoToolbox), by
+ * the Android emulator itself, or by a node that says no more (`h264`); or JPEG. */
+export type KnownScreenEncoder = "x264" | "hardware" | "emulator" | "h264" | "jpeg";
+
+export type ScreenEncoder = KnownScreenEncoder | (string & {});
+
+/** What holds a screen's frame rate under its encoder's own most: what gets through to its viewers, the machine's
+ * load, or the viewer's own drawing rate. */
+export type ScreenCap = "link" | "busy" | "asked";
+
+/**
+ * A screen's measures over the second before its frame (the node's, node/screen/perf.ts), and its viewer's link's (the
+ * sender's to that viewer). Only what was measured: a field absent wasn't.
+ */
+export type ScreenPerf = {
+  /** Frames the screen has sent so far, this one (`seq`) the last: a viewer counts the frames made between two
+   * measures against those it drew of the same run of numbers. */
+  sent: number;
+  seq: number;
+  /** Frames the screen made in that second, and their bits a second. */
+  madeFps: number;
+  madeKbps: number;
+  encoder: ScreenEncoder;
+  /** The node's own encoder's time from a frame in to it out, median, ms (x264 only). */
+  encodeMs?: number;
+  /** The most frames a second the screen sends now, and what holds it under its encoder's own most: the viewers'
+   * link, the machine's load, or the viewer's own drawing rate. */
+  capFps?: number;
+  capBy?: ScreenCap;
+  /** The machine's cores, CPU busy over them and memory in use, percent; all absent where the node isn't on the
+   * screen's machine. */
+  cores?: number;
+  cpuPct?: number;
+  memPct?: number;
+  link?: LinkPerf;
+};
+
+/** A viewer's link as its sender measures it from the viewer's acks (hub/browser/flow.ts AckFlow). */
+export type LinkPerf = {
+  /** The smallest time from a frame sent to its ack over the last 10 s: the link's round trip, ms. */
+  rttMs: number;
+  /** How long frames stand queued above that now, ms. */
+  queueMs: number;
+  /** What the link carried over the last second or so, kbit/s (absent until it has carried enough to tell). */
+  kbps?: number;
+  /** The budget the link holds the screen to, kbit/s; absent: it keeps up. */
+  budgetKbps?: number;
+  /** Frames not sent to this viewer in that second: the link had a queue, so it skipped to a newer picture. */
+  skipped: number;
 };
 
 /**

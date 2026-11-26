@@ -9,6 +9,7 @@ import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
 import { hostOf } from "./logins.ts";
 import { Scrub } from "../mask.ts";
 import type { Encoded, Input, LiveEncoding, MakeEncoder } from "../screen/live.ts";
+import * as perf from "../screen/perf.ts";
 import type { Recording, Steps } from "./recording.ts";
 
 export const WIDTH = 1280;
@@ -466,6 +467,7 @@ export class Session implements GuardSession {
     if (!w?.video || !("jpeg" in input)) return;
     const [width, height] = input.jpeg;
     this.seq += 1;
+    if (f.ms !== undefined) perf.encoded(this.id, f.ms);
     w.send({ sessionId: this.id, seq: this.seq, width, height, control: this.controlNow, h264B64: Buffer.from(f.data).toString("base64"), key: f.key, ...this.frameUrl() });
   }
 
@@ -504,7 +506,10 @@ export class Session implements GuardSession {
     this.last = { sessionId: this.id, seq: this.seq, jpegB64: data, width, height, control: this.controlNow, ...this.frameUrl() };
     if (!this.watcher) return;
     const now = performance.now();
-    const due = this.sent ? Math.max(this.sent.at + LIVE_GAP, now + this.pacer.wait(this.watcher.kbps)) : now;
+    const budgetWait = this.pacer.wait(this.watcher.kbps);
+    const due = this.sent ? Math.max(this.sent.at + LIVE_GAP, now + budgetWait) : now;
+    // What gets through holds it where the budget waits longer than its own frame gap (../screen/perf.ts).
+    perf.note(this.id, { capBy: this.sent !== undefined && now + budgetWait > this.sent.at + LIVE_GAP ? "link" : undefined });
     if (due > now) {
       // A frame that waits for its turn goes then, unless a newer one went first.
       this.flushTimer ??= setTimeout(() => {
@@ -526,6 +531,8 @@ export class Session implements GuardSession {
     const encoded = w.video === true && w.kbps !== undefined && this.encoder !== undefined && last.jpegB64 !== undefined
       && this.encoder.put({ jpeg: [last.width, last.height] }, Buffer.from(last.jpegB64, "base64"), w.kbps);
     if (!encoded) this.encoder?.stop();
+    // Chrome makes its screencast at the rate the page paints, which nothing here holds.
+    perf.note(this.id, { encoder: encoded ? "x264" : "jpeg" });
     if (!encoded) this.offer(last);
     this.sent = { at: performance.now(), seq: last.seq };
   }
@@ -629,6 +636,7 @@ export class Session implements GuardSession {
   }
 
   end(): void {
+    perf.forget(this.id);
     this.stopEvents?.();
     clearTimeout(this.flushTimer);
     clearInterval(this.ticker);

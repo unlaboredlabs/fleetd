@@ -600,6 +600,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "perf": {
+          "$ref": "#/$defs/ScreenPerf",
+          "description": "The second's measures, on at most one frame a second: the performance panel's."
+        },
         "seq": {
           "description": "1, 2, ... per link; a frame older than one already shown on the same link is dropped.",
           "format": "uint64",
@@ -1655,6 +1659,42 @@
         }
       ]
     },
+    "LinkPerf": {
+      "description": "A viewer's link as its sender measures it from the viewer's acks (hub/browser/flow.ts AckFlow).",
+      "properties": {
+        "budgetKbps": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "The budget the link holds the screen to, kbit/s; absent: it keeps up."
+        },
+        "kbps": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "What the link carried over the last second or so, kbit/s (absent until it has carried enough to tell)."
+        },
+        "queueMs": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "How long frames stand queued above that now, ms."
+        },
+        "rttMs": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "The smallest time from a frame sent to its ack over the last 10 s: the link's round trip, ms."
+        },
+        "skipped": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "Frames not sent to this viewer in that second: the link had a queue, so it skipped to a newer picture."
+        }
+      },
+      "required": [
+        "queueMs",
+        "rttMs",
+        "skipped"
+      ],
+      "type": "object"
+    },
     "LiveFrame": {
       "description": "Hub -> app on the live subscription. Board lanes at most 1/s, focus lanes and text at most 4/s; machines at most\nevery 5 s and slots at most 1/s, each only when changed. A slow link skips frames (latest wins), never queues them.",
       "properties": {
@@ -2598,6 +2638,108 @@
       ],
       "type": "string",
       "x-open": true
+    },
+    "ScreenCap": {
+      "description": "What holds a screen's frame rate under its encoder's own most: what gets through to its viewers, the machine's\nload, or the viewer's own drawing rate.",
+      "enum": [
+        "link",
+        "busy",
+        "asked"
+      ],
+      "type": "string"
+    },
+    "ScreenEncoder": {
+      "description": "How a screen's frames are made: H.264 by x264 on the machine's CPU, by the machine's hardware (VideoToolbox), by\nthe Android emulator itself, or by a node that says no more (`h264`); or JPEG.",
+      "oneOf": [
+        {
+          "const": "x264",
+          "type": "string"
+        },
+        {
+          "const": "hardware",
+          "type": "string"
+        },
+        {
+          "const": "emulator",
+          "type": "string"
+        },
+        {
+          "const": "h264",
+          "type": "string"
+        },
+        {
+          "const": "jpeg",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ScreenPerf": {
+      "description": "A screen's measures over the second before its frame (the node's, node/screen/perf.ts), and its viewer's link's (the\nsender's to that viewer). Only what was measured: a field absent wasn't.",
+      "properties": {
+        "capBy": {
+          "$ref": "#/$defs/ScreenCap"
+        },
+        "capFps": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "The most frames a second the screen sends now, and what holds it under its encoder's own most: the viewers'\nlink, the machine's load, or the viewer's own drawing rate."
+        },
+        "cores": {
+          "minimum": 1,
+          "type": "integer",
+          "description": "The machine's cores, CPU busy over them and memory in use, percent; all absent where the node isn't on the\nscreen's machine."
+        },
+        "cpuPct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "encodeMs": {
+          "minimum": 0,
+          "type": "number",
+          "description": "The node's own encoder's time from a frame in to it out, median, ms (x264 only)."
+        },
+        "encoder": {
+          "$ref": "#/$defs/ScreenEncoder"
+        },
+        "link": {
+          "$ref": "#/$defs/LinkPerf"
+        },
+        "madeFps": {
+          "minimum": 0,
+          "type": "integer",
+          "description": "Frames the screen made in that second, and their bits a second."
+        },
+        "madeKbps": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memPct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sent": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer",
+          "description": "Frames the screen has sent so far, this one (`seq`) the last: a viewer counts the frames made between two\nmeasures against those it drew of the same run of numbers."
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "encoder",
+        "madeFps",
+        "madeKbps",
+        "sent",
+        "seq"
+      ],
+      "type": "object"
     },
     "ScreenThumb": {
       "description": "A live session's picture for the Screens page (`screen_thumb`): one of its frames, made small (at most\n[`THUMB_SIDE`] pixels a side), a few a minute while an app shows the page (`screen_thumbs`).",

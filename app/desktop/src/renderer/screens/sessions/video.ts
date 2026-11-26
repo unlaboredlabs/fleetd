@@ -11,6 +11,7 @@ import type { BrowserFrame } from "../../../shared/contracts";
 import { H264_CODEC, H264_CONFIG } from "../../../shared/h264";
 import { useData } from "../../src/data/react";
 import { Surface } from "./player";
+import { perfDecodeIn, perfDecodeOut, perfDrawn } from "./perf";
 
 export const CODEC = H264_CODEC;
 
@@ -109,9 +110,11 @@ export function useVideo(
       d = new VideoDecoder({
         output: (decodedPicture) => {
           const seq = decodedPicture.timestamp / 1000;
+          perfDecodeOut(sessionId, seq);
           if (seq > onCanvas.current) {
             onCanvas.current = seq;
             surface.draw(decodedPicture, decodedPicture.displayWidth, decodedPicture.displayHeight);
+            perfDrawn(sessionId, seq, decodedPicture.displayWidth, decodedPicture.displayHeight);
             setDrawn({ sessionId, seq });
           }
           decodedPicture.close();
@@ -134,6 +137,7 @@ export function useVideo(
       if (chunk === undefined) continue;
       if (frame.key === true) keyed.current = true;
       try {
+        perfDecodeIn(sessionId, frame.seq);
         d.decode(new EncodedVideoChunk(chunk));
       } catch {
         // A chunk the decoder refuses outright: start again at a keyframe.

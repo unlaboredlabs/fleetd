@@ -37,6 +37,8 @@ export const SHORTCUTS = {
   "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },
   // Caught in the capture phase, so a page you have taken over never sees it (screens/sessions).
   "session.handBack": { keys: "Mod+Shift+Enter", title: "Hand Back the Page", section: "Screens" },
+  // Caught in the capture phase too: the screen's performance panel opens or closes over a page you have taken over.
+  "session.perf": { keys: "Mod+Shift+P", title: "Show or Hide Screen Performance", section: "Screens" },
 } as const satisfies Record<string, Shortcut>;
 
 export type ShortcutId = keyof typeof SHORTCUTS;

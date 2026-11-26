@@ -41,6 +41,7 @@ import { hasBox, hostedBox } from "../place/hosted.ts";
 import { boxes } from "../sandbox/remote/boxes.ts";
 import { recordingsDir, Session, type StreamStarter } from "./session.ts";
 import { commandLine, type DeviceCall, type DeviceDone, isHostKey, ranDone, ranOutput, RUN_WAIT, Work } from "./work.ts";
+import * as perf from "../screen/perf.ts";
 
 /** A session no tool call touched this long is ended (node.json `screenIdleMinutes`, else 30). */
 const IDLE_MINUTES = 30;
@@ -557,6 +558,8 @@ export class Devices implements Screens {
       return;
     }
     const pump = new Pump(session.id, () => session.control(), (f) => toHub(this.node, { t: "browser_frame", ...f }), frame.kbps);
+    // Android's own encoder makes its H.264, in the emulator (../screen/perf.ts).
+    if (session.wantsVideo()) perf.note(session.id, { encoder: "emulator" });
     const stop = session.watch((f) => pump.offer(f));
     this.pumps.set(session.id, { pump, stop });
     if (session.wantsVideo()) session.key();
