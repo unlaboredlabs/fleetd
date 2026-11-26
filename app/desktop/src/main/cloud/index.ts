@@ -135,8 +135,8 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     );
   };
   if (config !== null) {
-    setTimeout(() => void refreshNames().catch(() => undefined), NAMES_FIRST_MS).unref?.();
-    setInterval(() => void refreshNames().catch(() => undefined), NAMES_EVERY_MS).unref?.();
+    setTimeout(() => void refreshNames().catch(() => undefined), NAMES_FIRST_MS).unref();
+    setInterval(() => void refreshNames().catch(() => undefined), NAMES_EVERY_MS).unref();
   }
   const account = new CloudAccount({
     config,
