@@ -22,9 +22,9 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
-import { bodyOf, flatOf, moveOf, poseOf, turnBetween, zoomAbout, type BrowserFrame } from "../desktop";
+import { bodyOf, flatOf, moveOf, poseOf, turnBetween, zoomAbout, type BrowserFrame, type BrowserInput } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
-import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
+import { addressable, addressOf, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KeyField, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Avatar } from "../ui/Avatar";
@@ -317,17 +317,18 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const gestures = useSimultaneousGestures(pinch, pan, one);
   const moved = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }, { translateY: y.value }, { scale: zoom.value }] }));
 
-  // The keyboard: a hidden field whose every change goes to the page (screen.ts typed), then is emptied.
+  // The keyboard: a hidden field whose changes go to the page (screen.ts KeyField); put away, a new empty one.
   const keys = useRef<ComponentRef<typeof TextInput>>(null);
+  const [field] = useState(() => new KeyField());
+  const [fieldKey, setFieldKey] = useState(0);
   const [typing, setTyping] = useState(false);
   const toggleKeys = () => {
     haptics.tap();
     if (typing) keys.current?.blur();
     else keys.current?.focus();
   };
-  const onKeys = (next: string) => {
-    for (const input of typed(next)) session.input(sessionId, input);
-    keys.current?.clear();
+  const send = (inputs: readonly BrowserInput[]) => {
+    for (const input of inputs) session.input(sessionId, input);
   };
   useEffect(() => {
     if (!yours) keys.current?.blur();
@@ -667,18 +668,19 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
           )}
         </View>
         <TextInput
+          key={fieldKey}
           ref={keys}
           style={styles.keys}
-          onChangeText={onKeys}
-          onKeyPress={(e) => {
-            if (e.nativeEvent.key === "Backspace") for (const input of BACKSPACE) session.input(sessionId, input);
-          }}
-          onSubmitEditing={() => {
-            for (const input of ENTER) session.input(sessionId, input);
-          }}
+          onChangeText={(next) => send(field.changed(next))}
+          onKeyPress={(e) => send(field.pressed(e.nativeEvent.key))}
+          onSubmitEditing={() => send(ENTER)}
           submitBehavior="submit"
           onFocus={() => setTyping(true)}
-          onBlur={() => setTyping(false)}
+          onBlur={() => {
+            setTyping(false);
+            field.reset();
+            setFieldKey((n) => n + 1);
+          }}
           autoCorrect={false}
           autoCapitalize="none"
           spellCheck={false}
