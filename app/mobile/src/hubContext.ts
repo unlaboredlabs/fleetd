@@ -2,6 +2,8 @@
 import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
+import type { AccountPreview } from "./accountDelete";
+import type { BillingFailure, Got } from "./billing";
 import type { KeptHub, SavedAccount } from "./cloud/account";
 import type { AgentProviderId, PairFailure, SkillOrigin } from "./desktop";
 import type { OnSignedIn } from "./screens/Cloud";
@@ -32,6 +34,10 @@ export interface HubContextValue {
   readonly signOutCloud: () => Promise<void>;
   /** Makes a new empty workspace of the person's own on fleetd cloud, named `name` or the cloud's way, and shows it; why not, or null. */
   readonly newWorkspace: (name: string) => Promise<PairFailure | null>;
+  /** What deleting the fleetd account would take, read on one of its workspaces before asking. */
+  readonly previewCloudAccount: () => Promise<Got<AccountPreview>>;
+  /** Deletes the fleetd account for good (`email` its email typed again), then forgets its workspaces; else the cloud's refusal. */
+  readonly deleteCloudAccount: (email: string) => Promise<BillingFailure | null>;
 }
 
 export const HubContext = createContext<HubContextValue | null>(null);

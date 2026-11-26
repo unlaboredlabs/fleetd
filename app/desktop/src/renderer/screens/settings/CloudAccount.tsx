@@ -1,14 +1,20 @@
 // Settings › Hubs & devices › fleetd account: who is signed in to fleetd cloud, and Sign out; or Sign in, which adds
 // the account's teams beside the hubs this app has. Only on a build with the cloud's values (onboarding/cloud.ts):
 // any other build shows nothing here. A sign-in from here names the account, then asks about each invitation, in a
-// dialog each, before anything connects (onboarding/SignIn.tsx).
-import { useState } from "react";
-import { Button, Dialog, Text } from "../../ui";
+// dialog each, before anything connects (onboarding/SignIn.tsx). Signed in, Delete account (App Store 5.1.1(v)) reads
+// what the delete would take and says it (the workspaces that go and any plan that stops, those left, and the ones that
+// hold it back), asks for the account's email typed back and has the cloud delete it, which revokes every key and
+// session of it: the app then forgets the account's workspaces, as signing out would. The cloud's refusals show as written.
+import { useEffect, useState } from "react";
+import type { AccountPreviewOutcome } from "../../../shared/cloud";
+import { blockedLine, deleteAccountLines, emailMatches } from "../../../shared/legal";
+import { Button, Dialog, Field, Input, Text, toast } from "../../ui";
 import { useHubs } from "../../src/data/react";
 import { refreshCloud, useCloud } from "../onboarding/cloud";
 import { invitedLine, invitedTitle, missedTeams, useSignIn } from "../onboarding/SignIn";
-import { SettingsRow, SettingsSection } from "./parts";
+import { DangerButton, Notice, SettingsRow, SettingsSection } from "./parts";
 import { onWeb } from "../../src/web";
+import s from "./settings.module.css";
 
 export function CloudAccountSettings() {
   const { state } = useCloud();
@@ -19,6 +25,7 @@ export function CloudAccountSettings() {
   const [kept, setKept] = useState<readonly string[]>([]);
   // Why the last sign-out didn't happen (the web app's, when fleetd cloud can't be reached): still signed in.
   const [notOut, setNotOut] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   if (!state.available) return null;
   const step = signIn.step;
   const waiting = step.at === "waiting" || step.at === "finishing";
@@ -89,6 +96,20 @@ export function CloudAccountSettings() {
           </span>
         )}
       </SettingsRow>
+      {/* The cloud is asked on one of the account's workspaces: with none in this app, there is nowhere to ask. */}
+      {state.email === null || teams.length === 0 ? null : (
+        <SettingsRow
+          reveal="hubs.account.delete"
+          title="Delete account"
+          hint="Deletes your fleetd account and everything of yours in it, for good."
+          control={
+            <DangerButton disabled={busy || step.at !== "start"} onClick={() => setDeleting(true)}>
+              Delete account…
+            </DangerButton>
+          }
+        />
+      )}
+      {state.email === null ? null : <DeleteAccountDialog email={state.email} open={deleting} onClose={() => setDeleting(false)} />}
       <Dialog
         open={step.at === "arrived"}
         onOpenChange={(open) => {
@@ -140,5 +161,99 @@ export function CloudAccountSettings() {
         }
       />
     </SettingsSection>
+  );
+}
+
+/** Delete account's one confirm: what goes, read from the cloud first, then the account's email typed back, which the cloud checks too. */
+function DeleteAccountDialog({ email, open, onClose }: { email: string; open: boolean; onClose: () => void }) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ message: string; fix?: string | undefined } | null>(null);
+  const [preview, setPreview] = useState<AccountPreviewOutcome | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void window.fleetd.cloud.accountPreview().then((out) => {
+      if (live) setPreview(out);
+    });
+    return () => {
+      live = false;
+    };
+  }, [open]);
+  // Read again at each opening: what goes may have changed since.
+  const close = () => {
+    setTyped("");
+    setError(null);
+    setBusy(false);
+    setPreview(null);
+    onClose();
+  };
+  const read = preview?.ok === true ? preview.preview : null;
+  const blocked = read === null ? null : blockedLine(read);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    const out = await window.fleetd.cloud.deleteAccount(typed);
+    setBusy(false);
+    if (!out.ok) {
+      setError({ message: out.failure.message, fix: out.failure.fix });
+      return;
+    }
+    close();
+    toast({ title: "Your fleetd account is deleted" });
+    void refreshCloud();
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !busy) close();
+      }}
+      title="Delete your fleetd account?"
+      description="This can't be undone."
+      footer={
+        <>
+          <Button onClick={close} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={busy || read === null || blocked !== null || !emailMatches(typed, email)} onClick={() => void remove()}>
+            {busy ? "Deleting…" : "Delete account"}
+          </Button>
+        </>
+      }
+    >
+      {preview === null ? (
+        <span role="status">
+          <Text tone="quiet">Loading…</Text>
+        </span>
+      ) : !preview.ok ? (
+        <Notice tone="danger">{preview.failure.fix === undefined ? preview.failure.message : `${preview.failure.message} ${preview.failure.fix}`}</Notice>
+      ) : blocked !== null ? (
+        <Notice tone="warning">{blocked}</Notice>
+      ) : (
+        <ul className={s.lines}>
+          {deleteAccountLines(preview.preview).map((line) => (
+            <li key={line}>
+              <Text>{line}</Text>
+            </li>
+          ))}
+        </ul>
+      )}
+      {read === null || blocked !== null ? null : (
+        <Field label={`Type ${email} to confirm`}>
+          <Input value={typed} type="email" autoComplete="off" spellCheck={false} onChange={(e) => setTyped(e.target.value)} disabled={busy} />
+        </Field>
+      )}
+      {error ? (
+        <div role="alert">
+          <Text tone="danger">{error.message}</Text>
+          {error.fix ? (
+            <Text as="p" tone="quiet">
+              {error.fix}
+            </Text>
+          ) : null}
+        </div>
+      ) : null}
+    </Dialog>
   );
 }

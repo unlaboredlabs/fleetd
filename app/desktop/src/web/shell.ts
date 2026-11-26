@@ -191,6 +191,10 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
     for (const [k, v] of Object.entries(WEB_HEADER)) headers.set(k, v);
     return deps.fetch(input, { ...init, headers, credentials: "same-origin" });
   };
+  const accountTeam = (): KeyedTeam | null => {
+    const first = teams.keys().next();
+    return first.done === true ? null : keyed(first.value);
+  };
   const notTeam = { ok: false as const, failure: { code: "", message: "That team isn't in this account." } };
 
   const readBytes = async (id: HubId, request: FileRequest): Promise<{ ok: true; name: string; blob: Blob } | { ok: false; message: string }> => {
@@ -412,6 +416,21 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         const hub = teamHubIds(read.ok ? read.session.teams.map((t) => t.id) : [...session.teams.map((t) => t.id), id]).get(id) ?? teamHubId(id);
         deps.go(`/?team=${encodeURIComponent(id)}${toHash(startScreen(hub))}`);
         return { ok: true, hub };
+      },
+      // Asked on any of the account's workspaces; deleted, the cloud dropped this session too: the page goes to its start.
+      accountPreview: async () => {
+        const team = accountTeam();
+        return team === null ? notTeam : (await invites()).accountPreview(teamFetch, team);
+      },
+      deleteAccount: async (email) => {
+        const team = accountTeam();
+        if (team === null) return notTeam;
+        const out = await (await invites()).deleteAccount(teamFetch, team, email);
+        if (out.ok) {
+          cache.clear();
+          deps.go("/");
+        }
+        return out;
       },
       installGithub: (hub): Promise<InstallGithubOutcome> => {
         const team = keyed(hub);

@@ -5,7 +5,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cloudDomain, readAccepted, teamOrigin } from "../../shared/accounts";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
@@ -17,7 +17,7 @@ import type { CloudConfig } from "./config";
 import { openBilling, readTeamBilling, setBillingCap } from "./billing";
 import { connectComputer } from "./connect";
 import { installGithub } from "./github";
-import { deleteTeam, listInvites, makeWorkspace, odd, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
+import { deleteTeam, listInvites, makeWorkspace, odd, revokeInvite, sendInvite, type KeyedTeam, accountPreview, deleteAccount } from "./invites";
 
 export interface Cloud {
   state(): CloudState;
@@ -37,6 +37,10 @@ export interface Cloud {
   deleteTeam(hub: HubId, name: string): Promise<DeleteTeamOutcome>;
   /** A new empty workspace of the person's own, asked on `from` (one of their cloud workspaces), connected here. */
   newWorkspace(from: HubId, name: string): Promise<NewWorkspaceOutcome>;
+  /** What deleting the person's cloud account would take, read before asking. */
+  accountPreview(): Promise<AccountPreviewOutcome>;
+  /** The person deletes their cloud account for good, `email` theirs typed again; on success the app forgets its workspaces. */
+  deleteAccount(email: string): Promise<DeleteAccountOutcome>;
   installGithub(hub: HubId): Promise<InstallGithubOutcome>;
   billing(hub: HubId): Promise<BillingOutcome>;
   billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
@@ -45,6 +49,9 @@ export interface Cloud {
 
 /** Asked of a hub that didn't come with the account: the page never offers it there. */
 const NOT_CLOUD = { ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } } as const;
+
+/** The account asked about itself with none of its workspaces in the app. */
+const NO_WORKSPACE = { ok: false, failure: { code: "", message: "None of your fleetd workspaces is in this app.", fix: "Sign in again, then delete the account." } } as const;
 
 /** Who is signed in, beside the hubs' list; no token is in it. */
 export const ACCOUNT_FILE = "desktop-account.json";
@@ -84,6 +91,8 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     const origin = keyed === null || config === null ? null : teamOrigin(keyed.url, config.accountsUrl, local);
     return keyed === null || origin === null ? null : { origin, key: keyed.key, name: hubs.list().find((h) => h.id === id)?.label ?? "Hub" };
   };
+  /** Where the account is asked about itself: any of its workspaces, whose key says who. */
+  const accountTeam = (): KeyedTeam | null => hubs.cloudHubs().reduce<KeyedTeam | null>((found, h) => found ?? team(h.id), null);
   const cloudHub = ({ id, label, service }: { id: HubId; label: string; service: HubService }): CloudHub => ({
     id,
     label,
@@ -158,6 +167,18 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
       if (!made.ok) return { ok: false, failure: made.failure };
       const got = readAccepted(made.body);
       return got === null ? odd(t) : account.connectMade(got);
+    },
+    accountPreview: async () => {
+      const t = accountTeam();
+      return t === null ? NO_WORKSPACE : accountPreview(fetch, t);
+    },
+    // Deleted, every key of theirs opens nothing now: the app forgets the account's workspaces without asking them.
+    deleteAccount: async (email) => {
+      const t = accountTeam();
+      if (t === null) return NO_WORKSPACE;
+      const out = await deleteAccount(fetch, t, email);
+      if (out.ok) account.deleted();
+      return out;
     },
     installGithub: async (id) => {
       const t = team(id);

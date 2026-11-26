@@ -91,6 +91,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "notifications", label: "Notifications", tab: "general", keywords: ["notify me when", "alerts", "mute", "finished", "done"] },
   { key: "notifications.test", label: "Test notification", tab: "general", keywords: ["notifications", "alerts", "try"] },
   { key: "general.updates", label: "Version", tab: "general", keywords: ["version", "update", "check for updates", "edge", "stable", "up to date"] },
+  { key: "general.about", label: "About", tab: "general", keywords: ["privacy policy", "terms of service", "legal", "support", "help", "contact"] },
   page("accounts", ["accounts", "connect", "sign in", "connections"]),
   {
     key: "claude",
@@ -108,6 +109,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
   page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
   { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove", "restart"] },
+  { key: "hubs.account.delete", label: "Delete account", tab: "hubs", keywords: ["delete my account", "remove account", "close account", "erase", "gdpr", "fleetd account"] },
   { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
   { key: "devices", label: PAGE_LABEL.devices, tab: "hubs", keywords: ["devices", "phone", "signed in", "keys"] },
   { key: "devices.pair", label: "Pair a phone", tab: "hubs", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },

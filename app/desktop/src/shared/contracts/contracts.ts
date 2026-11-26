@@ -123,6 +123,12 @@ export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 /** A team's invites by email, on the team's own address (not the accounts service's), with an owner's or admin's device key: GET lists, POST makes one, `<this>/<inviteId>/revoke` (POST) takes one back. */
 export const ACCOUNTS_INVITES_PATH = "/accounts/v1/invites";
 
+/** The person deletes their own cloud account (App Store 5.1.1(v)), asked on any of their workspaces' own address with their device key there (and as `/t/<team>/accounts/v1/account/delete` with the web app's session): POST `{ email }`, their email typed back, answered `{ deleted, workspaces }` (the workspaces deleted with it, where they were the only member). Every key and web session of theirs is revoked by then. A workspace that goes has its plan cancelled at once and its agents stopped. Refused `wrong_email`, `sole_owner`, `forbidden`, `busy`, `unavailable`, `invalid`. */
+export const ACCOUNTS_ACCOUNT_DELETE_PATH = "/accounts/v1/account/delete";
+
+/** What deleting the person's account would take, read before asking, on the same addresses as ACCOUNTS_ACCOUNT_DELETE_PATH: GET answers `{ email, deletes: [{ name, plan }], leaves: [name], blocked: [name] }`; non-empty `blocked` (the only owner of a workspace with other members) means the delete is refused `sole_owner`. */
+export const ACCOUNTS_ACCOUNT_PATH = "/accounts/v1/account";
+
 /** A team deleted for good by its owner, on the team's own address with an owner's device key (and as `/t/<team>/accounts/v1/team/delete` with the web app's session): POST `{ name }`, the team's name typed again. */
 export const ACCOUNTS_TEAM_DELETE_PATH = "/accounts/v1/team/delete";
 /** A new empty workspace owned by the person, asked on any team's own address with their device key (and as `/t/<team>/accounts/v1/workspaces` with the web app's session): POST `{ name? }`, answered `{ team }` as POST /v1/app/team answers (the web app's with no pairing code: its session is paired in already). Refused `workspace_cap`, `rate_limited`, `forbidden`, `invalid`. */

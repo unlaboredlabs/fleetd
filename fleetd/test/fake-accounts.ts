@@ -18,12 +18,18 @@
 // signs in App Review's address and code (D737) to its one team, answered as a sign-in is; a wrong address or code is
 // one refusal, and with no `demo` the demo sign-in is off. And POST ACCOUNTS_WORKSPACES_PATH as fleetd-cloud's does: any
 // key of a person's makes them a new empty workspace of their own (named, or after them), answered as POST
-// ACCOUNTS_TEAM_PATH answers, up to `workspaceCap` they made; past it, refused `workspace_cap`.
+// ACCOUNTS_TEAM_PATH answers, up to `workspaceCap` they made; past it, refused `workspace_cap`. POST ACCOUNTS_ACCOUNT_DELETE_PATH, any key of the person's
+// with their email typed back, deletes their account as fleetd-cloud does: every key of theirs opens nothing then, the
+// teams where they were the only member go (`plans` names those whose plan stops with them), and they leave the others;
+// the only owner of a team with others in it is refused (`sole_owner`), as is a wrong email. GET ACCOUNTS_ACCOUNT_PATH
+// answers what that delete would take, deleting nothing.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   ACCOUNTS_ACCEPT_PATH,
+  ACCOUNTS_ACCOUNT_DELETE_PATH,
+  ACCOUNTS_ACCOUNT_PATH,
   ACCOUNTS_DEMO_SIGN_IN_PATH,
   ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
@@ -156,6 +162,10 @@ export class FakeAccounts {
   readonly #makes = new Map<string, string>();
   /** Each team deleted by its owner (POST ACCOUNTS_TEAM_DELETE_PATH), by name. */
   readonly deleted: string[] = [];
+  /** The teams on a plan, by name: deleting an account that takes one stops it. */
+  readonly plans = new Set<string>();
+  /** Each account deleted (POST ACCOUNTS_ACCOUNT_DELETE_PATH), by email. */
+  readonly deletedAccounts: string[] = [];
   /** Each team made on asking (POST ACCOUNTS_TEAM_PATH), as `<team> <email>`. */
   readonly madeOnAsking: string[] = [];
   /** The most workspaces one person may have made (POST ACCOUNTS_WORKSPACES_PATH), counting those still there. */
@@ -422,6 +432,8 @@ export class FakeAccounts {
     if (req.method === "POST" && path === GITHUB_INSTALL_PATH) return this.#githubInstall(name, req, res);
     if (req.method === "POST" && path === ACCOUNTS_TEAM_DELETE_PATH) return this.#deleteTeam(name, req, res);
     if (req.method === "POST" && path === ACCOUNTS_WORKSPACES_PATH) return this.#newWorkspace(name, req, res);
+    if (req.method === "POST" && path === ACCOUNTS_ACCOUNT_DELETE_PATH) return this.#deleteAccount(name, req, res);
+    if (req.method === "GET" && path === ACCOUNTS_ACCOUNT_PATH) return this.#accountPreview(name, req, res);
     fail(res, 404, { code: "not_found", message: "Nothing here." });
   }
 
@@ -459,6 +471,51 @@ export class FakeAccounts {
     for (let n = 2; this.#teams.has(slug); n++) slug = `${base}-${String(n)}`;
     await this.team(slug, [caller.email]);
     send(res, 200, { team: this.#entry(this.#teams.get(slug)!, caller.email) });
+  }
+
+  /** Who asks about their own account, by any key of theirs; null when the key opens nothing. */
+  #accountOf(name: string, req: IncomingMessage): string | null {
+    const bearer = /^Bearer (.+)$/u.exec(req.headers.authorization ?? "")?.[1];
+    const caller = this.keys.find((k) => k.team === name && k.key === bearer);
+    return caller === undefined || this.deleted.includes(name) ? null : caller.email;
+  }
+
+  /** What deleting `email`'s account would take: the teams that go, those left, and those that hold it back. */
+  #accountTeams(email: string): { alone: Team[]; left: Team[]; held: Team[] } {
+    const teams = this.teamsOf(email).map((n) => this.#teams.get(n)!).filter((t) => !this.deleted.includes(t.name));
+    const alone = teams.filter((t) => t.roles.size === 1);
+    const held = teams.filter((t) => t.roles.size > 1 && t.roles.get(email) === "owner" && ![...t.roles].some(([e, r]) => e !== email && r === "owner"));
+    return { alone, left: teams.filter((t) => t.roles.size > 1), held };
+  }
+
+  /** GET ACCOUNTS_ACCOUNT_PATH, as fleetd-cloud answers it: nothing is deleted. */
+  #accountPreview(name: string, req: IncomingMessage, res: ServerResponse): void {
+    const email = this.#accountOf(name, req);
+    if (email === null) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    const { alone, left, held } = this.#accountTeams(email);
+    send(res, 200, { email, deletes: alone.map((t) => ({ name: t.name, plan: this.plans.has(t.name) ? "Team" : null })), leaves: left.map((t) => t.name), blocked: held.map((t) => t.name) });
+  }
+
+  /** POST ACCOUNTS_ACCOUNT_DELETE_PATH, in fleetd-cloud's words (src/accounts `deleteAccount`). */
+  async #deleteAccount(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const email = this.#accountOf(name, req);
+    if (email === null) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    const typed = str(await readBody(req), "email")?.trim().toLowerCase();
+    if (typed === undefined || typed === "") return fail(res, 400, { code: "invalid", message: "Your email is missing.", fix: "Type your account's email to delete it." });
+    if (typed !== email.toLowerCase()) return fail(res, 400, { code: "wrong_email", message: "That isn't this account's email.", fix: `Type ${email} to delete it.` });
+    const { alone, left, held } = this.#accountTeams(email);
+    if (held.length > 0) {
+      return fail(res, 409, { code: "sole_owner", message: `You're the only owner of ${held.map((t) => t.name).join(", ")}, which has other members.`, fix: "Make someone else an owner there, or delete the workspace, then delete your account." });
+    }
+    for (const t of [...alone, ...left]) t.roles.delete(email);
+    for (const t of alone) {
+      this.deleted.push(t.name);
+      this.plans.delete(t.name);
+    }
+    for (let i = this.keys.length - 1; i >= 0; i--) if (this.keys[i]!.email === email) this.keys.splice(i, 1);
+    this.#people.delete(email);
+    this.deletedAccounts.push(email);
+    send(res, 200, { deleted: email, workspaces: alone.map((t) => t.name) });
   }
 
   /** Agents running in a team now: its owner's delete is refused while any is. */

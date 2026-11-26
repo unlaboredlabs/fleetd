@@ -1,7 +1,8 @@
 // fleetd cloud's Sign in, on a build that has it (src/main/cloud/fixture.ts reads each fixture's `cloud` section):
 // the first screen's two ways in, the wait for the browser and how a sign-in fails; back from it, who signed in and
 // an invitation asked about before anything connects; Connect a computer on a team with
-// no machine yet; the account's row in Settings; People on a team, where owners and admins invite by email; and
+// no machine yet; the account's row in Settings, and its Delete account (`cloud-account-delete*`: what goes, a plan that
+// stops, and the only owner of a team with others in it held back); People on a team, where owners and admins invite by email; and
 // `cloud-admin`, the Hub group as a team's owner sees it, the hub's own controls (Updates, Restart hub, adding a machine
 // over SSH, setup steps, creating a GitHub App) gone, as hub_info's leftOut says; and `cloud-github-*`, its GitHub step
 // with fleetd's one App: to install, installed, the person's own GitHub to connect first, and a service without the
@@ -248,6 +249,22 @@ export default defineGroup({
         hub: true,
         newWorkspaceFailure: { code: "workspace_cap", message: "You've made 10 workspaces, the most one person can have.", fix: "Delete one you don't use in Settings › Workspace, then make a new one." },
       };
+      return f;
+    })(),
+    (() => {
+      const f = Fixture.from(base("typical"), "cloud-account-delete", "Delete account: leaving acme, side-project deleted with it and its plan stopping.");
+      f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
+      f.label = "acme";
+      f.cloud = { email: EMAIL, hub: true, accountPreview: { deletes: [{ name: "side-project", plan: "Team" }], leaves: ["acme"], blocked: [] } };
+      f.answer("people_list", undefined, { people: [], devices: [], invites: [] });
+      return f;
+    })(),
+    (() => {
+      const f = Fixture.from(base("typical"), "cloud-account-delete-blocked", "Delete account held back: the only owner of acme, which has other members.");
+      f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
+      f.label = "acme";
+      f.cloud = { email: EMAIL, hub: true, accountPreview: { deletes: [], leaves: [], blocked: ["acme"] } };
+      f.answer("people_list", undefined, { people: [], devices: [], invites: [] });
       return f;
     })(),
     people(base("chat-empty"), "owner", "People on a cloud team, as its owner: Invite by email, and two invites waiting.", sam),

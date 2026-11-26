@@ -30,6 +30,7 @@ import { webSocketTransport } from "./src/hub/socket";
 import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
 import { cloudDomain, type PairFailure } from "./src/desktop";
 import { deviceName } from "./src/hub/deviceName";
+import { accountPreview, askedOn, deleteAccount } from "./src/accountDelete";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
@@ -479,7 +480,22 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
           resolve,
         ),
       );
-    return { session, state, paired: shown, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace };
+    // Deleted, the cloud revoked every key of the account already: its workspaces only leave this phone, as at sign-out.
+    const noWorkspace = { message: "None of your fleetd workspaces is on this phone.", fix: "Sign in again, then delete the account." };
+    const previewCloudAccount: HubContextValue["previewCloudAccount"] = () => {
+      const on = askedOn(paired, hubs);
+      return on === null ? Promise.resolve({ ok: false, failure: noWorkspace }) : accountPreview(on);
+    };
+    const deleteCloudAccount: HubContextValue["deleteCloudAccount"] = async (email) => {
+      const on = askedOn(paired, hubs);
+      if (on === null) return noWorkspace;
+      const out = await deleteAccount(on, email);
+      if (!out.ok) return out.failure;
+      if (paired.cloud === true) leaving.current = true;
+      await onSignedOut(hubs.filter((h) => h.cloud !== true));
+      return null;
+    };
+    return { session, state, paired: shown, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace, previewCloudAccount, deleteCloudAccount };
   }, [session, state, paired, shown, hubs, account, onForget, onShow, onMade, onSignedIn, onSignedOut]);
 
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.

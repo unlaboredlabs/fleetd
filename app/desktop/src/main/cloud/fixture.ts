@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { readBilling, type BillingState } from "../../shared/billing";
-import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -49,6 +49,10 @@ export const CloudSection = z.object({
   billingFailure: Failure.optional(),
   /** New workspace is refused so, as the cloud would (the most one person may make). Absent: refused as sample data. */
   newWorkspaceFailure: Failure.optional(),
+  /** Delete account is refused so, as the cloud would (the only owner of a workspace with others in it). */
+  deleteAccountFailure: Failure.optional(),
+  /** What deleting the account would take, as the cloud's preview answers. Absent: the fixture's hub is left, nothing goes. */
+  accountPreview: z.object({ deletes: z.array(z.object({ name: z.string(), plan: z.string().nullable() })), leaves: z.array(z.string()), blocked: z.array(z.string()) }).optional(),
 });
 export type CloudSection = z.infer<typeof CloudSection>;
 
@@ -181,6 +185,22 @@ export class FixtureCloud implements Cloud {
   newWorkspace(): Promise<NewWorkspaceOutcome> {
     if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
     return Promise.resolve(failed(this.#section?.newWorkspaceFailure ?? { code: "", message: "Sample data, not connected: nothing is made." }));
+  }
+
+  accountPreview(): Promise<AccountPreviewOutcome> {
+    const preview = this.#section?.accountPreview ?? { deletes: [], leaves: ["acme"], blocked: [] };
+    return Promise.resolve({ ok: true, preview: { email: this.#email ?? "", ...preview } });
+  }
+
+  // The email typed must be the fixture's; a refusal set for the shot shows instead. Deleted, the account is gone.
+  deleteAccount(email: string): Promise<DeleteAccountOutcome> {
+    const refusal = this.#section?.deleteAccountFailure;
+    if (refusal !== undefined) return Promise.resolve(failed(refusal));
+    if (this.#email === null || email.trim().toLowerCase() !== this.#email.toLowerCase()) {
+      return Promise.resolve(failed({ code: "wrong_email", message: "That isn't this account's email.", fix: "Type the email you sign in with." }));
+    }
+    this.#email = null;
+    return Promise.resolve({ ok: true, workspaces: [] });
   }
 
   billing(): Promise<BillingOutcome> {

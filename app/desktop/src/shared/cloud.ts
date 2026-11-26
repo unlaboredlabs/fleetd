@@ -1,5 +1,6 @@
 // fleetd cloud's Sign in, as the page sees it (main: src/main/cloud). Only a build given the cloud's accounts address
 // and WorkOS client id offers it; any other build is the self-hosted app alone, with nothing of this on screen.
+import type { AccountPreview } from "./legal";
 import type { AccountsInvite } from "./contracts";
 import type { BillingBuy, BillingState } from "./billing";
 import type { HubId } from "./hubs";
@@ -120,6 +121,12 @@ export type BillingOpenOutcome = { readonly ok: true } | { readonly ok: false; r
 
 /** The spend cap as the team keeps it now (cents a month, null: none), or why it wasn't set. */
 export type BillingCapOutcome = { readonly ok: true; readonly capCents: number | null } | { readonly ok: false; readonly failure: PairFailure };
+
+/** The account deleted for good (`workspaces`: those deleted with it), and its workspaces gone from this app; or the cloud's refusal in its words (the only owner of a workspace with other members, the email typed isn't the account's). */
+/** What deleting the account would take (shared/legal.ts), or why it couldn't be read. */
+export type AccountPreviewOutcome = { readonly ok: true; readonly preview: AccountPreview } | { readonly ok: false; readonly failure: PairFailure };
+
+export type DeleteAccountOutcome = { readonly ok: true; readonly workspaces: readonly string[] } | { readonly ok: false; readonly failure: PairFailure };
 
 /** The team deleted for good, and gone from this app; or the team's refusal in its words (not the owner, the name typed isn't its name, agents running). */
 export type DeleteTeamOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };

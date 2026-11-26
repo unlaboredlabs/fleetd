@@ -432,6 +432,8 @@ export const REQUESTS = {
   [IPC.cloudRevokeInvite]: z.tuple([HubId, z.string().regex(/^inv_[0-9a-f]{10}$/u)]),
   [IPC.cloudDeleteTeam]: z.tuple([HubId, z.string().max(200)]),
   [IPC.cloudNewWorkspace]: z.tuple([HubId, z.string().max(200)]),
+  [IPC.cloudDeleteAccount]: z.tuple([z.string().max(320)]),
+  [IPC.cloudAccountPreview]: none,
   [IPC.cloudInstallGithub]: z.tuple([HubId]),
   [IPC.cloudBilling]: z.tuple([HubId]),
   [IPC.cloudBillingOpen]: z.tuple([
