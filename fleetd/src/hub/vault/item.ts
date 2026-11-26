@@ -133,6 +133,8 @@ export type SaveSpec = {
   sink?: SinkMeta;
   /** The node holds it already (the migration): no delivery now. */
   held?: boolean;
+  /** An agent stored it (`vault_store`): its task and order for the audit, and its note. */
+  agent?: { taskId?: string; workstreamId?: string; note?: string };
 };
 
 

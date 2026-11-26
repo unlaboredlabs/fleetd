@@ -14,6 +14,7 @@ import { runsOn } from "../browser/live.ts";
 import { chat } from "../chat/index.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../lead_calls/index.ts";
 import { store as hubStore } from "../store/hub_store.ts";
+import { storeCall } from "./agent_store.ts";
 import type { AuditData } from "./audit.ts";
 import { envRows } from "./deliver.ts";
 import { FIELDS, hostOf, type Secret, totpCode, type VaultKind } from "./fields.ts";
@@ -22,7 +23,7 @@ import { type ItemRow, type UseContext, vault } from "./index.ts";
 
 export { FILLS_PER_HOST_HOUR, FILLS_PER_ITEM_HOUR, onSite, resolve, SHARED_HOSTING } from "./fill.ts";
 
-export const OPS = ["vault_fill", "vault_filled", "vault_items"] as const;
+export const OPS = ["vault_fill", "vault_filled", "vault_items", "vault_store"] as const;
 
 /** Refusals of one session within ten minutes that put a line in the project's chat. */
 const REFUSALS_LINE = 3;
@@ -264,4 +265,5 @@ export function registerLeadCalls(hub: Hub): void {
   calls.register("vault_fill", (caller, call) => fills(hub).fill(caller, call));
   calls.register("vault_filled", (caller, call) => fills(hub).filled(caller, call));
   calls.register("vault_items", (caller, call) => fills(hub).items(caller, call));
+  calls.register("vault_store", (caller, call) => storeCall(hub, caller, call));
 }

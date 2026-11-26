@@ -13,6 +13,7 @@ import { checkArguments } from "./check.ts";
 import { at, isObject, rustJson } from "./json.ts";
 import { browserResult, errorResult, toolResult, type ToolResult } from "./results.ts";
 import { callerCwd, NODE_RESTARTING, nodeSocketPath, osError, sendToNode } from "./socket.ts";
+import { storeSecret } from "./store.ts";
 import { toolList, toolsFor, SNAPSHOT, type Role } from "./tools.ts";
 
 export { SERVER_NAME } from "./tools.ts";
@@ -163,6 +164,7 @@ async function toolCall(role: Role, params: unknown, deps: LeadDeps) {
     return errorResult(String(why));
   }
   if (call.op === "attachment_read") return saveAttachment(call, deps);
+  if (call.op === "vault_store") return storeSecret(call, deps);
   let answer: Record<string, unknown>;
   try {
     answer = await sendCall(call, deps);

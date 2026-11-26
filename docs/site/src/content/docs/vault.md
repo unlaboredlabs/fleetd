@@ -43,6 +43,11 @@ Agents can list what they may use, but have no way to show, change or delete an 
 or a payment. Only a bank check, a captcha or a passkey is handed to you. See
 [Payments & sign-ins](/docs/payments-and-sign-ins).
 
+An agent can save a secret it holds, such as a key it made, as a new variable of its bot with `vault_store`. It
+writes the value to a file only it can read; fleetd seals and saves it, then wipes and deletes the file, so the value
+never shows in the chat or the agent's session. You aren't asked: the variable's activity names the agent that saved
+it. The person it works for, or an admin, can show it. A variable that's there already is never replaced.
+
 A variable set for one order wins over the bot's variable of the same name, until the order closes. See
 [Order variables](/docs/approvals-and-secrets#order-variables).
 
