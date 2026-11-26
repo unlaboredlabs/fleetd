@@ -104,7 +104,7 @@ export function BotMemory({ route }: ChatInfoProps<"Memory">) {
 function Line({ line }: { line: BotLine }) {
   const t = useTheme();
   return (
-    <View style={styles.row} accessible accessibilityLabel={line.by === undefined ? line.text : `${line.text}. From ${line.by}`}>
+    <View style={styles.row} accessible accessibilityLabel={line.by === undefined ? line.text : `${line.text}${/[.!?]$/u.test(line.text) ? "" : "."} From ${line.by}`}>
       <Text style={[type.body, { color: t.label }]} selectable>
         {line.text}
       </Text>
