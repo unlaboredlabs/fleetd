@@ -8,6 +8,9 @@ export const HISTORY = 60;
 
 /** One second's measures, as the panel reads them: all over the same frames, by their numbers (FrameCounts). */
 export type ViewerSecond = {
+  /** Whether the screen's machine sends its measures (a node from before them, or a link that drops them, doesn't):
+   * without them nothing says what was made, and what came and was drawn is counted over the last WINDOW_MS. */
+  measured: boolean;
   /** Frames the screen made (numbered), that reached this viewer, and that it drew, a second. Drawn ≤ came ≤ made. */
   made: number;
   arrived: number;
@@ -18,8 +21,8 @@ export type ViewerSecond = {
   decodeMs?: number;
 };
 
-/** A second of the graph: frames made and shown. */
-export type GraphSecond = { made: number; shown: number };
+/** A second of the graph: frames shown, and made where the machine said. */
+export type GraphSecond = { made?: number; shown: number };
 
 export type PerfNow = {
   viewer: ViewerSecond;
@@ -44,7 +47,7 @@ export const WINDOW_MS = 2_000;
  */
 export class FrameCounts {
   private stamps: { at: number; seq: number; sent: number }[] = [];
-  private came: { seq: number; bytes: number }[] = [];
+  private came: { at: number; seq: number; bytes: number }[] = [];
   private drew = new Set<number>();
   private link: number | undefined;
   history: GraphSecond[] = [];
@@ -62,7 +65,7 @@ export class FrameCounts {
       this.drew.clear();
       this.link = link;
     }
-    this.came.push({ seq, bytes });
+    this.came.push({ at: now, seq, bytes });
     const last = this.stamps.at(-1);
     if (stamp !== undefined && (last === undefined || stamp.seq > last.seq))
       this.stamps.push({ at: now, seq: stamp.seq, sent: stamp.sent });
@@ -72,8 +75,10 @@ export class FrameCounts {
     this.drew.add(seq);
   }
 
-  /** The rates now, and the second into the graph's history: none once no measure has come for STILL_MS. */
+  /** The rates now, and the second into the graph's history: none once no measure has come for STILL_MS. With no
+   * measures from the screen's machine, what came and was drawn over the last WINDOW_MS, and nothing of what was made. */
   second(now: number): Omit<ViewerSecond, "decodeMs"> {
+    if (this.stamps.length === 0) return this.unmeasured(now);
     const b = this.stamps.at(-1);
     let from = 0;
     if (b !== undefined)
@@ -82,13 +87,8 @@ export class FrameCounts {
       });
     this.stamps = this.stamps.slice(from);
     const a = this.stamps[0];
-    let out = { made: 0, arrived: 0, drawn: 0, kbps: 0 };
-    if (
-      a !== undefined &&
-      b !== undefined &&
-      b !== a &&
-      now - b.at < STILL_MS
-    ) {
+    let out = { measured: true, made: 0, arrived: 0, drawn: 0, kbps: 0 };
+    if (a !== undefined && b !== undefined && b !== a && now - b.at < STILL_MS) {
       this.came = this.came.filter((c) => c.seq > a.seq);
       for (const q of this.drew) if (q <= a.seq) this.drew.delete(q);
       const per = 1000 / Math.max(1, b.at - a.at);
@@ -96,18 +96,35 @@ export class FrameCounts {
       let drawn = 0;
       for (const q of this.drew) if (q <= b.seq) drawn++;
       out = {
+        measured: true,
         made: Math.round((b.sent - a.sent) * per),
         arrived: Math.round(run.length * per),
         drawn: Math.round(drawn * per),
-        kbps: Math.round(
-          (run.reduce((n, c) => n + c.bytes, 0) * 8 * per) / 1000,
-        ),
+        kbps: Math.round((run.reduce((n, c) => n + c.bytes, 0) * 8 * per) / 1000),
       };
     }
-    this.history = [
-      ...this.history,
-      { made: out.made, shown: out.drawn },
-    ].slice(-HISTORY);
+    this.history = [...this.history, { made: out.made, shown: out.drawn }].slice(-HISTORY);
+    return out;
+  }
+
+  private unmeasured(now: number): Omit<ViewerSecond, "decodeMs"> {
+    this.came = this.came.filter((c) => c.at > now - WINDOW_MS);
+    const first = this.came[0];
+    for (const q of this.drew) if (first === undefined || q < first.seq) this.drew.delete(q);
+    let out = { measured: false, made: 0, arrived: 0, drawn: 0, kbps: 0 };
+    if (first !== undefined) {
+      const per = 1000 / Math.max(1, Math.min(WINDOW_MS, now - first.at));
+      let drawn = 0;
+      for (const c of this.came) if (this.drew.has(c.seq)) drawn++;
+      out = {
+        measured: false,
+        made: 0,
+        arrived: Math.round(this.came.length * per),
+        drawn: Math.round(drawn * per),
+        kbps: Math.round((this.came.reduce((n, c) => n + c.bytes, 0) * 8 * per) / 1000),
+      };
+    }
+    this.history = [...this.history, { shown: out.drawn }].slice(-HISTORY);
     return out;
   }
 }
@@ -133,17 +150,13 @@ export function graphOf(
 } {
   const at = HISTORY - history.length;
   const target = history.map((h) =>
-    cap === undefined ? h.made : Math.min(h.made, cap),
+    // Unmeasured, what was shown is all there is to show against.
+    h.made === undefined ? h.shown : cap === undefined ? h.made : Math.min(h.made, cap),
   );
   const top = Math.max(10, ...target, ...history.map((h) => h.shown)) * 1.1;
   const y = (n: number) => (GRAPH_H - (n / top) * (GRAPH_H - 2)).toFixed(2);
   const line = (vals: readonly number[]) =>
-    vals
-      .map(
-        (v, i) =>
-          `${i === 0 ? "M" : "L"}${String((at + i) * 3)} ${y(v)}H${String((at + i) * 3 + 3)}`,
-      )
-      .join("");
+    vals.map((v, i) => `${i === 0 ? "M" : "L"}${String((at + i) * 3)} ${y(v)}H${String((at + i) * 3 + 3)}`).join("");
   const gap = history
     .map((h, i) => {
       const t = target[i] ?? 0;
@@ -172,12 +185,8 @@ export const STILL_MS = 2_000;
 export const STALE_MS = 3_000;
 
 const perSecond = (n: number) => `${String(n)} a second`;
-const ms = (n: number) =>
-  n < 10 ? `${n.toFixed(1)} ms` : `${String(Math.round(n))} ms`;
-const rate = (kbps: number) =>
-  kbps >= 1000
-    ? `${(kbps / 1000).toFixed(1)} Mbit/s`
-    : `${String(kbps)} kbit/s`;
+const ms = (n: number) => (n < 10 ? `${n.toFixed(1)} ms` : `${String(Math.round(n))} ms`);
+const rate = (kbps: number) => (kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbit/s` : `${String(kbps)} kbit/s`);
 const secs = (msValue: number) => `${String(Math.round(msValue / 1000))} s`;
 
 const ENCODER: Record<string, string> = {
@@ -187,10 +196,7 @@ const ENCODER: Record<string, string> = {
   h264: "H.264",
 };
 
-const encoderWords = (
-  perf: ScreenPerf,
-  kind: SessionKind | undefined,
-): string =>
+const encoderWords = (perf: ScreenPerf, kind: SessionKind | undefined): string =>
   perf.encoder === "jpeg"
     ? kind === undefined || kind === "browser"
       ? "Chrome’s JPEGs"
@@ -212,10 +218,7 @@ export const LOST_SHARE = 0.1;
  * as the sender skipped them, here as far as they reached it undrawn, whichever is more; then the way when it holds the
  * rate. A budget alone, with nothing lost, isn't slow.
  */
-export function verdictOf(
-  now: PerfNow | undefined,
-  drawsAtMost?: number,
-): Verdict {
+export function verdictOf(now: PerfNow | undefined, drawsAtMost?: number): Verdict {
   if (now === undefined)
     return {
       word: "Measuring",
@@ -226,16 +229,17 @@ export function verdictOf(
   if (quietMs === undefined || quietMs >= STILL_MS)
     return {
       word: "Still",
-      line:
-        quietMs === undefined
-          ? "No frame has come yet"
-          : `Nothing changed on the screen for ${secs(quietMs)}`,
+      line: quietMs === undefined ? "No frame has come yet" : `Nothing changed on the screen for ${secs(quietMs)}`,
       tone: "quiet",
     };
-  const perf =
-    now.perfAgeMs !== undefined && now.perfAgeMs < STALE_MS
-      ? now.perf
-      : undefined;
+  // Frames come, but nothing says what the screen made: its machine sends no measures. Only what was shown here.
+  if (!viewer.measured)
+    return {
+      word: "Not measured",
+      line: `Its machine doesn’t send measures: ${perSecond(viewer.drawn)} shown here`,
+      tone: "quiet",
+    };
+  const perf = now.perfAgeMs !== undefined && now.perfAgeMs < STALE_MS ? now.perf : undefined;
   const link = perf?.link;
   if (perf?.capBy === "busy")
     return {
@@ -246,15 +250,9 @@ export function verdictOf(
   // Lost frames are the way's where its sender skipped them, and this viewer's where they reached it and it never drew
   // them. A viewer that draws at most so many reaches only those its sender paced to it; any other reaches every frame
   // sent that wasn't skipped.
-  const could =
-    drawsAtMost === undefined
-      ? viewer.made
-      : Math.min(viewer.made, drawsAtMost);
+  const could = drawsAtMost === undefined ? viewer.made : Math.min(viewer.made, drawsAtMost);
   const way = Math.min(link?.skipped ?? 0, viewer.made);
-  const reached =
-    drawsAtMost === undefined
-      ? viewer.made - way
-      : Math.min(viewer.arrived, drawsAtMost);
+  const reached = drawsAtMost === undefined ? viewer.made - way : Math.min(viewer.arrived, drawsAtMost);
   const here = Math.max(0, reached - viewer.drawn);
   if (could >= 5 && way + here >= could * LOST_SHARE) {
     if (way >= here)
@@ -277,10 +275,7 @@ export function verdictOf(
     };
   return {
     word: "Smooth",
-    line:
-      link === undefined
-        ? perSecond(viewer.drawn)
-        : `${perSecond(viewer.drawn)}, ${ms(link.rttMs)} round trip`,
+    line: link === undefined ? perSecond(viewer.drawn) : `${perSecond(viewer.drawn)}, ${ms(link.rttMs)} round trip`,
     tone: "success",
   };
 }
@@ -305,11 +300,9 @@ export function groupsOf(
     stream.push({
       label: "Shown",
       value: perSecond(viewer.drawn),
-      ...(at.drawsAtMost === undefined
-        ? {}
-        : { note: `at most ${String(at.drawsAtMost)} here` }),
+      ...(at.drawsAtMost === undefined ? {} : { note: `at most ${String(at.drawsAtMost)} here` }),
     });
-  if (viewer !== undefined) {
+  if (viewer?.measured === true) {
     const skipped = perf?.link?.skipped ?? 0;
     stream.push({
       label: "Sent",
@@ -324,10 +317,7 @@ export function groupsOf(
   }
   if (perf !== undefined) {
     // Its most a second only where something holds it under what its encoder makes.
-    if (
-      perf.capBy === "busy" ||
-      (perf.capBy === "link" && perf.capFps !== undefined)
-    )
+    if (perf.capBy === "busy" || (perf.capBy === "link" && perf.capFps !== undefined))
       stream.push({
         label: "At most",
         value: perSecond(perf.capFps ?? viewer?.made ?? 0),
@@ -337,9 +327,7 @@ export function groupsOf(
   }
   if (at.screen !== undefined) {
     const pic = now?.picture;
-    const smaller =
-      pic !== undefined &&
-      (pic.width !== at.screen.width || pic.height !== at.screen.height);
+    const smaller = pic !== undefined && (pic.width !== at.screen.width || pic.height !== at.screen.height);
     stream.push({
       label: "Picture",
       value: `${String((smaller ? pic : at.screen).width)} × ${String((smaller ? pic : at.screen).height)}`,
@@ -350,23 +338,15 @@ export function groupsOf(
         : {}),
     });
     if (at.shownWidth !== undefined && at.shownWidth > 0) {
-      const pct = Math.round(
-        (at.shownWidth / (smaller ? pic : at.screen).width) * 100,
-      );
+      const pct = Math.round((at.shownWidth / (smaller ? pic : at.screen).width) * 100);
       stream.push({
         label: "Scaled",
         value: `${String(pct)}%`,
-        note:
-          pct < 100
-            ? "to fit here"
-            : pct > 100
-              ? "up to fit here"
-              : "pixel for pixel",
+        note: pct < 100 ? "to fit here" : pct > 100 ? "up to fit here" : "pixel for pixel",
       });
     }
   }
-  if (viewer !== undefined)
-    stream.push({ label: "Data", value: rate(viewer.kbps) });
+  if (viewer !== undefined) stream.push({ label: "Data", value: rate(viewer.kbps) });
   stream.push({
     label: "Path",
     value: at.direct ? "Straight to the machine" : "Through the workspace",
@@ -396,25 +376,17 @@ export function groupsOf(
   if (perf !== undefined)
     delay.push({
       label: "Encoder",
-      value:
-        perf.encodeMs === undefined
-          ? encoderWords(perf, at.kind)
-          : ms(perf.encodeMs),
-      ...(perf.encodeMs === undefined
-        ? {}
-        : { note: encoderWords(perf, at.kind) }),
+      value: perf.encodeMs === undefined ? encoderWords(perf, at.kind) : ms(perf.encodeMs),
+      ...(perf.encodeMs === undefined ? {} : { note: encoderWords(perf, at.kind) }),
     });
-  if (viewer?.decodeMs !== undefined)
-    delay.push({ label: "Decode", value: ms(viewer.decodeMs), note: "here" });
+  if (viewer?.decodeMs !== undefined) delay.push({ label: "Decode", value: ms(viewer.decodeMs), note: "here" });
 
   const machine: Row[] = [];
   if (perf?.cpuPct !== undefined)
     machine.push({
       label: "CPU",
       value: `${String(perf.cpuPct)}%`,
-      ...(perf.cores === undefined
-        ? {}
-        : { note: `of ${String(perf.cores)} cores` }),
+      ...(perf.cores === undefined ? {} : { note: `of ${String(perf.cores)} cores` }),
       ...(perf.cpuPct >= 90 ? { tone: "warning" as const } : {}),
     });
   if (perf?.memPct !== undefined)

@@ -4,7 +4,16 @@
 import { X } from "lucide-react";
 import { Button, Text, Tooltip } from "../../ui";
 import { display } from "../../../shared/shortcuts";
-import { GRAPH_H, GRAPH_W, graphOf, groupsOf, LOST_SHARE, verdictOf, type GraphSecond, type PerfNow } from "./perfModel";
+import {
+  GRAPH_H,
+  GRAPH_W,
+  graphOf,
+  groupsOf,
+  LOST_SHARE,
+  verdictOf,
+  type GraphSecond,
+  type PerfNow,
+} from "./perfModel";
 import type { SessionKind } from "../../../shared/contracts";
 import s from "./sessions.module.css";
 
@@ -19,8 +28,16 @@ function Graph({ history }: { history: readonly GraphSecond[] }) {
         <Text size="xs" tone="quiet">
           Frames a second
         </Text>
-        <Text size="xs" tone={now !== undefined && now.shown < now.made * (1 - LOST_SHARE) ? "warning" : "faint"} tabular>
-          {now === undefined ? "" : `${String(now.shown)} shown of ${String(now.made)} sent`}
+        <Text
+          size="xs"
+          tone={now?.made !== undefined && now.shown < now.made * (1 - LOST_SHARE) ? "warning" : "faint"}
+          tabular
+        >
+          {now === undefined
+            ? ""
+            : now.made === undefined
+              ? `${String(now.shown)} shown`
+              : `${String(now.shown)} shown of ${String(now.made)} sent`}
         </Text>
       </div>
       <svg
@@ -28,7 +45,11 @@ function Graph({ history }: { history: readonly GraphSecond[] }) {
         viewBox={`0 0 ${String(GRAPH_W)} ${String(GRAPH_H)}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label={now === undefined ? "Frames a second over the last minute" : `Frames a second over the last minute: ${String(now.shown)} shown of ${String(now.made)} sent now`}
+        aria-label={
+          now === undefined
+            ? "Frames a second over the last minute"
+            : `Frames a second over the last minute: ${String(now.shown)} shown${now.made === undefined ? "" : ` of ${String(now.made)} sent`} now`
+        }
       >
         <path d={g.gap} className={s.perfGap} />
         <path d={g.target} className={s.perfMade} />
@@ -74,7 +95,14 @@ export function PerfPanel({
         </Text>
         <span className={s.headGap} />
         <Tooltip content={`Hide performance · ${display("session.perf", window.fleetd.platform)}`}>
-          <Button variant="quiet" size="sm" iconOnly icon={<X aria-hidden />} aria-label="Hide performance" onClick={onClose} />
+          <Button
+            variant="quiet"
+            size="sm"
+            iconOnly
+            icon={<X aria-hidden />}
+            aria-label="Hide performance"
+            onClick={onClose}
+          />
         </Tooltip>
       </span>
       <div className={s.perfBody}>

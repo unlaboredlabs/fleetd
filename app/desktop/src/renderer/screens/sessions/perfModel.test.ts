@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ScreenPerf } from "../../../shared/contracts";
-import {
-  FrameCounts,
-  graphOf,
-  groupsOf,
-  verdictOf,
-  type PerfNow,
-} from "./perfModel";
+import { FrameCounts, graphOf, groupsOf, verdictOf, type PerfNow } from "./perfModel";
 
 const PERF: ScreenPerf = {
   sent: 300,
@@ -22,7 +16,7 @@ const PERF: ScreenPerf = {
 };
 
 const now = (over: Partial<PerfNow> = {}): PerfNow => ({
-  viewer: { made: 30, arrived: 30, drawn: 30, kbps: 1200 },
+  viewer: { measured: true, made: 30, arrived: 30, drawn: 30, kbps: 1200 },
   history: [{ made: 30, shown: 30 }],
   picture: { width: 1280, height: 800 },
   quietMs: 30,
@@ -68,19 +62,17 @@ describe("verdictOf", () => {
   });
   it("says frames were lost on the way when they didn't come", () => {
     const lost = now({
-      viewer: { made: 30, arrived: 12, drawn: 12, kbps: 900 },
+      viewer: { measured: true, made: 30, arrived: 12, drawn: 12, kbps: 900 },
       perf: {
         ...PERF,
         link: { rttMs: 1, queueMs: 300, skipped: 18, budgetKbps: 900 },
       },
     });
-    expect(verdictOf(lost).line).toBe(
-      "18 of 30 frames a second skipped on the way: it gets 900 kbit/s through",
-    );
+    expect(verdictOf(lost).line).toBe("18 of 30 frames a second skipped on the way: it gets 900 kbit/s through");
   });
   it("blames this window for frames the sender didn't skip", () => {
     const slow = now({
-      viewer: { made: 31, arrived: 12, drawn: 0, kbps: 300 },
+      viewer: { measured: true, made: 31, arrived: 12, drawn: 0, kbps: 300 },
       perf: { ...PERF, link: { rttMs: 1, queueMs: 0, skipped: 3 } },
     });
     expect(verdictOf(slow)).toMatchObject({
@@ -90,7 +82,7 @@ describe("verdictOf", () => {
   });
   it("says the way holds it when the screen sends only what gets through", () => {
     const held = now({
-      viewer: { made: 4, arrived: 4, drawn: 4, kbps: 8400 },
+      viewer: { measured: true, made: 4, arrived: 4, drawn: 4, kbps: 8400 },
       perf: {
         ...PERF,
         capBy: "link",
@@ -105,7 +97,15 @@ describe("verdictOf", () => {
   it("doesn't blame a phone for frames its sender paced away", () => {
     expect(
       verdictOf(
-        now({ viewer: { made: 26, arrived: 10, drawn: 10, kbps: 900 } }),
+        now({
+          viewer: {
+            measured: true,
+            made: 26,
+            arrived: 10,
+            drawn: 10,
+            kbps: 900,
+          },
+        }),
         12,
       ).word,
     ).toBe("Smooth");
@@ -113,7 +113,15 @@ describe("verdictOf", () => {
   it("doesn't count what a phone never draws as lost", () => {
     expect(
       verdictOf(
-        now({ viewer: { made: 30, arrived: 12, drawn: 12, kbps: 900 } }),
+        now({
+          viewer: {
+            measured: true,
+            made: 30,
+            arrived: 12,
+            drawn: 12,
+            kbps: 900,
+          },
+        }),
         12,
       ).word,
     ).toBe("Smooth");
@@ -121,7 +129,15 @@ describe("verdictOf", () => {
   it("blames this computer when it draws far fewer than came", () => {
     expect(
       verdictOf(
-        now({ viewer: { made: 30, arrived: 30, drawn: 12, kbps: 1200 } }),
+        now({
+          viewer: {
+            measured: true,
+            made: 30,
+            arrived: 30,
+            drawn: 12,
+            kbps: 1200,
+          },
+        }),
       ).word,
     ).toBe("Slowed here");
   });
@@ -199,5 +215,38 @@ describe("graphOf", () => {
     const g = graphOf([{ made: 30, shown: 12 }], 12);
     expect(g.gap).toBe("");
     expect(g.targetNow).toBe(12);
+  });
+});
+
+describe("a screen whose machine sends no measures", () => {
+  it("counts what came and was drawn, and says it isn't measured rather than smooth at zero", () => {
+    const c = new FrameCounts();
+    for (let seq = 1; seq <= 90; seq++) {
+      c.arrived(seq, 1, 1000, seq * (1000 / 30));
+      c.drawn(seq);
+    }
+    const viewer = c.second(3_000 + 5);
+    expect(viewer).toMatchObject({
+      measured: false,
+      arrived: 30,
+      drawn: 30,
+    });
+    expect(viewer.kbps).toBeGreaterThan(0);
+    const n = now({ viewer, perf: undefined, history: c.history });
+    expect(verdictOf(n)).toEqual({
+      word: "Not measured",
+      line: "Its machine doesn’t send measures: 30 a second shown here",
+      tone: "quiet",
+    });
+    const rows = groupsOf(n, {
+      kind: undefined,
+      screen: undefined,
+      shownWidth: undefined,
+      direct: false,
+      machine: undefined,
+    }).flatMap((g) => g.rows);
+    expect(rows.map((r) => r.label)).not.toContain("Sent");
+    expect(rows.find((r) => r.label === "Shown")?.value).toBe("30 a second");
+    expect(graphOf(c.history).gap).toBe("");
   });
 });

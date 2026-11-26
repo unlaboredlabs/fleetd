@@ -3,7 +3,7 @@ import type { PerfNow } from "./desktop";
 import { stripOf } from "./perfStrip";
 
 const now = (over: Partial<PerfNow> = {}): PerfNow => ({
-  viewer: { made: 30, arrived: 11, drawn: 11, kbps: 1600 },
+  viewer: { measured: true, made: 30, arrived: 11, drawn: 11, kbps: 1600 },
   history: [{ made: 30, shown: 11 }],
   picture: undefined,
   quietMs: 40,
@@ -25,8 +25,13 @@ describe("the phone's performance strip", () => {
     expect(s.rows.find((r) => r.label === "Encoder")?.value).toBe("Chrome’s JPEGs");
   });
   it("says the way holds it when only a few get through", () => {
-    const held = now({ viewer: { made: 3, arrived: 3, drawn: 3, kbps: 5900 }, perf: { ...now().perf!, capBy: "link", link: { rttMs: 77, queueMs: 0, skipped: 0, budgetKbps: 6000 } } });
+    const held = now({ viewer: { measured: true, made: 3, arrived: 3, drawn: 3, kbps: 5900 }, perf: { ...now().perf!, capBy: "link", link: { rttMs: 77, queueMs: 0, skipped: 0, budgetKbps: 6000 } } });
     expect(stripOf(held, undefined).verdict).toMatchObject({ word: "Slowed on the way", line: "Only 3 a second get through, at 6.0 Mbit/s" });
+  });
+  it("says a screen whose machine sends no measures isn't measured", () => {
+    const s = stripOf(now({ viewer: { measured: false, made: 0, arrived: 11, drawn: 11, kbps: 1600 }, perf: undefined }), undefined);
+    expect(s.verdict.word).toBe("Not measured");
+    expect(s.rows.map((r) => r.label)).not.toContain("Sent");
   });
   it("says nothing it didn't measure", () => {
     const s = stripOf(now({ perf: undefined }), undefined);

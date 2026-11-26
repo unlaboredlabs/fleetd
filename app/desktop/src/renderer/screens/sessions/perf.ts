@@ -89,9 +89,7 @@ class Meter {
     this.decodes = [];
     return {
       ...this.counts.second(now),
-      ...(sorted.length === 0
-        ? {}
-        : { decodeMs: sorted[Math.floor(sorted.length / 2)] ?? 0 }),
+      ...(sorted.length === 0 ? {} : { decodeMs: sorted[Math.floor(sorted.length / 2)] ?? 0 }),
     };
   }
 }
@@ -99,12 +97,8 @@ class Meter {
 const meters = new Map<string, Meter>();
 
 /** Frame `seq` of `sessionId`'s drawn here, its picture of its size. */
-export const perfDrawn = (
-  sessionId: string,
-  seq: number,
-  width: number,
-  height: number,
-): void => meters.get(sessionId)?.drawn(seq, width, height);
+export const perfDrawn = (sessionId: string, seq: number, width: number, height: number): void =>
+  meters.get(sessionId)?.drawn(seq, width, height);
 /** An H.264 frame of `sessionId`'s into this window's decoder, and its picture out. */
 export const perfDecodeIn = (sessionId: string, seq: number): void =>
   meters.get(sessionId)?.decodeIn(seq, performance.now());
@@ -112,10 +106,7 @@ export const perfDecodeOut = (sessionId: string, seq: number): void =>
   meters.get(sessionId)?.decodeOut(seq, performance.now());
 
 /** The screen's measures each second while `on`; undefined until the first second has gone. */
-export function useScreenPerf(
-  sessionId: string,
-  on: boolean,
-): PerfNow | undefined {
+export function useScreenPerf(sessionId: string, on: boolean): PerfNow | undefined {
   const layer = useDataLayer();
   const [now, setNow] = useState<PerfNow | undefined>(undefined);
   useEffect(() => {
@@ -124,12 +115,7 @@ export function useScreenPerf(
     meters.set(sessionId, meter);
     const unsubscribe = layer.store.subscribe((s, prev) => {
       const f = s.browserFrame;
-      if (
-        f !== undefined &&
-        f !== prev.browserFrame &&
-        f.sessionId === sessionId
-      )
-        meter.arrived(f, performance.now());
+      if (f !== undefined && f !== prev.browserFrame && f.sessionId === sessionId) meter.arrived(f, performance.now());
     });
     const tick = window.setInterval(() => {
       const t = performance.now();
@@ -138,8 +124,7 @@ export function useScreenPerf(
         viewer,
         history: meter.counts.history,
         picture: meter.picture,
-        quietMs:
-          meter.lastArrival === undefined ? undefined : t - meter.lastArrival,
+        quietMs: meter.lastArrival === undefined ? undefined : t - meter.lastArrival,
         perf: meter.perf?.perf,
         perfAgeMs: meter.perf === undefined ? undefined : t - meter.perf.at,
       });
