@@ -10,9 +10,16 @@
 // itself under it (fleetd's scripts/check.sh does), unless FLEETD_HEAVY_SLOT says it holds one. So a run inside one
 // takes no second slot, and neither does the repo's declared `background` start or `wait` (.fleetd/pre-push.json): the
 // one returns at once, its run taking a slot of its own, and the other only waits for that run.
-import { closeSync, existsSync, readFileSync } from "node:fs";
+//
+// On Linux a run is held to its slot's own CPUs (slotCpus: `taskset`), and its children with it. A slot counted as one
+// run's test workers, but a run fans out past them: on Nov 26 the desktop check's four Playwright workers, each an
+// Electron app, kept 10.4 cores busy, a fleetd check's four test workers with the hubs and browsers its tests start up
+// to 4.7, so six slots' runs could ask for 60 of the devbox's 32 and the load passed 100. Pinned, the six can use 24
+// at most, and tools that size themselves by the CPUs they may use (`nproc`, Node's and Bun's availableParallelism,
+// `bun test --parallel`, Go, Rust) see the slot's 4.
+import { closeSync, existsSync, readFileSync, readlinkSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import * as buildSlots from "./build_slots.ts";
 import { runInherited, take, writeWrapper } from "./build_slots.ts";
 import { readConfig } from "./config.ts";
@@ -59,12 +66,60 @@ export function ephemeralPorts(): number {
   return 65535 - 49152 + 1;
 }
 
+/** A Linux CPU list (`0-3,8,10-11`) as its CPUs, in order; undefined when it isn't one. */
+export function parseCpuList(text: string): number[] | undefined {
+  const cpus: number[] = [];
+  for (const part of text.trim().split(",")) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!m) return undefined;
+    const lo = Number(m[1]);
+    const hi = m[2] === undefined ? lo : Number(m[2]);
+    if (hi < lo) return undefined;
+    for (let c = lo; c <= hi; c++) cpus.push(c);
+  }
+  return cpus.length ? cpus : undefined;
+}
+
+/** The machine's CPUs runs can be pinned to: the root cgroup's (a container's own), else every online one; undefined
+ * off Linux. Not this process's own: a run started inside a slot still sizes the machine, not its slot. */
+export function machineCpus(): number[] | undefined {
+  if (process.platform !== "linux") return undefined;
+  for (const path of ["/sys/fs/cgroup/cpuset.cpus.effective", "/sys/devices/system/cpu/online"]) {
+    try {
+      const cpus = parseCpuList(readFileSync(path, "utf8"));
+      if (cpus) return cpus;
+    } catch {}
+  }
+  return undefined;
+}
+
+/** The CPUs of slot `slot` of `slots`: past the first `reserved` of `cpus` (the build slots' jobs, as slotsFit leaves
+ * them), an equal share each, at least one, so no two slots share one while the machine has a CPU for each. Slots set
+ * past that (node.json) wrap around. */
+export function slotCpus(cpus: number[], reserved: number, slots: number, slot: number): number[] {
+  const free = cpus.length > reserved ? cpus.slice(reserved) : cpus;
+  const each = Math.min(free.length, Math.max(1, Math.floor(free.length / Math.max(1, slots))));
+  return Array.from({ length: each }, (_, i) => free[(slot * each + i) % free.length]!);
+}
+
+/** `0-3,8`: the list taskset and /proc read. */
+export const cpuList = (cpus: number[]) => {
+  const parts: string[] = [];
+  for (let i = 0; i < cpus.length; ) {
+    let j = i;
+    while (j + 1 < cpus.length && cpus[j + 1] === cpus[j]! + 1) j++;
+    parts.push(i === j ? `${cpus[i]}` : `${cpus[i]}-${cpus[j]}`);
+    i = j + 1;
+  }
+  return parts.join(",");
+};
+
 /** This machine as slotsFit reads it. Builds with no turns (`buildSlots` 0) count as the slots memory fits. */
 export function machineHere(home: string): Machine {
   const jobs = buildJobsHere();
   const mem = buildSlots.memTotal();
   return {
-    cores: availableParallelism(),
+    cores: machineCpus()?.length ?? availableParallelism(),
     buildSlots: buildSlots.slotsHere(home) ?? buildSlots.slotsFit(mem),
     buildJobs: jobs,
     testWorkers: testWorkers(jobs),
@@ -128,6 +183,25 @@ export function declaredLight(cwd: string, argv: string[]): boolean {
   });
 }
 
+/** Holds this process (every thread), and so the run it starts next, to slot `fd`'s CPUs (slotCpus), where Linux and
+ * `taskset` are there; else, or when taskset fails, the run goes unpinned, as before pinning. */
+function pin(home: string, slots: number, fd: number): void {
+  const cpus = machineCpus();
+  const taskset = Bun.which("taskset");
+  if (!cpus || !taskset) return;
+  let slot: number;
+  try {
+    slot = Number(/^slot-(\d+)$/.exec(basename(readlinkSync(`/proc/self/fd/${fd}`)))?.[1] ?? NaN);
+  } catch {
+    return;
+  }
+  if (!Number.isInteger(slot)) return;
+  const m = machineHere(home);
+  const mine = slotCpus(cpus, m.buildSlots * m.buildJobs, slots, slot);
+  const r = Bun.spawnSync([taskset, "-a", "-p", "-c", cpuList(mine), String(process.pid)], { stdout: "ignore", stderr: "pipe" });
+  if (r.exitCode !== 0) process.stderr.write(`fleetd: couldn't hold this run to its slot's CPUs (${r.stderr.toString().trim()}): it may use every CPU\n`);
+}
+
 export async function main(argv: string[]): Promise<number> {
   const [home, bin, ...args] = argv;
   if (home === undefined || bin === undefined) {
@@ -143,6 +217,7 @@ export async function main(argv: string[]): Promise<number> {
   } catch (error) {
     process.stderr.write(`fleetd: heavy-run slots unavailable (${(error as Error).message}): running without waiting\n`);
   }
+  if (slot !== undefined) pin(home, slots, slot[0]!);
   // Held in this process only, never handed to the run's children: a server a test leaves running can't keep it.
   const code = await runInherited(bin, args, { ...process.env, [HELD]: "1", [OLD.held]: "1" });
   for (const fd of slot ?? []) closeSync(fd);
