@@ -566,7 +566,7 @@ export async function startNode(
           if (config.runner) void sessions.reprobe().catch(() => {});
           return void ctx.send({ t: "node_action_result", id: String(frame.id ?? ""), ok: true, message: `the tailnet is ${nodeTailnet()!.on ? "on" : "off"} here` });
         }
-        // The agents' Mac: the folders of tasks that ended for good go.
+        // The agents' Mac: the folders of tasks that ended go.
         if (frame.action === "mac_ended" && isAgentsMac(config)) {
           return void macEnded(node, frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
         }

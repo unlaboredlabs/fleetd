@@ -110,8 +110,8 @@ export const gb = (bytes: number): string => {
 
 /** Below this the disk warns: Xcode builds and simulators need room. */
 export const DISK_LOW = 30e9;
-/** Below this builds and new simulators fail. */
-export const DISK_FULL = 10e9;
+/** Below this the Mac refuses agents' new jobs and simulators, once it has freed what it could (node/mac_tool FLOOR). */
+export const DISK_FULL = 20e9;
 /** What the disk row says to run: simulators no installed Xcode can run any more take the most room. */
 export const DISK_COMMAND = "xcrun simctl delete unavailable";
 
@@ -226,7 +226,7 @@ export function healthRows(read: MacMenuBarRead, now: number): HealthRow[] {
             title: "Disk",
             tone,
             word: free,
-            detail: `Of ${gb(disk.totalBytes)}. Builds and simulators fail below ${gb(DISK_FULL)}; fleetd frees ended tasks' folders and old builds by itself.`,
+            detail: `Of ${gb(disk.totalBytes)}. Agents' jobs and simulators are refused below ${gb(DISK_FULL)}; fleetd frees ended tasks' folders, idle ones and old builds by itself.`,
             fix: { kind: "command", where: "In Terminal at the Mac, delete the simulators no installed Xcode runs", command: DISK_COMMAND },
           },
     );

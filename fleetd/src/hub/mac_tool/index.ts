@@ -6,7 +6,7 @@
 // the agent's placed on the Mac (machine_roles `simPlace`): a simulator the step lends is that screen, watched, taken
 // over and recorded there, and the Mac reports it under the place's key in the agent's name.
 //
-// At each sweep the hub names the tasks that ended for good to the Mac (`tellEnded`), whose folders there go.
+// At each sweep the hub names the tasks that ended to the Mac (`tellEnded`), whose folders there go.
 import { ToolError } from "../../shared/errors.ts";
 import type { MacCaller, MacResultFrame, MacSendCall } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
@@ -39,9 +39,9 @@ export const ENDED_DAYS = 7;
 const ENDED_WAIT = 120_000;
 
 /**
- * Tells each online agents' Mac which tasks ended for good (TaskRecords.endedForGood), at every sweep: their folders
- * there go (node/mac_tool `ended`), so a finished task's checkout and build output don't sit on the Mac's disk for
- * days. Sent again each time, so a Mac that was offline or busy with a task's job catches up at the next.
+ * Tells each online agents' Mac which tasks ended (TaskRecords.endedSince), at every sweep: their folders there go
+ * (node/mac_tool `ended`), so a finished task's checkout and build output don't sit on the Mac's disk for days. Sent
+ * again each time, so a Mac that was offline, restarted or just used by a task that went on catches up at the next.
  */
 export async function tellEnded(hub: Hub): Promise<void> {
   const macs = store(hub)
@@ -49,7 +49,7 @@ export async function tellEnded(hub: Hub): Promise<void> {
     .filter((m) => m.agentsMac === true && m.status !== "offline")
     .map((m) => m.machineId);
   if (macs.length === 0) return;
-  const tasks = TaskRecords.endedForGood(hub.db.conn, isoMs(hub.clock.now() - ENDED_DAYS * 86_400_000));
+  const tasks = TaskRecords.endedSince(hub.db.conn, isoMs(hub.clock.now() - ENDED_DAYS * 86_400_000));
   if (tasks.length === 0) return;
   await Promise.all(
     macs.map((m) =>

@@ -335,8 +335,9 @@ export type NodeAction = {
    * machine there under its id. The node enrols, then links to that hub from its next start; it answers ok once enrolled.
    */
   rejoin?: { hub: string; code: string };
-  /** `mac_ended`, to the agents' Mac: tasks that ended for good (their worktree gone, or cancelled), whose folders on the
-   * Mac go. An older node answers that it doesn't know the action, and sweeps them after its FOLDER_DAYS. */
+  /** `mac_ended`, to the agents' Mac: tasks that ended (done, failed or cancelled), whose folders on the Mac go once
+   * nothing used them for a while. An older node answers that it doesn't know the action, and sweeps them after its
+   * FOLDER_DAYS. */
   tasks?: string[];
 };
 

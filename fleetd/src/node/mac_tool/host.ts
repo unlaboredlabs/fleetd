@@ -6,8 +6,9 @@
 // iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them;
 // a `sim_start`'s frame carries the screen the hub made for the simulator it lends (sim_screen.ts).
 // What agents do on the Mac goes to the menu bar (`activity`, ./activity.ts). A task's folder goes, with its snapshot
-// in the mirror, once the hub says the task ended for good (`ended`), else once nothing touched it for FOLDER_DAYS
-// (`sweep`); build caches go while the disk is short (`relieve`).
+// in the mirror and what it left running there, once the hub says the task ended (`ended`), else once nothing touched
+// it for FOLDER_DAYS (`sweep`); build caches and idle agents' folders go while the disk is short (`relieve`), and a
+// step that writes waits for that and is refused under FLOOR (`room`), never left to die on a full disk.
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -16,12 +17,14 @@ import {
   ftruncateSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   realpathSync,
   rmSync,
   statfsSync,
   statSync,
+  utimesSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
@@ -57,8 +60,19 @@ export const FOLDER_DAYS = 3;
 export const LOW_FREE = 30e9;
 /** ...until it has this much free again, so one freed cache doesn't leave it at the edge for the next build. */
 export const ROOM_FREE = 50e9;
+/** Under this much free, even after freeing what it could, a step that writes (a job, a push, a simulator) is refused:
+ * a cold iOS build writes gigabytes, and a job whose log can't be written dies before its command starts. */
+export const FLOOR = 20e9;
 /** A cache touched within this long may be a build's that runs now: it is never freed for room. */
 export const CACHE_IDLE = 3600_000;
+/** An ended task's folder a step used within this long stays until the hub's next word: the task may have gone on. */
+export const ENDED_QUIET = 10 * 60_000;
+/** The finished jobs whose logs an agent keeps on the Mac; an older one's goes as a new one starts. */
+export const JOBS_KEPT = 20;
+/** A job's log stops growing here (its command runs on), so one chatty job can't fill the disk. */
+export const LOG_MAX = 256 * 2 ** 20;
+/** In a folder freed for room (`relieve`): the agent's pushed work went, so its next job waits for a push. */
+export const FREED = ".freed";
 /** A foreground job nobody followed for this long ends: its agent stopped waiting for it. */
 export const FOREGROUND_IDLE = 60_000;
 /** How long `logs` waits for output while the job runs. */
@@ -93,6 +107,9 @@ exec /usr/bin/xcodebuild "$@"
 `;
 
 const refuse = (message: string, fix?: string) => new ToolError("invalid", message, fix);
+const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
+/** The steps that write to the Mac's disk: each makes room first (`room`). */
+const WRITES = new Set(["put", "checkout", "run", "sim_start"]);
 const failed = (what: string, e: unknown) => new ToolError("failed", `${what}: ${e instanceof Error ? e.message : String(e)}`);
 
 /** An agent's folder on the Mac, by task (else by session), and the project it works on. */
@@ -171,6 +188,10 @@ export class Host {
     const s = statfsSync(path);
     return s.bavail * s.bsize;
   };
+  /** Where a job's log stops growing (LOG_MAX; tests set less). */
+  logMax = LOG_MAX;
+  /** The upkeep under way, which every caller shares (`housekeep`). */
+  private keeping: Promise<string[]> | undefined;
 
   constructor(
     /** `~/work`: each agent's folder, and `.mirrors/` of each project's snapshots. */
@@ -199,6 +220,8 @@ export class Host {
     let answer: Answer;
     let out: Uint8Array = new Uint8Array();
     try {
+      // Room first: on a full disk even the agent's folder can't be made.
+      if (WRITES.has(envelope.step.step)) await this.room();
       const agent = this.agent(frame.caller);
       // Any step of the agent's keeps its simulator.
       this.sims?.touch(agent.name);
@@ -280,7 +303,9 @@ export class Host {
           if (!name) throw refuse(`${step.pack} can't name a file`);
           pack = join(agent.dir, "in", name);
         }
-        return [await checkout(this.mirror(agent.project), repoOf(agent), agent.name, step.snapshot, pack), none];
+        const done = await checkout(this.mirror(agent.project), repoOf(agent), agent.name, step.snapshot, pack);
+        rmSync(join(agent.dir, FREED), { force: true });
+        return [done, none];
       }
       case "run":
         return [this.start(agent, step.args, step.env ?? [], step.background), none];
@@ -332,11 +357,25 @@ export class Host {
     if (running >= RUNNING_MAX) {
       throw refuse(`you have ${running} jobs running on the Mac, the most at once`, "end some with mac kill (mac ps lists them)");
     }
+    if (!existsSync(repoOf(agent)) && existsSync(join(agent.dir, FREED))) {
+      throw refuse("Your pushed work on the Mac was freed for room after an hour unused.", "run mac push, then this command again");
+    }
     mkdirSync(this.cache(), { recursive: true });
+    // The oldest finished jobs' logs go, so an agent's many jobs don't pile up on the disk.
+    const finished = [...mine.jobs].filter(([, j]) => j.exit !== undefined);
+    for (const [n, j] of finished.slice(0, Math.max(finished.length - JOBS_KEPT + 1, 0))) {
+      rmSync(j.log, { force: true });
+      mine.jobs.delete(n);
+    }
     const job = ++mine.next;
     const log = join(agent.dir, "jobs", `${job}.log`);
     const mask = masker(named);
-    const fd = openSync(log, "w");
+    let fd: number;
+    try {
+      fd = openSync(log, "w");
+    } catch (e) {
+      throw failed("the job's log was not made on the Mac", e);
+    }
     const cwd = existsSync(repoOf(agent)) ? repoOf(agent) : agent.dir;
     let child: Subprocess<"ignore", "pipe", "pipe">;
     try {
@@ -354,9 +393,24 @@ export class Host {
     }
     const entry: Job = { command: mask(args.join(" ")), background, startedMs: this.clock(), child, log, exit: undefined, followed: Date.now() };
     mine.jobs.set(job, entry);
+    // Past LOG_MAX, or with the disk full, the output is dropped and the job runs on: its end is still kept.
+    const max = this.logMax;
+    let written = 0;
+    const write = (text: string) => {
+      if (written >= max) return;
+      const bytes = Buffer.from(text);
+      const room = max - written;
+      const kept = bytes.length > room ? Buffer.concat([bytes.subarray(0, room), Buffer.from(`\n[fleetd: this log stops here, at ${Math.round(max / 2 ** 20)} MB; the job runs on]\n`)]) : bytes;
+      written = bytes.length > room ? max : written + bytes.length;
+      try {
+        writeSync(fd, kept);
+      } catch {
+        // The disk is full: what the job says now is lost, never the job.
+      }
+    };
     const copy = async (stream: ReadableStream<Uint8Array>) => {
       const decoder = new TextDecoder();
-      for await (const chunk of stream) writeSync(fd, mask(decoder.decode(chunk, { stream: true })));
+      for await (const chunk of stream) write(mask(decoder.decode(chunk, { stream: true })));
     };
     void Promise.all([copy(child.stdout), copy(child.stderr)]).then(async () => {
       const code = await child.exited;
@@ -451,27 +505,96 @@ export class Host {
     return new Set([...simulators.map((s) => s.agent), ...jobs.map((j) => j.agent)]);
   }
 
-  /** The hub's word that these tasks ended for good (`node_action` mac_ended): their folders go, with their snapshots,
-   * unless the agent still runs a job or holds a simulator there (the next word takes those). */
-  async ended(tasks: string[]): Promise<string[]> {
-    const busy = this.busy();
-    const names = tasks.filter((t) => safePart(t) === t && !busy.has(t) && existsSync(join(this.root, t)));
+  /**
+   * The hub's word that these tasks ended (`node_action` mac_ended): their folders go, with their snapshots, and what
+   * they left running there ends first (a background Metro, a simulator: fleetd's own jobs and clones, nothing else).
+   * One a step used within ENDED_QUIET stays for the next word: its task may have gone on since the hub looked.
+   */
+  async ended(tasks: string[], now = Date.now()): Promise<string[]> {
+    const names: string[] = [];
+    for (const t of tasks) {
+      if (safePart(t) !== t || !existsSync(join(this.root, t))) continue;
+      if (usedAt(join(this.root, t)) > now - ENDED_QUIET) continue;
+      for (const job of this.jobs.get(t)?.jobs.keys() ?? []) this.kill(t, job);
+      this.jobs.delete(t);
+      this.sims?.end(t);
+      names.push(t);
+    }
     return removeFolders(this.root, names);
   }
 
   /** The Mac's upkeep: folders nothing touched for FOLDER_DAYS and old builds in Xcode's own DerivedData go, then
-   * caches while the disk is short of LOW_FREE. What went, by name. */
-  async housekeep(now = Date.now()): Promise<string[]> {
-    const busy = this.busy();
-    const gone = await sweep(this.root, FOLDER_DAYS, now, busy);
-    if (this.xcodeData) gone.push(...(await sweepXcode(this.xcodeData, FOLDER_DAYS, now)));
-    gone.push(...(await relieve(this.root, this.xcodeData, busy, this.freeBytes, now)));
-    return gone;
+   * caches and idle folders while the disk is short of LOW_FREE. What went, by name. One runs at a time: a caller
+   * while it runs gets its answer. */
+  housekeep(now = Date.now()): Promise<string[]> {
+    this.keeping ??= (async () => {
+      const busy = this.busy();
+      const gone = await sweep(this.root, FOLDER_DAYS, now, busy);
+      if (this.xcodeData) gone.push(...(await sweepXcode(this.xcodeData, FOLDER_DAYS, now)));
+      gone.push(...(await relieve(this.root, this.xcodeData, busy, this.freeBytes, now)));
+      return gone;
+    })().finally(() => (this.keeping = undefined));
+    return this.keeping;
+  }
+
+  /** Free bytes where the agents' folders are; unknown reads as plenty. */
+  free(): number {
+    try {
+      return this.freeBytes(existsSync(this.root) ? this.root : dirname(this.root));
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
+  }
+
+  /**
+   * Room for a step that writes: short of LOW_FREE the upkeep starts; under FLOOR the step waits for it, and is refused
+   * if it still has too little, saying how much is free and what went.
+   */
+  async room(): Promise<void> {
+    if (this.free() >= LOW_FREE) return;
+    const keeping = this.housekeep().catch((e: unknown) => {
+      console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`);
+      return [] as string[];
+    });
+    if (this.free() >= FLOOR) return;
+    const gone = await keeping;
+    const left = this.free();
+    if (left >= FLOOR) return;
+    const named = gone.length > 8 ? `${gone.slice(0, 8).join(", ")} and ${gone.length - 8} more` : gone.join(", ");
+    const freed = gone.length === 0 ? "fleetd found none of its own folders, builds or caches left to free" : `fleetd freed ${named} first`;
+    throw new ToolError(
+      "failed",
+      `The agents' Mac has ${gb(left)} free on its disk, under the ${gb(FLOOR)} a job, push or simulator needs; ${freed}.`,
+      `do without the Mac and say so in your result; a person frees space on it (${settingsPath("Machines")} shows its disk)`,
+    );
+  }
+
+  /** At the node's start: the job logs a node before left (its jobs ended with it, and no one can read them now). */
+  forgetJobs(): void {
+    let names: string[];
+    try {
+      names = readdirSync(this.root);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (name.startsWith(".")) continue;
+      rmSync(join(this.root, name, "jobs"), { recursive: true, force: true });
+    }
   }
 
   /** Every job ends with the node. */
   stop(): void {
     for (const [agent, mine] of this.jobs) for (const job of mine.jobs.keys()) this.kill(agent, job);
+  }
+}
+
+/** When a step last touched the agent's folder `dir` (its `.used`); 0 for none. */
+function usedAt(dir: string): number {
+  try {
+    return statSync(join(dir, ".used")).mtimeMs;
+  } catch {
+    return 0;
   }
 }
 
@@ -566,9 +689,10 @@ export async function sweepXcode(dir: string, days: number, now = Date.now()): P
 }
 
 /**
- * While the disk holding `root` has less than LOW_FREE free, frees build caches until it has ROOM_FREE, least recently
- * used first and none touched within CACHE_IDLE: Xcode's own DerivedData builds, then each idle agent's DerivedData (its
- * next build starts cold). `busy`'s are never touched, and an agent's pushed repo stays. What went, by name.
+ * While the disk holding `root` has less than LOW_FREE free, frees what fleetd made until it has ROOM_FREE, least
+ * recently used first and none touched within CACHE_IDLE: Xcode's own DerivedData builds, then each idle agent's
+ * DerivedData (its next build starts cold), then each idle agent's whole folder (its next job asks for a push first,
+ * FREED), then the agents' shared cache while no agent is busy. `busy`'s are never touched. What went, by name.
  */
 export async function relieve(
   root: string,
@@ -601,6 +725,31 @@ export async function relieve(
     await rm(data, { recursive: true, force: true });
     await mkdir(data, { recursive: true });
     gone.push(`${f.name}/DerivedData`);
+  }
+  for (const f of agents) {
+    if (free() >= ROOM_FREE) return gone;
+    const dir = join(root, f.name);
+    // Nothing pushed there, or freed already.
+    if (!existsSync(join(dir, "repo"))) continue;
+    await removeFolders(root, [f.name]);
+    // What the sweep goes by stays as it was, and the agent hears why its work is gone.
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, FREED), "");
+    writeFileSync(join(dir, ".used"), "");
+    utimesSync(join(dir, ".used"), f.used / 1000, f.used / 1000);
+    gone.push(f.name);
+  }
+  if (busy.size > 0) return gone;
+  const cache = join(root, ".cache");
+  const cached: { name: string; at: number }[] = [];
+  for (const name of await readdir(cache).catch(() => [] as string[])) {
+    const at = await stat(join(cache, name)).then((s) => s.mtimeMs, () => now);
+    if (at < idle) cached.push({ name, at });
+  }
+  for (const c of cached.sort((a, b) => a.at - b.at)) {
+    if (free() >= ROOM_FREE) return gone;
+    await rm(join(cache, c.name), { recursive: true, force: true });
+    gone.push(`.cache/${c.name}`);
   }
   return gone;
 }

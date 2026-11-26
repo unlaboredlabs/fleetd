@@ -685,10 +685,11 @@ export function diskSpace(machineId: string, offline: boolean, disk: NodeDisk | 
   return machineEntry(machineId, "disk", "warn", message);
 }
 
-/** Below this the agents' Mac's disk warns: it frees build caches by itself from here (node/mac_tool `relieve`). */
+/** Below this the agents' Mac's disk warns: it frees build caches and idle folders by itself from here (node/mac_tool
+ * `relieve`). */
 export const MAC_DISK_LOW = 30e9;
-/** Below this its builds and new simulators fail (ENOSPC). */
-export const MAC_DISK_FULL = 10e9;
+/** Below this it refuses new jobs, pushes and simulators once it has freed what it could (node/mac_tool `FLOOR`). */
+export const MAC_DISK_FULL = 20e9;
 
 /**
  * The agents' Mac's free space, from its heartbeat. It runs no agents, so the disk pause means nothing there; its
@@ -706,13 +707,19 @@ export function macDisk(machineId: string, offline: boolean, disk: NodeDisk | un
     "xcrun simctl delete unavailable",
   );
   if (disk.freeBytes < MAC_DISK_FULL) {
-    return machineEntry(machineId, "disk", "fail", `${space}: iOS builds and new simulators fail for lack of room.`, fix);
+    return machineEntry(
+      machineId,
+      "disk",
+      "fail",
+      `${space}: agents' jobs and new simulators are refused for lack of room, and fleetd has nothing of its own left to free.`,
+      fix,
+    );
   }
   return machineEntry(
     machineId,
     "disk",
     "warn",
-    `${space}: below ${gb(MAC_DISK_LOW)} fleetd frees old builds by itself, and builds start failing below ${gb(MAC_DISK_FULL)}.`,
+    `${space}: below ${gb(MAC_DISK_LOW)} fleetd frees old builds and idle agents' folders by itself, and refuses new jobs below ${gb(MAC_DISK_FULL)}.`,
     fix,
   );
 }

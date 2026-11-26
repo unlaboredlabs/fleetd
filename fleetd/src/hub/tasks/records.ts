@@ -219,15 +219,13 @@ export const TaskRecords = {
   },
 
   /**
-   * The tasks that ended after `since` and can't go on: cancelled, or ended with their worktree no longer kept for
-   * them (removed, or seen by the sweep). Their folders on the agents' Mac go (hub/mac_tool `tellEnded`).
+   * The tasks that ended (done, failed or cancelled) after `since`. Their folders on the agents' Mac go (hub/mac_tool
+   * `tellEnded`): a task that goes on later pushes its work there again, rather than the Mac keeping each finished
+   * task's build for days (W890, Nov 26: its disk full).
    */
-  endedForGood(db: Database, since: string): TaskId[] {
+  endedSince(db: Database, since: string): TaskId[] {
     return db
-      .query<{ n: number }, [string]>(
-        `SELECT n FROM tasks WHERE state IN ('done', 'failed', 'cancelled') AND ended_at > ?1
-               AND (worktree IS NOT NULL OR state = 'cancelled') ORDER BY n`,
-      )
+      .query<{ n: number }, [string]>(`SELECT n FROM tasks WHERE state IN ('done', 'failed', 'cancelled') AND ended_at > ?1 ORDER BY n`)
       .all(since)
       .map((r) => `T${r.n}` as TaskId);
   },
