@@ -4,7 +4,9 @@
 // offers comes from model.ts; the hub checks it all again. Invite someone is the plus beside the page's line
 // (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke. On a fleetd cloud team (a hub that
 // came with the account) the plus invites by email instead, and who is invited so is listed under People
-// (EmailInvites.tsx); a self-hosted hub's page is the one above, with nothing of the cloud on it.
+// (EmailInvites.tsx); and once fleetd's computers are on for it, each row says what that person's work spent on them
+// this month, against their spend limit if one is set (Spend limit… in the row's menu, Limits.tsx). A self-hosted
+// hub's page is the one above, with nothing of the cloud on it.
 import { Mail } from "lucide-react";
 import { useState } from "react";
 import type { HubRole, Invite, PeopleListOutput, Person } from "../../../shared/contracts";
@@ -24,6 +26,8 @@ import { pauseLine } from "../settings/claudeModel";
 import { useNoMachine } from "../settings/claudeParts";
 import { accountsLine, deviceNames, devicesLine, expiresLine, openInvites, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
+import { PersonLimitDialog, STOPPED_PERSON, useLimits } from "./Limits";
+import { limitLine, type MemberLimit } from "../../../shared/billing";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
@@ -86,7 +90,9 @@ export function People({ me }: { me: Person | undefined }) {
 
 function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefined }) {
   const [removing, setRemoving] = useState<PersonRow | null>(null);
+  const [limiting, setLimiting] = useState<MemberLimit | null>(null);
   const rows = peopleRows(list, me);
+  const limits = useLimits();
   const live = useLive();
   const claude = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   const github = useToolQuery("github_app_get", noInput, { enabled: live });
@@ -120,6 +126,7 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
               invite={inviteOf(row)}
               accounts={accounts(row.person.personId)}
               onRemove={() => setRemoving(row)}
+              spend={limits === undefined ? undefined : { row: limits.limits.members.find((m) => m.personId === row.person.personId), currency: limits.state.currency, onSet: setLimiting }}
             />
           ))}
         </SettingsList>
@@ -134,6 +141,7 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
         </SettingsSection>
       )}
       <RemoveDialog row={removing} onClose={() => setRemoving(null)} />
+      <PersonLimitDialog row={limiting} currency={limits?.state.currency ?? "usd"} onClose={() => setLimiting(null)} />
     </>
   );
 }
@@ -144,12 +152,15 @@ function PersonLine({
   invite,
   accounts,
   onRemove,
+  spend,
 }: {
   row: PersonRow;
   me: Person | undefined;
   invite: Invite | undefined;
   accounts: { line: string | null; pause: string | null };
   onRemove: () => void;
+  /** On a cloud workspace on fleetd's computers: this person's spend and limit, and Spend limit… to set it. */
+  spend: { row: MemberLimit | undefined; currency: string; onSet: (row: MemberLimit) => void } | undefined;
 }) {
   const live = useLive();
   const call = useHubCall();
@@ -171,6 +182,8 @@ function PersonLine({
     if (role !== p.role) run("person_set", { personId: p.personId, role }, "Not changed");
   };
   const devices = deviceNames(row.devices.map((d) => d.name));
+  const limit = spend?.row;
+  const limitItem = limit === undefined || spend === undefined ? [] : [{ label: "Spend limit…", onSelect: () => spend.onSet(limit) }];
   return (
     <SettingsListRow
       label={p.name}
@@ -200,8 +213,12 @@ function PersonLine({
               disabled={!live || busy}
               items={[{ label: "Revoke invite", onSelect: () => run("invite_revoke", { inviteId: invite.inviteId }, "Not revoked"), danger: true }]}
             />
-          ) : row.removable ? (
-            <RowMenu label={p.name} disabled={!live || busy} items={[{ label: "Remove from workspace", onSelect: onRemove, danger: true }]} />
+          ) : row.removable || limitItem.length > 0 ? (
+            <RowMenu
+              label={p.name}
+              disabled={!live || busy}
+              items={[...limitItem, ...(row.removable ? [{ label: "Remove from workspace", onSelect: onRemove, danger: true }] : [])]}
+            />
           ) : (
             <span className={a.menuRoom} />
           )}
@@ -214,7 +231,11 @@ function PersonLine({
           : row.invited
             ? "Invited, not joined yet"
             : devicesLine(row.devices.length)}
+        {limit === undefined || spend === undefined ? null : (
+          <span data-spend={limit.limitCents === null ? "none" : String(limit.limitCents)}>{` · spent ${limitLine(limit, spend.currency)}`}</span>
+        )}
       </Text>
+      {limit?.stopped === true ? <Notice tone="warning">{`Reached their spend limit. ${STOPPED_PERSON}`}</Notice> : null}
       {accounts.pause === null ? null : (
         <Notice tone="warning">
           <HubText>{accounts.pause}</HubText>

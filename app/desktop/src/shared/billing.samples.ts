@@ -31,6 +31,26 @@ const base = {
   rates: RATES,
   held: null,
   notice: null,
+  warnings: { on: true, percents: [50, 80, 100], lowCredits: false },
+  warned: null,
+  limits: null,
+};
+
+/**
+ * Each person's and bot's spend this month on the Team plan's $31.20, with limits: Alice's $25, Bob's $10 reached (his
+ * work stopped), the storefront bot's $40. People are fixtures/admin's; the bots' ids are stand-ins a fixture swaps
+ * for its snapshot's.
+ */
+export const SAMPLE_LIMITS = {
+  members: [
+    { personId: "p_aaaaaaaa", name: "Sam Rivera", limitCents: null, spentCents: 14_40, stopped: false },
+    { personId: "p_bbbbbbbb", name: "Alice Chen", limitCents: 25_00, spentCents: 6_80, stopped: false },
+    { personId: "p_cccccccc", name: "Bob Okafor", limitCents: 10_00, spentCents: 10_00, stopped: true },
+  ],
+  bots: [
+    { projectId: "storefront", name: "storefront", limitCents: 40_00, spentCents: 18_70, stopped: false },
+    { projectId: "checkout", name: "checkout", limitCents: null, spentCents: 12_50, stopped: false },
+  ],
 };
 
 const month = { from: "2026-10-01T00:00:00.000Z", to: "2026-10-19T10:30:00.000Z" };
@@ -59,7 +79,7 @@ export const BILLING_SAMPLES = {
     held: "none",
     notice: { message: "This workspace has no plan and no credits, so fleetd can't start a computer for its bots.", fix: "Pick a plan or buy credits.", action: "buy" },
   },
-  /** The Team plan, renewing, with credits left and $10 of them lapsing within 30 days; two sizes used; a cap. */
+  /** The Team plan, renewing, with credits left and $10 of them lapsing within 30 days; two sizes used; a cap; limits. */
   plan: {
     ...base,
     plan: team(),
@@ -73,6 +93,17 @@ export const BILLING_SAMPLES = {
         { cpu: 4, memGb: 8, seconds: 6.5 * 3600, cents: 78 },
       ],
     },
+    limits: SAMPLE_LIMITS,
+  },
+  /** The Team plan past 80% of its $100 cap this month: the warning's line at the top, with Raise cap. */
+  warned: {
+    ...base,
+    plan: team(),
+    credits: { leftCents: 21_60, capCents: 100_00, capSpentCents: 82_40, expiring: null },
+    usage: { ...period, seconds: 96 * 3600, cents: 82_40, bySize: [{ cpu: 8, memGb: 16, seconds: 96 * 3600, cents: 82_40 }] },
+    warned: { kind: "cap", percent: 80 },
+    notice: { message: "This workspace has used 80% of its $100 spend cap this month.", fix: "Raise the cap, or wait for next month." },
+    limits: SAMPLE_LIMITS,
   },
   /** The card for the Team plan declined: the plan lasts to the end of the month paid for, unless it is updated. */
   failed: {

@@ -24,6 +24,11 @@ import {
   sizeWord,
   topLine,
   usageRows,
+  limitLine,
+  limitsSet,
+  readLimit,
+  readWarningsOn,
+  warningsWhen,
   type BillingState,
 } from "./billing";
 import { heldLine, usedWord } from "./provided";
@@ -201,5 +206,55 @@ describe("Stripe's way back", () => {
     expect(paidLine("paid", paid, 0)).toBeNull();
     expect(paidLine("cancelled", none, 0)).toBeNull();
     expect(paidLine(null, none, 0)).toBeNull();
+  });
+});
+
+describe("spend warnings and limits", () => {
+  it("reads them, and an answer from before them as none", () => {
+    const s = state("warned");
+    expect(s.warnings).toEqual({ on: true, percents: [50, 80, 100], lowCredits: false });
+    expect(s.warned).toEqual({ kind: "cap", percent: 80 });
+    expect(s.limits?.members.map((m) => [m.name, m.limitCents, m.stopped])).toEqual([
+      ["Sam Rivera", null, false],
+      ["Alice Chen", 25_00, false],
+      ["Bob Okafor", 10_00, true],
+    ]);
+    const { warnings: _w, warned: _d, limits: _l, ...older } = BILLING_SAMPLES.plan;
+    expect(readBilling(older)).toMatchObject({ warnings: null, warned: null, limits: null });
+  });
+
+  it("refuses an answer whose limits or warnings aren't theirs", () => {
+    const bad = (more: Record<string, unknown>) => readBilling({ ...BILLING_SAMPLES.plan, ...more });
+    expect(bad({ limits: { members: [{ personId: "p1", name: "A", limitCents: -1, spentCents: 0, stopped: false }], bots: [] } })).toBeNull();
+    expect(bad({ limits: { members: [] } })).toBeNull();
+    expect(bad({ warnings: { on: "yes", percents: [50], lowCredits: true } })).toBeNull();
+    expect(bad({ warnings: { on: true, percents: [150], lowCredits: true } })).toBeNull();
+    // A warning this app doesn't know is no warning.
+    expect(bad({ warned: { kind: "other" } })?.warned).toBeNull();
+  });
+
+  it("says a warning as a warning, with Raise cap, not as a stop", () => {
+    expect(topLine(state("warned"))).toEqual({ tone: "warning", message: "This workspace has used 80% of its $100 spend cap this month. Raise the cap, or wait for next month.", fix: "cap" });
+    const low = { ...state("plan"), warned: { kind: "low" as const }, notice: { message: "This workspace's credits are low: $3.12 left, about a day at its recent use.", fix: "Buy credits or pick a plan.", action: "buy" as const } };
+    expect(topLine(low)).toMatchObject({ tone: "warning", fix: "buy" });
+    // Once the cap stops the bots, the stop is what it says.
+    expect(topLine({ ...state("cap"), warned: { kind: "cap", percent: 100 } })?.tone).toBe("danger");
+  });
+
+  it("words when the warnings go and each limit", () => {
+    expect(warningsWhen({ on: true, percents: [50, 80, 100], lowCredits: true })).toBe("At 50%, 80% and 100% of the cap, and when credits run low.");
+    expect(warningsWhen({ on: true, percents: [100], lowCredits: false })).toBe("At 100% of the cap.");
+    expect(limitLine({ limitCents: 25_00, spentCents: 6_80 }, "usd")).toBe("$6.80 of $25 this month");
+    expect(limitLine({ limitCents: null, spentCents: 14_40 }, "usd")).toBe("$14.40 this month");
+    const set = limitsSet(state("plan").limits ?? { members: [], bots: [] });
+    expect([...set.members.map((m) => m.name), ...set.bots.map((b) => b.name)]).toEqual(["Alice Chen", "Bob Okafor", "storefront"]);
+  });
+
+  it("reads a limit set for the one asked about, and the warnings' switch", () => {
+    const row = { personId: "p1", limitCents: 500, spentCents: 120, stopped: false };
+    expect(readLimit(row, { personId: "p1" })).toEqual({ limitCents: 500, spentCents: 120, stopped: false });
+    expect(readLimit(row, { personId: "p2" })).toBeNull();
+    expect(readLimit({ projectId: "b1", limitCents: null, spentCents: 0, stopped: false }, { projectId: "b1" })).toEqual({ limitCents: null, spentCents: 0, stopped: false });
+    expect([readWarningsOn({ on: false }), readWarningsOn({ on: "no" })]).toEqual([false, undefined]);
   });
 });

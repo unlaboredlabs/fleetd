@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BILLING_SAMPLES } from "../../shared/billing.samples";
 import { IPC } from "../../shared/channels";
 import { parseRequest } from "../../shared/ipc";
-import { openBilling, readTeamBilling, setBillingCap } from "./billing";
+import { openBilling, readTeamBilling, setBillingCap, setBillingLimit, setBillingWarnings } from "./billing";
 import type { KeyedTeam } from "./invites";
 
 const TEAM: KeyedTeam = { origin: "https://acme.fleetd.dev", key: "fk_device_key", name: "acme" };
@@ -80,6 +80,27 @@ describe("a cloud team's billing", () => {
     expect(await setBillingCap(member.fetch, TEAM, 100)).toMatchObject({ ok: false, failure: { code: "forbidden" } });
   });
 
+  it("sets a person's or a bot's limit and the warnings, and refuses a member in the team's words", async () => {
+    const { fetch, sent } = standIn((s) => {
+      const body = s.body as Record<string, unknown>;
+      return { status: 200, body: s.url.endsWith("/warnings") ? body : { ...body, spentCents: 6_80, stopped: false } };
+    });
+    expect(await setBillingLimit(fetch, TEAM, { personId: "p_bbbbbbbb" }, 25_00)).toEqual({ ok: true, limit: { limitCents: 25_00, spentCents: 6_80, stopped: false } });
+    expect(await setBillingLimit(fetch, TEAM, { projectId: "storefront" }, null)).toEqual({ ok: true, limit: { limitCents: null, spentCents: 6_80, stopped: false } });
+    expect(await setBillingWarnings(fetch, TEAM, false)).toEqual({ ok: true, on: false });
+    expect(sent.map((s) => [s.method, s.url.replace(TEAM.origin, ""), s.body])).toEqual([
+      ["POST", "/billing/v1/limit", { personId: "p_bbbbbbbb", limitCents: 25_00 }],
+      ["POST", "/billing/v1/limit", { projectId: "storefront", limitCents: null }],
+      ["POST", "/billing/v1/warnings", { on: false }],
+    ]);
+    // An answer for someone else isn't this one's.
+    const other = standIn(() => ({ status: 200, body: { personId: "p_cccccccc", limitCents: 100, spentCents: 0, stopped: false } }));
+    expect(await setBillingLimit(other.fetch, TEAM, { personId: "p_bbbbbbbb" }, 100)).toMatchObject({ ok: false });
+    const member = standIn(() => ({ status: 403, body: { code: "forbidden", message: "Only the workspace's owners and admins set spend limits.", fix: "Ask an owner or admin of the workspace." } }));
+    expect(await setBillingLimit(member.fetch, TEAM, { personId: "p_cccccccc" }, 100)).toMatchObject({ ok: false, failure: { code: "forbidden" } });
+    expect(await setBillingWarnings(member.fetch, TEAM, true)).toMatchObject({ ok: false, failure: { code: "forbidden" } });
+  });
+
   it("takes from the page only a plan or top-up key, the portal, or a cap in cents", () => {
     const ok = (channel: typeof IPC.cloudBillingOpen | typeof IPC.cloudBillingCap, args: unknown[]) => parseRequest(channel, args).ok;
     expect(ok(IPC.cloudBillingOpen, ["hub", { plan: "team" }])).toBe(true);
@@ -87,5 +108,11 @@ describe("a cloud team's billing", () => {
     expect(ok(IPC.cloudBillingOpen, ["hub", { url: "https://evil.example" }])).toBe(false);
     expect(ok(IPC.cloudBillingCap, ["hub", 12.5])).toBe(false);
     expect(ok(IPC.cloudBillingCap, ["hub", null])).toBe(true);
+    const limit = (args: unknown[]) => parseRequest(IPC.cloudBillingLimit, args).ok;
+    expect(limit(["hub", { personId: "p_bbbbbbbb" }, 2500])).toBe(true);
+    expect(limit(["hub", { projectId: "storefront" }, null])).toBe(true);
+    expect(limit(["hub", { personId: "p_bbbbbbbb", projectId: "storefront" }, 2500])).toBe(false);
+    expect(limit(["hub", { personId: "p_bbbbbbbb" }, -1])).toBe(false);
+    expect(parseRequest(IPC.cloudBillingWarnings, ["hub", "off"]).ok).toBe(false);
   });
 });

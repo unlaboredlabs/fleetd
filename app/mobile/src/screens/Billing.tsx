@@ -2,7 +2,8 @@
 // has it: one line at the top when something needs the team (a declined card, no credits, the cap reached) with the
 // one row that fixes it; the plan and when it renews or ends, Choose a Plan or Change Plan; the credits left and the
 // soonest that lapse within 30 days, Add Credits; Manage Payment; the computer time used this period by size; and the
-// monthly spend cap, set in a prompt. Stripe's checkout and portal open in the browser sheet, and the screen reads
+// monthly spend cap, set in a prompt, and its warnings, on or off; and the spend limits set for a person or a bot,
+// read only (they are set on the desktop and the web app). Stripe's checkout and portal open in the browser sheet, and the screen reads
 // again when it closes. Before fleetd's computers are on for the team there is no Billing (Settings lists no row), and
 // a screen opened just as they went off goes back. The iPhone app sells nothing (D733, App Review 3.1.1): there it reads
 // the plan without its price and the credits left, with no Choose a Plan, Change Plan, Add Credits or Manage Payment,
@@ -23,6 +24,8 @@ import {
   failureWords,
   FIX_TITLE,
   hours,
+  limitLine,
+  limitsSet,
   money,
   noBuyWhy,
   planChoice,
@@ -33,6 +36,8 @@ import {
   sizeWord,
   usageRows,
   periodWord,
+  percentsWord,
+  warningsWhen,
   type BillingBuy,
   type BillingState,
   type Got,
@@ -228,9 +233,47 @@ export function Billing() {
           value={state.credits.capCents === null ? "None" : money(state.credits.capCents, state.currency)}
           {...(state.canBuy && busy === null ? { onPress: capPrompt } : {})}
         />
+        {state.warnings === null ? null : (
+          <ListRow title="Spend Warnings" value={state.warnings.on ? "On" : "Off"} {...(state.warnings.on ? { detail: warningsDetail(state) } : {})} />
+        )}
       </ListSection>
+      <Limits state={state} />
       <Problem text={problem} />
     </>,
+  );
+}
+
+/** When the warnings go: with no cap, only low credits warn, which the desktop says the same way. */
+const warningsDetail = (state: BillingState): string => {
+  const w = state.warnings;
+  if (w === null) return "";
+  if (state.credits.capCents !== null) return warningsWhen(w);
+  return w.lowCredits ? `When credits run low. Set a cap to be warned at ${percentsWord(w)} of it too.` : `Set a cap to be warned at ${percentsWord(w)} of it.`;
+};
+
+/**
+ * The spend limits set, a person's or a bot's, this month's spend against each, read only: they are set on the desktop
+ * or the web app. A member's answer holds their own alone. None set: no section.
+ */
+function Limits({ state }: { state: BillingState }) {
+  const t = useTheme();
+  if (state.limits === null) return null;
+  const { members, bots } = limitsSet(state.limits);
+  if (members.length + bots.length === 0) return null;
+  return (
+    <ListSection header="Spend Limits" footer="Reaching one stops only that person's work or that bot on fleetd's computers. Set them on the desktop or web app.">
+      {[
+        ...members.map((m) => ({ key: `person:${m.personId}`, row: m, stopped: "Reached: their work is stopped" })),
+        ...bots.map((b) => ({ key: `bot:${b.projectId}`, row: b, stopped: "Reached: its work is stopped" })),
+      ].map(({ key, row, stopped }) => (
+        <ListRow
+          key={key}
+          title={row.name}
+          value={limitLine(row, state.currency).replace(/ this month$/u, "")}
+          {...(row.stopped ? { detail: stopped, detailColor: t.warning } : {})}
+        />
+      ))}
+    </ListSection>
   );
 }
 

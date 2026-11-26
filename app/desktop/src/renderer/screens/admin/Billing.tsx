@@ -1,8 +1,9 @@
 // Settings › Hub › Billing on a fleetd cloud team (a hub that came with the account), for its owners and admins: the
 // plan and when it renews or ends, the credits left (and the soonest that lapse, within 30 days), the computer time used
-// this period by size, and the team's own monthly spend cap. Change plan, Add credits and Manage payment open Stripe's
+// this period by size, the team's own monthly spend cap and its warnings (on by default: at 50, 80 and 100% of the cap
+// and when credits run low), and the spend limits set for a person or a bot (Limits.tsx). Change plan, Add credits and Manage payment open Stripe's
 // checkout or portal in the browser (main: src/main/cloud/billing.ts); no card is ever typed here. A declined card, no
-// credits or a reached cap is one line at the top with its fix (no credits: Pick a plan and Add credits right under it).
+// credits, a reached cap or a spend warning is one line at the top with its fix (no credits: Pick a plan and Add credits right under it).
 // Every price, included amount and rate is the service's answer (shared/billing.ts). A self-hosted hub has no Billing
 // at all, and a team has none until fleetd's computers are on for it (`useBillingShown`): no entry, no search result,
 // and a link to it lands on People.
@@ -28,6 +29,8 @@ import {
   sizeWord,
   topLine,
   usageRows,
+  percentsWord,
+  warningsWhen,
   type BillingState,
   billingReturnOf,
   PAID_READ_EVERY_MS,
@@ -43,7 +46,8 @@ import { useHub } from "../../src/data/react";
 import { billingKey, useBilling } from "./billingQuery";
 import { useNow } from "../live";
 import { navigate } from "../shell/navigation";
-import { GroupNote, HintLines, Notice, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
+import { GroupNote, HintLines, Notice, PageHead, SettingsRow, SettingsSection, SwitchRow } from "../settings/parts";
+import { LimitsSection } from "./Limits";
 import { useReveal } from "../settings/search";
 import s from "../settings/settings.module.css";
 import b from "./billing.module.css";
@@ -206,6 +210,7 @@ function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: numbe
       </SettingsSection>
       <Usage state={state} nowMs={nowMs} />
       <Cap state={state} field={capField} can={state.canBuy} />
+      <LimitsSection state={state} />
     </>
   );
 }
@@ -347,7 +352,51 @@ function Cap({ state, field, can }: { state: BillingState; field: RefObject<HTML
             </div>
           }
         />
+        <Warnings state={state} can={can} />
       </SettingsSection>
     </div>
+  );
+}
+
+/** The spend warnings' switch: on unless an admin turned it off; a cloud before them shows none. */
+function Warnings({ state, can }: { state: BillingState; can: boolean }) {
+  const hub = useHub().id;
+  const client = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const w = state.warnings;
+  if (w === null) return null;
+  const set = (on: boolean) => {
+    setBusy(true);
+    setError(null);
+    void window.fleetd.cloud
+      .billingWarnings(hub, on)
+      .then(async (out) => {
+        if (!out.ok) return setError(said(out.failure));
+        await client.invalidateQueries({ queryKey: billingKey(hub) });
+      })
+      .finally(() => setBusy(false));
+  };
+  return (
+    <SwitchRow
+      reveal="hub.billing.warnings"
+      title="Spend warnings"
+      hint="An email to the workspace's owners and admins, and a line in each bot's chat on fleetd's computers. Each goes once a month."
+      line={
+        error ??
+        (!w.on
+          ? "Off: nobody is told before the cap stops the bots."
+          : state.credits.capCents === null
+            ? w.lowCredits
+              ? `When credits run low. Set a cap to be warned at ${percentsWord(w)} of it too.`
+              : `Set a cap to be warned at ${percentsWord(w)} of it.`
+            : warningsWhen(w))
+      }
+      lineTone={error === null ? undefined : "danger"}
+      checked={w.on}
+      disabled={!can || busy}
+      onCheckedChange={set}
+      data={{ "data-warnings": String(w.on) }}
+    />
   );
 }

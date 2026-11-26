@@ -2,7 +2,8 @@
 // and WorkOS client id offers it; any other build is the self-hosted app alone, with nothing of this on screen.
 import type { AccountPreview } from "./legal";
 import type { AccountsInvite } from "./contracts";
-import type { BillingBuy, BillingState } from "./billing";
+import type { BillingBuy, BillingState, SpendLimit } from "./billing";
+import type { SigninState } from "./signin";
 import type { HubId } from "./hubs";
 import type { PairFailure } from "./pairing";
 
@@ -121,6 +122,18 @@ export type BillingOpenOutcome = { readonly ok: true } | { readonly ok: false; r
 
 /** The spend cap as the team keeps it now (cents a month, null: none), or why it wasn't set. */
 export type BillingCapOutcome = { readonly ok: true; readonly capCents: number | null } | { readonly ok: false; readonly failure: PairFailure };
+
+/** A person's or a bot's spend limit as the team keeps it now, with this month's spend, or why it wasn't set. */
+export type BillingLimitOutcome = { readonly ok: true; readonly limit: Omit<SpendLimit, "name"> } | { readonly ok: false; readonly failure: PairFailure };
+
+/** The spend warnings on or off as the team keeps them now, or why they weren't changed. */
+export type BillingWarningsOutcome = { readonly ok: true; readonly on: boolean } | { readonly ok: false; readonly failure: PairFailure };
+
+/** A cloud workspace's sign-in (GET ACCOUNTS_SIGNIN_PATH, and a change's answer), or why not. */
+export type SigninOutcome = { readonly ok: true; readonly signin: SigninState } | { readonly ok: false; readonly failure: PairFailure };
+
+/** The page that adds and verifies an email domain opened in the browser, or the workspace's refusal in its words. */
+export type SigninDomainOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };
 
 /** The account deleted for good (`workspaces`: those deleted with it), and its workspaces gone from this app; or the cloud's refusal in its words (the only owner of a workspace with other members, the email typed isn't the account's). */
 /** What deleting the account would take (shared/legal.ts), or why it couldn't be read. */

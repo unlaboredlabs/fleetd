@@ -225,6 +225,13 @@ export const fixtures = [
   "cloud-billing-cap",
   "cloud-billing-off",
   "cloud-billing-unreachable",
+  // ...and a spend warning at 80% of the cap; Sign-in set and empty; spend limits on People, on a bot, and a member's own.
+  "cloud-billing-warned",
+  "cloud-signin-set",
+  "cloud-signin-empty",
+  "cloud-people-limits",
+  "cloud-limits-bot",
+  "cloud-people-member-limit",
   // Hub › Machines on fleetd's computers: no machine of the team's own, one beside them, and a cloud before the pick.
   "cloud-fleetd-only",
   "cloud-fleetd-own",
@@ -5012,8 +5019,36 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.hub.billing",
     route: "#/settings/hub/billing",
-    fixtures: ["cloud-billing-none", "cloud-billing-plan", "cloud-billing-failed", "cloud-billing-cap", "cloud-billing-unreachable"],
+    fixtures: ["cloud-billing-none", "cloud-billing-plan", "cloud-billing-failed", "cloud-billing-cap", "cloud-billing-unreachable", "cloud-billing-warned"],
   },
+  // Sign-in on a fleetd cloud workspace (fixtures/cloud): Google required with a verified domain joining, and nothing
+  // set yet. A self-hosted workspace has no Sign-in row (settings.sheet).
+  { id: "settings.hub.signin", route: "#/settings/hub/signin", fixtures: ["cloud-signin-set", "cloud-signin-empty"] },
+  // Spend limits (admin/Limits.tsx): each person's spend on People with Bob's limit reached, then his Spend limit… dialog;
+  // a bot's limit in its settings; and a member's own in Workspaces & devices.
+  { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["cloud-people-limits"], variant: "limits" },
+  {
+    id: "settings.hub.people",
+    route: "#/settings/hub/people",
+    fixtures: ["cloud-people-limits"],
+    variant: "limit-dialog",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Bob Okafor: more" }).click();
+      await page.getByRole("menuitem", { name: "Spend limit…" }).click();
+      await page.getByRole("dialog", { name: "Bob Okafor's spend limit" }).waitFor();
+    },
+  },
+  {
+    id: "settings.projects",
+    route: "#/settings/projects",
+    fixtures: ["cloud-limits-bot"],
+    variant: "spend-limit",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "storefront" }).click();
+      await page.getByText("Spend limit", { exact: true }).scrollIntoViewIfNeeded();
+    },
+  },
+  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-people-member-limit"], variant: "my-limit" },
   // Before fleetd's computers are on for the team there is nothing to buy, so no Billing: no entry in the index, and its
   // link lands on People, never a page that only says so (W759).
   {

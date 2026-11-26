@@ -61,6 +61,21 @@ fleetd people role <personId> admin        # change a role
 fleetd people remove <personId>            # remove
 ```
 
+## Sign-in on fleetd cloud {#sign-in}
+
+On a fleetd cloud workspace, owners and admins open **Settings › Workspace › Sign-in**:
+
+- **Sign-in method**: any method (Google, GitHub or an emailed code), or **Google only**. With Google only, admins
+  and members signing in another way are refused for this workspace.
+- **Email domains**: **Add domain** (then **Manage domains**) opens a page to add your company's domain and verify it
+  with a DNS record.
+- **People with @yourdomain join automatically**: once a domain is verified, anyone signing in with an email there
+  joins as a member, with no invite. Off by default.
+
+Owners are let in however they sign in, so nobody gets locked out. A change applies from each person's next
+sign-in; anyone already signed in stays signed in. A workspace you run yourself has no Sign-in page: who joins is who
+you invite.
+
 ## Your name and devices {#you}
 
 - **Change your name:** Settings › You › **General**.

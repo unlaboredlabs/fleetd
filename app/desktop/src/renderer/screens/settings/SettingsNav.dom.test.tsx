@@ -371,7 +371,7 @@ it("lands a Billing link on a self-hosted hub on People, and lists no Billing ro
 
 it("covers every tab the routes know with a link that still opens", () => {
   const path = (tab: string) => `#/settings/${tab.startsWith("hub.") ? `hub/${tab.slice(4)}` : tab}`;
-  const covered = new Set([...OLD_LINKS.map(([hash]) => hash.split("?")[0]), "#/settings/hub/billing"]);
+  const covered = new Set([...OLD_LINKS.map(([hash]) => hash.split("?")[0]), "#/settings/hub/billing", "#/settings/hub/signin"]);
   expect(SETTINGS_TABS.map(path).filter((h) => !covered.has(h))).toEqual([]);
 });
 

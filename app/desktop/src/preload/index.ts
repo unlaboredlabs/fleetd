@@ -4,7 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
-import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingLimitOutcome, BillingOpenOutcome, BillingOutcome, BillingWarningsOutcome, SigninDomainOutcome, SigninOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacLeaveOutcome, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -175,6 +175,11 @@ const api: FleetdApi = {
     billing: (hub) => ipcRenderer.invoke(IPC.cloudBilling, hub) as Promise<BillingOutcome>,
     billingOpen: (hub, what) => ipcRenderer.invoke(IPC.cloudBillingOpen, hub, what) as Promise<BillingOpenOutcome>,
     billingCap: (hub, capCents) => ipcRenderer.invoke(IPC.cloudBillingCap, hub, capCents) as Promise<BillingCapOutcome>,
+    billingLimit: (hub, of, limitCents) => ipcRenderer.invoke(IPC.cloudBillingLimit, hub, of, limitCents) as Promise<BillingLimitOutcome>,
+    billingWarnings: (hub, on) => ipcRenderer.invoke(IPC.cloudBillingWarnings, hub, on) as Promise<BillingWarningsOutcome>,
+    signin: (hub) => ipcRenderer.invoke(IPC.cloudSignin, hub) as Promise<SigninOutcome>,
+    signinSet: (hub, change) => ipcRenderer.invoke(IPC.cloudSigninSet, hub, change) as Promise<SigninOutcome>,
+    signinDomain: (hub) => ipcRenderer.invoke(IPC.cloudSigninDomain, hub) as Promise<SigninDomainOutcome>,
     // Get started is the web app's: the desktop lists repos and connects GitHub from New bot and Settings.
     githubRepos: () => Promise.resolve<GithubReposOutcome>({ ok: false, failure: { code: "desktop", message: "The desktop app lists repositories in New bot." } }),
     connectGithub: () => Promise.resolve<ConnectGithubOutcome>({ ok: false, failure: { code: "desktop", message: "Connect GitHub in Settings › Accounts › GitHub." } }),

@@ -38,6 +38,7 @@ import { MachinePage } from "./MachinePage";
 import { ProvidedComputers } from "./Provided";
 import { People } from "./People";
 import { SetupPage } from "./SetupPage";
+import { SigninPage } from "./Signin";
 import { Updates } from "./Updates";
 import { useAdministers, useHubRole, type HubRoleView } from "./role";
 import s from "../settings/settings.module.css";
@@ -151,6 +152,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
       return <Billing />;
     case "hub.audit":
       return <AuditLog />;
+    case "hub.signin":
+      return <SigninPage />;
     case "hub.machines":
       return route.machine === undefined ? <Machines /> : route.machine === RUNNER_ID ? <ToProviders /> : <MachinePage machineId={route.machine} />;
     // Updates is a part of Machines, and Tools & skills of Every project › Agents (settings/route.ts).

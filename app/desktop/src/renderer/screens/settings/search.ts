@@ -34,6 +34,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "hub.machines": "Machines",
   "hub.providers": "Providers",
   "hub.billing": "Billing",
+  "hub.signin": "Sign-in",
   "hub.audit": "Audit log",
   "hub.updates": "Updates",
   "hub.agents": "Agents",
@@ -135,6 +136,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.signins", label: "Sign-ins", tab: "projects", keywords: ["browser", "sign in", "login", "logged in", "cookies", "forget", "sign out"] },
   { key: "projects.skills", label: "Bot skills", tab: "projects", keywords: ["skill", "skills", "learned", "history", "versions", "revert"] },
   { key: "projects.archive", label: "Archive bot", tab: "projects", keywords: ["archive", "bring back", "unarchive", "hide", "restore"] },
+  { key: "projects.limit", label: "Spend limit", tab: "projects", keywords: ["spend limit", "limit", "budget", "cost", "fleetd's computers"] },
   { key: "projects.delete", label: "Delete bot", tab: "projects", keywords: ["remove", "delete", "forget", "project"] },
   page("agents", ["limit", "at once", "parallel"]),
   { key: "agents.project", label: "Max agents", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency"] },
@@ -157,7 +159,10 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.billing.plan", label: "Plan", tab: "hub.billing", keywords: ["plan", "solo", "team", "scale", "upgrade", "subscription", "price"] },
   { key: "hub.billing.credits", label: "Credits", tab: "hub.billing", keywords: ["credits", "top up", "add credits", "balance", "buy"] },
   { key: "hub.billing.usage", label: "Computer time", tab: "hub.billing", keywords: ["usage", "hours", "computer time", "spend", "cost"] },
-  { key: "hub.billing.cap", label: "Spend cap", tab: "hub.billing", keywords: ["cap", "limit", "budget", "spend cap", "monthly"] },
+  { key: "hub.billing.cap", label: "Spend cap", tab: "hub.billing", keywords: ["cap", "budget", "spend cap", "monthly"] },
+  { key: "hub.billing.warnings", label: "Spend warnings", tab: "hub.billing", keywords: ["warnings", "alert", "email", "50%", "80%", "low credits", "notify"] },
+  { key: "hub.billing.limits", label: "Spend limits", tab: "hub.billing", keywords: ["limit", "spend limit", "per member", "per person", "per bot", "budget"] },
+  page("hub.signin", ["sign in", "sign-in", "login", "google only", "require", "email domain", "domain", "join automatically", "auto join"]),
   page("hub.audit", ["audit", "audit log", "log", "history", "who did", "security", "compliance", "export", "csv", "activity"]),
   { key: "hub.add-machine", label: "Add machine", tab: "hub.machines", keywords: ["machine", "ssh", "join", "computer", "this computer"] },
   { key: "hub.roles", label: "Machine roles", tab: "hub.machines", keywords: ["role", "sessions", "browser", "android", "desktop", "mac", "hosts"] },
@@ -193,17 +198,18 @@ const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];
 
 /**
  * What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. The Vault's
- * pages only on a hub that serves it (`vault`); Billing only on a fleetd cloud team (`billing`), where Machines holds
+ * pages only on a hub that serves it (`vault`); Sign-in only on a fleetd cloud workspace (`signin`); Billing, and a bot's spend limit, only on a fleetd cloud team (`billing`), where Machines holds
  * fleetd's computers in place of the providers a team connects with its own key (admin/Provided.tsx). General's
  * Version only where it shows (`version`): never in the web app on fleetd cloud, which updates itself (General.tsx).
  */
-export const optionsFor = (administers: boolean, vault = true, billing = false, version = true): ReadonlyArray<SettingsOption> =>
+export const optionsFor = (administers: boolean, vault = true, billing = false, version = true, signin = false): ReadonlyArray<SettingsOption> =>
   OPTIONS.filter(
     (o) =>
       (administers || !isHubTab(o.tab)) &&
       (vault || !VAULT_TABS.includes(o.tab)) &&
       (version || o.key !== "general.updates") &&
-      (billing || o.tab !== "hub.billing") &&
+      (billing || (o.tab !== "hub.billing" && o.key !== "projects.limit")) &&
+      (signin || o.tab !== "hub.signin") &&
       o.key !== (billing ? "hub.sandboxes" : "hub.provided"),
   );
 

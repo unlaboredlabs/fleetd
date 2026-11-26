@@ -10,12 +10,16 @@
 // with credits, a declined card, the cap reached, and the service not answering; and fleetd's computers not on yet for
 // the team, beside a self-hosted hub, where no Billing shows at all; and `cloud-fleetd-*`, Hub › Machines once
 // fleetd's computers are on for the team: with no machine of its own (they alone run its agents), with one (What runs
-// where's Linux machine a pick between them), and on a cloud that doesn't answer the pick yet.
+// where's Linux machine a pick between them), and on a cloud that doesn't answer the pick yet; `cloud-signin-*`,
+// Workspace › Sign-in: Google required with two domains (one verified, joining on), and nothing set yet; and
+// spend limits: People with each person's spend and limit (Bob's reached), a bot's limit in its
+// settings (`cloud-limits-bot`), and a member's own limit in Workspaces & devices (`cloud-people-member-limit`).
 // Without a `cloud` section every other fixture is today's app.
 import { alice, answerHub, bob, sam } from "../admin/index.ts";
 import { BILLING_SAMPLES, type BillingSample } from "../../src/shared/billing.samples.ts";
 import { Fixture, HUB, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
+import { projectSections } from "../kit/sections.ts";
 import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 
 const TEAM = "https://acme.fleetd.dev";
@@ -125,6 +129,9 @@ const github = (base: Fixture, name: string, note: string, app: JsonObject | nul
 /** Billing on the team acme as its owner, the team answering `GET /billing/v1` as `sample`. */
 const billing = (base: Fixture, sample: BillingSample, note: string): Fixture =>
   admin(base, `cloud-billing-${sample}`, note, { billing: BILLING_SAMPLES[sample] as unknown as JsonObject });
+
+/** Workspace › Sign-in on the team acme as its owner, the team answering `GET /accounts/v1/signin` as `signin`. */
+const signin = (base: Fixture, name: string, note: string, answer: JsonObject): Fixture => admin(base, `cloud-signin-${name}`, note, { signin: answer });
 
 /** The hub's runner for fleetd's computers, as a cloud team's snapshot lists it: no machine of the team's. */
 const RUNNER = { machineId: "hosted", name: "fleetd's computers", runner: true, status: "online", lastSeenAt: "2026-10-19T10:29:00Z", nodeVersion: "1.0.0" };
@@ -312,6 +319,37 @@ export default defineGroup({
       f.hubs = [{ label: "devbox", color: "blue", fixture: own }];
       return f;
     })(),
+    billing(base("typical"), "warned", "Billing past 80% of its spend cap: the warning's line with Raise cap, the warnings on, and the spend limits set."),
+    signin(base("typical"), "set", "Sign-in with Google required, acme.com verified and joining on, acme.io waiting for its DNS record.", {
+      require: "google",
+      domainJoin: true,
+      domains: [
+        { domain: "acme.com", state: "verified" },
+        { domain: "acme.io", state: "pending" },
+      ],
+    }),
+    signin(base("typical"), "empty", "Sign-in on a workspace that set nothing yet: any method, no domain, so joining by domain is off.", { require: null, domainJoin: false, domains: [] }),
+    people(base("chat-empty"), "limits", "People on a cloud workspace on fleetd's computers: each person's spend this month, Alice's and Bob's limits, Bob's reached.", sam, {
+      billing: BILLING_SAMPLES.plan as unknown as JsonObject,
+    }),
+    (() => {
+      // The storefront bot's settings on fleetd's computers, its limit $40 with $18.70 spent: the sample's stand-in id
+      // is the snapshot's own.
+      const f = fleetd(base("typical"), "only", "", false);
+      const g = Fixture.from(f, "cloud-limits-bot", "A bot on fleetd's computers in its settings: its spend limit, $18.70 of $40 this month.");
+      const projects = isObject(g.snapshot) && Array.isArray(g.snapshot["projects"]) ? g.snapshot["projects"].filter(isObject) : [];
+      const id = (title: string) => {
+        const found = projects.find((p) => p["title"] === title)?.["projectId"];
+        return typeof found === "string" ? found : title;
+      };
+      const limits = { ...BILLING_SAMPLES.plan.limits, bots: BILLING_SAMPLES.plan.limits.bots.map((b) => ({ ...b, projectId: id(b.name) })) };
+      g.cloud = { ...g.cloud, billing: { ...BILLING_SAMPLES.plan, limits } as unknown as JsonObject };
+      projectSections(g, { machineId: "hosted", projectId: id("storefront") });
+      return g;
+    })(),
+    people(base("chat-empty"), "member-limit", "A member of a cloud workspace with a spend limit: Workspaces & devices says theirs, $10 of $10 reached.", bob, {
+      billing: { ...BILLING_SAMPLES.plan, canBuy: false, limits: { members: BILLING_SAMPLES.plan.limits.members.filter((m) => m.name === "Bob Okafor"), bots: [] } } as unknown as JsonObject,
+    }),
     fleetd(base("typical"), "only", "Machines on a workspace on fleetd's computers with no machine of its own: they run its bots, at once and time used.", false),
     fleetd(base("typical"), "own", "Machines on a workspace with a machine of its own and fleetd's computers: Linux machine picks between them.", true),
     fleetd(base("typical"), "older", "Machines on fleetd's computers where the cloud doesn't answer the pick yet: still says where agents run.", false, true),

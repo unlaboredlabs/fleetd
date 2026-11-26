@@ -25,10 +25,11 @@ import { readFile } from "../shared/transfer";
 import type { UpdatesState } from "../shared/updates";
 import type { KeyedTeam } from "../main/cloud/invites";
 
-// Invites, GitHub and billing, asked for from Settings only: loaded on their first use, so their checks (zod) stay out
+// Invites, GitHub, billing and sign-in, asked for from Settings only: loaded on their first use, so their checks (zod) stay out
 // of the first load.
 const invites = () => import("../main/cloud/invites");
 const billing = () => import("../main/cloud/billing");
+const signin = () => import("../main/cloud/signin");
 const github = () => import("../main/cloud/github");
 import { externalUrl } from "../main/external";
 import type { Transport } from "../main/hub/link";
@@ -464,6 +465,27 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       billingCap: (hub, capCents) => {
         const team = keyed(hub);
         return team === null ? Promise.resolve(notTeam) : billing().then((m) => m.setBillingCap(teamFetch, team, capCents));
+      },
+      billingLimit: (hub, of, limitCents) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : billing().then((m) => m.setBillingLimit(teamFetch, team, of, limitCents));
+      },
+      billingWarnings: (hub, on) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : billing().then((m) => m.setBillingWarnings(teamFetch, team, on));
+      },
+      signin: (hub) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : signin().then((m) => m.readTeamSignin(teamFetch, team));
+      },
+      signinSet: (hub, change) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : signin().then((m) => m.setTeamSignin(teamFetch, team, change));
+      },
+      // The domain's page is this tab's trip too, as Stripe's is: it comes back to the web app's Sign-in page.
+      signinDomain: (hub) => {
+        const team = keyed(hub);
+        return team === null ? Promise.resolve(notTeam) : signin().then((m) => m.openSigninDomain(teamFetch, team, (url) => Promise.resolve(deps.go(url))));
       },
     },
     system: { hostName: () => Promise.resolve("") },
