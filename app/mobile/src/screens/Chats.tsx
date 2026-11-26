@@ -306,10 +306,11 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       <EmptyState icon="pin" title="No Pinned Chats" body="Swipe a chat right, or hold it, and pin it to keep it on top." />
     ) : filter === "archived" ? (
       <EmptyState icon="archive" title="Nothing Archived" body="Hold a bot in Chats and pick Archive to set it aside here, with everything kept." />
+    ) : firstRunShown(paired, state) ? (
+      // First, before the computer's empty state: it offers the workspace's own machine right here (its join line).
+      <FirstRun open={(step) => (step === "bot" ? root.newChat() : root.settingsAt(step === "where" ? "Billing" : "Claude"))} />
     ) : needsComputer(paired, state) ? (
       <ConnectComputer />
-    ) : firstRunShown(paired, state) ? (
-      <FirstRun open={(step) => (step === "bot" ? root.newChat() : root.settingsAt(step === "where" ? "Billing" : "Claude"))} />
     ) : (
       <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a bot, and its chat shows up here." />
     );
