@@ -3,7 +3,7 @@ import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigat
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
 import type { KeptHub, SavedAccount } from "./cloud/account";
-import type { AgentProviderId, SkillOrigin } from "./desktop";
+import type { AgentProviderId, PairFailure, SkillOrigin } from "./desktop";
 import type { OnSignedIn } from "./screens/Cloud";
 import type { AgentMessage } from "./screens/dms/model";
 import type { VaultItemSummary, VaultKind } from "./screens/vault/types";
@@ -30,6 +30,8 @@ export interface HubContextValue {
   readonly signedIn: OnSignedIn;
   /** Asks first, then drops this phone's key on every team of the account and ends its session. */
   readonly signOutCloud: () => Promise<void>;
+  /** Makes a new empty workspace of the person's own on fleetd cloud, named `name` or the cloud's way, and shows it; why not, or null. */
+  readonly newWorkspace: (name: string) => Promise<PairFailure | null>;
 }
 
 export const HubContext = createContext<HubContextValue | null>(null);

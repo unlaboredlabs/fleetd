@@ -385,6 +385,29 @@ describe("the web shell", () => {
     expect(went).toEqual(["/"]);
   });
 
+  it("makes a new workspace on this origin with the cookie, keeps the session that lists it, and opens on its Get started", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const made = { id: "c1d2e3f4-0000-4000-8000-000000000003", name: "side-project", url: "https://side-project.fleetd.dev" };
+    const refused = setup(() => json({ code: "workspace_cap", message: "You've made 10 workspaces, the most one person can have.", fix: "Delete one you don't use in Settings › Workspace, then make a new one." }, 403));
+    expect(await refused.api.cloud.newWorkspace(ACME, "Side project")).toEqual({
+      ok: false,
+      failure: { code: "workspace_cap", message: "You've made 10 workspaces, the most one person can have.", fix: "Delete one you don't use in Settings › Workspace, then make a new one." },
+    });
+    expect(refused.went).toEqual([]);
+    const { api, calls, went, stored } = setup((path) => (path === "/web/session" ? json({ email: SESSION.email, teams: [...SESSION.teams, made] }) : json({ team: { ...made, made: true } })));
+    expect(await api.cloud.newWorkspace(ACME, " Side project ")).toEqual({ ok: true, hub: "c1d2e3f400004000" });
+    expect(calls[0]).toMatchObject({ path: `/t/${team}/accounts/v1/workspaces`, init: { method: "POST", body: JSON.stringify({ name: "Side project" }) } });
+    expect(header(calls[0]?.init, "authorization")).toBeNull();
+    expect(header(calls[0]?.init, "x-fleetd-web")).toBe("1");
+    expect(went).toEqual([`/?team=${made.id}#/start?at=c1d2e3f400004000`]);
+    // The next page opens at once on the account as it is now, the new workspace among its own.
+    expect(JSON.stringify([...stored.values()])).toContain(made.id);
+    // No name typed: none sent, the cloud names it.
+    const unnamed = setup(() => json({ team: { ...made, made: true } }));
+    await unnamed.api.cloud.newWorkspace(ACME, "  ");
+    expect(unnamed.calls[0]?.init?.body).toBe("{}");
+  });
+
   it("says a sign-out that didn't reach the cloud failed, and stays", async () => {
     const t = setup(() => json({ code: "failed", message: "Something broke." }, 503));
     expect(await t.api.cloud.signOut()).toEqual({ kept: [], failure: { code: "failed", message: "Not signed out: Something broke." } });

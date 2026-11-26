@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacLeaveOutcome, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -211,6 +211,12 @@ export interface FleetdApi {
     revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
     /** The owner deletes a cloud team for good, `name` its name typed again; on success the app forgets it (the web app goes back to its start). Never rejects. */
     deleteTeam(hub: HubId, name: string): Promise<DeleteTeamOutcome>;
+    /**
+     * A new empty workspace of the person's own, asked on `from` (one of their cloud workspaces; the key only says who
+     * asks), named `name` or, empty, as a first one is; connected here and answered as its hub. The web app's page opens on
+     * it instead (it starts again with the new workspace among its own). Never rejects.
+     */
+    newWorkspace(from: HubId, name: string): Promise<NewWorkspaceOutcome>;
     /** Opens GitHub's install page for fleetd's App on a cloud team, as the team answers it. Never rejects. */
     installGithub(hub: HubId): Promise<InstallGithubOutcome>;
     /** A cloud team's plan, credits and use; refused for a hub that didn't come with the account. Never rejects. */

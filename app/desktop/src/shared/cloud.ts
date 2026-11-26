@@ -124,5 +124,8 @@ export type BillingCapOutcome = { readonly ok: true; readonly capCents: number |
 /** The team deleted for good, and gone from this app; or the team's refusal in its words (not the owner, the name typed isn't its name, agents running). */
 export type DeleteTeamOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };
 
+/** A new empty workspace made and connected, the hub it is here; or the cloud's refusal in its words (at the most one person may make, too many new ones from this address). */
+export type NewWorkspaceOutcome = { readonly ok: true; readonly hub: HubId } | { readonly ok: false; readonly failure: PairFailure };
+
 /** An invite taken back, or why not. */
 export type RevokeInviteOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };

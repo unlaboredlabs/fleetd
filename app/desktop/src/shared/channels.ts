@@ -81,6 +81,7 @@ export const IPC = {
   cloudRevokeInvite: "cloud:revoke-invite",
   /** invoke(hub, name) → DeleteTeamOutcome. The owner deletes a cloud team for good, its name typed again (POST ACCOUNTS_TEAM_DELETE_PATH with its key); the app forgets it. */
   cloudDeleteTeam: "cloud:delete-team",
+  cloudNewWorkspace: "cloud:new-workspace",
   /** invoke(hub) → InstallGithubOutcome. Opens GitHub's install page for fleetd's App, as the cloud team answers it (POST GITHUB_INSTALL_PATH with its key). */
   cloudInstallGithub: "cloud:install-github",
   /** invoke(hub) → BillingOutcome. A cloud team's plan, credits and use (GET BILLING_PATH with its key). */

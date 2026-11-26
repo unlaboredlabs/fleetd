@@ -343,6 +343,19 @@ export class CloudAccount {
     return { ok: true, email: answer.email, teams: outcomes, ...(picked === undefined ? {} : { picked }) };
   }
 
+  /**
+   * A workspace the person just made (ACCOUNTS_WORKSPACES_PATH's answer), paired as a sign-in's team of their own is:
+   * the hub it is here, or why it couldn't be connected.
+   */
+  async connectMade(team: AccountsTeam): Promise<{ ok: true; hub: string } | { ok: false; failure: PairFailure }> {
+    const config = this.#ports.config;
+    if (config === null) return failed("", "This app isn't set up to sign in to fleetd.");
+    const out = await this.#pairTeam(config, team, this.#ports.deviceName(), false);
+    if (!out.outcome.ok) return { ok: false, failure: out.outcome.failure };
+    const hub = out.origin === null ? null : this.#ports.heldAt(out.origin);
+    return hub === null ? failed("", `${out.outcome.name} was made, but this app couldn't open it.`, "Sign in again to connect it.") : { ok: true, hub: hub.id };
+  }
+
   /** The empty teams the last sign-in for a move connected: the hubs a hub may move into. */
   moveTargets(): ReadonlyArray<{ readonly hub: CloudHub; readonly name: string }> {
     return this.#empty.flatMap(({ origin, name }) => {
