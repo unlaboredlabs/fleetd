@@ -8,7 +8,7 @@ agents run on, and self-hosted or fleetd cloud, linking to `pricing.html` (`/pri
 go to the cloud's web app, app.fleetd.dev. The models section's marks are each company's own (Anthropic's press kit, Google's own
 sites, OpenAI's brand kit), unaltered but for a crop to the mark: the colour ones in `brand/models/`, the one-colour ones
 inline in the text colour. The pricing page's estimate and its per-hour or per-month prices run on the same live
-plans as the rest of it. That page holds the cloud's plans, computer time and credits, and
+plans as the rest of it. That page holds the cloud's plans (Free, for agents on your own machines, first), computer time and credits, and
 self-hosted and cloud side by side; its prices are fleetd-cloud's (`src/billing/stripe/prices.ts`, `src/billing/rates.ts`)
 and the docs' Billing page, so change the three together. It is dark until
 the reader picks Light with the small icon at the footer's end; the choice is kept under the docs' `starlight-theme` key, where anything but
