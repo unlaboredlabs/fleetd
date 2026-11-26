@@ -35,6 +35,7 @@ import { archiveWords, UNDO_MS } from "../archive";
 import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
+import { Names } from "../ui/Names";
 import { useBeside } from "../ui/pane";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
@@ -572,7 +573,7 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
           ) : null}
           <Text style={[type.subhead, styles.preview, { color: accentLine ? t.accent : t.secondary }]} numberOfLines={accentLine ? 1 : 2}>
             {mine ? <Text style={{ color: t.label }}>You: </Text> : null}
-            {mine ? text.slice(5) : text}
+            <Names text={mine ? text.slice(5) : text} plain />
           </Text>
           <View style={styles.marks}>
             {row.approvals > 0 ? (

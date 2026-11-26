@@ -115,18 +115,18 @@ function DmRow({ message: m, when, onPress }: { message: AgentMessage; when: str
         <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
           <View style={styles.top}>
             <Text style={[type.headline, styles.grow, { color: t.label }]} numberOfLines={1}>
-              <Names text={routeLine(m)} />
+              <Names text={routeLine(m)} plain />
             </Text>
             <Text style={[type.subhead, { color: t.secondary }]}>{when}</Text>
             <Icon name="chevron" size={13} color={t.tertiary} weight="semibold" />
           </View>
           <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={2}>
-            <Names text={opening(m.text)} />
+            <Names text={opening(m.text)} plain />
           </Text>
           <View style={styles.outcome}>
             <OutcomeGlyph glyph={glyphOf(m)} />
             <Text style={[type.footnote, styles.grow, { color: t.secondary }]} numberOfLines={1}>
-              <Names text={rowOutcome(m)} />
+              {rowOutcome(m)}
             </Text>
           </View>
         </View>

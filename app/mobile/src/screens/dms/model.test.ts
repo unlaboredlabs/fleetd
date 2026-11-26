@@ -44,9 +44,11 @@ describe("a bot's DMs between agents", () => {
     expect(rowOutcome(dm("M1", [to("T2577", "woke"), to("T2580", "woke")]))).toBe("Woke them");
     expect(rowOutcome(dm("M1", [to("T2577", "not_woken"), to("T2580", "not_woken")]))).toBe("Didn't wake them");
     expect(rowOutcome(dm("M1", [to("T2577", "refused")]))).toBe("Not sent");
-    expect(rowOutcome(dm("M1", [to("T2577", "delivered"), to("T2567", "not_woken"), to("T2580", "delivered")]))).toBe("Delivered to T2577, T2580 · Didn't wake T2567");
-    expect(rowOutcome(dm("M1", [to("T2577", "delivered"), to("T2539", "refused")]))).toBe("Delivered to T2577 · Not sent to T2539");
-    expect(rowOutcome(dm("M1", [to("T2577", "woke"), to("T2567", "held")]))).toBe("Woke T2577 · Held for T2567");
+    expect(
+      rowOutcome(dm("M1", [to("T2577", "delivered", { title: "Close codes" }), to("T2567", "not_woken", { title: "Reply quotes" }), to("T2580", "delivered")])),
+    ).toBe("Delivered to Close codes, an agent · Didn't wake Reply quotes");
+    expect(rowOutcome(dm("M1", [to("T2577", "delivered", { title: "Close codes" }), to("T2539", "refused")]))).toBe("Delivered to Close codes · Not sent to an agent");
+    expect(rowOutcome(dm("M1", [to("T2577", "woke", { title: "Close codes" }), to("T2567", "held", { title: "Reply quotes" })]))).toBe("Woke Close codes · Held for Reply quotes");
   });
 
   it("marks a row by what most needs a look: not sent, didn't wake, then held, then woke", () => {

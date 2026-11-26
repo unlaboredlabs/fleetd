@@ -64,19 +64,19 @@ const useTitle = (r: Ref): string | undefined => {
   return open ?? (session === undefined ? undefined : (known(session, r.id) ?? undefined));
 };
 
-/** One id by its name (inside a Text). */
-export function Name({ of }: { of: Ref }) {
+/** One id by its name (inside a Text); `plain`, in the words' own weight (a chats list's preview). */
+export function Name({ of, plain = false }: { of: Ref; plain?: boolean }) {
   const title = useTitle(of);
-  return <Text style={title === undefined ? undefined : styles.name}>{title ?? refWord(of)}</Text>;
+  return <Text style={title === undefined || plain ? undefined : styles.name}>{title ?? refWord(of)}</Text>;
 }
 
 /** Words with fleetd's ids in them by name (inside a Text). */
-export function Names({ text }: { text: string }) {
+export function Names({ text, plain = false }: { text: string; plain?: boolean }) {
   const runs = useMemo(() => splitRefs(text), [text]);
   if (runs.length === 1 && typeof runs[0] === "string") return <>{text}</>;
   return (
     <>
-      {runs.map((r, i) => (typeof r === "string" ? <Fragment key={i}>{r}</Fragment> : <Name key={i} of={r} />))}
+      {runs.map((r, i) => (typeof r === "string" ? <Fragment key={i}>{r}</Fragment> : <Name key={i} of={r} plain={plain} />))}
     </>
   );
 }
