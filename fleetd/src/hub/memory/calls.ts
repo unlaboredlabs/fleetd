@@ -7,6 +7,7 @@ import type { MemoryScope, PersonId, PersonRef, ProjectRef, RememberedItem } fro
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { aboutFor } from "../chat/about.ts";
+import { state } from "../chat/flow.ts";
 import { chat } from "../chat/index.ts";
 import { LeadRecords } from "../leads/records.ts";
 import { runHuman } from "../leads/requested.ts";
@@ -179,6 +180,8 @@ export function hold(hub: Hub, r: ProjectRef, item: RememberedItem, by: PersonRe
   if (heldLines(hub.db, r).some((m) => m.remembered !== undefined && same(m.remembered))) return { file, held: true, next };
   const text = item.forgotten === true ? `Waiting for an admin's OK to forget: ${item.text}` : `Waiting for an admin's OK: ${item.text}`;
   chat(hub).add(r, { author: "system", text, remembered: { ...item, ...(by ? { by } : {}), hold: "waiting" } });
+  // It waits on the admins now: their needs-you changes with it.
+  state(hub, r);
   return { file, held: true, next };
 }
 

@@ -152,6 +152,10 @@ test("an admin keeps a held line or not; a member can't; kept, it's written with
   ]);
   expect((await got()).files?.[0]?.authors?.map((a) => a.by?.name)).toEqual(["Bea"]);
   expect(chat(hub).state(PROJECT, false).needsYou).toBe(false);
+  // The apps were told each time: waiting on the admins as the lines were held, then on no one once answered.
+  const told = events(hub).page(0, ["chat.waiting"]).events.map((e) => (e.data as { needsYou: boolean; needsYouFor?: string[] }));
+  expect(told.at(0)?.needsYouFor?.sort()).toEqual(["p-ada", "p-ola"]);
+  expect(told.at(-1)?.needsYou).toBe(false);
   // Answered once is answered.
   expect((await ok(admin, "memory_hold_answer", { projectRef: PROJECT, messageId: first!.messageId, keep: false })).next).toBe("Already kept.");
   // Undo on a waiting line only takes the ask back.

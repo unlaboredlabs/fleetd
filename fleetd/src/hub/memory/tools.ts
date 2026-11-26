@@ -9,6 +9,7 @@ import { allows } from "../auth/index.ts";
 import type { Hub } from "../api/hub.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import { state } from "../chat/flow.ts";
 import { chat } from "../chat/index.ts";
 import { requireHuman, unknownProject } from "../leads/seams.ts";
 import { store } from "../store/hub_store.ts";
@@ -282,6 +283,7 @@ export function register(tools: Registry): void {
     const topic = item.topic === undefined ? {} : { topic: item.topic };
     if (!input.keep) {
       chat(hub).setRemembered(message, { ...item, hold: "dropped" }, `Not kept by ${name}: ${item.text}`);
+      state(hub, r);
       return { ok: true };
     }
     const memory = Memory.of(hub);
@@ -296,6 +298,8 @@ export function register(tools: Registry): void {
     changed(hub, r, item.topic, caller.name);
     const said = item.forgotten === true ? `Forgot, kept by ${name}: ${item.text}` : `Remembered, kept by ${name}: ${item.text}`;
     chat(hub).setRemembered(message, { ...item, hold: "kept" }, said);
+    // No longer waiting on the admins.
+    state(hub, r);
     return { ok: true };
   });
 
@@ -322,6 +326,7 @@ export function register(tools: Registry): void {
     // A held line isn't in memory: its Undo only takes the ask back.
     if (item.hold === "waiting") {
       chat(hub).setRemembered(message, { ...item, hold: "dropped", undone: true });
+      state(hub, r);
       return { ok: true };
     }
     if (item.hold === "dropped") return { ok: true, next: "It was never kept." };
