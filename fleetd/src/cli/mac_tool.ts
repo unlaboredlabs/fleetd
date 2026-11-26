@@ -176,7 +176,8 @@ export function parseRun(args: string[], vars: (name: string) => string | undefi
 export const shQuote = (arg: string) =>
   arg !== "" && /^[A-Za-z0-9\-_./=:@,+%^]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
 
-type Answer = { ok: any } | { text: string; code: number };
+/** `lost`: the node, the hub or the Mac couldn't be reached, which a restart of any of them causes. */
+type Answer = { ok: any } | { text: string; code: number; lost?: boolean };
 
 /** Where the node's half of `mac` runs in this process: a hosted box's folder for it, which the box's session sets. */
 export const MAC_HOME_ENV = "FLEETD_MAC_HOME";
@@ -188,7 +189,7 @@ async function call(step: Record<string, unknown>, waitMs: number): Promise<Answ
     const home = process.env[MAC_HOME_ENV];
     return answer(home ? await here(home, step, process.env.FLEETD_THREAD_ID, process.cwd()) : await nodeCall({ ...step, op: "mac" }, waitMs));
   } catch (error) {
-    return { text: `mac: ${why(error)}\n`, code: UNAVAILABLE };
+    return { text: `mac: ${why(error)}\n`, code: UNAVAILABLE, lost: true };
   }
 }
 
@@ -231,7 +232,8 @@ export function answer(frame: Record<string, unknown>): Answer {
   const error = frame.error as any;
   let text = `mac: ${typeof error?.message === "string" ? error.message : "the node sent no answer"}\n`;
   if (typeof error?.fix === "string") text += `mac: ${error.fix}\n`;
-  return { text, code: error?.code === "machine_offline" || error?.code === "forbidden" ? UNAVAILABLE : 1 };
+  const lost = error?.code === "machine_offline";
+  return { text, code: lost || error?.code === "forbidden" ? UNAVAILABLE : 1, ...(lost ? { lost } : {}) };
 }
 
 const u64 = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
@@ -320,14 +322,41 @@ async function runCommand(line: string[], env: object[], background: boolean, sa
   return followJob(job, true);
 }
 
-/** Prints the job's output from the start; following, until it ends, with its exit code. */
-async function followJob(job: number, follow: boolean): Promise<number> {
+/** How long a job is followed again while its Mac can't be reached: past an update's restarts of the hub and the
+ * Mac's node, which leave the job running there (node/mac_tool/job.ts). */
+export const FOLLOW_AGAIN_FOR = 600_000;
+
+/** Prints the job's output from the start; following, until it ends, with its exit code. A Mac out of reach (a
+ * restart of the hub, this node or the Mac's) is asked again from where the output stopped, for FOLLOW_AGAIN_FOR. */
+export async function followJob(
+  job: number,
+  follow: boolean,
+  ask: (step: Record<string, unknown>) => Promise<Answer> = (step) => call(step, STEP_WAIT_MS),
+  pause: (ms: number) => Promise<unknown> = Bun.sleep,
+): Promise<number> {
   let offset = 0;
+  let lostAt: number | undefined;
+  let wait = 1000;
   for (;;) {
-    const a = await call({ step: "logs", job, offset }, STEP_WAIT_MS);
+    const a = await ask({ step: "logs", job, offset });
     if (!("ok" in a)) {
+      if (a.lost && follow && (lostAt === undefined || Date.now() - lostAt < FOLLOW_AGAIN_FOR)) {
+        if (lostAt === undefined) {
+          lostAt = Date.now();
+          process.stderr.write(`${a.text}mac: job ${job} keeps running on the Mac; following it again once it's back\n`);
+        }
+        await pause(wait);
+        wait = Math.min(wait * 2, 10_000);
+        continue;
+      }
       process.stderr.write(a.text);
+      if (a.lost) process.stderr.write(`mac: job ${job} may still run on the Mac: mac logs ${job} -f follows it\n`);
       return a.code;
+    }
+    if (lostAt !== undefined) {
+      process.stderr.write(`mac: back on the Mac after ${Math.round((Date.now() - lostAt) / 1000)} s; job ${job} goes on\n`);
+      lostAt = undefined;
+      wait = 1000;
     }
     const result = a.ok;
     const data = Buffer.from(typeof result.dataB64 === "string" ? result.dataB64 : "", "base64");

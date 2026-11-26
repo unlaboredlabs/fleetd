@@ -128,6 +128,9 @@ mac pull ../DerivedData/Logs/Test out/test-logs
 
 A command gets none of the agent's secrets unless it passes one with `--env NAME`.
 
+A job keeps running through an update's restarts of the workspace and the Mac's node. `mac run` picks up its output
+where it stopped once the Mac is back.
+
 ## iOS simulators {#sim}
 
 `mac sim start` gives the agent its own iPhone simulator. The agent drives it with

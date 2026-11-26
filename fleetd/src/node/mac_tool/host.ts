@@ -55,6 +55,7 @@ import {
   type Step,
 } from "./protocol.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { type JobSpec, masker } from "./job.ts";
 
 /** An agent's folder nothing touched for this many days goes, and so does a build of Xcode's own DerivedData. */
 export const FOLDER_DAYS = 3;
@@ -132,7 +133,10 @@ async function git(dir: string, args: string[]): Promise<string> {
   return out.stdout;
 }
 
-type Job = { command: string; background: boolean; startedMs: number; child: Subprocess; log: string; exit: number | undefined; followed: number };
+/** A job: its relay's pid (its group's id, job.ts), its log and its end file; `exit` once it ended. */
+type Job = { command: string; background: boolean; startedMs: number; pid: number; log: string; end: string; exit: number | undefined; followed: number; signaled?: number };
+/** What a job's `<n>.json` beside its log keeps for the next node (`adoptJobs`). */
+type JobRecord = { command: string; background: boolean; startedMs: number; pid: number; project: string };
 
 /**
  * A job's shell: zsh as a login shell where there is one, so the agent's tools are on the PATH. A login shell's
@@ -178,12 +182,6 @@ export function jobEnv(
   return env;
 }
 
-/** Masks the values the agent sent along with its job in what the job logs. */
-function masker(named: MacEnv[]): (text: string) => string {
-  const values = named.map((e) => [e.value, `***${e.name}***`] as const).filter(([v]) => v.length >= 4).sort((a, b) => b[0].length - a[0].length);
-  return (text) => values.reduce((t, [v, shown]) => t.split(v).join(shown), text);
-}
-
 export class Host {
   /** Nonces seen within twice the skew. */
   private readonly seen = new Map<string, number>();
@@ -203,6 +201,12 @@ export class Host {
   };
   /** Where a job's log stops growing (LOG_MAX; tests set less). */
   logMax = LOG_MAX;
+  /** The command that holds a job (job.ts): this binary's `mac-job`, or job.ts itself from source. */
+  relay: string[] = Bun.main.startsWith("/$bunfs/") ? [process.execPath, "mac-job"] : [process.execPath, join(import.meta.dir, "job.ts")];
+  /** Whether the Mac's link to the hub is up: while it's down no agent can follow its job, so none counts as left. */
+  linked: () => boolean = () => true;
+  /** The node stopped: what watches its jobs lets go, and the jobs run on for the next one. */
+  private stopped = false;
   /** The upkeep under way, which every caller shares (`housekeep`). */
   private keeping: Promise<string[]> | undefined;
 
@@ -396,70 +400,76 @@ export class Host {
     // The oldest finished jobs' logs go, so an agent's many jobs don't pile up on the disk.
     const finished = [...mine.jobs].filter(([, j]) => j.exit !== undefined);
     for (const [n, j] of finished.slice(0, Math.max(finished.length - JOBS_KEPT + 1, 0))) {
-      rmSync(j.log, { force: true });
+      for (const f of [j.log, j.end, join(dirname(j.log), `${n}.json`)]) rmSync(f, { force: true });
       mine.jobs.delete(n);
     }
     const job = ++mine.next;
     const log = join(agent.dir, "jobs", `${job}.log`);
-    const mask = masker(named);
-    let fd: number;
+    const end = join(agent.dir, "jobs", `${job}.end`);
     try {
-      fd = openSync(log, "w");
+      closeSync(openSync(log, "w"));
+      rmSync(end, { force: true });
     } catch (e) {
       throw failed("the job's log was not made on the Mac", e);
     }
     const cwd = existsSync(repoOf(agent)) ? repoOf(agent) : agent.dir;
-    let child: Subprocess<"ignore", "pipe", "pipe">;
+    const spec: JobSpec = { argv: shellLine(args), cwd, named, logMax: this.logMax };
+    let child: Subprocess<"pipe", "ignore", "ignore">;
     try {
-      child = Bun.spawn(shellLine(args), {
+      // Its own session, so it outlives the node and `kill` ends its whole group; the values to mask go on stdin.
+      child = Bun.spawn([...this.relay, log, end], {
         cwd,
         env: jobEnv(agent, this.cache(), named, process.env, (path) => this.sims?.env(agent.name, path)),
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
+        stdin: "pipe",
+        stdout: "ignore",
+        stderr: "ignore",
         detached: true,
       });
+      child.stdin.write(JSON.stringify(spec));
+      void child.stdin.end();
+      child.unref();
     } catch (e) {
-      closeSync(fd);
       throw failed("the command didn't start on the Mac", e);
     }
-    const entry: Job = { command: mask(args.join(" ")), background, startedMs: this.clock(), child, log, exit: undefined, followed: Date.now() };
+    const entry: Job = { command: masker(named)(args.join(" ")), background, startedMs: this.clock(), pid: child.pid, log, end, exit: undefined, followed: Date.now() };
     mine.jobs.set(job, entry);
-    // Past LOG_MAX, or with the disk full, the output is dropped and the job runs on: its end is still kept.
-    const max = this.logMax;
-    let written = 0;
-    const write = (text: string) => {
-      if (written >= max) return;
-      const bytes = Buffer.from(text);
-      const room = max - written;
-      const kept = bytes.length > room ? Buffer.concat([bytes.subarray(0, room), Buffer.from(`\n[fleetd: this log stops here, at ${Math.round(max / 2 ** 20)} MB; the job runs on]\n`)]) : bytes;
-      written = bytes.length > room ? max : written + bytes.length;
-      try {
-        writeSync(fd, kept);
-      } catch {
-        // The disk is full: what the job says now is lost, never the job.
-      }
-    };
-    const copy = async (stream: ReadableStream<Uint8Array>) => {
-      const decoder = new TextDecoder();
-      for await (const chunk of stream) write(mask(decoder.decode(chunk, { stream: true })));
-    };
-    void Promise.all([copy(child.stdout), copy(child.stderr)]).then(async () => {
-      const code = await child.exited;
-      closeSync(fd);
-      entry.exit = child.signalCode ? 128 + (signalNumber(String(child.signalCode)) ?? 0) : code;
-      // A job that drove the agent's simulator is a line in its screen's log.
-      this.sims?.ran(agent.name, entry.command, entry.exit === 0, this.clock() - entry.startedMs);
-    });
+    const record: JobRecord = { command: entry.command, background, startedMs: entry.startedMs, pid: child.pid, project: agent.project };
+    try {
+      writeFileSync(join(agent.dir, "jobs", `${job}.json`), JSON.stringify(record));
+    } catch {
+      // Without it the job runs on, and only a restarted node loses sight of it.
+    }
+    void child.exited.then(() => this.finish(agent.name, entry));
     if (!background) void this.endUnfollowed(agent.name, job);
     return { step: "run", job };
   }
 
-  /** A foreground job its agent stopped following ends. */
+  /** The job's end as its relay wrote it; none written, it was killed (`signaled`) or its relay died. */
+  private finish(agent: string, entry: Job): void {
+    if (entry.exit !== undefined) return;
+    let code: number | undefined;
+    try {
+      const text = readFileSync(entry.end, "utf8").trim();
+      if (/^[0-9]+$/.test(text)) code = Number(text);
+    } catch {}
+    entry.exit = code ?? (entry.signaled !== undefined ? 128 + entry.signaled : 1);
+    // A job that drove the agent's simulator is a line in its screen's log.
+    this.sims?.ran(agent, entry.command, entry.exit === 0, this.clock() - entry.startedMs);
+  }
+
+  /** A job a node before started: its end, looked for every second until its relay is gone. */
+  private async watch(agent: string, entry: Job): Promise<void> {
+    while (!this.stopped && entry.exit === undefined && alive(entry.pid)) await Bun.sleep(1000);
+    if (!this.stopped) this.finish(agent, entry);
+  }
+
+  /** A foreground job its agent stopped following ends. While the Mac's link is down no one can follow it: that time
+   * doesn't count. */
   private async endUnfollowed(agent: string, job: number): Promise<void> {
     for (;;) {
       const j = this.jobs.get(agent)?.jobs.get(job);
-      if (!j || j.exit !== undefined) return;
+      if (this.stopped || !j || j.exit !== undefined) return;
+      if (!this.linked()) j.followed = Date.now();
       const left = FOREGROUND_IDLE - (Date.now() - j.followed);
       if (left <= 0) {
         this.kill(agent, job);
@@ -501,20 +511,18 @@ export class Host {
       .sort((a, b) => a.job - b.job);
   }
 
-  /** SIGTERM to the job's process group, SIGKILL after KILL_GRACE; false when it wasn't running. */
+  /** SIGTERM to the job's process group (its relay's), SIGKILL after KILL_GRACE; false when it wasn't running. */
   private kill(agent: string, job: number): boolean {
     const j = this.jobs.get(agent)?.jobs.get(job);
     if (!j || j.exit !== undefined) return false;
-    const pgid = j.child.pid;
-    const signal = (sig: NodeJS.Signals) => {
+    const signal = (sig: NodeJS.Signals, n: number) => {
+      j.signaled = n;
       try {
-        process.kill(-pgid, sig);
-      } catch {
-        j.child.kill(sig);
-      }
+        process.kill(-j.pid, sig);
+      } catch {}
     };
-    signal("SIGTERM");
-    setTimeout(() => j.exit === undefined && signal("SIGKILL"), KILL_GRACE);
+    signal("SIGTERM", 15);
+    setTimeout(() => j.exit === undefined && signal("SIGKILL", 9), KILL_GRACE).unref();
     return true;
   }
 
@@ -601,8 +609,12 @@ export class Host {
     );
   }
 
-  /** At the node's start: the job logs a node before left (its jobs ended with it, and no one can read them now). */
-  forgetJobs(): void {
+  /**
+   * At the node's start: the jobs a node before started are their agents' again, those still running watched to their
+   * end (job.ts holds them through the restart); a log without its record (an older node's, whose jobs ended with
+   * it) goes.
+   */
+  adoptJobs(): void {
     let names: string[];
     try {
       names = readdirSync(this.root);
@@ -612,21 +624,75 @@ export class Host {
     for (const name of names) {
       if (name.startsWith(".")) continue;
       const dir = join(this.root, name);
+      const jobs = join(dir, "jobs");
+      let files: string[];
+      try {
+        files = readdirSync(jobs);
+      } catch {
+        continue;
+      }
       let at: Date | undefined;
       try {
         at = statSync(dir).mtime;
       } catch {}
-      rmSync(join(dir, "jobs"), { recursive: true, force: true });
+      const kept = new Set<string>();
+      for (const file of files) {
+        const n = /^([0-9]+)\.json$/.exec(file)?.[1];
+        if (!n) continue;
+        let record: JobRecord;
+        try {
+          record = JSON.parse(readFileSync(join(jobs, file), "utf8")) as JobRecord;
+        } catch {
+          continue;
+        }
+        const log = join(jobs, `${n}.log`);
+        const end = join(jobs, `${n}.end`);
+        if (!existsSync(log) || !Number.isInteger(record.pid)) continue;
+        let mine = this.jobs.get(name);
+        if (!mine) this.jobs.set(name, (mine = { project: record.project, next: 0, jobs: new Map() }));
+        mine.next = Math.max(mine.next, Number(n));
+        const entry: Job = { command: record.command, background: record.background, startedMs: record.startedMs, pid: record.pid, log, end, exit: undefined, followed: Date.now() };
+        mine.jobs.set(Number(n), entry);
+        for (const f of [file, `${n}.log`, `${n}.end`]) kept.add(f);
+        // Its relay, by its pid and the log it holds: a pid another process took since is never its.
+        if (!existsSync(end) && relayOf(record.pid, log)) {
+          void this.watch(name, entry);
+          if (!record.background) void this.endUnfollowed(name, Number(n));
+        } else this.finish(name, entry);
+      }
+      for (const file of files) if (!kept.has(file)) rmSync(join(jobs, file), { recursive: true, force: true });
       // The folder's own time stays: an older node's folder without `.used` goes by it (`usedAt`), and a removal here
       // at each start kept it new for ever (T2970 on Nov 26).
       if (at) utimesSync(dir, at, at);
     }
   }
 
-  /** Every job ends with the node. */
+  /** The node stops: its jobs run on (job.ts) for the next node to take back (`adoptJobs`). */
   stop(): void {
+    this.stopped = true;
+  }
+
+  /** Every job ends: for tests, and a Mac that leaves. */
+  endJobs(): void {
     for (const [agent, mine] of this.jobs) for (const job of mine.jobs.keys()) this.kill(agent, job);
   }
+}
+
+/** Whether `pid` runs. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as { code?: string }).code === "EPERM";
+  }
+}
+
+/** Whether `pid` is the relay holding the job's `log` (job.ts), which its command line names. */
+function relayOf(pid: number, log: string): boolean {
+  if (!alive(pid)) return false;
+  const ps = Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" });
+  return ps.stdout.toString().includes(log);
 }
 
 /** A name fleetd gives an agent's folder: a task's id, or a session's. Only such a folder without `.used` is fleetd's. */
@@ -801,9 +867,6 @@ export async function relieve(
   }
   return gone;
 }
-
-const SIGNALS: Record<string, number> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
-const signalNumber = (name: string) => SIGNALS[name];
 
 function readFrom(path: string, offset: number, max: number): Uint8Array {
   if (!existsSync(path)) return new Uint8Array();
