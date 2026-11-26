@@ -534,7 +534,8 @@ async function phoneAdd(path: string): Promise<void> {
 
 function phoneFlag(kind: "halt" | "pull" | "resume", id: string): void {
   const now = iso(Date.now());
-  const find = (r: PhoneRollout) => r.updates.find((u) => u.id === id);
+  // By its iOS id or either platform's: fleetd's own workspace pulls by the id a phone reported (hub/app_errors/pull.ts).
+  const find = (r: PhoneRollout) => r.updates.find((u) => u.id === id || Object.values(u.platforms).some((p) => p?.id === id));
   updatePhone(
     (r) => {
       const u = find(r);
