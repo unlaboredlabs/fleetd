@@ -122,6 +122,11 @@ const took = (item: CommandApprovalItem): string | undefined => {
 /** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   if (item.permission?.preview !== undefined) return previewOutcome(item.permission.preview, item);
+  // A first visit folds to the site it was about: "Allowed duckduckgo.com".
+  if (item.permission?.site !== undefined && item.permission.checker?.verdict !== "block") {
+    if (item.state === "approved" || item.state === "ran") return { tone: "quiet", text: "Allowed" };
+    if (item.state === "denied") return { tone: "quiet", text: "Not allowed" };
+  }
   const time = took(item);
   switch (item.state) {
     case "open":
@@ -166,16 +171,22 @@ export const needsConfirm = (item: CommandApprovalItem): boolean =>
 /** The lead's line without its code marks, for a folded row's plain text. */
 const plain = (text: string): string => text.replace(/`/gu, "");
 
-/** What an answered approval was about, as one plain line for its folded row. */
+/** What an answered approval was about, as one plain line for its folded row. A tool prompt is always the lead's: no
+ * other session runs with prompts. */
 export const approvalTitle = (item: CommandApprovalItem): string =>
   plain(
     item.gated?.reason ??
       (item.permission === undefined
-        ? "An agent's request"
+        ? "The lead's request"
         : item.permission.preview !== undefined
           ? `· ${answeredWords(item)}`
-          : `An agent wanted to use ${item.permission.toolName}`),
+          : item.permission.site !== undefined
+            ? item.permission.site
+            : `The lead wanted to use ${item.permission.toolName}`),
   );
+
+/** A first visit's buttons: approving allows the site from then on. */
+export const siteWords = { yes: "Allow this site", no: "Not now" } as const;
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
 export const secretTitle = (item: SecretRequestItem): string =>

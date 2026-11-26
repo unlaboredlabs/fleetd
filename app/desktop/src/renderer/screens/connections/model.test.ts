@@ -11,6 +11,7 @@ import {
   isTailnetHost,
   serverNameProblem,
   needsSignIn,
+  onForBots,
   onlyText,
   pickedText,
   splitCommand,
@@ -158,6 +159,15 @@ describe("Connections", () => {
     );
     expect(needsSignIn(server("a", "https://a.example"), { machineId: "devbox", result: { signIn: true } })).toBe(true);
     expect(needsSignIn(server("a", "https://a.example", { oauth: { status: "signed_out", issuer: "x", signingIn: true } }))).toBe(false);
+  });
+
+  it("shows a custom MCP's switch off for bots while it waits on a sign-in (F1868)", () => {
+    const linear = server("linear", "https://mcp.linear.app/sse", { oauth: { status: "signed_out", issuer: "https://linear.app" } });
+    expect(onForBots(linear)).toBe(false);
+    expect(onForBots({ ...linear, oauth: signedIn })).toBe(true);
+    // A Test that found a sign-in counts too, and a switch turned off stays off once signed in.
+    expect(onForBots(server("a", "https://a.example"), { machineId: "devbox", result: { signIn: true } })).toBe(false);
+    expect(onForBots({ ...linear, enabled: false, oauth: signedIn })).toBe(false);
   });
 
   it("splits a command as a shell does and names it after what it runs", () => {

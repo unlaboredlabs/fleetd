@@ -21,7 +21,8 @@ Each bot has an approval mode, under **Settings › Bots** › *your bot* › Bo
 | Checker decides | A separate model checks each action. What you asked for runs; it asks you when unsure, and blocks what looks like an attack. |
 | Ask me about everything | Every such action waits for you. |
 
-Shell commands never ask in any mode. **Ran without asking**, under the mode, lists every action that ran without a card.
+Shell commands never ask in any mode. A browser command that opens a site counts as opening it, even inside a longer
+command: the card names the site once, and **Allow this site** lets the lead open it from then on. **Ran without asking**, under the mode, lists every action that ran without a card.
 
 ## What every mode refuses {#floors}
 

@@ -122,7 +122,14 @@ describe("a command approval", () => {
 
   it("folds to what it was about, as plain text", () => {
     expect(approvalTitle(approval("Q4"))).toBe("Run the database migration on the staging box: it adds the share_snapshots table");
-    expect(approvalTitle(approval("Q8"))).toBe("An agent wanted to use Bash");
+    // A tool prompt is always the lead's (F1838).
+    expect(approvalTitle(approval("Q8"))).toBe("The lead wanted to use Bash");
+  });
+
+  it("folds a first visit to the site it allowed or not (F1839)", () => {
+    const visit = { ...approval("Q8"), permission: { ...approval("Q8").permission!, summary: "agent-browser open https://duckduckgo.com", site: "duckduckgo.com" } };
+    expect([approvalOutcome({ ...visit, state: "approved" })?.text, approvalTitle(visit)]).toEqual(["Allowed", "duckduckgo.com"]);
+    expect(approvalOutcome(visit)?.text).toBe("Not allowed");
   });
 });
 

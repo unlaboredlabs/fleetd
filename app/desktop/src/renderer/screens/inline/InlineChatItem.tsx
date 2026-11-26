@@ -19,6 +19,7 @@ import {
   approvalOffline,
   approvalOutcome,
   approvalTitle,
+  siteWords,
   classWords,
   codeOnly,
   failureLine,
@@ -629,7 +630,9 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const warning = blocked ? { text: "Blocked by the checker", tone: "danger" as const } : preview === undefined ? undefined : actionWarning(preview.action);
   // A lead's proposal for a new project: the card says what approving it makes.
   const made = preview === undefined ? undefined : proposal(preview);
-  const words = blocked ? blockedWords : preview === undefined ? undefined : made !== undefined ? proposalWords : answerWords(preview.action);
+  // A first visit to a site: approving it allows the site from then on.
+  const site = gated === undefined && preview === undefined ? permission?.site : undefined;
+  const words = blocked ? blockedWords : site !== undefined ? siteWords : preview === undefined ? undefined : made !== undefined ? proposalWords : answerWords(preview.action);
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";
@@ -688,7 +691,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
     <Shell ref={section} label="Command to approve" requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {made !== undefined ? "New bot" : preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : gated === undefined ? "Permission" : "Command"}
+          {made !== undefined ? "New bot" : preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : site !== undefined ? "First visit" : gated === undefined ? "Permission" : "Command"}
         </Text>
         {warning === undefined ? null : (
           <Text size="xs" tone={warning.tone} strong>
@@ -733,13 +736,23 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
                     </InlineCode>
                   </>
                 )
+              : site !== undefined
+                ? (
+                    <>
+                      {marks(`${who} wants to open `)}
+                      <InlineCode>
+                        <Exact text={site} ltr />
+                      </InlineCode>
+                    </>
+                  )
               : permission !== undefined
                 ? (
                     <>
-                      An agent wants to use <Exact text={permission.toolName} ltr />
+                      {marks(`${who} wants to use `)}
+                      <Exact text={permission.toolName} ltr />
                     </>
                   )
-              : "An agent needs your OK"}
+              : `${who} needs your OK`}
       </Text>
       <HiddenWarning
         fields={[

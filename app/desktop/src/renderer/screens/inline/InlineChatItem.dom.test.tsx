@@ -183,6 +183,21 @@ describe("a focused approval", () => {
   });
 });
 
+describe("a first visit", () => {
+  it("names the lead and the site, allows the site, and folds to it (F1838)", async () => {
+    const hub = await render("Q50");
+    expect(host.textContent).toContain("First visit");
+    expect(host.textContent).toContain("The lead wants to open duckduckgo.com");
+    expect(host.textContent).not.toContain("An agent");
+    const allow = [...host.querySelectorAll("button")].find((b) => b.textContent === "Allow this site");
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Not now")).toBe(true);
+    act(() => allow!.click());
+    await settle();
+    expect(hub.answers).toEqual([{ requestId: "Q50", decision: "approve" }]);
+    expect(host.textContent).toContain("Allowedduckduckgo.com");
+  });
+});
+
 describe("a failed answer", () => {
   it("is one plain line with Retry, never the hub's message", async () => {
     let fail = true;
@@ -199,7 +214,7 @@ describe("a failed answer", () => {
     await settle();
     expect(hub.answers).toHaveLength(2);
     expect(host.querySelector("[role=alert]")).toBeNull();
-    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
+    expect(host.textContent).toContain("ApprovedThe lead wanted to use Edit");
   });
 
   it("ends a wait that never answers, instead of spinning for ever", async () => {
@@ -361,7 +376,7 @@ describe("a request the hub reopens", () => {
     await refetched();
     await click(button("Approve"));
     await settle();
-    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
+    expect(host.textContent).toContain("ApprovedThe lead wanted to use Edit");
 
     // The hub approved it, then reopened it: new evidence, no answeredAt.
     hub.requests.current = [request("Q10", "approved", undefined, "2026-10-19T10:31:00.000Z")];
@@ -374,7 +389,7 @@ describe("a request the hub reopens", () => {
       hub.send(updated("Q10", "open"));
     });
     await refetched();
-    expect(host.textContent).not.toContain("ApprovedAn agent wanted to use Edit");
+    expect(host.textContent).not.toContain("ApprovedThe lead wanted to use Edit");
     expect(host.textContent).toContain(OFFLINE);
     expect(button("Approve again").disabled).toBe(false);
   });
@@ -459,12 +474,12 @@ describe("a request the hub reopens", () => {
     const hub = await render("Q10");
     await click(button("Approve"));
     await settle();
-    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
+    expect(host.textContent).toContain("ApprovedThe lead wanted to use Edit");
     act(() => {
       hub.send(updated("Q10", "approved"));
     });
     await refetched();
-    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
+    expect(host.textContent).toContain("ApprovedThe lead wanted to use Edit");
     expect(has("Approve")).toBe(false);
   });
 
