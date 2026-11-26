@@ -3354,17 +3354,18 @@ export const screens: readonly Screen[] = [
     },
   },
   // Get started (screens/start), fleetd cloud's first run in the web app, on its sample views (the page itself reads the
-  // team's state, which the dom tests cover): a new team's steps (a computer, Tailscale, Claude with its key and
-  // endpoint or a computer's login, GitHub, a bot), and a teammate's (the team's bots, their own GitHub). Shot at the
-  // narrow size too: a browser can be any width.
+  // team's state, which the dom tests cover): a new team's steps (where agents run, its own machine free beside
+  // fleetd's computers with Tailscale under them, Claude with its key and endpoint or a computer's login, GitHub, a
+  // bot), and a teammate's (the team's bots, their own GitHub). Shot at the narrow size too: a browser can be any width.
   ...Object.entries({
     computer: "computer",
+    "computer-tailscale-signin": "computer",
+    "computer-tailscale-done": "computer",
+    "computer-own": "computer",
     unusable: "computer",
     offline: "computer",
     "hosted-failed": "computer",
     "computers-held": "computer",
-    tailscale: "tailscale",
-    "tailscale-signin": "tailscale",
     "claude-key": "claude",
     claude: "claude",
     "claude-code": "claude",
@@ -3380,6 +3381,18 @@ export const screens: readonly Screen[] = [
     teammate: "project",
     "teammate-open": "project",
   }).map(([sample, step]): Screen => ({ id: `start.${step}`, route: `#/start?sample=${sample}`, fixtures: ["cloud-connect"], variant: sample, sizes: [...defaultSizes, "narrow"] })),
+  // Where agents run on fleetd's computers, one click over from the team's own machine: Pick a plan.
+  {
+    id: "start.computer",
+    route: "#/start?sample=computer",
+    fixtures: ["cloud-connect"],
+    variant: "computer-fleetd",
+    sizes: [...defaultSizes, "narrow"],
+    open: async (page) => {
+      await page.getByRole("radio", { name: /^fleetd's computers/u }).click();
+      await page.getByRole("button", { name: "Pick a plan" }).waitFor();
+    },
+  },
   // Claude's endpoint on the tailnet while Tailscale is off: the line beside it, with Connect Tailscale.
   {
     id: "start.claude",
