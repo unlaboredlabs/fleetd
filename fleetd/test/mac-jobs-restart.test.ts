@@ -3,7 +3,7 @@
 // runs on under its own relay (node/mac_tool/job.ts), the next node takes it back with its output and its end, and the
 // agent's `mac run` follows it again from where its output stopped once the Mac is back.
 import { afterEach, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { followJob } from "../src/cli/mac_tool.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
@@ -39,6 +39,12 @@ async function follow(host: Host, task: string, job: number): Promise<{ out: str
   }
 }
 
+/** What job `job` of `task` logged so far. */
+const logged = (host: Host, task: string, job: number) => {
+  const log = join(host.root, task, "jobs", `${job}.log`);
+  return existsSync(log) ? readFileSync(log, "utf8") : "";
+};
+
 const until = async (ok: () => boolean, ms = 10_000) => {
   for (const end = Date.now() + ms; !ok(); await Bun.sleep(20)) if (Date.now() > end) throw new Error("timed out");
 };
@@ -47,8 +53,14 @@ test("a job outlives its node's restart: the next node takes it back, its output
   const one = mac();
   const agent = one.agent(caller("T1"));
   const env = [{ name: "TOKEN", value: "s3cr3t-value" }];
-  const [run] = (await one.step(agent, { step: "run", args: ["echo before $TOKEN; sleep 1.5; echo after $TOKEN; exit 7"], env, background: false })) as [{ job: number }, Uint8Array];
-  await until(() => readdirSync(join(one.root, "T1", "jobs")).includes(`${run.job}.json`));
+  // It runs until the test lets it go (a file in its folder), so it's running when each node looks, however slow the machine.
+  const [run] = (await one.step(agent, {
+    step: "run",
+    args: ["echo before $TOKEN; while [ ! -e go ]; do sleep 0.05; done; echo after $TOKEN; exit 7"],
+    env,
+    background: false,
+  })) as [{ job: number }, Uint8Array];
+  await until(() => logged(one, "T1", run.job).includes("before"));
   // The node stops, as an update restarts it, with the job still running.
   one.stop();
   expect(one.activity().jobs).toHaveLength(1);
@@ -56,6 +68,7 @@ test("a job outlives its node's restart: the next node takes it back, its output
   const two = mac(one.root);
   two.adoptJobs();
   expect(two.activity().jobs).toEqual([expect.objectContaining({ agent: "T1", projectId: "p1", job: run.job })]);
+  writeFileSync(join(one.root, "T1", "go"), "");
   expect(await follow(two, "T1", run.job)).toEqual({ out: "before ***TOKEN***\nafter ***TOKEN***\n", exitCode: 7 });
   const [ps] = (await two.step(two.agent(caller("T1")), { step: "ps" })) as [{ jobs: { job: number; running: boolean; exitCode?: number; command: string }[] }, Uint8Array];
   expect(ps.jobs).toEqual([expect.objectContaining({ job: run.job, running: false, exitCode: 7, command: expect.stringContaining("$TOKEN") })]);
@@ -73,7 +86,8 @@ test("a job the next node took back ends with mac kill, and one whose relay is g
   const one = mac();
   const agent = one.agent(caller("T2"));
   const [run] = (await one.step(agent, { step: "run", args: ["echo up; sleep 30"], env: [], background: true })) as [{ job: number }, Uint8Array];
-  await until(() => readdirSync(join(one.root, "T2", "jobs")).includes(`${run.job}.json`));
+  // Killed only once it said so: a kill before its first line leaves nothing to read.
+  await until(() => logged(one, "T2", run.job) === "up\n");
   one.stop();
 
   const two = mac(one.root);
