@@ -93,19 +93,38 @@ const HOMEBREW_BINS = ["/opt/homebrew/bin", "/usr/local/bin"];
  * action named (`xcodebuild -workspace … -scheme …`, as `expo run:ios` runs it) builds too: before it counted, those
  * filled Xcode's own DerivedData, which nothing swept (24 GB on Nov 22). Only a line that reads or exports, never
  * builds, goes on as it was.
+ *
+ * A build waits its turn for one of the Mac's build slots (`$FLEETD_MAC_BUILD_SLOT`, `macBuilds`) and uses its share
+ * of the Mac's cores (`-jobs $FLEETD_MAC_BUILD_JOBS`, unless the line names its own): on Nov 26 eight builds at once,
+ * each on every core, kept 152 compilers running and the Mac's load between 300 and 470.
  */
 export const XCODEBUILD = `#!/bin/sh
-# fleetd: each agent's builds keep their own DerivedData on the agents' Mac ($FLEETD_MAC_DERIVED_DATA).
+# fleetd: each agent's builds keep their own DerivedData on the agents' Mac ($FLEETD_MAC_DERIVED_DATA), and wait
+# their turn for one of its build slots.
 builds=
+settings=
+own=
+jobs=
 for a in "$@"; do
   case "$a" in
-    -derivedDataPath|-list|-version|-showsdks|-showdestinations|-showTestPlans|-license|-checkFirstLaunchStatus|-runFirstLaunch|-downloadPlatform|-downloadAllPlatforms|-importPlatform|-exportArchive|-exportNotarizedApp|-exportLocalizations|-importLocalizations|-create-xcframework|-find-executable|-find-library|-usage|-help|-h)
+    -list|-version|-showsdks|-showdestinations|-showTestPlans|-license|-checkFirstLaunchStatus|-runFirstLaunch|-downloadPlatform|-downloadAllPlatforms|-importPlatform|-exportArchive|-exportNotarizedApp|-exportLocalizations|-importLocalizations|-create-xcframework|-find-executable|-find-library|-usage|-help|-h)
       exec /usr/bin/xcodebuild "$@" ;;
-    build|build-for-testing|test|test-without-building|analyze|archive|clean|docbuild|-resolvePackageDependencies|-showBuildSettings|-workspace|-project|-scheme|-target|-alltargets)
+    -showBuildSettings)
+      settings=1 ;;
+    -derivedDataPath)
+      own=1 ;;
+    -jobs)
+      jobs=1 ;;
+    build|build-for-testing|test|test-without-building|analyze|archive|clean|docbuild|-resolvePackageDependencies|-workspace|-project|-scheme|-target|-alltargets)
       builds=1 ;;
   esac
 done
-[ -n "$builds" ] && exec /usr/bin/xcodebuild "$@" -derivedDataPath "$FLEETD_MAC_DERIVED_DATA"
+[ -n "$builds" ] || [ -n "$settings" ] || exec /usr/bin/xcodebuild "$@"
+[ -n "$own" ] || set -- "$@" -derivedDataPath "$FLEETD_MAC_DERIVED_DATA"
+# Its settings, read where its builds go (expo run:ios finds the app by them), never wait for a slot.
+[ -z "$settings" ] || exec /usr/bin/xcodebuild "$@"
+[ -n "$jobs" ] || [ -z "$FLEETD_MAC_BUILD_JOBS" ] || set -- "$@" -jobs "$FLEETD_MAC_BUILD_JOBS"
+[ -z "$FLEETD_MAC_BUILD_SLOT" ] || exec "$FLEETD_MAC_BUILD_SLOT" /usr/bin/xcodebuild "$@"
 exec /usr/bin/xcodebuild "$@"
 `;
 
@@ -203,6 +222,8 @@ export class Host {
   logMax = LOG_MAX;
   /** The command that holds a job (job.ts): this binary's `mac-job`, or job.ts itself from source. */
   relay: string[] = Bun.main.startsWith("/$bunfs/") ? [process.execPath, "mac-job"] : [process.execPath, join(import.meta.dir, "job.ts")];
+  /** The Mac's build slots (macBuilds): the command a build waits in (heavy_slots.ts), and the jobs each runs. */
+  builds: { slot: string; jobs: number } | undefined;
   /** Whether the Mac's link to the hub is up: while it's down no agent can follow its job, so none counts as left. */
   linked: () => boolean = () => true;
   /** The node stopped: what watches its jobs lets go, and the jobs run on for the next one. */
@@ -419,7 +440,10 @@ export class Host {
       // Its own session, so it outlives the node and `kill` ends its whole group; the values to mask go on stdin.
       child = Bun.spawn([...this.relay, log, end], {
         cwd,
-        env: jobEnv(agent, this.cache(), named, process.env, (path) => this.sims?.env(agent.name, path)),
+        env: {
+          ...(this.builds ? { FLEETD_MAC_BUILD_SLOT: this.builds.slot, FLEETD_MAC_BUILD_JOBS: String(this.builds.jobs) } : {}),
+          ...jobEnv(agent, this.cache(), named, process.env, (path) => this.sims?.env(agent.name, path)),
+        },
         stdin: "pipe",
         stdout: "ignore",
         stderr: "ignore",

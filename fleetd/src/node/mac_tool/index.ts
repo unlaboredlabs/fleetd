@@ -5,8 +5,9 @@
 // A Mac that runs agents (`ownMac`) is both: its agents' `mac` goes to the client, which the hub sends back to this
 // same node's host (hub/machine_roles/mac.ts `macFor`), so they get its simulators and Xcode through the same steps,
 // their jobs in their own worktrees. It makes its golden simulator only once an agent first asks for one.
-import { rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { availableParallelism } from "node:os";
+import { dirname, join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
 import type { MacCallFrame } from "../../shared/screens_wire.ts";
@@ -26,6 +27,8 @@ import { homeDir } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient, worktreeOf } from "./client.ts";
 import { Host } from "./host.ts";
+import { macBuilds } from "./protocol.ts";
+import { memTotal } from "../build_slots.ts";
 import { installShim, launchEnv, refreshForwarders } from "./shim.ts";
 
 export { worktreeOf } from "./client.ts";
@@ -101,9 +104,15 @@ const simSetting = (node: Node) => {
   return Number.isInteger(setting) && setting > 0 ? setting : undefined;
 };
 
-/** The hub's `mac_call`s to the host, their answers back as `mac_result`. */
+/** The hub's `mac_call`s to the host, their answers back as `mac_result`. Its jobs' builds wait their turn for the
+ * Mac's build slots (`buildSlots`). */
 function answerCalls(node: Node, h: Host): void {
   h.linked = () => node.area("link").current !== undefined;
+  try {
+    h.builds = buildSlots(node.home, self(node));
+  } catch (e) {
+    console.warn(`${new Date().toISOString()} WARN the Mac's build slots were not set up: builds run at once {"error":${JSON.stringify(String(e))}}`);
+  }
   onHub(node, "mac_call", (f) => {
     const frame = f as unknown as MacCallFrame;
     void h.answer(frame).then((answer) => toHub(node, { t: "mac_result", ...answer }));
@@ -246,6 +255,18 @@ export const noScreen = (frame: ScreenControlFrame) => ({
   id: frame.id,
   error: { code: "not_found" as const, message: `Screen ${frame.sessionId} isn't live here any more.` },
 });
+
+/** The command a build on the Mac waits in (host.ts XCODEBUILD): a heavy-run slot of the Mac's own (heavy_slots.ts),
+ * as many as `macBuilds` sizes from its cores and memory, under `<node home>/heavy-slots`. */
+export function buildSlots(home: string, exe: string[], cores = availableParallelism(), mem = memTotal()): { slot: string; jobs: number } {
+  const { slots, jobs } = macBuilds(cores, mem);
+  const quoted = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
+  const slot = join(home, "mac", "build-slot");
+  mkdirSync(dirname(slot), { recursive: true });
+  const script = `#!/bin/sh\n# fleetd's: a build on the Mac waits its turn for one of its ${slots} build slots.\nexec ${exe.map(quoted).join(" ")} heavy-slot --slots ${slots} ${quoted(home)} "$@"\n`;
+  if (!existsSync(slot) || readFileSync(slot, "utf8") !== script) writeFileSync(slot, script, { mode: 0o755 });
+  return { slot, jobs };
+}
 
 /** How often the Mac looks for old folders and builds, and for a disk short of room (host.ts `housekeep`): a cold
  * iOS build writes gigabytes in minutes. */

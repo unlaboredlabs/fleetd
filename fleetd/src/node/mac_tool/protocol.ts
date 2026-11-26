@@ -113,6 +113,13 @@ export function safePart(name: string): string | undefined {
 
 /** iOS simulators agents may have booted at once: about 3 GB each, the Mac keeping 8 GB for itself, at least 1. */
 export const simBudget = (memBytes: number) => Math.max(Math.floor(Math.max(Math.floor(memBytes / 2 ** 30) - 8, 0) / 3), 1);
+/** Builds a Mac runs at once, each on `jobs` of its cores: one per 4 cores, and one per 4 GB past the 8 GB the Mac keeps
+ * for itself and its simulators; at least one. The agents' Mac (12 cores, 16 GB) runs 2, at 6 jobs each. */
+export function macBuilds(cores: number, memBytes: number | undefined): { slots: number; jobs: number } {
+  const mem = memBytes === undefined ? Infinity : Math.floor(Math.max(Math.floor(memBytes / 2 ** 30) - 8, 0) / 4);
+  const slots = Math.max(1, Math.min(Math.floor(cores / 4), mem));
+  return { slots, jobs: Math.max(2, Math.floor(cores / slots)) };
+}
 /** Simulators a Mac runs at once unless its screens settings say otherwise: a person's own Mac stays usable, and four
  * made the agents' Mac sluggish enough to time agents out. A small Mac runs fewer (`simBudget`). */
 export const SIMS_DEFAULT = 2;
