@@ -30,9 +30,10 @@ export function Runs({ automationId, projectRef }: { automationId: string; proje
             <StatusChip tone={chip.tone} inRow>
               {chip.label}
             </StatusChip>
-            <Text size="xs" tone="quiet">
+            {/* What it said, on one line: its message's first line opens the message in the chat. */}
+            <Text size="xs" tone="quiet" className={s.said}>
               {note !== null && r.messageId !== undefined ? (
-                <a href={messageHref(projectRef, r.messageId)} title="Open in the chat">
+                <a className={s.saidLink} href={messageHref(projectRef, r.messageId)} title={`${note}\nOpen in the chat`}>
                   {note}
                 </a>
               ) : (
