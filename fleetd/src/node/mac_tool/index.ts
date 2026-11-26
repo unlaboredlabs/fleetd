@@ -103,6 +103,7 @@ const simSetting = (node: Node) => {
 
 /** The hub's `mac_call`s to the host, their answers back as `mac_result`. */
 function answerCalls(node: Node, h: Host): void {
+  h.linked = () => node.area("link").current !== undefined;
   onHub(node, "mac_call", (f) => {
     const frame = f as unknown as MacCallFrame;
     void h.answer(frame).then((answer) => toHub(node, { t: "mac_result", ...answer }));
@@ -257,9 +258,9 @@ const housekeeping = new WeakMap<Host, Timer[]>();
  * while the disk is short, now and every SWEEP_EVERY; what agents do on it written for the menu bar whenever it
  * changes (activity.rs). */
 function startHousekeeping(node: Node, h: Host, macScreen = true): void {
-  // What a node before left that no one can use now: its jobs' logs, and its Mac screen sessions' folders (neither
-  // outlives the node).
-  h.forgetJobs();
+  // The jobs a node before started are their agents' again (they outlive it); its Mac screen sessions' folders go
+  // (they don't).
+  h.adoptJobs();
   if (macScreen) rmSync(join(macDir(node.home), "sessions"), { recursive: true, force: true });
   // One sweep at a time (host.ts `housekeep`): a slow one (a big build's folder, a mirror's gc) is never started again under itself.
   const clean = () => {
@@ -281,7 +282,7 @@ export async function ended(node: Node, action: NodeAction): Promise<NodeActionR
   return { id: action.id, ok: true, message: gone.length === 0 ? "no ended task's folder here" : `removed ${gone.join(", ")}` };
 }
 
-/** Every job on the Mac ends with its node; the simulators it lent run on, for the next node to take over. */
+/** The jobs and simulators the Mac lent run on past its node, for the next node to take over. */
 export async function stop(node: Node): Promise<void> {
   if (!isAgentsMac(node) && !isOwnMac(node)) return;
   const h = host(node);
