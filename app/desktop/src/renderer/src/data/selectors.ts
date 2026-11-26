@@ -350,6 +350,17 @@ export const selectLeadAtWork = perKey((key) => (s: DataState): "live" | "held" 
   selectLeadWorking(key)(s) === true ? "live" : !s.fresh && s.chatStates[key]?.leadWorking === true ? "held" : undefined,
 );
 
+/**
+ * The lead's turn waits on something outside it, not at a step: its start held or failed (a cloud team's billing, no
+ * computer free) or the turn parked at Claude's usage limit. A message then waits for that, not for its next step.
+ */
+export const selectLeadHeld = perKey((key) => (s: DataState): boolean => {
+  const at = key.indexOf("/");
+  const lead = s.live.lanes[leadLaneId({ machineId: key.slice(0, at), projectId: key.slice(at + 1) })];
+  const a = lead?.activity?.activity;
+  return lead?.status === "parked" || (a?.kind === "starting" && a.failed !== undefined);
+});
+
 /** The hub can stop a lead mid-turn: false until it said so on this connection. */
 export const selectCanStop = (s: DataState): boolean => s.fresh && s.chatStop === true;
 
