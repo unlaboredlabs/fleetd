@@ -2,6 +2,7 @@
 // `agent_lanes`, `machines`, `slots`, with orders' `live_lane`, phase's lane statuses and agents' task reads). Tasks come
 // through hub/tasks' records, leads (their state and parked) through hub/leads.
 import type {
+  ActivityNow,
   LaneStatus,
   LeadState,
   LiveLane,
@@ -10,6 +11,7 @@ import type {
   SlotState,
   Task,
   ThreadRef,
+  UsageParked,
   WorkstreamId,
 } from "../../../shared/contracts.ts";
 import type { Hub } from "../../api/hub.ts";
@@ -89,13 +91,22 @@ export function leadLaneStatus(state: LeadState, parked: boolean, threadStatus: 
   }
 }
 
-/** orders/mod.rs `live_lane`: what is doing comes only with a working lane. */
-export function liveLane(laneId: string, status: LaneStatus, parts: LiveParts | undefined): LiveLane {
+/**
+ * A lane parked at a usage limit, as a retry: its class ("usage_limit", "rate_limit") and when fleetd tries it again
+ * (the reset the limit named, else its next check), so the chat says that in place of a "Thinking" that counts on.
+ */
+export function parkedActivity(parked: UsageParked): ActivityNow {
+  const at = parked.resumeAt ?? parked.checkAt;
+  return { activity: { kind: "retrying", attempt: 1, of: 1, reason: parked.class, ...(at === undefined ? {} : { retryAt: at }) }, since: parked.since };
+}
+
+/** orders/mod.rs `live_lane`: what is doing comes only with a working lane, and a parked one's wait. */
+export function liveLane(laneId: string, status: LaneStatus, parts: LiveParts | undefined, parked?: UsageParked): LiveLane {
   const working = status === "working" || status === "starting";
   return {
     laneId,
     status,
-    ...(working && parts?.activity ? { activity: parts.activity } : {}),
+    ...(working && parts?.activity ? { activity: parts.activity } : status === "parked" && parked !== undefined ? { activity: parkedActivity(parked) } : {}),
     ...(parts?.tokens ? { tokens: parts.tokens } : {}),
     ...(parts ? { spark: parts.spark } : {}),
   };
@@ -113,7 +124,7 @@ function taskLane(hub: Hub, task: Task, focus: boolean): LaneNow {
   const status = taskLaneStatus(task, task.threadRef ? threadStatus(hub, task.threadRef) : undefined);
   const parts = task.threadRef ? activity(hub).live(task.threadRef) : undefined;
   return {
-    lane: liveLane(task.taskId, status, parts),
+    lane: liveLane(task.taskId, status, parts, task.parked),
     ...(focus && parts?.text ? { text: parts.text } : {}),
     ...(task.threadRef ? { thread: task.threadRef } : {}),
   };
@@ -128,7 +139,7 @@ function leadLanes(hub: Hub, projects: ProjectRef[], focus: boolean): LaneNow[] 
     const thread = { machineId: r.machineId, threadId: lead.threadId };
     const status = leadLaneStatus(lead.state, lead.parked !== undefined, executors(hub).tracked(thread)?.summary.status);
     const parts = activity(hub).live(thread);
-    out.push({ lane: liveLane(leadLaneId(r), status, parts), ...(focus && parts?.text ? { text: parts.text } : {}), thread });
+    out.push({ lane: liveLane(leadLaneId(r), status, parts, lead.parked), ...(focus && parts?.text ? { text: parts.text } : {}), thread });
   }
   return out;
 }
@@ -174,10 +185,11 @@ export function boardLanes(hub: Hub, caller: Caller): LaneNow[] {
     .filter((t) => t.endedAt !== undefined && t.endedAt >= cutoff);
   lanes.push(...readableTasks(hub, caller, ended).map((t) => taskLane(hub, t, false)));
   const readable = new Set(readableProjects(hub, caller).map(refKey));
-  // chat/flow.rs `lead_working`: the lead's own state says it works.
+  // chat/flow.rs `lead_working`: the lead's own state says it works; a lead parked at a usage limit is mid-turn too,
+  // and its lane says the limit and when it tries again (parkedActivity).
   const working = leads(hub)
     .list()
-    .filter((l) => readable.has(refKey(l.projectRef)) && l.state === "working")
+    .filter((l) => readable.has(refKey(l.projectRef)) && (l.state === "working" || l.parked !== undefined))
     .map((l) => l.projectRef);
   lanes.push(...leadLanes(hub, working, false));
   return lanes;

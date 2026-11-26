@@ -3,7 +3,7 @@ import { afterAll, expect, test } from "bun:test";
 import { StreamText } from "../src/hub/executor/activity.ts";
 import { activity } from "../src/hub/executor/activity.ts";
 import { executors } from "../src/hub/executor/index.ts";
-import { leadLaneStatus, taskLaneStatus } from "../src/hub/app_ws/live/lanes.ts";
+import { leadLaneStatus, liveLane, taskLaneStatus } from "../src/hub/app_ws/live/lanes.ts";
 import { type LaneNow, LIVE_MAX_FRAME_BYTES, Pump, type TickInput } from "../src/hub/app_ws/live/pump.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { build } from "../src/hub/serve/index.ts";
@@ -260,4 +260,19 @@ test("a board lane goes out as its agent moves and as a task starts, not on the 
   await app.next(has("T4"), 3000);
   expect(performance.now() - sent).toBeLessThan(400);
   app.close();
+});
+
+// The second quality sweep: a lead parked at a usage limit sent a lane with no step, and the chat read "Thinking" for
+// the whole wait. Parked, the lane says its limit and when fleetd tries it again, as a retry the apps word.
+test("a parked lane carries its limit and next try as a retry", () => {
+  const since = "2026-11-26T22:16:12.000Z";
+  const parked = { class: "usage_limit", since, resumeAt: "2026-11-26T23:00:00.000Z" } as const;
+  expect(liveLane("lead:a/p", "parked", undefined, parked)).toEqual({
+    laneId: "lead:a/p",
+    status: "parked",
+    activity: { activity: { kind: "retrying", attempt: 1, of: 1, reason: "usage_limit", retryAt: "2026-11-26T23:00:00.000Z" }, since },
+  });
+  const checked = liveLane("T1", "parked", undefined, { class: "rate_limit", since, checkAt: "2026-11-26T22:17:12.000Z" });
+  expect(checked.activity?.activity).toEqual({ kind: "retrying", attempt: 1, of: 1, reason: "rate_limit", retryAt: "2026-11-26T22:17:12.000Z" });
+  expect(liveLane("T1", "idle", undefined, parked).activity).toBeUndefined();
 });

@@ -360,6 +360,16 @@ describe("Claude not serving the lead's turn", () => {
     expect(wakeWords(w, T + 64_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying…" });
   });
 
+  // The second quality sweep: a turn parked at a usage limit read "Thinking 0:53" for the whole wait. The workspace
+  // now gives the parked lane its limit and next try as a retry (app_ws/live/lanes.ts parkedActivity).
+  test("a turn parked at a usage limit says so, and when it tries again", () => {
+    const parked = (reason: string, at?: number): Activity => ({ kind: "retrying", attempt: 1, of: 1, reason, ...(at === undefined ? {} : { retryAt: iso(at) }) });
+    const w = (a: Activity) => some({ working: true, waiting: true, asked, activity: a, activitySince: T });
+    expect(wakeWords(w(parked("usage_limit", 3_600_000)), T + 60_000, "UTC")).toEqual({ words: "Claude’s usage limit is reached, retrying at 11:00" });
+    expect(wakeWords(w(parked("rate_limit", 120_000)), T + 60_000, "UTC")).toEqual({ words: "Claude is busy (rate-limited), retrying at 10:02" });
+    expect(wakeWords(w(parked("pool_exhausted")), T + 60_000, "UTC")).toEqual({ words: "Claude’s usage is used up; the lead carries on once there’s more" });
+  });
+
   test("a hub that doesn’t say since when: the row’s step and time, as before", () => {
     const w = some({ working: true, waiting: true, asked, activity: retrying("overloaded") });
     expect(w).toEqual({ phase: "working" });
