@@ -113,8 +113,11 @@ it("says a plain word for one that is gone, and never its id", async () => {
 it("shows ids in a message's markdown as chips, a code span of one id too, and leaves code blocks alone", async () => {
   preloadMarkdown();
   await mount(<Markdown source={"Done: `T5945` and **W890**.\n\n```\nT5945\n```"} />);
-  await settle();
-  expect(chips().map((c) => c[1])).toEqual(["Get started home", "Launch readiness"]);
+  // The parser is its own chunk: under load it lands after a few turns, so wait for it rather than for one settle.
+  await vi.waitFor(async () => {
+    await settle();
+    expect(chips().map((c) => c[1])).toEqual(["Get started home", "Launch readiness"]);
+  });
   expect(host.querySelector("pre")?.textContent).toContain("T5945");
 });
 
