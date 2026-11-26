@@ -127,7 +127,7 @@ describe("a command approval", () => {
   });
 
   it("folds a first visit to the site it allowed or not (F1839)", () => {
-    const visit = { ...approval("Q8"), permission: { ...approval("Q8").permission!, summary: "agent-browser open https://duckduckgo.com", site: "duckduckgo.com" } };
+    const visit = { ...approval("Q8"), permission: { threadId: "t-lead", requestId: "perm-9", toolName: "Bash", summary: "agent-browser open https://duckduckgo.com", site: "duckduckgo.com" } };
     expect([approvalOutcome({ ...visit, state: "approved" })?.text, approvalTitle(visit)]).toEqual(["Allowed", "duckduckgo.com"]);
     expect(approvalOutcome(visit)?.text).toBe("Not allowed");
   });

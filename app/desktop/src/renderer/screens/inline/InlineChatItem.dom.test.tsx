@@ -191,7 +191,8 @@ describe("a first visit", () => {
     expect(host.textContent).not.toContain("An agent");
     const allow = [...host.querySelectorAll("button")].find((b) => b.textContent === "Allow this site");
     expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Not now")).toBe(true);
-    act(() => allow!.click());
+    expect(allow).toBeDefined();
+    act(() => allow?.click());
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q50", decision: "approve" }]);
     expect(host.textContent).toContain("Allowedduckduckgo.com");

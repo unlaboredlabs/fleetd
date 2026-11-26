@@ -72,7 +72,7 @@ test("a project outside the repo installs the package, imports every entry point
     code: 0,
     out: JSON.stringify({
       filed: [["Q1", "denied", "expired: the run ended"], ["Q2", "approved", "allowed on devbox, answered by human:desk"]],
-      answers: [{ behavior: "allow", updatedInput: { command: "ls" } }],
+      answers: [{ behavior: "allow", updatedInput: { file_path: "notes.md" } }],
       project: { machineId: "devbox", projectId: "P1" },
       confirmPays: true,
       personOnly: false,
@@ -182,7 +182,8 @@ import { promptVerdict, visitCarriesData } from "fleetd/hub/project_lead/prompt_
 const at = "2026-01-01T00:00:00.000Z";
 const rows: HumanRequest[] = [];
 const answers: PermissionDecision[] = [];
-let pending = { requestId: "r1", toolName: "Bash", summary: "ls", input: { command: "ls" } as unknown };
+// A tool that asks: a shell command never does (D311).
+let pending = { requestId: "r1", toolName: "Write", summary: "notes.md", input: { file_path: "notes.md" } as unknown };
 const row = (id: string) => rows.find((r) => r.requestId === id)!;
 const a: PromptApprovals = {
   deps: {
@@ -218,7 +219,7 @@ const a: PromptApprovals = {
 };
 const event = (seq: number, type: string, requestId?: string): HubEvent => ({
   seq, at, type, summary: type, machineId: "devbox", projectId: "P1", threadId: "T1",
-  ...(requestId ? { data: { permission: { requestId, toolName: "Bash", summary: "ls" } } } : {}),
+  ...(requestId ? { data: { permission: { requestId, toolName: "Write", summary: "notes.md" } } } : {}),
 });
 await onThreadEvent(a, event(1, "thread.waiting", "r1"));
 await onThreadEvent(a, event(2, "thread.completed"));
