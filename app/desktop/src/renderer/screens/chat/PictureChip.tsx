@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Button, cx, Text, Tooltip } from "../../ui";
 import { fmtBytes } from "./attachments";
 import type { Attached } from "./drafts";
-import c from "./composer.module.css";
+import c from "./pictureChip.module.css";
 import v from "./viewer.module.css";
 
 export function PictureChip({ a, onRemove, onRetry }: { a: Attached & { thumb: NonNullable<Attached["thumb"]> }; onRemove: () => void; onRetry: (() => void) | undefined }) {

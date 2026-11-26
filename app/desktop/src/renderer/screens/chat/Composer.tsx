@@ -14,14 +14,14 @@ interface ProjectRef {
 }
 
 import { ArrowUp, Check, Paperclip, Reply, RotateCw, Square, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AttachmentRef, ChatAbout } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectLeadAtWork, selectLeadWorking } from "../../src/data/selectors";
-import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
-import { PictureChip } from "./PictureChip";
+import { Button, cx, IdChip, preloadable, preloadWhenIdle, Text, Tooltip, Truncate } from "../../ui";
+import { onWeb } from "../../src/web";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
 import { composerSendOn } from "../live/steerModel";
@@ -35,6 +35,11 @@ import { hubName } from "../shell/model";
 import c from "./composer.module.css";
 
 const IN_CHAT = '[data-screen="chat"], [data-screen^="chat."]';
+
+// A picture's square loads on first use, not with the first chat: on the web once the app is idle, on the desktop at once.
+const PictureChipView = preloadable(() => import("./PictureChip").then((m) => m.PictureChip));
+if (onWeb()) preloadWhenIdle(PictureChipView);
+else PictureChipView.preload().catch(() => undefined);
 
 /** A folder among the dropped items: that's a project to add, not a file for the lead. */
 const hasFolder = (data: DataTransfer): boolean =>
@@ -292,12 +297,13 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           <div className={c.chips}>
             {draft.attached.map((a) =>
               a.thumb !== undefined ? (
-                <PictureChip
-                  key={a.local}
-                  a={{ ...a, thumb: a.thumb }}
-                  onRetry={a.upload && !a.upload.ok && a.file !== undefined ? () => drafts.retry(projectKey, a.local) : undefined}
-                  onRemove={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
-                />
+                <Suspense key={a.local} fallback={null}>
+                  <PictureChipView
+                    a={{ ...a, thumb: a.thumb }}
+                    onRetry={a.upload && !a.upload.ok && a.file !== undefined ? () => drafts.retry(projectKey, a.local) : undefined}
+                    onRemove={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
+                  />
+                </Suspense>
               ) : (
                 <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
                   <Truncate expand="none" size="xs" tone="inherit">

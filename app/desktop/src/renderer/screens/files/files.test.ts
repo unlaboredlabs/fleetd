@@ -6,7 +6,8 @@ import type { Call } from "../../../shared/contracts";
 import { parseDelimited, toTsv } from "./csv";
 import { hasHeader, letters, rangeName, selectedText, summary } from "./grid";
 import { langForPath } from "../../ui/markdown/highlighter";
-import { CODE, showOf, showsInside } from "./kind";
+import { kindWord, showsInside } from "./cardKind";
+import { CODE, showOf } from "./kind";
 import { fileSource } from "./source";
 import { columnOf, excelDate, isDateCode, openWorkbook, percentDecimals, readSheet, xmlText } from "./xlsx";
 import { entryText, zipEntries, type Ranged } from "./zip";
@@ -26,6 +27,10 @@ describe("showOf", () => {
     expect(showOf("chart.png", "image/png")).toEqual({ as: "image" });
     expect(showsInside("notes.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(false);
     expect(showsInside("all.zip", "application/zip")).toBe(false);
+    // The card's quick answer agrees with how the file shows.
+    for (const [name, mime] of [["temps.csv", "text/csv"], ["q3.xlsx", XLSX], ["a.pdf", "application/pdf"], ["a.png", "image/png"], ["notes.txt", "text/plain"], ["a.zip", "application/zip"], ["a.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]] as const)
+      expect(showsInside(name, mime)).toBe(showOf(name, mime).as !== "app");
+    expect([kindWord("a.md", "text/plain"), kindWord("a.py", "text/plain"), kindWord("a.log", "text/plain"), kindWord("a.csv", "text/csv"), kindWord("a.pdf", "application/pdf")]).toEqual(["Markdown", "Python", "Text", "CSV", "PDF"]);
   });
   it("names code's language as the highlighter does", () => {
     for (const [ext, lang] of Object.entries(CODE)) expect(langForPath(`a.${ext}`)).toBe(lang);

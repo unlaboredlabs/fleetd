@@ -6,7 +6,7 @@ import { Download, File, FileArchive, FileImage, FileSpreadsheet, FileText, Pres
 import { useState } from "react";
 import { glyphOf, type FileGlyph } from "../../../../shared/files";
 import { useDataLayer } from "../../../src/data/react";
-import { kindWord } from "../../files/kind";
+import { kindWord } from "../../files/cardKind";
 import { openChatFile } from "../../files/open";
 import { Button, Text, toast, Truncate } from "../../../ui";
 import { fmtBytes } from "../attachments";
