@@ -444,6 +444,117 @@ it("switches to a hub's home when the chat last open on it is gone, and to Get s
   expect(streaming()).toBeNull();
 });
 
+describe("a bot the workspace doesn't list (W890)", () => {
+  const OTHER = "#/project/hosted/9e95bb40-7023-4211-b29d-e790a41455c8";
+  const screenOf = () => host.querySelector<HTMLElement>("[data-screen^='chat'], [data-screen='home.empty']")?.dataset["screen"] ?? null;
+
+  it("opens a new, empty workspace on Get started, never another workspace's bot kept in the address", async () => {
+    window.location.hash = OTHER;
+    await mount([{ id: "hub", label: "wsl-hq8" }]);
+    act(() => {
+      hub("hub").send(live());
+      hub("hub").send(empty);
+    });
+    await settle();
+    await settle();
+    expect(window.location.hash).toBe("#/");
+    expect(screenOf()).toBe("home.empty");
+    expect(host.textContent).not.toContain("removed");
+    // Its chat, asked for before the workspace's list came, is closed, and it was never kept as the workspace's last.
+    expect(streaming()).toBeNull();
+    expect(window.localStorage.getItem("fleetd.lastChats")).toBeNull();
+  });
+
+  it("opens the workspace's own home bot instead of a bot it doesn't list", async () => {
+    window.location.hash = OTHER;
+    await mount([{ id: "hub", label: "devbox" }]);
+    act(() => {
+      hub("hub").send(live());
+      hub("hub").send(project("devbox", "storefront"));
+    });
+    await settle();
+    await settle();
+    expect(window.location.hash).toBe("#/project/devbox/storefront");
+    expect(streaming()).toBe("hub:storefront");
+    expect(host.querySelector("[data-screen='chat.missing']")).toBeNull();
+  });
+
+  it("goes to a workspace's own home, not another workspace's bot named on it", async () => {
+    await mount([
+      { id: "hub", label: "Personal" },
+      { id: "a1b2", label: "Acme" },
+      { id: "c3d4", label: "Studio" },
+    ]);
+    twoByTwo();
+    act(() => {
+      hub("c3d4").send(live());
+      hub("c3d4").send(empty);
+    });
+    await settle();
+    // Acme's billing, on Personal: Personal's home.
+    await open("#/project/laptop/billing?at=hub");
+    await settle();
+    expect(window.location.hash).toBe("#/project/devbox/Ada?at=hub");
+    expect(streaming()).toBe("hub:Ada");
+    // On Studio, which has no bot: Get started.
+    await open("#/project/laptop/billing?at=c3d4");
+    await settle();
+    expect(currentRoute()).toMatchObject({ id: "home", at: "c3d4" });
+    expect(screenOf()).toBe("home.empty");
+    expect(streaming()).toBeNull();
+  });
+
+  it("never opens a workspace on a last chat kept on another workspace", async () => {
+    // The last chat opened anywhere was Acme's billing; Studio has kept none of its own.
+    window.localStorage.setItem("fleetd.lastProject", "a1b2:laptop/billing");
+    window.localStorage.setItem("fleetd.lastChats", JSON.stringify({ a1b2: "a1b2:laptop/billing" }));
+    await mount([
+      { id: "a1b2", label: "Acme" },
+      { id: "c3d4", label: "Studio" },
+    ]);
+    act(() => {
+      hub("a1b2").send(live());
+      hub("a1b2").send(withTwo("laptop", "billing", "ledger"));
+      hub("c3d4").send(live());
+      hub("c3d4").send(empty);
+    });
+    await settle();
+    await open("#/?at=c3d4");
+    await settle();
+    expect(currentRoute()).toMatchObject({ id: "home", at: "c3d4" });
+    expect(screenOf()).toBe("home.empty");
+    expect(streaming()).toBeNull();
+  });
+
+  it("says a bot removed while open was removed, in workspace words, with Back to bots", async () => {
+    await mount([{ id: "hub", label: "devbox" }]);
+    act(() => {
+      hub("hub").send(live());
+      hub("hub").send(withTwo("devbox", "storefront", "Ada"));
+    });
+    await settle();
+    await open("#/project/devbox/storefront/agents");
+    await act(() => import("../panel/ProjectPanel"));
+    await settle();
+    expect(streaming()).toBe("hub:storefront");
+    expect(host.querySelector("#project-panel")).not.toBeNull();
+    // Removed while open: the next snapshot no longer lists it.
+    act(() => hub("hub").send(project("devbox", "Ada")));
+    await settle();
+    expect(window.location.hash).toBe("#/project/devbox/storefront/agents");
+    const gone = host.querySelector<HTMLElement>("[data-screen='chat.missing']");
+    expect(gone?.textContent).toContain("This bot was removed.");
+    expect(gone?.textContent).not.toMatch(/hub/iu);
+    // No panel of its agents beside it.
+    expect(host.querySelector("#project-panel")).toBeNull();
+    act(() => [...(gone?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Back to bots")?.click());
+    await settle();
+    await settle();
+    expect(window.location.hash).toBe("#/project/devbox/Ada");
+    expect(streaming()).toBe("hub:Ada");
+  });
+});
+
 it("keeps each hub's last chat across a restart of the app", async () => {
   const start = async () => {
     await mount([

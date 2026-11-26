@@ -62,11 +62,15 @@ const lastChats = (): Record<string, unknown> => {
   const v: unknown = JSON.parse(window.localStorage.getItem(LAST_CHATS) ?? "{}");
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
 };
-/** The last chat opened (its row key): on `hub`, else on any; a hub with none kept yet has the last one, if it is its. */
+/**
+ * The last chat opened (its row key): on `hub`, else on any. A hub's own is only ever its own, never one kept on another
+ * hub or account; the home it opens is matched against the hub's own bots all the same (homeProject).
+ */
 const readLast = (hub?: HubId): string | null => {
   try {
-    const own = hub === undefined ? undefined : lastChats()[hub];
-    return typeof own === "string" ? own : window.localStorage.getItem(LAST_PROJECT);
+    if (hub === undefined) return window.localStorage.getItem(LAST_PROJECT);
+    const own = lastChats()[hub];
+    return typeof own === "string" ? own : null;
   } catch {
     return null;
   }
@@ -228,14 +232,28 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   // (the route alone can still say home). The frame is its hub's, so leaving the hub closes it.
   const layer = useDataLayer();
   const chatKey = open === null ? null : projectId(open);
+  // A bot this hub doesn't list never opens: an address or link kept from another workspace or account (a new
+  // person's first screen, W890) goes to this hub's home instead, Get started on one with no bot yet. One the hub
+  // listed while it was open and no longer does was removed: its chat says so, with a way back (ChatScreen).
+  const listed = useData((st) => chatKey !== null && chatKey in st.projects);
+  const fresh = useData((st) => st.fresh);
+  const [seen, setSeen] = useState<string | null>(null);
+  if (listed && seen !== chatKey) setSeen(chatKey);
+  const gone = chatKey !== null && fresh && !listed;
+  const stray = gone && seen !== chatKey;
+  useEffect(() => {
+    if (stray && !sheet) navigate({ id: "home", at: route.at }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stray]);
+  const streamed = stray ? null : chatKey;
   // At commit, not after the paint: its first read (chat_history) is on the way to the chat's rows.
   useLayoutEffect(() => {
-    if (chatKey === null) {
+    if (streamed === null) {
       layer.chat.close();
       return;
     }
-    layer.chat.open(chatKey);
-  }, [layer, chatKey]);
+    layer.chat.open(streamed);
+  }, [layer, streamed]);
   useEffect(() => () => layer.chat.close(), [layer]);
   // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens on this hub.
   const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast(route.at));
@@ -243,13 +261,13 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const panel = useProjectPanel(screen);
   // What shows under the Settings sheet isn't a chat you opened: it never becomes the one `#/` opens.
   useEffect(() => {
-    if (openKey === null || sheet) return;
+    if (openKey === null || sheet || !listed) return;
     try {
       keepLast(route.at, openKey);
     } catch {
       // Without storage the app opens on the first project instead; nothing else depends on it.
     }
-  }, [openKey, sheet, route.at]);
+  }, [openKey, sheet, route.at, listed]);
   // A chat opened in a folded section (a notification, ⌘K, a hub's last chat) unfolds it, so it shows where it lives:
   // once each time it is opened, so its section folded while it is open stays folded.
   const openRow = openKey === null || sheet ? undefined : projects?.find((p) => p.key === openKey);
@@ -391,8 +409,9 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
             </Boundary>
           ) : undefined
         }
-        aside={chrome && panel.shown ? <PanelSlot panel={panel} sidebarPx={showSidebar ? sidebarPx : 0} /> : undefined}
-        asideOpen={panel.open}
+        // A removed bot's agents, PRs and plan are gone with it: its chat says so, with no panel beside it.
+        aside={chrome && panel.shown && !gone ? <PanelSlot panel={panel} sidebarPx={showSidebar ? sidebarPx : 0} /> : undefined}
+        asideOpen={panel.open && !gone}
       >
         <div className={s.column} data-under={under || undefined}>
           {/* Over the chat they float under the top row, as it does, rather than push the conversation down as they
@@ -413,7 +432,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
             ) : null}
           </div>
           <div className={s.screen} data-held={held || undefined}>
-            {shown.id === "home" && projects !== undefined && !projects.some((p) => p.hub === route.at) ? (
+            {stray ? null : shown.id === "home" && projects !== undefined && !projects.some((p) => p.hub === route.at) ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
                 <Suspense fallback={null}>
                   <FirstRun onAddProject={() => go({ id: "projects.add" })} />

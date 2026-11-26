@@ -369,6 +369,8 @@ export const fixtures = [
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
+  // ...and the bot on screen removed while its chat is open (W890).
+  "resilience-bot-removed",
   // W733: a busy bot's long chat with pictures, read up through, and the link dropping while scrolled up (fixtures/scroll).
   "scroll-still",
   "scroll-drop",
@@ -508,6 +510,8 @@ export interface Screen {
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+/** A bot of another workspace (the person's screenshot, W890): no fixture's hub lists it. */
+const STRAY_BOT = "#/project/hosted/9e95bb40-7023-4211-b29d-e790a41455c8";
 /** One of storefront's browser sessions, open in the panel (fixtures/sessions). */
 const SESSION_ROUTE = (id: string) => `${CHAT}/sessions/${id}`;
 
@@ -2717,6 +2721,21 @@ export const screens: readonly Screen[] = [
     replay: true,
     realClock: true,
   },
+  // W890: the bot on screen removed while open says so in workspace words, with Back to bots. The fixture's first run
+  // has removed it before the route opens (a bot the hub doesn't list goes home), so the page loads again on its chat
+  // and the timeline removes it while it is open.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["resilience-bot-removed"],
+    variant: "removed",
+    expect: "error",
+    open: async (page) => {
+      await page.evaluate((hash) => window.history.replaceState(null, "", hash), CHAT);
+      await page.reload();
+      await page.locator('[data-screen="chat.missing"]').waitFor({ timeout: 10_000 });
+    },
+  },
   // W733: the conversation moves only by the wheel. Read up through a history of pictures and image blocks, each
   // loading as it comes near: what is on screen never jumps (a picture growing above it, or in view).
   {
@@ -2868,8 +2887,9 @@ export const screens: readonly Screen[] = [
       }
     },
   },
-  // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
-  { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
+  // A link to a bot the hub doesn't have (here, a hub with none) goes to its home (W890; chat~removed has a bot removed
+  // while open, which says so).
+  { id: "home.empty", route: CHAT, fixtures: ["empty"], variant: "missing" },
   // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
   // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
   // not run, denied, running).
@@ -3164,7 +3184,8 @@ export const screens: readonly Screen[] = [
     open: (page) => expect(page.getByText("Pull requests show once you’re connected.")).toBeVisible(),
   },
   { id: "prs", route: PRS, fixtures: ["typical"], variant: "narrow", sizes: ["narrow"] },
-  { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  // ...its PRs too: the hub's home, no panel of a bot it doesn't have (W890).
+  { id: "home.empty", route: PRS, fixtures: ["empty"], variant: "missing-prs" },
   {
     id: "prs",
     route: CHAT,
@@ -3225,6 +3246,12 @@ export const screens: readonly Screen[] = [
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old", "offline-held"],
   },
   { id: "home.empty", route: "#/", fixtures: ["empty"] },
+  // W890: an address kept from another workspace or account, naming a bot this one doesn't have, never opens it: an
+  // empty workspace lands on its own home (Get started, or Where agents run on a new cloud team), one with bots on its
+  // home bot, never "This bot was removed".
+  { id: "home.empty", route: STRAY_BOT, fixtures: ["empty"], variant: "stray" },
+  { id: "setup.machine", route: STRAY_BOT, fixtures: ["cloud-connect"], variant: "stray" },
+  { id: "chat", route: STRAY_BOT, fixtures: ["typical"], variant: "stray" },
   // Settings opened from the sidebar opens as a sheet over it; closing it returns focus to the control that opened it.
   {
     id: "shell",
