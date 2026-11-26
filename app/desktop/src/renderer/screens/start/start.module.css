@@ -353,8 +353,12 @@
   }
 }
 
+/* A word of the join line, whole on its line (never a flag split), unless it is longer than the line: the code the
+   cloud mints is one 50-odd-character token, which then breaks inside rather than running out of the box. */
 .word {
-  white-space: nowrap;
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .ok {
