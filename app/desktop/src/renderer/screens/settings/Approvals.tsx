@@ -1,8 +1,8 @@
 // A project's approvals (its Projects page; W239): how its lead's risky actions (sends, shares, a site it opens on its
-// own for the first time, a final confirm on a site) are approved, and the log of what ran without asking, each row
-// linking to its line in the project's chat: the newest few, repeats folded, and Show all for the rest in a bounded
-// list that reads older pages as it scrolls (W601). The checker runs on the hub's default model (W467). Reads
-// project_approvals; writes project_approvals_set.
+// own for the first time, a final confirm on a site) are approved, the picked mode's one line under the choice, and the
+// log of what ran without asking, each row linking to its line in the project's chat: the newest few, repeats folded,
+// and Show all for the rest in a bounded list that reads older pages as it scrolls (W601). The checker runs on the
+// hub's default model (W467). Reads project_approvals; writes project_approvals_set.
 import { useState, type UIEvent } from "react";
 import type { ApprovalMode, ProjectApprovals, ProjectApprovalsOutput } from "../../../shared/contracts";
 import { Button, Radio, RadioGroup, Text } from "../../ui";
@@ -11,7 +11,7 @@ import { shortClock } from "../chat/format";
 import { prose } from "../inline/prose";
 import { navigate } from "../shell/navigation";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { FLOORS, logWhy, MODES } from "./approvalsModel";
+import { FLOORS, logWhy, modeLine, MODES } from "./approvalsModel";
 import { addPage, FIRST_PAGE, fold, hasMore, PAGE, SHOWN, showAllWord, timesWord, type LogRow, type Pages } from "./approvedLog";
 import { PROJECT_TOOLS } from "../projects/model";
 import { HintLines, SettingsList, SettingsListRow, SettingsRow } from "./parts";
@@ -80,6 +80,9 @@ function ModeEditor({ projectRef, saved, locked }: { projectRef: Ref; saved: Pro
           <Radio key={m.mode} value={m.mode} label={m.label} />
         ))}
       </RadioGroup>
+      <Text size="sm" tone="quiet" data-picked-line="">
+        {modeLine(saved.mode)}
+      </Text>
       {problem === null ? null : (
         <div role="alert">
           <Text size="sm" tone="danger">

@@ -19,7 +19,8 @@ export type PeopleOnly =
 
 /** Who can do it and where, in one line. */
 export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
-  approval_mode: "Only a person changes a bot's approval mode: in the app, the chat's menu or the bot's settings.",
+  approval_mode:
+    "Only a person loosens a bot's approval mode: in the app, the chat's menu or the bot's settings. When they ask for it stricter, project_setup takes approvals.",
   sites: "Only a person allows a site: they answer the card its first visit shows, or add it in the bot's settings in the app.",
   agents: "Only a person picks a bot's profiles and models and sets its max agents: Settings › Bots › Agents in the app.",
   card: "Only a person gives a bot a card: the bot's Vault in the app, on their own device.",
@@ -36,7 +37,7 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
 
 /** The names a call might carry for each, lowercase with nothing but letters and digits. */
 const NAMES: Record<PeopleOnly, string[]> = {
-  approval_mode: ["approvalmode", "approvals", "approval", "mode", "permissionmode", "yolo"],
+  approval_mode: ["approvalmode", "approval", "mode", "permissionmode", "yolo"],
   sites: ["sites", "site", "allowedsites", "allowsite", "allowsites"],
   agents: ["profile", "profiles", "model", "models", "maxagents", "agentlimit", "effort", "leadprofile", "leadmodel"],
   card: ["card", "cards", "paymentcard"],

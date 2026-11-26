@@ -3006,8 +3006,17 @@
       "type": "object"
     },
     "ProjectSetupCall": {
-      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. What guards people (approval mode, sites, profiles, the card, the vault, MCP servers, prompts,\ndelete) has no field here.",
+      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. It makes approvals and merges stricter only, never looser, with no undo. What guards people\n(loosening those, sites, profiles, the card, the vault, MCP servers, prompts, delete) has no field here.",
       "properties": {
+        "approvals": {
+          "description": "A stricter approval mode than the project's now: `yolo`, `checker`, `ask`, loosest first.",
+          "enum": [
+            "yolo",
+            "checker",
+            "ask"
+          ],
+          "type": "string"
+        },
         "archive": {
           "description": "True archives the project: its chat leaves the list and its lead stops. A person brings it back.",
           "type": "boolean"
@@ -3111,6 +3120,22 @@
         "instructions": {
           "description": "The project's Instructions, whole: what every agent of the project is told. Empty clears them.",
           "maxLength": 64000,
+          "type": "string"
+        },
+        "mergeMode": {
+          "description": "How its PRs merge, only stricter than now: `verify_after`, then `test_first`.",
+          "enum": [
+            "verify_after",
+            "test_first"
+          ],
+          "type": "string"
+        },
+        "merges": {
+          "description": "Who merges its PRs, only stricter than now: `fleetd`, then `people`.",
+          "enum": [
+            "fleetd",
+            "people"
+          ],
           "type": "string"
         },
         "picture": {

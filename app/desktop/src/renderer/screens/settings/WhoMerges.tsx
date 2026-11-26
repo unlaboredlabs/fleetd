@@ -1,13 +1,14 @@
 // A bot's Who merges (its Projects page, Safety): You, people merging its PRs on GitHub (a new bot's default), or
-// fleetd's merge train. While You, Rules opens its risk rules below the row: the files whose PRs merge themselves
-// all the same, and those that always wait for a person, one rule a line. The hub enforces both in its train.
-// Reads the project's summary (`merges`) and project_settings_get (`mergeRules`); writes project_settings_set.
+// fleetd's merge train, the picked one's line under the title. While You, Rules opens its risk rules below the row: the
+// files whose PRs merge themselves all the same, and those that always wait for a person, one rule a line. The hub
+// enforces both in its train. Reads the project's summary (`merges`) and project_settings_get (`mergeRules`); writes
+// project_settings_set.
 import { useState } from "react";
 import type { Merger, RiskRules } from "../../../shared/contracts";
 import { Button, Segmented, Text, Textarea } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { HintLines, SettingsRow } from "./parts";
-import { linesOf, RULES_WORDS, rulesText, WHO_MERGES, WHO_MERGES_WORDS } from "./whoMergesModel";
+import { linesOf, RULES_WORDS, rulesText, WHO_MERGES, WHO_MERGES_LINE, WHO_MERGES_WORDS } from "./whoMergesModel";
 import s from "./settings.module.css";
 
 type Ref = { machineId: string; projectId: string };
@@ -47,8 +48,8 @@ export function WhoMergesSetting({ projectRef, merges, rules, locked = false }: 
       reveal="projects.merges"
       title="Who merges"
       hint={<HintLines lines={HINT} />}
-      line={problem}
-      lineTone="danger"
+      line={problem ?? WHO_MERGES_LINE[shown]}
+      lineTone={problem === null ? undefined : "danger"}
       control={
         <>
           {people && rules !== undefined && !locked ? (

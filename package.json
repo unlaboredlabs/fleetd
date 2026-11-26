@@ -227,6 +227,7 @@
     "./hub/projects/inspect": "./fleetd/src/hub/projects/inspect.ts",
     "./hub/projects/people_only": "./fleetd/src/hub/projects/people_only.ts",
     "./hub/projects/repo_create_rules": "./fleetd/src/hub/projects/repo_create_rules.ts",
+    "./hub/projects/tighten_rules": "./fleetd/src/hub/projects/tighten_rules.ts",
     "./hub/prompts/disallowed": "./fleetd/src/hub/prompts/disallowed.ts",
     "./hub/prompts/entry": "./fleetd/src/hub/prompts/entry.ts",
     "./hub/prompts/registry": "./fleetd/src/hub/prompts/registry.ts",

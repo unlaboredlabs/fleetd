@@ -17,6 +17,7 @@ import type {
   Merger,
   MergeMode,
   MergeShared,
+  PersonRef,
   RiskRules,
   ProjectEnvVar,
   ProjectRef,
@@ -345,11 +346,19 @@ export function setWhoMerges(hub: Hub, caller: Caller, project: ProjectSummary, 
   if (!isHuman(caller)) {
     throw new ToolError("forbidden", "Only a person picks who merges a bot's PRs.", "Ask the human to set Who merges in the bot's settings.");
   }
+  return whoMergesTo(hub, project, merges, { name: whoOf(caller), ...(caller.person ? { person: caller.person } : {}) });
+}
+
+/** Who changed a safety setting, in its line: a person, or a lead on a person's ask (project_setup, tighten.ts). */
+export type ChangedBy = { name: string; person?: PersonRef };
+
+/** Sets who merges, once the caller may: false when it already was. Tells every app. */
+export function whoMergesTo(hub: Hub, project: ProjectSummary, merges: Merger, by: ChangedBy): boolean {
   const r = { machineId: project.machineId, projectId: project.projectId };
   if (mergesOf(hub.db.conn, r) === merges) return false;
   setMerges(hub.db.conn, r, merges);
   const said = merges === "people" ? `People merge ${project.title}'s PRs now` : `fleetd merges ${project.title}'s PRs now`;
-  announce(hub, r, `${said}, by ${whoOf(caller)}`, { merges, ...(caller.person ? { by: caller.person } : {}) });
+  announce(hub, r, `${said}, by ${by.name}`, { merges, ...(by.person ? { by: by.person } : {}) });
   return true;
 }
 
@@ -378,6 +387,11 @@ export function setHowItMerges(hub: Hub, caller: Caller, project: ProjectSummary
   if (!isHuman(caller)) {
     throw new ToolError("forbidden", "Only a person picks how a bot's PRs merge.", "Ask the human to set it next to Who merges in the bot's settings.");
   }
+  return mergeModeTo(hub, project, mode, { name: whoOf(caller), ...(caller.person ? { person: caller.person } : {}) });
+}
+
+/** Sets how the bot's PRs merge, once the caller may, for every bot sharing one of its repos: false when none changed. */
+export function mergeModeTo(hub: Hub, project: ProjectSummary, mode: MergeMode, by: ChangedBy): boolean {
   const r = { machineId: project.machineId, projectId: project.projectId };
   // One merge train per GitHub repo: every bot sharing one of this bot's repos goes the same way (W845).
   let changed = false;
@@ -386,7 +400,7 @@ export function setHowItMerges(hub: Hub, caller: Caller, project: ProjectSummary
     setMergeMode(hub.db.conn, b, mode);
     const title = store(hub).projectGet(b)?.title ?? b.projectId;
     const said = mode === "verify_after" ? `${title}'s PRs merge, then verify now` : `${title}'s PRs are tested, then merged now`;
-    announce(hub, b, `${said}, by ${whoOf(caller)}`, { mergeMode: mode, ...(caller.person ? { by: caller.person } : {}) });
+    announce(hub, b, `${said}, by ${by.name}`, { mergeMode: mode, ...(by.person ? { by: by.person } : {}) });
     changed = true;
   }
   return changed;
