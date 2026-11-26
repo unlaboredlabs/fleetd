@@ -25,7 +25,10 @@ hidden tab, and stays still, grey and idle, with reduced motion. The bots beside
 Under the hero, the stage shows the desktop app on a laptop's display, under a macOS menu bar (fleetd's menus,
 status icons and clock) with the camera notch in it (drawn in `home.html`), and the phone app on a foldable phone in front
 of its corner. Both devices are drawn in `home.html` (HTML and CSS, lengths in shares of the stage). The phone is a
-titanium foldable with its cameras and side keys but no maker's marks (no island, no logos); the laptop's screen is a
+titanium foldable with its cameras and side keys but no maker's marks (no island, no logos), drawn to Apple's own
+pictures of the iPhone Duo: shut it is a D, its free edge round and its hinge side square with the hinge's spine a
+sliver past it, the outer display's camera at its top right above the status column, the volume keys on the top edge
+and Touch ID's side button on the free edge; the inner display's camera is under the glass, unseen. The laptop's screen is a
 Mac's, its menu bar and notch as macOS shows them. Their screens are the apps themselves, in `hero/`: `desk-*` the
 desktop app, `duo-open-*` and `duo-closed-*` the phone app's inner and outer screens (WebP at 2x and 1x).
 
@@ -48,7 +51,7 @@ The foldable opens once, 500 ms after the whole phone is in view (on load too, w
 `hero/unfold-{wide,phone}-{dark,light}.webm` (VP9) with an `.mp4` (H.264) twin for Safari, the one for the stage's width
 and the theme, loaded only once the phone shows (never with reduced motion) and laid exactly over the phone. A turn in
 CSS perspective is rastered soft while it moves, so the unfold is rendered offline from the page itself, a frame at a
-time held still until it is drawn sharp, at 2x for a wide stage (876x662) and a phone's (700x532), each placed on
+time held still until it is drawn sharp, at 2x for a wide stage (876x662, at the page's measure, 1512 px wide and up) and a phone's (700x532), each placed on
 whole device pixels by the renderer and the page alike so a 2x screen shows its frames unresampled:
 
 ```sh
@@ -61,8 +64,10 @@ over in perspective on a spring with mass (upright at 0.36 s, flat at 0.62 s aga
 rebound, at rest by 1.16 s), each face shaded by its angle to the light, which comes from the top left on both
 devices (the inner face comes up turned away from it, dark, and lightens as it lies down); past upright the hinge's
 barrels show at its ends, flush in the band. The leaf and the screens are drawn by the page onto a canvas (anything in
-CSS 3D is drawn soft): the leaf from 2x shots the renderer takes of the page's own phone at rest, open and shut, and its
-screens from their pictures, each projected column by column through the same perspective; past upright both halves
+CSS 3D is drawn soft): the leaf from 2x shots the renderer takes of the page's own phone at rest, open and shut (shut, its outer
+display with it, the page's own pixels, so the first turning frame follows the still one), and the inner display from
+its pictures, each projected column by column through the same perspective, and the leaf's thickness (5.2 mm) as its
+outline round the D's corners, swept behind the face that shows, so the edge follows the corners as it stands off; past upright both halves
 of the inner display come from one picture, cut at the hinge, so they line up at every angle. Before the frames, the
 renderer measures how far each drawing, flat, lies off the page's own phone (Chrome rounds where it puts each picture),
 and moves it by that. As the leaf stands up the inner display wakes and plays the recording of the phone
