@@ -129,8 +129,12 @@ export const onCloud = (u: Pick<WorkspaceUsageOutput, "total" | "currency">): bo
 /** Its share of the largest, 0 to 1, for a row's bar. */
 export const share = (v: number, max: number): number => (max <= 0 ? 0 : Math.min(1, Math.max(0, v / max)));
 
-/** A row with nothing in the period: listed quiet, after those that did something. */
-export const idle = (c: WorkspaceUsageCounts): boolean => c.messages + c.orders + c.agents + c.agentMs + c.merged + c.approvals + c.failed === 0;
+/**
+ * A row with nothing in the period: listed quiet, after those that did something. On the cloud, time on fleetd's
+ * computers counts too: the "No one" row often holds only that, the leads' own boxes.
+ */
+export const idle = (c: WorkspaceUsageCounts): boolean =>
+  c.messages + c.orders + c.agents + c.agentMs + c.merged + c.approvals + c.failed + (c.computerMs ?? 0) + (c.spendCents ?? 0) === 0;
 
 /** "the 30 days before". */
 export const before = (days: Period): string => `the ${days} days before`;
