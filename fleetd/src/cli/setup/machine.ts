@@ -348,6 +348,13 @@ export function preparedSteps(r: Resolved, p: Prepared): Begin[] {
 /** `linux-x64`, `darwin-arm64`. */
 export const preparedPlatform = (p: Prepared) => `${p.facts.platform}-${p.facts.arch}`;
 
+/**
+ * Where a joining machine gets a new code: fleetd cloud's Get started for a cloud workspace (its people have no
+ * workspace machine), `fleetd pair --worker` on a self-hosted one's.
+ */
+export const newJoinLine = (machineId = "<name>") =>
+  `get a new join line where this one came from: Get started on fleetd cloud, or fleetd pair --worker ${machineId} on your workspace's machine`;
+
 /** The join to run again after one that stopped before it enrolled. */
 function joinAgain(a: AddArgs, hub: string, code: string, machineId: string): string {
   if (a.mac) return "the join line you pasted again (it has --mac and the workspace's version)";
@@ -552,7 +559,7 @@ export async function prepare(
   // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
   if (r.enroll.kind === "keep" && plan.steps.some((s) => s.stdin?.kind === "enrollToken")) {
     throw Stop.fail(
-      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: on the workspace's machine, run fleetd pair --worker ${r.machineId}, then run what it prints here with --rejoin`,
+      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: ${newJoinLine(r.machineId)}, then run it here with --rejoin`,
     );
   }
   const prepared: Prepared = { facts, plan, input, ...(fetched === undefined ? {} : { fetched }) };
@@ -630,7 +637,7 @@ export async function execute(
     if (result.code !== 0) {
       const fix =
         step.stdin?.kind === "enrollToken" && r.joining
-          ? "the code is single use and lasts 15 minutes: on the workspace's machine, run fleetd pair --worker for a new one"
+          ? `the code is single use and lasts 15 minutes: ${newJoinLine(r.machineId)}`
           : r.againByHand !== undefined && noSystemd(plan.platform, step.command, result)
             ? `this machine has no systemd user service to run its node (a container, or WSL without systemd): run ${r.againByHand}, then start the node with ${q(plan.layout.bin)} node run --home ${q(plan.layout.nodeHome)}`
             : `fix that, then run ${r.again}; finished steps are skipped`;

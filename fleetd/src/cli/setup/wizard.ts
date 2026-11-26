@@ -12,7 +12,7 @@ import * as tty from "../tty.ts";
 import { Checklist } from "./checklist.ts";
 import { claudeLogin } from "./claude_login.ts";
 import { asOwner, claudeKey } from "./connect_steps.ts";
-import { type Added, Stop, join as joinHubAs, localArgs } from "./machine.ts";
+import { type Added, Stop, join as joinHubAs, localArgs, newJoinLine } from "./machine.ts";
 import { setupRows } from "../../node/agents_mac/rows.ts";
 import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
@@ -319,7 +319,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
           );
   }
   if (hub.trim() === "" || code.trim() === "") {
-    list.failed("join", "needs the workspace's address and a one-time code", "on the workspace's machine, run fleetd pair --worker <name>, then the command it prints here");
+    list.failed("join", "needs the workspace's address and a one-time code", `${newJoinLine()}, then run it here`);
     list.outro(list.needsYou(), AGAIN);
     return 1;
   }
