@@ -16,7 +16,7 @@ import { CAP_VAULT } from "../../shared/node_link.ts";
 import { publicKeyOf } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
-import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
+import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { boxKey } from "../auth/box_key.ts";
 import { token } from "../onepassword/index.ts";
 import { store as hubStore } from "../store/hub_store.ts";
@@ -131,14 +131,15 @@ function held(hub: Hub, row: ItemRow, m: string, target: string, fingerprint: st
 }
 
 /**
- * Takes in what machine `m`'s node holds. A Rust or older node counts as waiting. Returns its progress.
+ * Takes in what machine `m`'s node holds. A Rust or older node counts as waiting. Returns its progress; throws while
+ * its link isn't live, so a caller never takes nothing for done.
  */
 export async function adopt(hub: Hub, m: string, ask?: () => Promise<Record<string, unknown>>): Promise<MachineProgress> {
   const vt = vault(hub);
   const p = progress(hub);
   const now = hub.clock.now();
   const was = p.machines[m];
-  if (!ask && !linked(hub, m)) return was ?? { adopted: 0, waiting: 0, mismatched: 0, skippedSystem: 0, updatedMs: now };
+  if (!ask && !linked(hub, m)) throw offline(m);
   if (!ask && !nodeCan(hub, m, CAP_VAULT)) {
     const waiting = hub.db.conn
       .query<{ n: number }, [string]>("SELECT count(*) AS n FROM project_env WHERE machine_id = ? AND kind = 'secret'")

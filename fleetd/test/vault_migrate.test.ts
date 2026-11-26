@@ -1,11 +1,14 @@
 // Moving today's variables, sinks and card into the vault (src/hub/vault/migrate.ts): plain rows from the hub, secrets
 // from a Bun node sealed to the hub, fleetd's own GH_TOKEN skipped, idempotent, a Rust node left waiting, and the
-// node's newer value winning after a rollback.
+// node's newer value winning after a rollback, and a machine coming online moving its secrets in once its link is live.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { adopt, migrateCards, migratePlain, migrationStatus } from "../src/hub/vault/migrate.ts";
+import { start as startVault } from "../src/hub/vault/loops.ts";
 import { putToken } from "../src/hub/onepassword/index.ts";
+import { events } from "../src/hub/store/events.ts";
+import { sweep } from "../src/hub/sweep/index.ts";
 import { M, PROJECT, type VaultHub, vaultHub } from "./vault-kit.ts";
 
 let k: VaultHub;
@@ -114,4 +117,51 @@ test("a picked op:// card is imported from a node holding its person's token, th
   expect(k.hub.db.all<{ card_ref: string }>("SELECT card_ref FROM project_settings")[0]!.card_ref).toBe(`vault:${card.itemId}`);
   expect(await migrateCards(k.hub)).toBe(0);
   void publicKeyOf;
+});
+
+const online = () => events(k.hub).append({ at: at(), type: "machine.online", machineId: M, summary: `${M} is online` });
+async function until(ok: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !ok(); i++) await Bun.sleep(5);
+}
+
+test("machine.online logged before the link is live: the secrets move in once it is", async () => {
+  startVault(k.hub);
+  hubRow("API_KEY", "secret", "planted-mig-4");
+  k.node.adopt = { vars: [{ scope: "project", projectId: "p1", name: "API_KEY", secret: true, sealed: sealed("planted-mig-4"), fingerprint: fp("planted-mig-4"), bytes: 13 }], sinks: [] };
+  // The runner answered, so the machine is announced; the hub's subscription to the node isn't live yet.
+  k.node.online = false;
+  online();
+  await Bun.sleep(20);
+  expect(items()).toEqual([]);
+  k.node.online = true;
+  await until(() => items().length > 0);
+  expect(items().map((r) => [r.envName, r.meta.fingerprint])).toEqual([["API_KEY", fp("planted-mig-4")]]);
+  expect(migrationStatus(k.hub)).toMatchObject({ machines: [{ machineId: M, adopted: 1, waiting: 0 }] });
+});
+
+test("a move-in that fails when the machine comes online is tried again by the sweep", async () => {
+  startVault(k.hub);
+  const held = { vars: [{ scope: "project", projectId: "p1", name: "API_KEY", secret: true, sealed: sealed("planted-mig-5"), fingerprint: fp("planted-mig-5"), bytes: 13 }], sinks: [] };
+  let asked = 0;
+  Object.defineProperty(k.node, "adopt", {
+    get: () => {
+      if (asked++ === 0) throw new Error("the node's answer was lost");
+      return held;
+    },
+  });
+  online();
+  await until(() => asked > 0);
+  await Bun.sleep(20);
+  expect(items()).toEqual([]);
+  await sweep(k.hub).runOnce();
+  expect(items().map((r) => r.envName)).toEqual(["API_KEY"]);
+  // Taken in: the next sweep doesn't ask again.
+  await sweep(k.hub).runOnce();
+  expect(asked).toBe(2);
+});
+
+test("adopt refuses a machine whose link isn't live rather than doing nothing", async () => {
+  k.node.online = false;
+  await expect(adopt(k.hub, M)).rejects.toThrow("offline");
+  expect(migrationStatus(k.hub)).toMatchObject({ machines: [] });
 });

@@ -13,6 +13,8 @@ export { fromExecutor, offline } from "./node_errors.ts";
 export type NodePort = {
   /** The machine's node is linked and its session stream live (executor `is_connected`). */
   linked(m: string): boolean;
+  /** Resolves once the machine's node is linked and its session stream live, at once if it is (executor `awaitLive`). */
+  live(m: string, signal?: AbortSignal): Promise<void>;
   /** Its node is on a link at all, live or not yet (link `link_id`). */
   onLink(m: string): boolean;
   /** The linked node lists `cap` (link `node_can`). */
@@ -28,6 +30,7 @@ export type NodePort = {
 export const nodePort = (hub: Hub): NodePort =>
   hub.area<NodePort>("node_port", (h) => ({
     linked: (m) => executors(h).isConnected(m),
+    live: (m, signal) => executors(h).awaitLive(m, signal),
     onLink: (m) => link(h).linkId(m) !== undefined,
     can: (m, cap) => link(h).can(m, cap),
     request: (m, frame) => link(h).request(m, frame as never) as unknown as Promise<Record<string, unknown>>,
@@ -77,6 +80,7 @@ export function fakeNodePort(fake: {
 }): NodePort {
   return {
     linked: (m) => fake.linkId(m) !== undefined,
+    live: async () => {},
     onLink: (m) => fake.linkId(m) !== undefined,
     can: (m, cap) => fake.can(m, cap),
     request: (m, frame) => fake.request(m, frame),
