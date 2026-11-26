@@ -83,6 +83,14 @@ The same problem is reported once, not on every look. Main's CI and Deploys skip
 
 Each watcher's row shows its last 24 hours: how many looks and what they cost. A **Something else** watcher can only read, never change anything.
 
+## Daily check-in {#check-in}
+
+Once a day, the lead can offer to take work off your plate. It is off until you switch on **Daily check-in** in the bot's **Automations** (on the phone, in the bot's info).
+
+At 09:00 your time, the lead looks for open orders that stopped moving, approvals or secrets that have waited on you for over an hour, and follow-ups it promised in the chat. If it finds something, it posts one short offer with buttons, such as "Two things I can pick up: … Want me to?". Nothing starts until you tap a button or answer. On a quiet day, or one where the same things still wait as the day before, it posts nothing and costs nothing.
+
+Only a person switches it on: an admin of the workspace, as with the bot's other automations. The lead can pause it, but can't switch it on or change it.
+
 ## Nightly memory refresh {#the-nightly-memory-refresh}
 
 Every night the lead tidies the bot's memory. It's built in, not an automation: find it under the bot's **Instructions & memory**, with **Run now**. See [What agents are told](/docs/memory#memory-refresh).

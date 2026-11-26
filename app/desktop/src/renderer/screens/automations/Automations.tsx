@@ -1,4 +1,4 @@
-// Settings → Projects › Automations: one project's watchers (Watching.tsx) at the top, then its automations (the project picked in the sidebar), each a prompt the project's lead runs on a schedule, from a
+// Settings → Projects › Automations: one project's daily check-in switch (CheckIn.tsx) and watchers (Watching.tsx) at the top, then its automations (the project picked in the sidebar), each a prompt the project's lead runs on a schedule, from a
 // webhook or on Run now. Each run opens an order the lead starts on its own; reviews, the merge train and approvals
 // still apply. A person makes, edits, pauses, runs and deletes them here and reads their runs, each linked to its
 // order. A webhook URL holds its secret, so the hub returns it only when it is made or rotated: shown once, here.
@@ -33,7 +33,8 @@ import {
 } from "./model";
 import s from "./automations.module.css";
 import { Runs } from "./Runs";
-import { isWatcher } from "./watchModel";
+import { isCheckIn, isWatcher } from "./watchModel";
+import { CheckIn } from "./CheckIn";
 import { Watching } from "./Watching";
 
 const READS = ["automation_list", "automation_runs"] as const;
@@ -68,13 +69,14 @@ export function Automations({ route }: { route: SettingsRoute }) {
   }
 
   const all = list.data?.automations ?? [];
-  const automations = all.filter((a) => !isWatcher(a));
+  const automations = all.filter((a) => a.watch === undefined);
   const name = project ? scopeName(project, projects) : null;
   return (
     <div className={settings.scroll} data-screen="settings.automations">
       <div className={settings.column}>
         <PageHead title="Automations" />
         {url ? <WebhookUrl {...url} onDone={() => setUrl(null)} /> : null}
+        {ref && list.data ? <CheckIn projectRef={ref} checkIn={all.find(isCheckIn)} /> : null}
         {ref && list.data ? <Watching projectRef={ref} watchers={all.filter(isWatcher)} watchable={list.data.watchable} /> : null}
         <SettingsSection
           title={ref && list.data ? "Automations" : undefined}
