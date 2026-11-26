@@ -259,21 +259,29 @@ test("the watcher keeps a build that comes up, puts back one that doesn't, and o
 
 /**
  * A new build that gets `share` of a core, comes up healthy once it used `upAfterCpuMs` of CPU (never when undefined),
- * and runs as `pids(nowMs)`; the build put back comes up at once.
+ * and runs as `pids(nowMs, restarts)` (a new pid at each restart by default); the build put back gets `backShare` of
+ * a core (`share` by default) and comes up once it used `backAfterCpuMs` (at once by default).
  */
-function busyPorts(o: { share: number; upAfterCpuMs?: number; pids?: (now: number) => number | null }) {
+function busyPorts(o: {
+  share: number;
+  upAfterCpuMs?: number;
+  backShare?: number;
+  backAfterCpuMs?: number;
+  pids?: (now: number, restarts: number) => number | null;
+}) {
   let now = 0;
   let restartedAt = 0;
   let restarts = 0;
-  const cpu = () => (now - restartedAt) * o.share;
+  const cpu = () => (now - restartedAt) * (restarts > 1 ? (o.backShare ?? o.share) : o.share);
   const ports: Ports = {
     restart() {
       restarts++;
       restartedAt = now;
     },
-    healthy: async (_h, version) => (version === "1.1.0" ? o.upAfterCpuMs !== undefined && cpu() >= o.upAfterCpuMs : restarts > 1),
+    healthy: async (_h, version) =>
+      version === "1.1.0" ? o.upAfterCpuMs !== undefined && cpu() >= o.upAfterCpuMs : restarts > 1 && cpu() >= (o.backAfterCpuMs ?? 0),
     ran: () => {
-      const pid = o.pids ? o.pids(now) : 7;
+      const pid = o.pids ? o.pids(now, restarts) : 100 + restarts;
       return pid === null ? "down" : { pid, cpuMs: cpu() };
     },
     sleep: async (ms) => {
@@ -307,7 +315,7 @@ test("the watcher puts back a build that spins, one that exits, and one stuck id
   });
   expect(spins.now()).toBe(90_000);
   // It exits 3 s in, and the service manager starts it again 5 s later: put back at once, not after 90 s.
-  const exits = busyPorts({ share: 0.5, pids: (now) => (now < 3000 ? 7 : now < 8000 ? null : 8) });
+  const exits = busyPorts({ share: 0.5, pids: (now, restarts) => (restarts === 0 ? 6 : now < 3000 ? 7 : now < 8000 ? null : 8) });
   expect((await finish(plan(dir), exits.ports)).message).toBe("1.1.0 stopped before it came up healthy, so 1.0.0 was put back and runs again");
   expect(exits.now()).toBeLessThan(5000);
   // Alive, not up and using no CPU: the clock's cap, three times the wait.
@@ -315,6 +323,27 @@ test("the watcher puts back a build that spins, one that exits, and one stuck id
   expect((await finish(plan(dir), idle.ports)).message).toBe("1.1.0 didn't come up healthy within 270 s, so 1.0.0 was put back and runs again");
   expect(idle.now()).toBe(270_000);
   expect(readFileSync(join(dir, "fleetd"), "utf8")).toBe("old");
+});
+
+test("the watcher never takes the process from before the restart for the new build's", async () => {
+  const dir = join(home.dir, "kickstart");
+  mkdirSync(dir);
+  // A service manager that answers while the old process (6) is still on its way out, 1.5 s, then runs the new one (7).
+  const late = busyPorts({ share: 0.5, upAfterCpuMs: 3000, pids: (now, restarts) => (restarts === 0 || now < 1500 ? 6 : 7) });
+  expect(await finish(plan(dir), late.ports)).toEqual({ state: "done", stage: null, message: "runs 1.1.0" });
+  expect(late.now()).toBe(6000);
+});
+
+test("the workspace waits on a restarting node for all of its watcher's wait, the build put back judged by CPU time too", async () => {
+  const { defaultTiming } = await import("../src/hub/update/index.ts");
+  const dir = join(home.dir, "worst");
+  mkdirSync(dir);
+  // The new build stuck idle to the cap, then the old one on a quarter of a core: 30 s of CPU, 2 min on the clock.
+  const worst = busyPorts({ share: 0, backShare: 0.25, backAfterCpuMs: 30_000 });
+  expect((await finish(plan(dir), worst.ports)).message).toBe("1.1.0 didn't come up healthy within 270 s, so 1.0.0 was put back and runs again");
+  expect(worst.now()).toBe(390_000);
+  // The workspace still waits when the old build links again, so it reads the node put back, not failed.
+  expect(defaultTiming().nodeRestart).toBeGreaterThan(worst.now());
 });
 
 test("the watcher reads the process from systemd's MainPID or launchd's pid line, and its CPU time from ps", async () => {

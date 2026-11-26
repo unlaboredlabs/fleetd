@@ -253,9 +253,10 @@ export const defaultTiming = (): Timing => ({
   nodePoll: 1000,
   verdict: HEALTH_WAIT_SECS * 2 * 1000,
   nodeBack: HEALTH_WAIT_SECS * 3 * 1000,
-  // Past the watcher's longest wait on the new build, with time for the old one to link again once put back: a node
-  // build stuck idle is then seen rolled back, not failed and pushed to it again at the next automatic update.
-  nodeRestart: WATCH_MAX_MS + HEALTH_WAIT_SECS * 1000,
+  // Past the watcher's longest wait, on the new build and then the one it put back, each by its CPU time: a node build
+  // stuck idle, or an old one slow to come back on a busy machine, is then seen rolled back, not failed and pushed to
+  // it again at the next automatic update. The slack covers the probes' spawns.
+  nodeRestart: WATCH_MAX_MS + 30_000,
   restart: HEALTH_WAIT_SECS * 3 * 1000,
   // Downloads from the release CDN, not GitHub's API: no rate limit to mind.
   prefetchEvery: 120_000,

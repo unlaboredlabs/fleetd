@@ -22,8 +22,9 @@ const POLL_MS = 100;
 const PROBE_MS = 1000;
 /** The longest the restart waits for `plan.answered`. */
 export const ANSWER_WAIT_MS = 2000;
-/** The longest the watcher waits on a new build with the default wait: for `answered`, then the cap on the clock. */
-export const WATCH_MAX_MS = ANSWER_WAIT_MS + HEALTH_WAIT_SECS * CAP_TIMES * 1000;
+/** The longest the watcher waits with the default wait: for `answered`, then the cap on the new build and on the one
+ * put back, each judged by the same CPU-time rules. */
+export const WATCH_MAX_MS = ANSWER_WAIT_MS + 2 * HEALTH_WAIT_SECS * CAP_TIMES * 1000;
 
 export type Health = { kind: "hub"; url: string } | { kind: "node"; up: string };
 
@@ -62,6 +63,7 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
     const deadline = ports.nowMs() + ANSWER_WAIT_MS;
     while (!existsSync(plan.answered) && ports.nowMs() < deadline) await ports.sleep(POLL_MS);
   }
+  const old = pidOf(ports.ran(plan.service));
   const started = ports.nowMs();
   try {
     ports.restart(plan.service);
@@ -77,7 +79,7 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
     }
     return { state: "failed", stage: "restart", message };
   }
-  const missed = await up(plan, ports, plan.to, started);
+  const missed = await up(plan, ports, plan.to, started, old);
   if (missed === undefined) return { state: "done", stage: null, message: `runs ${to}` };
   const why = `${to} ${missed}`;
   try {
@@ -85,11 +87,12 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
   } catch (e) {
     return { state: "failed", stage: "health", message: `${why}, and putting ${from} back failed (${errText(e)}): run \`fleetd update\` on that machine` };
   }
+  const bad = pidOf(ports.ran(plan.service));
   const again = ports.nowMs();
   let back = false;
   try {
     ports.restart(plan.service);
-    back = (await up(plan, ports, plan.from, again)) === undefined;
+    back = (await up(plan, ports, plan.from, again, bad)) === undefined;
   } catch {
     back = false;
   }
@@ -100,12 +103,15 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
   };
 }
 
+const pidOf = (ran: Ran | "down" | undefined) => (ran === undefined || ran === "down" ? undefined : ran.pid);
+
 /**
  * Undefined once the service answers on `version`; else why it is taken as not coming up: its process exited, it ran
  * `plan.waitSecs` on a CPU, or it isn't up CAP_TIMES that on the clock. Where the process can't be read, its clock
- * time stands in for its CPU time.
+ * time stands in for its CPU time. `old`, the process before the restart, is never taken for the new one: a service
+ * manager that answers before it ended (launchd's kickstart, maybe) would have it read as exiting once it's gone.
  */
-async function up(plan: Plan, ports: Ports, version: string, sinceMs: number): Promise<string | undefined> {
+async function up(plan: Plan, ports: Ports, version: string, sinceMs: number, old?: number): Promise<string | undefined> {
   const wait = plan.waitSecs * 1000;
   let pid: number | undefined;
   let cpuMs: number | undefined;
@@ -115,7 +121,8 @@ async function up(plan: Plan, ports: Ports, version: string, sinceMs: number): P
     const now = ports.nowMs();
     if (now - probed >= PROBE_MS) {
       probed = now;
-      const ran = ports.ran(plan.service);
+      const read = ports.ran(plan.service);
+      const ran = read !== undefined && read !== "down" && read.pid === old ? undefined : read;
       // None now, or another one the service manager started after it: the build exited as it started.
       if (pid !== undefined && (ran === "down" || (ran !== undefined && ran.pid !== pid))) return "stopped before it came up healthy";
       if (ran !== undefined && ran !== "down") [pid, cpuMs] = [ran.pid, ran.cpuMs];
