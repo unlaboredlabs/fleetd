@@ -9,7 +9,7 @@ import { CallError } from "../../src/data/queries";
 import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
-import { Button, Field, InlineCode, Input, Segmented, Text } from "../../ui";
+import { Button, Field, InlineCode, SecretInput, Segmented, Text } from "../../ui";
 import { CONNECT, runsOnLine, sealedLine, SETUP_TOKEN, shownChoice, TOKEN_PLACEHOLDER } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestResult, useMachines, useNoMachine, useSave, useTest, type Tried } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -94,7 +94,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
         </li>
       </ol>
       <Field label="Token">
-        <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
+        <SecretInput mono aria-label="Token" value={token} disabled={busy} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
       </Field>
       <div className={s.inline}>
         <Button variant="primary" disabled={busy || token.trim() === ""} onClick={connect}>

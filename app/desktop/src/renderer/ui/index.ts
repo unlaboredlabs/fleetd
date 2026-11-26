@@ -23,6 +23,7 @@ export { Button, Kbd, type ButtonProps, type ButtonVariant, type ButtonSize } fr
 export {
   Field,
   Input,
+  SecretInput,
   Textarea,
   Checkbox,
   Switch,

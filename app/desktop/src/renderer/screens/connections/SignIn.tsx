@@ -7,7 +7,7 @@ import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "rea
 import type { McpOauthStartOutput, McpScope, McpServer } from "../../../shared/contracts";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Dialog, Field, InlineCode, Input, Text } from "../../ui";
+import { Button, Dialog, Field, InlineCode, Input, SecretInput, Text } from "../../ui";
 import { CommandLine } from "../onboarding/Prose";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import type { Named } from "../settings/namedServers";
@@ -128,7 +128,7 @@ function Body({ signIn, url, why, client, setClient }: { signIn: SignIn; url: st
           <Input mono aria-label="Client ID" value={client.id} autoComplete="off" spellCheck={false} onChange={(e) => setClient({ ...client, id: e.target.value })} />
         </Field>
         <Field label="Client secret (optional)">
-          <Input mono aria-label="Client secret" data-secret="" value={client.secret} autoComplete="off" spellCheck={false} onChange={(e) => setClient({ ...client, secret: e.target.value })} />
+          <SecretInput mono aria-label="Client secret" value={client.secret} onChange={(e) => setClient({ ...client, secret: e.target.value })} />
         </Field>
         <Problem text={signIn.problem} />
       </div>

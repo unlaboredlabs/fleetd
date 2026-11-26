@@ -210,6 +210,11 @@ const type = async (label: string, value: string) => {
     await Promise.resolve();
   });
 };
+const eye = (label: string) => {
+  const b = host.querySelector<HTMLButtonElement>(`button[aria-label='${label}']`);
+  if (b === null) throw new Error(`no button ${label}`);
+  return b;
+};
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 const section = (label: string) => {
   const el = host.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
@@ -244,6 +249,22 @@ it("saves the hub's key and endpoint sealed through main, tests it at once, and 
   expect(host.textContent).not.toContain(KEY);
 });
 
+it("masks the key while it's typed or pasted, with an eye to show it", async () => {
+  await render(noKey);
+  const field = host.querySelector<HTMLInputElement>("input[aria-label='API key']");
+  if (field === null) throw new Error("no API key field");
+  // A password field, so neither the page, a recording nor a browser's text of it shows the key.
+  expect(field.type).toBe("password");
+  await type("API key", KEY);
+  expect(field.value).toBe(KEY);
+  await click(eye("Show API key"));
+  expect(field.type).toBe("text");
+  await click(eye("Hide API key"));
+  expect(field.type).toBe("password");
+  await click(button("Save and test"));
+  expect(sealed.map((r) => (r.account === "hub_api" ? r.key : undefined))).toEqual([KEY]);
+});
+
 it("speaks of the team on a fleetd cloud team, and says plainly when it can't take a key yet", async () => {
   await render(noKey, { me: sam, admin: true }, true);
   const key = section("Workspace API key");
@@ -251,6 +272,7 @@ it("speaks of the team on a fleetd cloud team, and says plainly when it can't ta
   expect(key.textContent).toContain("The workspace owner's subscription (yours) isn't connected.");
   expect(host.textContent).toContain("Members may use the workspace's API key");
   expect(host.textContent).not.toMatch(/the hub|Hub API key|hub owner/u);
+  expect(host.querySelector<HTMLInputElement>("input[aria-label='API key']")?.type).toBe("password");
   await type("API key", KEY);
   await click(button("Save and test"));
   expect(sealed).toEqual([]);

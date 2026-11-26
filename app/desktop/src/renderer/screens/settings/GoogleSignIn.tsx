@@ -15,7 +15,7 @@ import { CallError } from "../../src/data/queries";
 import { CLOUD_NOT_READY, ConfirmRemove, MissingOn, Problem, useMachines } from "./claudeParts";
 import { sealedLine } from "./claudeModel";
 import { settingsPath } from "../../../shared/settingsPages";
-import { Button, copyText, Field, Input, Text, Truncate } from "../../ui";
+import { Button, copyText, Field, Input, SecretInput, Text, Truncate } from "../../ui";
 import { MACHINE_WAIT_MS } from "../admin/machines";
 import { useAdministers } from "../admin/role";
 import { openExternal } from "../prs/PrDetail";
@@ -351,7 +351,7 @@ export function GeminiKeyRow({ status }: { status: AntigravityStatusOutput | und
             </Button>
           </div>
           <Field label="API key" description={key === undefined ? undefined : "Leave it empty to keep the saved key."}>
-            <Input mono aria-label="Gemini API key" className={s.secretValue} data-secret="" value={value} disabled={busy} autoComplete="off" spellCheck={false} onChange={(e) => setValue(e.target.value)} />
+            <SecretInput mono aria-label="Gemini API key" value={value} disabled={busy} onChange={(e) => setValue(e.target.value)} />
           </Field>
           <Field label="Endpoint">
             <Input mono aria-label="Gemini endpoint" value={endpoint} disabled={busy} autoComplete="off" spellCheck={false} placeholder="Google's own" onChange={(e) => setEndpoint(e.target.value)} />

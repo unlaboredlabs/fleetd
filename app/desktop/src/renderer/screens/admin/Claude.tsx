@@ -12,7 +12,7 @@ import { CallError } from "../../src/data/queries";
 import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
-import { Button, Field, Input, Text } from "../../ui";
+import { Button, Field, Input, SecretInput, Text } from "../../ui";
 import { endpointShown, endpointToSave } from "../../../shared/claudeEndpoint";
 import { TailnetHint, useTailnet } from "../settings/Tailscale";
 import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine } from "../settings/claudeModel";
@@ -152,7 +152,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
           </Field>
           <TailnetHint endpoint={endpoint} tailnet={tailnet} />
           <Field label="API key" description={api === undefined ? undefined : "Leave it empty to keep the saved key."}>
-            <Input mono aria-label="API key" className={s.secretValue} data-secret="" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
+            <SecretInput mono aria-label="API key" value={key} disabled={busy} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
           </Field>
           <div className={s.inline}>
             <Button variant="primary" disabled={busy || (api === undefined ? key.trim() === "" : !changed)} onClick={submit}>
