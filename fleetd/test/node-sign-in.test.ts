@@ -65,7 +65,7 @@ test.skipIf(!chrome)("no vault login: the person's form signs the page in, the c
 
   const asked = await r.call("request_sign_in", { site: devbox, username: "#email", password: "#pw", why: "the release" });
   expect(asked.result!.requestId).toBe("Q1");
-  expect(String(asked.result!.message)).toStartWith("Asked the person to sign in to 127.0.0.1 in a secure form (Q1).");
+  expect(String(asked.result!.message)).toStartWith("Asked the person to sign in to 127.0.0.1, in a secure form (Q1).");
   expect(opened[0]).toEqual({ sessionId: started.result!.sessionId, input: { site: devbox, username: "#email", password: "#pw", why: "the release" } });
 
   // The person's fields, sealed by the hub to this machine.
@@ -85,6 +85,7 @@ test.skipIf(!chrome)("no vault login: the person's form signs the page in, the c
   // The site asks for a code: its own form.
   const code = await r.call("request_sign_in", { site: devbox, otp: "#code", why: "the release" });
   expect(code.result!.requestId).toBe("Q2");
+  expect(String(code.result!.message)).toStartWith("Asked the person for the code 127.0.0.1 sent them, in a secure form (Q2).");
   expect((await r.broker.deliver(frame("Q2", { otp: CODE }) as never, box, "devbox")).error).toBeUndefined();
   await d.until(page, "document.title", "Signed in");
   expect(bodies[1]).toEqual({ path: "/code", body: `code=${CODE}` });

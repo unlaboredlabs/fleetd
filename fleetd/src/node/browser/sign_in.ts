@@ -58,7 +58,7 @@ export async function requestSignIn(broker: Broker, thread: string, call: Record
   session.stepAt("request_sign_in", args, true, undefined, 0);
   return {
     requestId: id,
-    message: `Asked the person to sign in to ${domain} in a secure form (${id}). Stay on this page and end your turn: once they submit it, fleetd fills ${fields.map((f) => SAID[f]).join(" and ")} and submits the form, and you are woken. You never see what they type; don't ask for it in the chat.`,
+    message: `${fields.length === 1 && fields[0] === "otp" ? `Asked the person for the code ${domain} sent them` : `Asked the person to sign in to ${domain}`}, in a secure form (${id}). Stay on this page and end your turn: once they submit it, fleetd fills the ${fields.map((f) => SAID[f]).join(" and ")} and submits the form, and you are woken. You never see what they type; don't ask for it in the chat.`,
   };
 }
 
