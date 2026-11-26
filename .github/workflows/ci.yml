@@ -586,7 +586,9 @@ jobs:
     # A release APK, debug-signed (installable with adb or by opening it on the phone). A push to main and a manual run
     # build it for arm64 phones and x86_64 emulators; a pull request (and the train's batch) for x86_64 alone, what the
     # hub's Android emulators install: the same code compiled once, not twice. mobile-release.yml keeps every ABI.
-    # Gradle's build cache and ccache (the native code) are main's: a pull request reads them, main saves.
+    # Gradle's build cache and ccache (the native code) are main's: a pull request reads them, main saves. ccache's entry
+    # is keyed by what its native code is built from (the dependencies, patches, Expo config and plugins), not by commit:
+    # one entry of about 460 MB per commit filled the repository's 10 GB of caches and evicted every other one.
     name: mobile (android)
     needs: mobile-scope
     if: ${{ !cancelled() && needs.mobile-scope.outputs.app != 'false' }}
@@ -628,9 +630,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends ccache
           ccache --version | head -n 1
       - uses: actions/cache/restore@v5
+        id: ccache
         with:
           path: .ccache
-          key: ccache-android-${{ github.sha }}
+          key: ccache-android-${{ hashFiles('app/mobile/package-lock.json', 'app/mobile/patches/**', 'app/mobile/app.config.ts', 'app/mobile/plugins/**') }}
           restore-keys: ccache-android-
       - run: npm ci --no-audit --no-fund
       - run: npx expo prebuild --platform android --clean --no-install
@@ -640,11 +643,12 @@ jobs:
           ccache --zero-stats
           ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures="$ABIS"
           ccache --show-stats
-      - if: github.ref == 'refs/heads/main'
+      # Saved only for inputs no entry has yet: the same inputs compile the same objects.
+      - if: github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: .ccache
-          key: ccache-android-${{ github.sha }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v7
         with:
           name: fleetd-android-apk
@@ -661,7 +665,8 @@ jobs:
     # run, sends TestFlight nothing broken. Writers changing native code compile on the agents' Mac before their PR.
     # `xcode-27` is GitHub's standard Xcode 27 image, free here (`xcode-27-xlarge` is the paid one). A cold build takes
     # about half an hour; Xcode's compilation cache (Swift and C alike, by content, so a fresh `expo prebuild` still
-    # hits it) and CocoaPods' downloads carry over from main's last build.
+    # hits it) and CocoaPods' downloads carry over from main's last build, keyed by Xcode and what the native project
+    # is built from (not by commit, which would fill the repository's 10 GB of caches), saved for inputs new to it.
     name: mobile (ios build)
     needs: mobile-scope
     if: >-
@@ -687,11 +692,12 @@ jobs:
           xcodebuild -version
           echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v5
+        id: cache
         with:
           path: |
             .xcode-cas
             ~/Library/Caches/CocoaPods
-          key: ios-build-${{ steps.xcode.outputs.version }}-${{ github.sha }}
+          key: ios-build-${{ steps.xcode.outputs.version }}-${{ hashFiles('app/mobile/package-lock.json', 'app/mobile/patches/**', 'app/mobile/app.config.ts', 'app/mobile/plugins/**', 'app/mobile/modules/**') }}
           restore-keys: ios-build-${{ steps.xcode.outputs.version }}-
       - run: npm ci --no-audit --no-fund
       # Installs the pods too.
@@ -712,10 +718,10 @@ jobs:
           tail -n 20 "$RUNNER_TEMP/build.log"
       - name: iOS SDK
         run: ../../.github/release/ios-sdk.sh build/Build/Products/Release-iphoneos/fleetd.app/Info.plist
-      - if: github.ref == 'refs/heads/main'
+      - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: |
             .xcode-cas
             ~/Library/Caches/CocoaPods
-          key: ios-build-${{ steps.xcode.outputs.version }}-${{ github.sha }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}

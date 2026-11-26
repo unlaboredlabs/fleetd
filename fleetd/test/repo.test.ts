@@ -60,6 +60,16 @@ test("ci.yml's one macOS job compiles the iOS app on main only, on the release's
   expect(settings.afterMerge).not.toContain(ios.name);
 });
 
+test("no workflow keys a cache by commit", () => {
+  // One entry per commit (ccache's for Android was about 460 MB each) filled the repository's 10 GB of caches, and GitHub
+  // then evicted every other cache: an entry is keyed by its inputs, so commits with the same ones share it.
+  const keyed = readdirSync(WORKFLOWS)
+    .filter((f) => f.endsWith(".yml"))
+    .flatMap((f) => readFileSync(join(WORKFLOWS, f), "utf8").split("\n").map((line) => [f, line.trim()] as const))
+    .filter(([, line]) => /^(key|restore-keys):/.test(line) && /github\.sha|GITHUB_SHA|github\.run_id/.test(line));
+  expect(keyed).toEqual([]);
+});
+
 test("the train's after-merge checks are what mac.yml reports", () => {
   // No PR runs a macOS job: each check mac.yml (Nightly) reports, the iOS build of a manual run among them, is after
   // merge only. mac.yml never starts on a push or a pull request by itself.
