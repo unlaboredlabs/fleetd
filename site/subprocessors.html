@@ -63,7 +63,7 @@
   <article class="doc" aria-labelledby="h">
     <h1 id="h">Subprocessors</h1>
     <p class="when">Draft for review, November 26, 2026</p>
-    <p class="draft"><b>Draft for review.</b> Not linked from the site yet. Items marked <mark class="confirm">[confirm]</mark> are not verified and must be checked or removed before this page goes live.</p>
+    <p class="draft"><b>Draft for review.</b> Not linked from the site yet. Items marked <mark class="confirm">[confirm]</mark> are features still being built; the page goes live once they ship.</p>
     <p>The companies that process personal data for fleetd cloud (app.fleetd.dev), what each one gets, and where. Each works only on our instructions, under a data processing agreement with us. How we use them is on <a href="/security">Security</a>; our commitments to you are in the <a href="/dpa">Data Processing Agreement</a>.</p>
 
     <h2 id="list">Who processes your data</h2>
@@ -71,14 +71,15 @@
       <thead><tr><th scope="col">Provider</th><th scope="col">What for</th><th scope="col">What it gets</th><th scope="col">Where</th></tr></thead>
       <tbody>
         <tr><th scope="row">Hetzner Online</th><td data-label="What for">The servers fleetd cloud runs on, and the phone notification relay</td><td data-label="What it gets">Everything the service handles while it runs: requests, chats, files, sealed vault items</td><td data-label="Where">Germany (Nuremberg)</td></tr>
-        <tr><th scope="row">PlanetScale</th><td data-label="What for">The database</td><td data-label="What it gets">Accounts, workspaces, chats, agents’ work, sealed vault items, usage, billing records</td><td data-label="Where">Germany (Frankfurt, on AWS) <mark class="confirm">[confirm]</mark></td></tr>
+        <tr><th scope="row">PlanetScale</th><td data-label="What for">The database</td><td data-label="What it gets">Accounts, workspaces, chats, agents’ work, sealed vault items, usage, billing records</td><td data-label="Where">Germany (Frankfurt, on AWS)</td></tr>
         <tr><th scope="row">Cloudflare</th><td data-label="What for">DNS, network protection, the tunnel in front of the servers, file storage (R2), server logs, backups, email to support@fleetd.dev</td><td data-label="What it gets">All traffic to app.fleetd.dev (it ends TLS), files and recordings, server logs, sealed backups, support emails</td><td data-label="Where">Storage in the EU (R2’s EU jurisdiction); traffic passes its nearest data centre, worldwide</td></tr>
         <tr><th scope="row">WorkOS</th><td data-label="What for">Sign-in, sign-in codes and invite emails</td><td data-label="What it gets">Name, email address, sign-in method and history, IP address</td><td data-label="Where">United States</td></tr>
         <tr><th scope="row">Stripe</th><td data-label="What for">Payments, invoices and tax</td><td data-label="What it gets">Billing name, email and address, tax ID, card details (we never see the full number), what you bought</td><td data-label="Where">United States</td></tr>
-        <tr><th scope="row">fleetd’s computer supplier</th><td data-label="What for">The computers agents run on, when a workspace uses fleetd’s computers</td><td data-label="What it gets">What a bot’s agents work on: its repositories, files, the variables and logins they use, their screens</td><td data-label="Where"><mark class="confirm">[confirm region]</mark></td></tr>
+        <tr><th scope="row">fleetd’s computer supplier</th><td data-label="What for">The computers agents run on, when a workspace uses fleetd’s computers</td><td data-label="What it gets">What a bot’s agents work on: its repositories, files, the variables and logins they use, their screens</td><td data-label="Where">EU (France and Germany)</td></tr>
         <tr><th scope="row">GitHub</th><td data-label="What for">fleetd’s GitHub App, which bots use to reach your repositories; GitHub Actions, which starts our deploys and backups and keeps their keys</td><td data-label="What it gets">What passes between your bots and your repositories; the keys our deploys and backups use</td><td data-label="Where">United States</td></tr>
-        <tr><th scope="row">Blacksmith</th><td data-label="What for">The runners our builds, backups and restore drills run on</td><td data-label="What it gets">A copy of the database while a backup or restore drill runs, deleted when the job ends</td><td data-label="Where">United States <mark class="confirm">[confirm region]</mark></td></tr>
-        <tr><th scope="row">Better Stack</th><td data-label="What for">Uptime checks, alerts and the status page</td><td data-label="What it gets">Whether checks passed, and a failure’s one-line reason; no workspace content</td><td data-label="Where"><mark class="confirm">[confirm region]</mark></td></tr>
+        <tr><th scope="row">Blacksmith</th><td data-label="What for">The runners our builds, backups and restore drills run on</td><td data-label="What it gets">A copy of the database while a backup or restore drill runs, deleted when the job ends</td><td data-label="Where">United States (Phoenix)</td></tr>
+        <tr><th scope="row">Better Stack</th><td data-label="What for">Uptime checks, alerts and the status page</td><td data-label="What it gets">Whether checks passed, and a failure’s one-line reason; no workspace content</td><td data-label="Where">EU</td></tr>
+        <tr><th scope="row">Resend</th><td data-label="What for">Email from fleetd cloud, such as spend warnings</td><td data-label="What it gets">The recipient’s email address and the message</td><td data-label="Where">EU <mark class="confirm">[confirm: ships with spend warnings]</mark></td></tr>
         <tr><th scope="row">Apple and Google</th><td data-label="What for">Delivering phone notifications</td><td data-label="What it gets">Your device’s push token and a sealed message they can’t read</td><td data-label="Where">United States</td></tr>
         <tr><th scope="row">Vercel</th><td data-label="What for">Hosting the fleetd.sh website and the phone app’s updates</td><td data-label="What it gets">Visitors’ IP addresses and the pages they ask for; no workspace data</td><td data-label="Where">United States; served worldwide</td></tr>
       </tbody>
@@ -95,7 +96,7 @@
     <p>Where a provider processes data outside the EU, the EEA or the UK, we rely on the EU–US Data Privacy Framework where it is certified, or on the EU Standard Contractual Clauses and the UK Addendum.</p>
 
     <h2 id="changes">When this list changes</h2>
-    <p>We tell workspace owners by email, and update this page, at least <b>30 days</b> before a new provider starts processing your data. If you object on reasonable grounds, tell us at <a href="mailto:support@fleetd.dev">support@fleetd.dev</a> within those 30 days. If we can’t resolve it, you can end your plan and we refund what you paid for the time left.</p>
+    <p>We tell workspace owners by email, and update this page, at least <b>30 days</b> before a new provider starts processing your data. If you object on reasonable grounds, tell us at <a href="mailto:support@fleetd.dev">support@fleetd.dev</a> within those 30 days. If we can’t resolve it, you can end your plan and we refund the unused part of what you prepaid.</p>
   </article>
 </main>
 

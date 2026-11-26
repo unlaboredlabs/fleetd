@@ -78,7 +78,7 @@ p,h1,h2,table,blockquote{margin:0}
 .doc .facts li>span:first-child{color:var(--grey)}
 /* A draft's note, and what in it is still to check. */
 .doc .draft{padding:10px 14px;border:1px solid var(--rule);border-radius:6px;background:var(--tone);font-size:14.5px}
-.doc mark.confirm{background:none;color:#e0a33a;font-weight:500;white-space:nowrap}
+.doc mark.confirm{background:none;color:#e0a33a;font-weight:500}
 [data-theme="light"] .doc mark.confirm{color:#9a5b00}
 .doc table.stack{table-layout:fixed}
 .doc table.stack tbody th{white-space:normal}

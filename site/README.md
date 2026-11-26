@@ -93,9 +93,10 @@ their word, and move a page's Effective date when its text changes.
 
 `security.html`, `subprocessors.html` and `dpa.html` (`/security`, `/subprocessors`, `/dpa`) are drafts for the person's
 review: the same layout, listing themselves after the five, `noindex`, out of `sitemap.xml`, and linked from no other
-page. Each opens with a "Draft for review" note, and `<mark class="confirm">` marks what is still to check. Once the
-person says go: take off the note, the marks and `noindex`, add them to the five pages' lists, the footers and
-`sitemap.xml`, and uncomment the line under the providers in `privacy.html`.
+page. Each opens with a "Draft for review" note, and `<mark class="confirm">` marks a feature still being built. The
+security page and the subprocessor list go live once those ship: take off the note, the marks and `noindex`, add them
+to the five pages' lists, the footers and `sitemap.xml`, uncomment the line under the providers in `privacy.html`, and
+point security.txt's Policy at `/security`. The DPA stays a draft until a lawyer has read it and the Terms bring it in.
 
 ## Refreshing the clips
 
