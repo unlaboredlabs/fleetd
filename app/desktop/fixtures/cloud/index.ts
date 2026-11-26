@@ -354,34 +354,58 @@ export default defineGroup({
     fleetd(base("typical"), "own", "Machines on a workspace with a machine of its own and fleetd's computers: Linux machine picks between them.", true),
     fleetd(base("typical"), "older", "Machines on fleetd's computers where the cloud doesn't answer the pick yet: still says where agents run.", false, true),
     (() => {
-      // Usage on a cloud workspace over 30 days: each person's computer time and spend, and No one holding only the
-      // leads' own boxes, which no person's order started (its row shows for that alone).
+      // Usage on a cloud workspace over 30 days, every figure the sum of its parts: the People rows (No one holding
+      // only the leads' own boxes, which no person's order started) and the Bots rows each add up to the tiles, and so
+      // do the days, the leads' time and spend in them.
       const f = admin(base("typical"), "cloud-usage", "Usage on a fleetd cloud workspace: spend per person and bot, No one holding only the leads' computer time.");
       const H = 3_600_000;
-      const counts = (c: JsonObject): JsonObject => ({ agents: 0, agentMs: 0, approvals: 0, failed: 0, merged: 0, messages: 0, orders: 0, computerMs: 0, spendCents: 0, ...c });
-      const days: JsonObject[] = Array.from({ length: 30 }, (_, k) => {
-        const d = new Date(Date.UTC(2026, 9, 20 + k));
-        const busy = d.getUTCDay() === 0 || d.getUTCDay() === 6 ? 0.3 : 1;
-        const orders = Math.round((3 + (k % 4)) * busy);
-        return { date: d.toISOString().slice(0, 10), orders, merged: Math.round(orders * 1.4), failed: k % 7 === 3 ? 1 : 0, agentMs: Math.round(orders * 2.1 * H), computerMs: Math.round(orders * 2.6 * H), spendCents: Math.round(orders * 2.6 * 8) };
-      });
-      const sum = (key: string) => days.reduce((n, d) => n + (d[key] as number), 0);
+      const NUMBERS = ["messages", "orders", "agents", "agentMs", "merged", "approvals", "failed", "computerMs", "spendCents"] as const;
+      type Counts = Record<(typeof NUMBERS)[number], number>;
+      const counts = (c: Partial<Counts>): Counts => ({ messages: 0, orders: 0, agents: 0, agentMs: 0, merged: 0, approvals: 0, failed: 0, computerMs: 0, spendCents: 0, ...c });
+      const add = (rows: Counts[]): Counts => counts(Object.fromEntries(NUMBERS.map((k) => [k, rows.reduce((n, r) => n + r[k], 0)])));
+      const less = (a: Counts, b: Counts): Counts => counts(Object.fromEntries(NUMBERS.map((k) => [k, a[k] - b[k]])));
+      const sam = counts({ messages: 231, orders: 58, agents: 196, agentMs: 132 * H, merged: 81, approvals: 17, failed: 3, computerMs: 166 * H, spendCents: 1_190 });
+      const alice = counts({ messages: 142, orders: 37, agents: 131, agentMs: 85 * H, merged: 54, approvals: 6, failed: 1, computerMs: 103 * H, spendCents: 742 });
+      const bob = counts({ messages: 39, orders: 9, agents: 29, agentMs: 19 * H, merged: 11, computerMs: 24 * H, spendCents: 166 });
+      const nobody = counts({ computerMs: 61 * H, spendCents: 366 });
+      const total = add([sam, alice, bob, nobody]);
+      const storefront = counts({ messages: 248, orders: 61, agents: 214, agentMs: 141 * H, merged: 88, approvals: 15, failed: 2, computerMs: 207 * H, spendCents: 1_490 });
+      const api = less(total, storefront);
+      // The days: the total spread over weekdays and weekends, each day's share rounded down and what that leaves given
+      // to the days with the largest remainders, so they add up exactly.
+      const weights = Array.from({ length: 30 }, (_, k) => ([0, 6].includes(new Date(Date.UTC(2026, 9, 20 + k)).getUTCDay()) ? 1 : 3 + (k % 4)));
+      const all = weights.reduce((n, w) => n + w, 0);
+      const DAILY = ["orders", "merged", "failed", "agentMs", "computerMs", "spendCents"] as const;
+      const days: JsonObject[] = weights.map((w, k) => ({ date: new Date(Date.UTC(2026, 9, 20 + k)).toISOString().slice(0, 10) }));
+      for (const key of DAILY) {
+        const parts = weights.map((w, k) => {
+          const exact = (total[key] * w) / all;
+          return { k, share: Math.floor(exact), over: exact - Math.floor(exact) };
+        });
+        let left = total[key] - parts.reduce((n, p) => n + p.share, 0);
+        for (const p of [...parts].sort((x, y) => y.over - x.over)) if (left-- > 0) p.share += 1;
+        parts.forEach((p, k) => {
+          const day = days[k];
+          if (day) day[key] = p.share;
+        });
+      }
+      const ask = (c: Counts, ms: number): JsonObject => (c.merged > 0 ? { ...c, askToMergeMs: ms } : c);
       f.answer("workspace_usage", undefined, {
         since: "2026-10-20T00:00:00.000Z",
         until: "2026-11-18T15:00:00.000Z",
         now: { running: 4, queued: 0, waiting: 1 },
         currency: "USD",
-        total: counts({ orders: sum("orders"), merged: sum("merged"), failed: sum("failed"), agentMs: sum("agentMs"), messages: 412, agents: 356, approvals: 23, askToMergeMs: 3 * H + 40 * 60_000, computerMs: sum("computerMs") + 61 * H, spendCents: sum("spendCents") + 366 }),
-        previous: counts({ orders: 96, merged: 120, failed: 6, agentMs: 190 * H, messages: 380, agents: 301, approvals: 19, askToMergeMs: 4 * H + 5 * 60_000, computerMs: 290 * H, spendCents: 1_980 }),
+        total: ask(total, 3 * H + 40 * 60_000),
+        previous: ask(counts({ orders: 96, merged: 120, failed: 6, agentMs: 190 * H, messages: 380, agents: 301, approvals: 19, computerMs: 290 * H, spendCents: 1_980 }), 4 * H + 5 * 60_000),
         members: [
-          { person: { personId: "p_aaaaaaaa", name: "Sam Rivera" }, role: "owner", counts: counts({ messages: 231, orders: 58, agents: 196, agentMs: 132 * H, merged: 81, approvals: 17, failed: 3, askToMergeMs: 3 * H + 20 * 60_000, computerMs: 166 * H, spendCents: 1_190 }) },
-          { person: { personId: "p_bbbbbbbb", name: "Alice Chen" }, role: "admin", counts: counts({ messages: 142, orders: 37, agents: 131, agentMs: 85 * H, merged: 54, approvals: 6, failed: 1, askToMergeMs: 4 * H + 10 * 60_000, computerMs: 103 * H, spendCents: 742 }) },
-          { person: { personId: "p_cccccccc", name: "Bob Okafor" }, role: "member", counts: counts({ messages: 39, orders: 9, agents: 29, agentMs: 19 * H, merged: 11, computerMs: 24 * H, spendCents: 166 }) },
+          { person: { personId: "p_aaaaaaaa", name: "Sam Rivera" }, role: "owner", counts: ask(sam, 3 * H + 20 * 60_000) },
+          { person: { personId: "p_bbbbbbbb", name: "Alice Chen" }, role: "admin", counts: ask(alice, 4 * H + 10 * 60_000) },
+          { person: { personId: "p_cccccccc", name: "Bob Okafor" }, role: "member", counts: ask(bob, 3 * H + 50 * 60_000) },
         ],
-        unattributed: counts({ computerMs: 61 * H, spendCents: 366 }),
+        unattributed: nobody,
         bots: [
-          { name: "storefront", projectRef: { machineId: "hosted", projectId: "storefront" }, counts: counts({ orders: 61, agents: 214, agentMs: 141 * H, merged: 88, failed: 2, askToMergeMs: 3 * H + 30 * 60_000, computerMs: 203 * H, spendCents: 1_464 }) },
-          { name: "api", projectRef: { machineId: "hosted", projectId: "api" }, counts: counts({ orders: 43, agents: 142, agentMs: 95 * H, merged: 58, failed: 2, askToMergeMs: 4 * H, computerMs: 151 * H, spendCents: 1_000 }) },
+          { name: "storefront", projectRef: { machineId: "hosted", projectId: "storefront" }, counts: ask(storefront, 3 * H + 30 * 60_000) },
+          { name: "api", projectRef: { machineId: "hosted", projectId: "api" }, counts: ask(api, 4 * H) },
         ],
         days,
       });
