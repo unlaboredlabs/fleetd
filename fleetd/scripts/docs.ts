@@ -48,8 +48,9 @@ export function slugify(text: string): string {
   return out.replace(/-+$/, "");
 }
 
-/** Text safe in a markdown paragraph or table cell: nothing in it reads as markup. */
-export const mdText = (s: string) => s.replace(/[\\`*_[\]<>|#{}]/g, (c) => `\\${c}`);
+/** Text safe in a markdown paragraph, heading or table cell: nothing in it reads as markup, and `--join` stays two
+ * hyphens rather than the docs' smart punctuation's en dash. */
+export const mdText = (s: string) => s.replace(/[\\`*_[\]<>|#{}]/g, (c) => `\\${c}`).replace(/--/g, "-\\-");
 
 /** `text` with the lines between the region's markers replaced by `generated`. */
 export function splice(text: string, region: string, generated: string): string {
@@ -263,7 +264,7 @@ export function cliPage(help: string = usageText()): string {
       const title = headed.has(name) ? `${name} ${forms[0]!.option ?? ""}`.trim() : name;
       headed.add(name);
       const synopsis = forms.flatMap((f) => f.synopsis.map((l, i) => (i === 0 ? `fleetd ${l}` : `    ${l}`)));
-      md += `### fleetd ${title} {#${forms[0]!.id}}\n\n`;
+      md += `### fleetd ${mdText(title)} {#${forms[0]!.id}}\n\n`;
       if (entry.desc.length) md += `${prose(capitalize(summary(entry.desc.join(" "))), commands, words)}\n\n`;
       md += `\`\`\`text\n${synopsis.join("\n")}\n\`\`\`\n\n`;
       forms = [];

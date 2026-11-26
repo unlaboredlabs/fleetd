@@ -73,9 +73,14 @@ export const OLD_ANCHORS = {
   "/docs/skills": { "hub-wide": "/docs/skills#workspace-wide" },
 };
 
-/** The inline script every page carries: once the page is read, it looks up its own path in the map above. */
-export const oldAnchorScript = `document.addEventListener("DOMContentLoaded", () => {
-  const moved = ${JSON.stringify(OLD_ANCHORS)}[location.pathname.replace(/(\\.html|\\/)$/, "")];
-  const id = decodeURIComponent(location.hash.slice(1));
-  if (moved && id && moved[id] && !document.getElementById(id)) location.replace(moved[id]);
-});`;
+/** The inline script every page carries: once the page is read, and whenever only its #section changes (a link to
+ * /docs/reference/cli#hub-start followed from that page), it looks up its own path in the map above. */
+export const oldAnchorScript = `(() => {
+  const go = () => {
+    const moved = ${JSON.stringify(OLD_ANCHORS)}[location.pathname.replace(/(\\.html|\\/)$/, "")];
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (moved && id && moved[id] && !document.getElementById(id)) location.replace(moved[id]);
+  };
+  document.addEventListener("DOMContentLoaded", go);
+  addEventListener("hashchange", go);
+})();`;
