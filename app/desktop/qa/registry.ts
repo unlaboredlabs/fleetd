@@ -273,6 +273,7 @@ export const fixtures = [
   "bubbles-agent",
   "bubbles-ask",
   "bubbles-sources",
+  "bubbles-preview",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
@@ -2590,7 +2591,7 @@ export const screens: readonly Screen[] = [
   },
   // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
   // PR card with its diff, and an ask waiting on you.
-  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
+  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources", "bubbles-preview"], variant: "bubbles" },
   // The tagged chat (a project's trial): a quiet line over each run names its order and, over the lead's, whom it is
   // for; the closed order's messages stay as bubbles where they were. With one order open no tag names it; with the
   // trial off the chat is today's.

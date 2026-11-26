@@ -85,7 +85,7 @@ function Address({ current, disabled, save }: { current: string | undefined; dis
       lineTone={current === undefined ? "warning" : undefined}
       control={
         <span style={{ display: "flex", gap: "var(--space-2)" }}>
-          <Input aria-label="Preview address" mono placeholder="https://preview.example.com" value={value} disabled={disabled} onChange={(e) => setDraft(e.target.value)} />
+          <Input aria-label="Preview address" mono placeholder="https://preview.example.com" value={value} style={{ width: "34ch" }} disabled={disabled} onChange={(e) => setDraft(e.target.value)} />
           <Button variant="secondary" disabled={disabled || draft === undefined || draft === (current ?? "")} onClick={() => void save(value).then(() => setDraft(undefined))}>
             Save
           </Button>
@@ -107,7 +107,7 @@ function LinkList({ links, disabled, act }: { links: readonly ShareLink[]; disab
           label={l.label ?? `Port ${l.port}`}
           icon={<MonitorPlay />}
           name={l.label ?? `Port ${l.port}`}
-          meta={`port ${l.port} on ${machineName(l.machineId)}`}
+          meta={l.label === undefined ? `on ${machineName(l.machineId)}` : `port ${l.port} on ${machineName(l.machineId)}`}
           data={{ "data-share-link": l.name }}
           controls={
             <>
@@ -143,11 +143,11 @@ function SharePort({ disabled, act }: { disabled: boolean; act: (what: string, r
   return (
     <SettingsSection title="Share a port" hint="A dev server already running on one of the workspace's machines: its port becomes a link for two hours.">
       <SettingsRow
-        title="Port"
+        title="Machine and port"
         control={
           <span style={{ display: "flex", gap: "var(--space-2)" }}>
             <Select aria-label="Machine" value={chosen} onValueChange={setMachine} options={machines.map((m) => ({ value: m.machine.machineId, label: m.machine.name }))} />
-            <Input aria-label="Port" inputMode="numeric" placeholder="5173" value={port} style={{ width: "7ch" }} disabled={disabled} onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))} />
+            <Input aria-label="Port" inputMode="numeric" placeholder="5173" value={port} style={{ width: "10ch" }} disabled={disabled} onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))} />
             <Button
               variant="secondary"
               disabled={disabled || !ok}

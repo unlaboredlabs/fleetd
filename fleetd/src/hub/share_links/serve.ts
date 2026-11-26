@@ -197,6 +197,7 @@ export async function servePreview(hub: Hub, req: Request, server: Server<Socket
   if (!sl.enabled()) return off();
   const base = sl.cachedPreviewUrl()!;
   const origin = previewUrl(base, name);
+  const secure = base.startsWith("https:");
   const url = new URL(req.url);
   if (url.pathname === ENTER_PATH) {
     const code = url.searchParams.get("code") ?? "";
@@ -214,10 +215,10 @@ export async function servePreview(hub: Hub, req: Request, server: Server<Socket
     });
     return new Response(null, {
       status: 302,
-      headers: { location: safePath(url.searchParams.get("to")), "set-cookie": header(signCookie(l, person.personId, exp), exp, now), "cache-control": "no-store" },
+      headers: { location: safePath(url.searchParams.get("to")), "set-cookie": header(signCookie(l, person.personId, exp), exp, now, secure), "cache-control": "no-store" },
     });
   }
-  const value = read(req.headers.get("cookie"));
+  const value = read(req.headers.get("cookie"), secure);
   const pass = value === undefined ? undefined : verify(l.secret, name, value, now);
   if (!pass) return signIn(origin + url.pathname + url.search);
   const person = people(hub).get(pass.personId);
@@ -249,7 +250,7 @@ export async function servePreview(hub: Hub, req: Request, server: Server<Socket
   const answer = await upstreamOf(hub, l, origin).fetch(req);
   if (refreshDue(pass.expMs, now, l.expiresMs)) {
     const exp = cookieEnd(now, l.expiresMs);
-    answer.headers.append("set-cookie", header(signCookie(l, person.personId, exp), exp, now));
+    answer.headers.append("set-cookie", header(signCookie(l, person.personId, exp), exp, now, secure));
   }
   return answer;
 }

@@ -9,7 +9,7 @@ import { serve, stop } from "../src/hub/http/index.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import type { SocketData } from "../src/hub/http/route.ts";
 import { people } from "../src/hub/people/store.ts";
-import { COOKIE } from "../src/hub/share_links/cookie.ts";
+import { LOCAL_COOKIE } from "../src/hub/share_links/cookie.ts";
 import { start } from "../src/hub/share_links/loops.ts";
 import { dial, fleetdsOwn } from "../src/node/share/index.ts";
 import { refusal, testHub } from "./people-kit.ts";
@@ -82,8 +82,9 @@ async function signIn(l: ShareLink, as = t.bobsPhone): Promise<string> {
   expect(entered.status).toBe(302);
   expect(entered.headers.get("location")).toBe("/cart?x=1");
   const set = entered.headers.get("set-cookie")!;
+  // The test's preview address is http on localhost: the cookie without __Host- and Secure, which Safari drops there.
+  expect(set).toMatch(/^fleetd_preview=/);
   expect(set).toContain("HttpOnly; SameSite=Lax");
-  expect(set).toContain("Secure");
   expect(set).not.toContain("Domain");
   return set.split(";")[0]!;
 }
@@ -143,7 +144,7 @@ test("the gate: non-members, removed people, ended links and the switch", async 
   const other = await t.call<SharePortOutput>(t.owner, "share_port", { machineId: "devbox", port: DEV + 1 });
   expect((await at(other.link, "/", { cookie: cookie })).status).toBe(401);
   // A forged one neither.
-  expect((await at(link, "/", { cookie: `${COOKIE}=${link.name}.eA.9999999999999.bad` })).status).toBe(401);
+  expect((await at(link, "/", { cookie: `${LOCAL_COOKIE}=${link.name}.eA.9999999999999.bad` })).status).toBe(401);
   // Bob leaves the workspace: his cookie stops at once.
   people(t.hub).remove(t.bob.personId);
   const gone = await at(link, "/", { cookie });

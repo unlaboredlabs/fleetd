@@ -133,6 +133,41 @@ const ASK: Draft[] = [
   ),
 ];
 
+/** An agent's dev server as a share link's card, live, and one that has ended. */
+const PREVIEW: Draft[] = [
+  you(12, "can I try the new checkout on my phone?"),
+  lead(
+    11,
+    "It's running on devbox. Open it here, on your computer or your phone:",
+    { v: 1, kind: "preview", name: "k7f3q9m2x8ab", port: 5173, label: "One-page checkout" },
+    "Only people in this workspace can open it, and it ends in two hours.",
+  ),
+  you(3, "and yesterday's receipts one?"),
+  lead(2, "That one has ended:", { v: 1, kind: "preview", name: "p2r8w4c6d1ze", port: 3000, label: "Receipts redesign" }, "Say if you want it back."),
+];
+
+const previewCards = (base: Fixture): Fixture => {
+  const f = chat(base, "bubbles-preview", "A share link's Open preview card for a dev server, and one whose link ended.", PREVIEW);
+  const at = (minutes: number) => new Date(Date.parse(f.now) + minutes * 60_000).toISOString();
+  f.answer("share_links_list", undefined, {
+    enabled: true,
+    previewUrl: "https://preview.example.com",
+    links: [
+      {
+        name: "k7f3q9m2x8ab",
+        url: "https://k7f3q9m2x8ab.preview.example.com",
+        machineId: "devbox",
+        port: 5173,
+        label: "One-page checkout",
+        createdBy: { kind: "agent", name: "The lead" },
+        createdAt: at(-11),
+        expiresAt: at(109),
+      },
+    ],
+  });
+  return f;
+};
+
 /** The person's messages from outside the app, each with its quiet "via" line: Shortcuts, the Share Sheet. */
 const SOURCES: Draft[] = [
   { author: "human", text: "I'm home", minutesAgo: 60, extra: { client: "shortcuts" } },
@@ -195,6 +230,7 @@ export default defineGroup({
     chat(base("typical"), "bubbles-pr", "The lead shows a PR as a live card and the part of its diff that matters.", PR),
     chat(base("typical"), "bubbles-sources", "Your messages from Shortcuts and the Share Sheet, each saying so under it.", SOURCES),
     agentCards(base("typical")),
+    previewCards(base("typical")),
     chat(base("typical"), "bubbles-ask", "The lead asks you to approve, after a pick-one ask you answered, under a checklist.", ASK, { needsYou: true }),
   ],
 });

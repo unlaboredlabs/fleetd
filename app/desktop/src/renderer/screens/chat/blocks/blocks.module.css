@@ -326,6 +326,9 @@
 .fileGlyph[data-glyph="slides"] {
   --glyph-tint: var(--series-2);
 }
+.fileCard[data-block="preview"] {
+  width: min(100%, 400px);
+}
 .fileGlyph[data-glyph="preview"] {
   --glyph-tint: var(--accent);
 }

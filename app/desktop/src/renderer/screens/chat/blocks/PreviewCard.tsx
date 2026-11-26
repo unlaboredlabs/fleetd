@@ -52,7 +52,7 @@ export function PreviewCard({ preview }: { preview: PreviewBlock }) {
   const meta = ended
     ? "This link has ended"
     : link !== undefined
-      ? `Port ${link.port} on ${machineName(link.machineId)} · ${untilText(link.expiresAt)}`
+      ? `${machineName(link.machineId)}:${link.port} · ${untilText(link.expiresAt).replace(/^until/, "ends")}`
       : port !== undefined
         ? `Port ${port}`
         : "Share link";

@@ -135,6 +135,10 @@ test("the cookie: one link's, signed, ending, and never sent on", () => {
   expect(strip(`a=1; ${COOKIE}=${v}; b=2`)).toBe("a=1; b=2");
   expect(strip(`${COOKIE}=${v}`)).toBeUndefined();
   expect(header(v, now + 60_000, now)).toBe(`${COOKIE}=${v}; Max-Age=60; Path=/; Secure; HttpOnly; SameSite=Lax`);
+  expect(header(v, now + 60_000, now, false)).toBe(`fleetd_preview=${v}; Max-Age=60; Path=/; HttpOnly; SameSite=Lax`);
+  expect(read(`fleetd_preview=${v}`)).toBeUndefined();
+  expect(read(`fleetd_preview=${v}`, false)).toBe(v);
+  expect(strip(`fleetd_preview=${v}; a=1`)).toBe("a=1");
   expect(cookieEnd(now, now + 10)).toBe(now + 10);
   expect(refreshDue(now + COOKIE_MS / 4, now, now + COOKIE_MS * 2)).toBe(true);
   expect(refreshDue(now + COOKIE_MS / 4, now, now + COOKIE_MS / 4)).toBe(false);
