@@ -8314,6 +8314,9 @@
       ],
       "x-open": true
     },
+    "HttpsAddressAddInput": {
+      "type": "object"
+    },
     "HubBusyItem": {
       "description": "One thing in flight on the hub.",
       "properties": {
@@ -12357,6 +12360,12 @@
         "github_disconnect.output": {
           "$ref": "#/$defs/GithubDisconnectOutput"
         },
+        "https_address_add.input": {
+          "$ref": "#/$defs/HttpsAddressAddInput"
+        },
+        "https_address_add.output": {
+          "$ref": "#/$defs/SignIns"
+        },
         "hub_info.input": {
           "$ref": "#/$defs/HubInfoInput"
         },
@@ -13041,6 +13050,18 @@
         "sidebar_order_set.output": {
           "$ref": "#/$defs/SidebarOrderSetOutput"
         },
+        "sign_ins_get.input": {
+          "$ref": "#/$defs/SignInsGetInput"
+        },
+        "sign_ins_get.output": {
+          "$ref": "#/$defs/SignIns"
+        },
+        "sign_ins_set.input": {
+          "$ref": "#/$defs/SignInsSetInput"
+        },
+        "sign_ins_set.output": {
+          "$ref": "#/$defs/SignIns"
+        },
         "skill_delete.input": {
           "$ref": "#/$defs/SkillDeleteInput"
         },
@@ -13449,6 +13470,8 @@
         "github_connect.output",
         "github_disconnect.input",
         "github_disconnect.output",
+        "https_address_add.input",
+        "https_address_add.output",
         "hub_info.input",
         "hub_info.output",
         "hub_move_cancel.input",
@@ -13675,6 +13698,10 @@
         "sidebar_order_get.output",
         "sidebar_order_set.input",
         "sidebar_order_set.output",
+        "sign_ins_get.input",
+        "sign_ins_get.output",
+        "sign_ins_set.input",
+        "sign_ins_set.output",
         "skill_delete.input",
         "skill_delete.output",
         "skill_get.input",
@@ -22603,6 +22630,43 @@
       },
       "required": [
         "order"
+      ],
+      "type": "object"
+    },
+    "SignIns": {
+      "description": "Where a connection's sign-in sends the browser back to a self-hosted workspace: its https address when it has one, else\nfleetd's return page (`returnPage`, on by default), which forwards the browser to the workspace's own address.",
+      "properties": {
+        "https": {
+          "description": "The workspace's https address: its https `--url`, or a Tailscale Serve front. Sign-ins come back here when set.",
+          "type": "string"
+        },
+        "returnPage": {
+          "description": "Whether sign-ins come back through fleetd's return page while the workspace has no https address.",
+          "type": "boolean"
+        },
+        "returnPageUrl": {
+          "description": "fleetd's return page, `https://accounts.fleetd.dev/oauth/return` unless the workspace runs with its own.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "returnPage",
+        "returnPageUrl"
+      ],
+      "type": "object"
+    },
+    "SignInsGetInput": {
+      "type": "object"
+    },
+    "SignInsSetInput": {
+      "properties": {
+        "returnPage": {
+          "description": "Whether sign-ins come back through fleetd's return page while the workspace has no https address.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "returnPage"
       ],
       "type": "object"
     },

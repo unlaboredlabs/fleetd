@@ -20,6 +20,9 @@ import { redact } from "../src/hub/redact.ts";
 import { openSealed, publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import type { McpServer } from "../src/shared/contracts.ts";
 import { people } from "../src/hub/people/store.ts";
+import { RETURN_PAGE, returnResponse } from "../src/shared/oauth_return.ts";
+import { ToolError } from "../src/shared/errors.ts";
+import type { TailscaleRun } from "../src/hub/mcp_oauth/sign_ins.ts";
 import { tinyMcp } from "./tiny_mcp.ts";
 import { tempHome } from "./helpers.ts";
 
@@ -359,10 +362,16 @@ test("asks for offline_access where the sign-in lists it, so the server can be r
     expect(oidc.seen.registered).toHaveLength(2);
     expect(oidc.seen.registered[1]).toMatchObject({ scope: "openid offline_access", grant_types: ["authorization_code", "refresh_token"] });
     expect(renewing.searchParams.get("client_id")).toBe("client-2");
-    // A hub reached over plain http on a tailnet: the service refuses the callback, and the person hears how to fix it.
-    await expect(call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4790" })).rejects.toThrow(
-      /Invalid redirect URI.*takes only an https or loopback callback/,
-    );
+    // A hub reached over plain http on a tailnet signs in through fleetd's return page, which the service takes.
+    const via = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4790" });
+    expect(via.redirectUri).toBe(RETURN_PAGE);
+    // With the return page off, the service refuses the callback: one plain line, and the reason the app offers https for.
+    await call("sign_ins_set", { returnPage: false });
+    const refused = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4790" }).catch((e: unknown) => e as ToolError);
+    expect(refused).toBeInstanceOf(ToolError);
+    expect((refused as ToolError).message).toBe("Couldn't sign in to canvas: it needs the workspace on an https address.");
+    expect((refused as ToolError).reason).toBe("needs_https");
+    expect((refused as ToolError).fix).toBe("Turn on the sign-in return page in Connections, or give the workspace an https address.");
   } finally {
     oidc.server.stop(true);
   }
@@ -479,10 +488,11 @@ test("a sign-in from an app on plain http calls back at the workspace's https fr
       transport: { type: "http", url: `${svc2.base}/mcp` },
       integration: { readTools: [] },
     };
-    // No https front: the app's own plain-http address, which the service refuses.
+    // No https front and the return page off: the app's own plain-http address, which the service refuses.
     const bare = lab();
     await bare.call("mcp_server_set", server);
-    await expect(bare.call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4795" })).rejects.toThrow("Invalid redirect URI");
+    await bare.call("sign_ins_set", { returnPage: false });
+    await expect(bare.call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://devbox.example.ts.net:4795" })).rejects.toMatchObject({ reason: "needs_https" });
     // Tailscale Serve fronts the hub over https: the callback goes there, whatever address the app is on.
     const { hub, call } = lab(async () => serving(4791, "http://127.0.0.1:4795"));
     await call("mcp_server_set", server);
@@ -501,6 +511,70 @@ test("a sign-in from an app on plain http calls back at the workspace's https fr
   } finally {
     svc2.server.stop(true);
   }
+});
+
+test("from a plain-http tailnet address, a sign-in goes through fleetd's return page and lands back on the workspace", async () => {
+  const svc2 = httpsOnlyService();
+  try {
+    const { hub, call } = lab();
+    await call("mcp_server_set", {
+      scope,
+      name: "canvas",
+      enabled: true,
+      roles: { lead: true, writers: true, reviewers: true },
+      transport: { type: "http", url: `${svc2.base}/mcp` },
+      integration: { readTools: [] },
+    });
+    expect(await call("sign_ins_get", {})).toEqual({ returnPage: true, returnPageUrl: RETURN_PAGE });
+    const started = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://100.100.1.2:4795" });
+    expect(started.redirectUri).toBe(RETURN_PAGE);
+    const authorize = new URL(started.authorizeUrl as string);
+    expect(authorize.searchParams.get("redirect_uri")).toBe(RETURN_PAGE);
+    // The service sends the browser to the return page, which forwards it, code and state as they came, to the workspace.
+    const st = authorize.searchParams.get("state")!;
+    const back = returnResponse(`${RETURN_PAGE}?code=c-1&state=${encodeURIComponent(st)}`);
+    expect(back.status).toBe(302);
+    const at = new URL(back.headers.get("location")!);
+    expect(at.origin).toBe("http://100.100.1.2:4795");
+    expect(at.pathname).toBe("/oauth/callback");
+    const page = (await oauthCallback(new Request(at), { hub } as never))!;
+    expect(page.status).toBe(200);
+    expect(mcpServers(hub).get(team, "canvas")!.oauth).toMatchObject({ status: "connected", signingIn: false });
+    // This machine's own address needs no return page: services take a loopback callback.
+    const local = await call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://127.0.0.1:4795" });
+    expect(local.redirectUri).toBe("http://127.0.0.1:4795/oauth/callback");
+  } finally {
+    svc2.server.stop(true);
+  }
+});
+
+test("Give the workspace an https address runs Tailscale Serve on a free https port, and says the fix when it can't", async () => {
+  let served = "{}";
+  const ran: string[][] = [];
+  let answer = { code: 0, out: "" };
+  const { hub, call } = lab(async () => served);
+  hub.area<TailscaleRun>("tailscale_run", () => async (args) => {
+    ran.push(args);
+    if (answer.code === 0) served = serving(443, "http://127.0.0.1:4795");
+    return answer;
+  });
+  // Tailscale says HTTPS is off for the tailnet: its page to turn it on is the fix.
+  answer = { code: 1, out: "Serve is not enabled on your tailnet.\nTo enable, visit:\n\n         https://login.tailscale.com/f/serve?node=abc\n" };
+  await expect(call("https_address_add", {})).rejects.toMatchObject({ message: "HTTPS is off for your tailnet.", fix: "Turn it on at https://login.tailscale.com/f/serve?node=abc, then try again." });
+  answer = { code: 0, out: "" };
+  const done = await call("https_address_add", {});
+  expect(ran.at(-1)).toEqual(["serve", "--bg", "--https=443", "http://127.0.0.1:4795"]);
+  expect(done.https).toBe("https://devbox.example.ts.net");
+  // Sign-ins come back to it from then on; the return page isn't used.
+  expect((await call("sign_ins_get", {})).https).toBe("https://devbox.example.ts.net");
+  // Another site on 443 already: the workspace takes 8443 and leaves that one alone.
+  const other = lab(async () => JSON.stringify({ TCP: { "443": { HTTPS: true } }, Web: { "devbox.example.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:8425" } } } } }));
+  const runs: string[][] = [];
+  other.hub.area<TailscaleRun>("tailscale_run", () => async (args) => (runs.push(args), { code: 1, out: "boom" }));
+  await expect(other.call("https_address_add", {})).rejects.toMatchObject({ message: "Tailscale couldn't give the workspace an https address." });
+  expect(runs[0]).toEqual(["serve", "--bg", "--https=8443", "http://127.0.0.1:4795"]);
+  // No Tailscale at all.
+  await expect(lab().call("https_address_add", {})).rejects.toMatchObject({ fix: expect.stringContaining("tailscale serve --bg 4795") });
 });
 
 /** A project's "docs" server, signed in through the fake service: its token is on the machine. */

@@ -92,6 +92,7 @@
     "./shared/lead_once": "./fleetd/src/shared/lead_once.ts",
     "./shared/limit_text": "./fleetd/src/shared/limit_text.ts",
     "./shared/node_link": "./fleetd/src/shared/node_link.ts",
+    "./shared/oauth_return": "./fleetd/src/shared/oauth_return.ts",
     "./shared/redact": "./fleetd/src/shared/redact.ts",
     "./shared/sandbox": "./fleetd/src/shared/sandbox.ts",
     "./shared/tailnet": "./fleetd/src/shared/tailnet.ts",

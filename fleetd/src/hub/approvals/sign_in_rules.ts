@@ -120,5 +120,5 @@ export const saves = (save: boolean, values: Partial<Record<SignInField, string>
 export function signInFilledLine(fields: readonly SignInField[], site: SecureInputSite, saved: { label: string } | undefined, notSaved: string | undefined): string {
   const what = codeOnly(fields) ? "the code" : "the sign-in";
   const kept = saved ? ` and saved it to the vault as ${saved.label}: the next sign-in there fills by itself` : notSaved ? `; not saved to the vault: ${notSaved}` : "";
-  return `The person entered ${what} for ${site.domain}; fleetd filled it and submitted the form${kept}. You never see it. Look at the page: if it now asks for a one-time code, call request_sign_in with otp.`;
+  return `The person entered ${what} for ${site.domain}; fleetd filled it and submitted the form${kept}. You never see it. Look at the page: if it now asks for a code the site emailed, read it from a connected mail server's tools first; else call request_sign_in with otp.`;
 }

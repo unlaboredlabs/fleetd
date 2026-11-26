@@ -224,6 +224,8 @@ const PLANS: Partial<Record<ToolName, Plan>> = {
   onepassword_remove: () => connection(false, "1Password"),
   tailnet_connect: () => connection(true, "Tailscale"),
   tailnet_disconnect: () => connection(false, "Tailscale"),
+  sign_ins_set: (_hub, input) => workspace(`Turned the sign-in return page ${input.returnPage === false ? "off" : "on"}`, "Connections"),
+  https_address_add: () => workspace("Gave the workspace an https address", "Connections"),
   claude_settings_set: () => workspace("Changed how agents use Claude", "Claude"),
   profile_create: (_hub, input) => workspace(`Added the profile ${str(input.name) ?? ""}`.trim(), "Profiles"),
   profile_update: () => workspace("Changed a profile", "Profiles"),

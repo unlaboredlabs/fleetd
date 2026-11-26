@@ -810,6 +810,11 @@
           "const": "same_repo_there",
           "description": "project_repo_add of a url whose folder already holds that repo, used by no bot: add it as it is (useExisting) or as a separate copy (copy).",
           "type": "string"
+        },
+        {
+          "const": "needs_https",
+          "description": "mcp_oauth_start of a service that takes only an https sign-in address, from a workspace without one: the app offers https_address_add.",
+          "type": "string"
         }
       ],
       "x-open": true

@@ -209,6 +209,7 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
   vault_move: "not called: it moves an item set aside at the upgrade, which no tool makes",
   hub_restart: "not called: it restarts the hub the run is calling, which drops every connection the run holds",
+  https_address_add: "not called: it runs Tailscale Serve on the computer the run's hub is on, which changes that computer's tailnet sites",
   hub_move_start: "not called: it moves the hub into a fleetd cloud team, which a run doesn't reach, and pauses the hub the run is calling",
   share_port: "not called: a share link needs the workspace's preview address, a wildcard name a run doesn't have",
   share_link_renew: "not called: it renews a share link, which only share_port makes",
