@@ -7,7 +7,7 @@ import { byMachine, defaultTiming, type Held, leadEnd, type LeadTurns, HUB_UPDAT
 import { busyWords, healthUrl, updateSummary } from "../src/hub/update/ports.ts";
 import type { HubUpdateData, UpdatePart, UpdateRun, UpdateState } from "../src/shared/contracts.ts";
 import { type Feed, sha256Hex } from "../src/update/index.ts";
-import type { Plan } from "../src/update/finish.ts";
+import { type Plan, WATCH_MAX_MS } from "../src/update/finish.ts";
 import { atLeast, versionCmp } from "../src/update/version.ts";
 import { PROTOCOL as HOSTED } from "../src/node/runner/host.ts";
 import { tempHome } from "./helpers.ts";
@@ -144,7 +144,7 @@ class Fake implements UpdatePorts {
   }
 }
 
-const timing = () => ({ ...defaultTiming(), poll: 1, nodePoll: 5, verdict: 50, nodeBack: 200, restart: 30, drainPoll: 1, drain: 50, prefetchEvery: 1000 });
+const timing = () => ({ ...defaultTiming(), poll: 1, nodePoll: 5, verdict: 50, nodeBack: 200, nodeRestart: 200, restart: 30, drainPoll: 1, drain: 50, prefetchEvery: 1000 });
 
 function updatesIn(dir: string, fake: Fake, more: Partial<ReturnType<typeof timing>> = {}) {
   const u = new Updates(join(dir, "update"), { now: () => fake.now }, { ...timing(), ...more });
@@ -582,6 +582,12 @@ test("a run an older workspace planned drops its cloud machines' asleep parts as
   const run = new Updates(join(dir, "update"), { now: () => 0 }, defaultTiming()).status()!;
   expect(run.parts.map((p) => p.machineId ?? p.part)).toEqual(["hub", "m0"]);
   expect(lastAutoOf(run)).toMatchObject({ result: "done" });
+});
+
+test("the workspace waits on a restarting node past its watcher's longest wait, so a build put back reads put back", () => {
+  // A new node build that never links is put back only at the watcher's cap: a shorter wait here called it failed, and
+  // automatic updates sent it the same build again 10 minutes later.
+  expect(defaultTiming().nodeRestart).toBeGreaterThan(WATCH_MAX_MS);
 });
 
 test("a node waits 2 minutes at most by default", () => {

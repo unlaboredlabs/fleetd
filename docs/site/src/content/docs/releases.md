@@ -46,7 +46,8 @@ Edge moves to Fast.
 
 After the workspace restarts on a new build, it checks itself before its machines update:
 
-1. The workspace comes up healthy within 90 seconds.
+1. The workspace comes up healthy within 90 seconds of its own CPU time, so a busy machine doesn't fail a good build.
+   A build that exits while it starts goes back at once, and one not up 4½ minutes after its restart goes back too.
 2. Every machine that was online before the update reconnects within 3 minutes.
 3. Lead turns still work. Two failed turns with none finishing normally fail the check. A failure counts whether
    Claude exited, hit a fatal error or stalled, or the machine lost its link. Failures whose error the provider

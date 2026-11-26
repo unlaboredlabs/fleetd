@@ -66,6 +66,43 @@ export function restart(service: Service): void {
   if (r.status !== 0) throw new Error(`restarting ${service.name} exited with ${r.signal ? `signal: ${r.signal}` : `exit status: ${r.status}`}`);
 }
 
+/** The process `service` runs now: its pid, null when it runs none, undefined when the service manager can't say. */
+export function mainPid(service: Service): number | null | undefined {
+  const [prefix] = unitAffixes();
+  const [cmd, args] =
+    process.platform === "darwin"
+      ? ["launchctl", ["print", `gui/${uid()}/${prefix}${service.unit}`]]
+      : ["systemctl", ["--user", "show", "-p", "MainPID", "--value", service.name]];
+  const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000, env: userManagerEnv() });
+  if (r.error || r.status !== 0) return undefined;
+  return parseMainPid(r.stdout, process.platform === "darwin" ? "launchd" : "systemd");
+}
+
+/** systemd's `MainPID` value (0 for none), or launchd's `pid = <n>` line (none while it isn't running). */
+export function parseMainPid(text: string, manager: "systemd" | "launchd"): number | null | undefined {
+  if (manager === "launchd") {
+    const m = /^\s*pid = (\d+)\s*$/m.exec(text);
+    return m ? Number(m[1]) : null;
+  }
+  const v = text.trim();
+  if (!/^\d+$/.test(v)) return undefined;
+  return Number(v) > 0 ? Number(v) : null;
+}
+
+/** The CPU time `pid` used, every thread of it, in ms: from `ps`, which Linux and macOS both have. */
+export function cpuTimeMs(pid: number): number | undefined {
+  const r = spawnSync("ps", ["-o", "time=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 });
+  return r.error || r.status !== 0 ? undefined : parseCpuTime(r.stdout);
+}
+
+/** `ps -o time=`: `[dd-][hh:]mm:ss` on Linux, `m:ss.cc` on macOS (its minutes past 59). */
+export function parseCpuTime(text: string): number | undefined {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(text.trim());
+  if (!m) return undefined;
+  const [days, hours, minutes, seconds] = [Number(m[1] ?? 0), Number(m[2] ?? 0), Number(m[3]), Number(m[4])];
+  return Math.round((((days * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000);
+}
+
 /**
  * Starts `program args` outside the calling service, so the service's own restart doesn't end it: a transient systemd
  * user unit on Linux, a new session on macOS.

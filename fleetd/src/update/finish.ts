@@ -6,14 +6,24 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { UpdateStage, UpdateState } from "../shared/contracts.ts";
 import { errText, replaceFile, restore } from "./index.ts";
-import { restart as restartService, type Service, spawnOutside } from "./service.ts";
+import { cpuTimeMs, mainPid, restart as restartService, type Service, spawnOutside } from "./service.ts";
 import { versionShown } from "./version.ts";
 
-/** How long a restarted hub or node gets to come up healthy before the previous build goes back. */
+/**
+ * How long a restarted hub or node gets to come up healthy before the previous build goes back: in the time its process
+ * ran on a CPU, not on the clock, so a busy machine that leaves it a quarter of a core doesn't roll a good build back
+ * (0.9.37 on the devbox, Nov 26: 21 s of CPU in 92 s at load 60, not up yet, put back).
+ */
 export const HEALTH_WAIT_SECS = 90;
+/** Whatever its CPU time says, a build not up in this many times the wait on the clock goes back: one stuck idle. */
+const CAP_TIMES = 3;
 const POLL_MS = 100;
+/** How often the watcher asks the service manager about the process: a spawn each time, so not at every poll. */
+const PROBE_MS = 1000;
 /** The longest the restart waits for `plan.answered`. */
 export const ANSWER_WAIT_MS = 2000;
+/** The longest the watcher waits on a new build with the default wait: for `answered`, then the cap on the clock. */
+export const WATCH_MAX_MS = ANSWER_WAIT_MS + HEALTH_WAIT_SECS * CAP_TIMES * 1000;
 
 export type Health = { kind: "hub"; url: string } | { kind: "node"; up: string };
 
@@ -31,11 +41,15 @@ export type Plan = {
 
 export type Verdict = { state: UpdateState; stage?: UpdateStage | null; message: string };
 
+export type Ran = { pid: number; cpuMs: number };
+
 /** What the watcher does to the world; tests stand in fakes. */
 export interface Ports {
   restart(service: Service): void;
   /** The service answers on `version` now, and did so after `sinceMs`. */
   healthy(health: Health, version: string, sinceMs: number): Promise<boolean>;
+  /** The service's process and the CPU time it used; "down" with none running, undefined when that can't be told. */
+  ran(service: Service): Ran | "down" | undefined;
   sleep(ms: number): Promise<void>;
   nowMs(): number;
 }
@@ -63,8 +77,9 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
     }
     return { state: "failed", stage: "restart", message };
   }
-  if (await up(plan, ports, plan.to, started)) return { state: "done", stage: null, message: `runs ${to}` };
-  const why = `${to} didn't come up healthy within ${plan.waitSecs} s`;
+  const missed = await up(plan, ports, plan.to, started);
+  if (missed === undefined) return { state: "done", stage: null, message: `runs ${to}` };
+  const why = `${to} ${missed}`;
   try {
     restore(plan.exe, plan.prev);
   } catch (e) {
@@ -74,7 +89,7 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
   let back = false;
   try {
     ports.restart(plan.service);
-    back = await up(plan, ports, plan.from, again);
+    back = (await up(plan, ports, plan.from, again)) === undefined;
   } catch {
     back = false;
   }
@@ -85,11 +100,29 @@ export async function finish(plan: Plan, ports: Ports): Promise<Verdict> {
   };
 }
 
-async function up(plan: Plan, ports: Ports, version: string, sinceMs: number): Promise<boolean> {
-  const deadline = sinceMs + plan.waitSecs * 1000;
+/**
+ * Undefined once the service answers on `version`; else why it is taken as not coming up: its process exited, it ran
+ * `plan.waitSecs` on a CPU, or it isn't up CAP_TIMES that on the clock. Where the process can't be read, its clock
+ * time stands in for its CPU time.
+ */
+async function up(plan: Plan, ports: Ports, version: string, sinceMs: number): Promise<string | undefined> {
+  const wait = plan.waitSecs * 1000;
+  let pid: number | undefined;
+  let cpuMs: number | undefined;
+  let probed = -Infinity;
   for (;;) {
-    if (await ports.healthy(plan.health, version, sinceMs)) return true;
-    if (ports.nowMs() >= deadline) return false;
+    if (await ports.healthy(plan.health, version, sinceMs)) return undefined;
+    const now = ports.nowMs();
+    if (now - probed >= PROBE_MS) {
+      probed = now;
+      const ran = ports.ran(plan.service);
+      // None now, or another one the service manager started after it: the build exited as it started.
+      if (pid !== undefined && (ran === "down" || (ran !== undefined && ran.pid !== pid))) return "stopped before it came up healthy";
+      if (ran !== undefined && ran !== "down") [pid, cpuMs] = [ran.pid, ran.cpuMs];
+    }
+    if (cpuMs !== undefined && cpuMs >= wait) return `didn't come up healthy in ${plan.waitSecs} s of CPU time`;
+    if (cpuMs === undefined && now - sinceMs >= wait) return `didn't come up healthy within ${plan.waitSecs} s`;
+    if (now - sinceMs >= wait * CAP_TIMES) return `didn't come up healthy within ${plan.waitSecs * CAP_TIMES} s`;
     await ports.sleep(POLL_MS);
   }
 }
@@ -155,7 +188,7 @@ export function start(plan: Plan, planPath: string, from: string = plan.prev): v
   spawnOutside(from, ["update-finish", planPath]);
 }
 
-/** The real world: the service manager, `/healthz` and the node's up file. */
+/** The real world: the service manager, `/healthz`, the node's up file and `ps`. */
 export const realPorts: Ports = {
   restart: restartService,
   async healthy(health, version, sinceMs) {
@@ -173,6 +206,12 @@ export const realPorts: Ports = {
     } catch {
       return false;
     }
+  },
+  ran(service) {
+    const pid = mainPid(service);
+    if (pid === null) return "down";
+    const cpuMs = pid === undefined ? undefined : cpuTimeMs(pid);
+    return pid === undefined || cpuMs === undefined ? undefined : { pid, cpuMs };
   },
   sleep: (ms) => Bun.sleep(ms),
   nowMs: () => Date.now(),
