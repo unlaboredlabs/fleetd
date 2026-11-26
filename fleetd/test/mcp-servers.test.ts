@@ -537,7 +537,7 @@ test("from a plain-http tailnet address, a sign-in goes through fleetd's return 
     const at = new URL(back.headers.get("location")!);
     expect(at.origin).toBe("http://100.100.1.2:4795");
     expect(at.pathname).toBe("/oauth/callback");
-    const page = (await oauthCallback(new Request(at), { hub } as never))!;
+    const page = (await oauthCallback(new Request(at.toString()), { hub } as never))!;
     expect(page.status).toBe(200);
     expect(mcpServers(hub).get(team, "canvas")!.oauth).toMatchObject({ status: "connected", signingIn: false });
     // This machine's own address needs no return page: services take a loopback callback.
