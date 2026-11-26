@@ -2481,6 +2481,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/VaultStoreCall",
+          "description": "An agent's `vault_store`: a secret it holds, saved as its bot's variable, sealed to the workspace's box key.",
+          "properties": {
+            "op": {
+              "const": "vault_store",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/VaultImportSearchCall",
           "description": "A lead's search of its person's 1Password for items to import, and its proposal (an import card in the chat).",
           "properties": {
@@ -4560,6 +4574,31 @@
           "type": "string"
         }
       ]
+    },
+    "VaultStoreCall": {
+      "description": "`vault_store`: without `sealed`, the workspace's box key to seal to (nothing is stored); with it, the value\nsealed to that key, saved as a secret variable of the caller's bot. Answers its name and fingerprint, never a value.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/EnvName"
+        },
+        "note": {
+          "description": "What it is, for the vault's audit.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "sealed": {
+          "description": "The value, sealed to `sealTo` (base64).",
+          "maxLength": 131072,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "WaitCiCall": {
       "description": "`wait_ci`: a task asks to be woken when a GitHub Actions run (its URL) or the checks on a PR's head (the PR's URL)\nfinish, or with `merged`, when the PR merges. Its thread then continues with one line: the outcome and the failing\njobs, or the merge (or why the PR won't merge).",

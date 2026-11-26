@@ -144,6 +144,47 @@ export function checkEnvName(name: string): void {
   if (envNameReserved(name)) throw invalid(`${name} is fleetd's or claude's own: it can't be set.`, "Pick another name.");
 }
 
+/** Variables that change what later sessions run (a loader, a shell's start file, a runtime's options, git's
+ * commands): an agent's `vault_store` never sets one, as a person may. Compared in capitals. */
+const RUNS_CODE = new Set([
+  "BASH_ENV", "ENV", "ZDOTDIR", "PROMPT_COMMAND", "SHELLOPTS", "BASHOPTS", "IFS", "CDPATH", "EDITOR", "VISUAL", "PAGER",
+  "MANPAGER", "BROWSER", "LESSOPEN", "LESSCLOSE", "SSH_ASKPASS", "SUDO_ASKPASS", "NODE_OPTIONS", "NODE_PATH",
+  "BUN_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME", "PERL5OPT", "PERL5LIB", "PERLLIB", "RUBYOPT", "RUBYLIB",
+  "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS",
+]);
+const RUNS_CODE_PREFIXES = ["LD_", "DYLD_", "GIT_", "BASH_FUNC_", "NPM_CONFIG_"];
+
+/** `checkEnvName`, and refused too: a name that runs code in later sessions. For a variable an agent stores. */
+export function checkStoreName(name: string): void {
+  checkEnvName(name);
+  const upper = name.toUpperCase();
+  if (RUNS_CODE.has(upper) || RUNS_CODE_PREFIXES.some((p) => upper.startsWith(p))) {
+    throw invalid(`${name} changes what later sessions run: an agent can't store it.`, "Store it under a plain name; a person may set it in the bot's Vault.");
+  }
+}
+
+/** The most an agent stores (`vault_store`). */
+export const STORE_MAX_BYTES = 64 * 1024;
+
+/**
+ * A stored value from the file's bytes, as both ends work it out (so their fingerprints agree): UTF-8 text, one
+ * leading BOM and one trailing newline dropped (as `$(cat file)` would), no NUL, 1 byte to STORE_MAX_BYTES.
+ */
+export function storedValue(bytes: Uint8Array): string {
+  if (bytes.length === 0 || bytes.length > STORE_MAX_BYTES) throw invalid(`A stored value is 1 byte to ${STORE_MAX_BYTES / 1024} KB.`);
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw invalid("The value isn't UTF-8 text: a variable holds text.", "Base64 a binary key first.");
+  }
+  if (text.startsWith("\uFEFF")) text = text.slice(1);
+  text = text.endsWith("\r\n") ? text.slice(0, -2) : text.endsWith("\n") ? text.slice(0, -1) : text;
+  if (text.includes("\0")) throw invalid("The value holds a NUL byte, which no variable can.");
+  if (text === "") throw invalid("The value is empty.");
+  return text;
+}
+
 /**
  * Checks `secret` for `kind` and returns the metadata the hub keeps readable. `given` carries what only the person
  * can say: sites, whether a variable is secret, a card's billing address, the item's source and sink.

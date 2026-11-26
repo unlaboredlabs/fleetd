@@ -27,6 +27,7 @@ export const WORKER_OPS: readonly string[] = [
   "artifact_read",
   "attachment_read",
   "vault_items",
+  "vault_store",
 ];
 /** The calls a task's node makes for it: its browser sessions (node/browser), and a project's purchases in them. */
 export const NODE_OPS: readonly string[] = [

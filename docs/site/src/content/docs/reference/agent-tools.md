@@ -98,6 +98,7 @@ Each tool below says when only one of them gets it.
 ### Vault and payments
 
 - <span id="vault_items"></span>`vault_items`: List the vault items it may use, never their values.
+- <span id="vault_store"></span>`vault_store`: Save a secret it holds as a new variable of its bot, never showing the value.
 - <span id="fill_credential"></span>`fill_credential`: Fill a login field from the vault, without seeing it.
 - <span id="fill_address"></span>`fill_address`: Fill an address form from the vault.
 - <span id="vault_import_search"></span>`vault_import_search`: Search your 1Password for items to import into the vault. Lead only.

@@ -7,7 +7,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Start a fleetd agent (a task). title is what the human sees: a short plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind write (its own worktree and branch), read, or review (needs pr). repo: the bot's repo it works in when it has several; absent, pr's repo, else the bot's own. profile: one your first message lists; absent, the default, which reviews always run on. A full slot board queues it. A writer that repeats work in flight is refused; when it is different work, call again with notDuplicateOf and notDuplicateWhy. The result names writers and work it may overlap. Its result arrives in a later wake: end your turn.",
+   "description": "Start a fleetd agent (a task). title is what the human sees: a short plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind write (its own worktree and branch), read, or review (needs pr). repo: which of the bot's repos; absent, pr's, else the bot's own. profile: one your first message lists; absent, the default (reviews always use it). A full board queues it. A writer that repeats work in flight is refused; when it is different work, call again with notDuplicateOf and notDuplicateWhy. The answer names work it may overlap. Its result comes in a later wake: end your turn.",
    "inputSchema": {
     "properties": {
      "kind": {
@@ -209,7 +209,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it, even when every order is closed. With workstreamId it sets that order's brief (goal, why, pointers, constraints, doneWhen) and starts it, or edits it. For another bot's ask give asked, its N<n> handle, so the asker hears when it lands.",
+   "description": "Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief and starts it, even with every order closed. With workstreamId it sets or edits that order's brief (goal, why, pointers, constraints, doneWhen) and starts it. For another bot's ask give asked (its N<n>): the asker hears when it lands.",
    "inputSchema": {
     "properties": {
      "asked": {
@@ -421,7 +421,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; each secretEnv value comes from the node's sinks or, for a command with workstreamId, that order's own variables (secretKey stripe.key reads STRIPE_KEY; envName names any other). The exit code and output tail arrive in a later wake.",
+   "description": "A prod write, spend, delete or key use: the human sees this exact argv with Approve / Deny; the node runs it only once approved. Each secretEnv value comes from the node's sinks or, with workstreamId, that order's variables (secretKey stripe.key reads STRIPE_KEY; envName names others). Exit code and output tail come later.",
    "inputSchema": {
     "properties": {
      "argv": {
@@ -520,7 +520,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Keep one memory entry, in plain words, for later sessions: scope user for how the person you answer works everywhere, project for this bot. Each scope has a short core every session reads and topic files (topic) for detail only some work needs. replaces (an entry's words, quoted exactly) takes its place: never keep two versions. A project file past its cap is refused: merge or replace entries, then call again. The chat shows it with Undo. Never a secret.",
+   "description": "Keep one memory entry in plain words for later sessions: scope user for how the person works, project for this bot. A scope has a short core every session reads and topic files (topic) for detail. replaces (an entry's exact words) takes its place: never two versions. A project file past its cap is refused: merge entries, retry. Shown in chat with Undo. Never a secret.",
    "inputSchema": {
     "properties": {
      "replaces": {
@@ -674,7 +674,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Make an automation for this bot: name, prompt (each run gives it to you as a new order) and optionally schedule: cron to recur (0 9 * * 1-5) or at to run once (a reminder: 2026-11-03T18:00). tz: absent, the zone of the person who last wrote; give one only when they ask. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook. For runs that send or change something, call automation_confirm after it. watch makes it a watcher instead (your prompt's Automations).",
+   "description": "Make an automation for this bot: name, prompt (each run gives it to you as a new order), optional schedule: cron to recur (0 9 * * 1-5) or at for once (2026-11-03T18:00). tz: absent, the last writer's zone. Runs start on their own; reviews, train and approvals apply. Only a person adds a webhook. For runs that send or change something, call automation_confirm after. watch makes a watcher (your prompt's Automations).",
    "inputSchema": {
     "properties": {
      "name": {
@@ -786,7 +786,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Change an automation's name, prompt or schedule (removeSchedule: true takes it off), or pause it (paused: true) or resume it (false); fields left out stay. Paused, nothing starts it; resumed, its schedule goes on from now.",
+   "description": "Change an automation's name, prompt or schedule (removeSchedule: true drops it), or pause (paused: true) or resume (false) it; fields left out stay. Paused, nothing starts it; resumed, its schedule runs from now.",
    "inputSchema": {
     "properties": {
      "automationId": {
@@ -979,7 +979,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Keep the bot's checklist: the human's to-dos beside the chat, each todo, doing or done. An item's text is a short plain outcome (\"Gift cards apply before tax\"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream) or remove it; replace sets the whole list. Returns the list.",
+   "description": "Keep the bot's checklist: the human's to-dos beside the chat, each todo, doing or done. An item's text is a short plain outcome (\"Gift cards apply before tax\"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by id (text, state, link to its PR, agent or workstream) or remove it; replace sets the whole list.",
    "inputSchema": {
     "properties": {
      "items": {
@@ -1204,7 +1204,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Change your own bot when a person asks: title, icon or picture (an image in your working directory), color, shape, instructions (all every agent of it is told; empty clears them), setup (each new worktree's commands), env (plain variables; secrets go through request_secret), archive.",
+   "description": "Change your own bot when a person asks: title, icon or picture (an image in your working directory), color, shape, instructions (what its every agent is told; empty clears), setup (each new worktree's commands), env (plain variables; secrets via request_secret), archive.",
    "inputSchema": {
     "properties": {
      "archive": {
@@ -1786,7 +1786,7 @@
    "lead": true,
    "worker": true,
    "browser": false,
-   "description": "Publish a report too long or rich for chat: Markdown (format md) or a whole HTML page (html). name: lowercase words with hyphens (sweep-report); title: what the human reads. Give content, or path to a file (.html or .htm is html unless format says otherwise). The chat shows a card opening it. The same name again keeps a new version. Link to it in chat as `[Title](artifact:name)`, or `artifact:name@2`. HTML runs sandboxed with no network: inline every script, style, font and image (data: URLs).",
+   "description": "Publish a report too long or rich for chat: Markdown (format md) or a whole HTML page (html). name: lowercase-hyphen words (sweep-report); title: what the human reads. Give content, or path (.html/.htm is html unless format says). The chat shows a card; the same name keeps a new version. Link it as `[Title](artifact:name)` or `artifact:name@2`. HTML is sandboxed offline: inline every script, style, font, image (data: URLs).",
    "inputSchema": {
     "properties": {
      "content": {
@@ -1885,7 +1885,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Open a browser session: a fresh Chrome with an empty profile, thrown away at session_end (a lead with no repo keeps its bot's profile and sign-ins), recorded. Drive it with the agent-browser CLI in Bash, already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android: a fresh Android 15 emulator, driven with agent-device (pass no --serial or --platform). kind linux_desktop: a fresh Linux desktop (1280x800, xterm), driven with the desktop tool. kind mac: the agents' Mac's own screen, shared, driven with desktop and agent-desktop; it ends after 5 idle minutes. An iOS simulator runs on a Mac machine: `mac sim start` (mac --help); kind ios says how, or how to add a Mac.",
+   "description": "Open a browser session: a fresh Chrome with an empty profile, thrown away at session_end (a lead with no repo keeps its bot's profile and sign-ins), recorded. Drive it with the agent-browser CLI in Bash, already pointed at it: no --cdp, no browser of your own. purpose: one line on what for. kind android: a fresh Android 15 emulator, driven with agent-device (no --serial or --platform). kind linux_desktop: a fresh Linux desktop (1280x800, xterm), driven with desktop. kind mac: the agents' Mac's own screen, shared, driven with desktop and agent-desktop; it ends after 5 idle minutes. An iOS simulator runs on a Mac: `mac sim start` (mac --help); kind ios says how, or how to add a Mac.",
    "inputSchema": {
     "properties": {
      "kind": {
@@ -1919,7 +1919,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac). screenshot; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in screenshot pixels; left_click_drag from start_coordinate to coordinate; type text; key: xdotool key names in text (Return, ctrl+s; on the Mac cmd and option too); scroll with scroll_direction and scroll_amount; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop, in your working directory (on the Mac, in a folder of the session's). Mac only: agent_desktop runs one agent-desktop command, text its arguments (`snapshot --app Finder -i`; run `skills get platform` first), acting on apps' accessibility refs without moving the pointer; its headless commands claim their app for you (one agent per app). Pointer, keys, launch and --headed take the Mac's lease, one agent at a time. Screenshot after acting.",
+   "description": "Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac). screenshot; left_click, right_click, middle_click, double_click, triple_click, mouse_move at coordinate [x, y] (screenshot pixels); left_click_drag from start_coordinate to coordinate; type text; key: xdotool names in text (Return, ctrl+s; cmd, option on the Mac); scroll by scroll_direction, scroll_amount; wait duration s; cursor_position; launch: text is a shell command run on the desktop in your working directory (the Mac: a session's folder). Mac only: agent_desktop runs one agent-desktop command, text its arguments (`snapshot --app Finder -i`; `skills get platform` first), via apps' accessibility refs, not the pointer; headless commands claim their app (one agent per app). Pointer, keys, launch and --headed take the Mac's lease (one agent at once). Screenshot after acting.",
    "inputSchema": {
     "properties": {
      "action": {
@@ -2147,6 +2147,39 @@
    }
   },
   {
+   "name": "vault_store",
+   "op": "vault_store",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Save a secret you hold as your bot's variable, out of the transcript: write it to a 0600 file in your worktree or TMPDIR, name it; it's sealed and stored, the file shredded; you get its fingerprint. Logged; no tool reads it back.",
+   "inputSchema": {
+    "properties": {
+     "file": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "pattern": "^/",
+      "type": "string"
+     },
+     "name": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+     },
+     "note": {
+      "maxLength": 300,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "file"
+    ],
+    "type": "object"
+   }
+  },
+  {
    "name": "vault_import_search",
    "op": "vault_import_search",
    "lead": true,
@@ -2227,7 +2260,7 @@
    "lead": true,
    "worker": false,
    "browser": true,
-   "description": "Record a payment at the checkout open in your browser session, with the person's card, once basket and total are final: shop, total (`129.90`) and currency (`EUR`) with everything in it, items. Nobody is asked: it goes in the person's purchases log; then call purchase_fill. Never type card details. Trading, transfers and crypto stay refused.",
+   "description": "Record a payment at the checkout open in your browser session, with the person's card, once basket and total are final: shop, total (`129.90`), currency (`EUR`) and items. Nobody is asked: it goes in the person's purchases log; then call purchase_fill. Never type card details. Trading, transfers and crypto are refused.",
    "inputSchema": {
     "properties": {
      "items": {
@@ -3245,6 +3278,18 @@
     "expected": "string or map"
    },
    "/site": {
+    "expected": "a string"
+   }
+  },
+  "vault_store": {
+   "/file": {
+    "expected": "a string"
+   },
+   "/name": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[A-Za-z_][A-Za-z0-9_]{0,127}$, got {got}"
+   },
+   "/note": {
     "expected": "a string"
    }
   },

@@ -414,6 +414,7 @@ const TOOL_GROUPS: [string, [string, string][]][] = [
     "Vault and payments",
     [
       ["vault_items", "List the vault items it may use, never their values."],
+      ["vault_store", "Save a secret it holds as a new variable of its bot, never showing the value."],
       ["fill_credential", "Fill a login field from the vault, without seeing it."],
       ["fill_address", "Fill an address form from the vault."],
       ["vault_import_search", "Search your 1Password for items to import into the vault."],

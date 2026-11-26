@@ -165,7 +165,7 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
     if (row.kind === "env") checkEnvLimits(hub, draft, meta.bytes ?? 0, row.itemId);
     const saved = vt.store.update(row, draft, secret, by(v), now);
     if (envName !== row.envName && row.kind === "env") mirrorProjectRow(hub, row, undefined, true);
-    after(hub, v, saved, secret, action, s.held);
+    after(hub, v, saved, secret, action, s.held, s.agent);
     return saved;
   }
   const kind = s.kind;
@@ -194,13 +194,22 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
   const cap = scope.machineId ? vt.store.count({ machineId: scope.machineId, projectId: scope.projectId! }) : vt.store.count("team");
   if (cap >= ITEMS_MAX) throw new ToolError("invalid", `At most ${ITEMS_MAX} items fit here.`, "Delete some first.");
   const saved = vt.store.insert(draft, secret, by(v), now);
-  after(hub, v, saved, secret, action, s.held);
+  after(hub, v, saved, secret, action, s.held, s.agent);
   return saved;
 }
 
 /** What every write does after it: the audit row, the event, the Rust mirror and the variables' delivery. */
-function after(hub: Hub, v: Viewer, row: ItemRow, secret: Secret | undefined, action: "create" | "update" | "import" | "adopt" | "delete" | "restore" | "move", held = false): void {
+function after(
+  hub: Hub,
+  v: Viewer,
+  row: ItemRow,
+  secret: Secret | undefined,
+  action: "create" | "update" | "import" | "adopt" | "delete" | "restore" | "move",
+  held = false,
+  agent?: SaveSpec["agent"],
+): void {
   const vt = vault(hub);
+  const order = row.workstreamId ?? agent?.workstreamId;
   vt.used({
     atMs: hub.clock.now(),
     itemId: row.itemId,
@@ -210,8 +219,14 @@ function after(hub: Hub, v: Viewer, row: ItemRow, secret: Secret | undefined, ac
     ...(v.human ? { deviceId: v.caller.keyId } : {}),
     ...(row.machineId !== undefined ? { machineId: row.machineId } : {}),
     ...(row.projectId !== undefined ? { projectId: row.projectId } : {}),
-    ...(row.workstreamId !== undefined ? { workstreamId: row.workstreamId } : {}),
-    data: { label: row.label, kind: row.kind, ...(row.envName !== undefined ? { names: [row.envName] } : {}) },
+    ...(agent?.taskId !== undefined ? { taskId: agent.taskId } : {}),
+    ...(order !== undefined ? { workstreamId: order } : {}),
+    data: {
+      label: row.label,
+      kind: row.kind,
+      ...(row.envName !== undefined ? { names: [row.envName] } : {}),
+      ...(agent ? { via: "vault_store", ...(agent.note !== undefined ? { message: agent.note } : {}) } : {}),
+    },
   });
   vt.changed(row);
   if (row.kind !== "env") return;
