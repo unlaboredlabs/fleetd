@@ -40,12 +40,12 @@ describe("Connect this computer", () => {
     expect(asked).toEqual([{ tool: "machine_join", input: {} }]);
     expect(t.ran).toEqual([{ file: "/usr/bin/x-terminal-emulator", args: ["-e", "/bin/sh", "/tmp/fleetd-x/fleetd-join.sh"] }]);
     expect(t.scripts[0]).toBe(
-      `#!/bin/sh\nrm -f "$0"\nrmdir "$(dirname "$0")" 2>/dev/null\ncurl -fsSL https://fleetd.sh | sh -s -- --join https://acme.fleetd.dev --code fje_abc123 --git-identity 'Sam <sam@acme.example>'\necho\nprintf 'Press Return to close. '\nread -r _\n`,
+      `#!/bin/sh\nrm -f "$0"\nrmdir "$(dirname "$0")" 2>/dev/null\ncurl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=fje_abc123 sh -s -- --join https://acme.fleetd.dev --git-identity 'Sam <sam@acme.example>'\necho\nprintf 'Press Return to close. '\nread -r _\n`,
     );
   });
 
   it("never runs the hub's own line, and refuses a code or address that isn't one", async () => {
-    expect(joinLine("https://acme.fleetd.dev", "fje_x")).toBe("curl -fsSL https://fleetd.sh | sh -s -- --join https://acme.fleetd.dev --code fje_x");
+    expect(joinLine("https://acme.fleetd.dev", "fje_x")).toBe("curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=fje_x sh -s -- --join https://acme.fleetd.dev");
     for (const output of [{ hubUrl: "https://acme.fleetd.dev", code: "x; rm -rf ~" }, { hubUrl: "file:///etc", code: "fje_x" }, { line: "curl evil | sh" }]) {
       const t = terminal();
       expect((await connectComputer(hub(output), t.deps)).ok).toBe(false);

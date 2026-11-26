@@ -1,5 +1,5 @@
-// The Automations tab's Watching group: the bot's watchers, each a look at one thing about its software on a schedule
-// that says one line in the chat only when something is off. A row is what it watches, then how often, its profile and
+// The Automations tab's Watching group: the bot's watchers, each a look at one thing (about its software, where it has a
+// repo) on a schedule that says one line in the chat only when something is off. A row is what it watches, then how often, its profile and
 // its last day's cost, with its on switch; + adds one (a preset the bot can have, or one sentence). Its menu looks now,
 // edits how often and the profile, shows its runs, and deletes it.
 import { useState } from "react";
@@ -13,7 +13,7 @@ import settings from "../settings/settings.module.css";
 import { localZone } from "./model";
 import { Runs } from "./Runs";
 import s from "./automations.module.css";
-import { EVERY_OPTIONS, kindLabel, offered, SENTENCE_MAX, sentenceProblem, watcherInput, watchLine } from "./watchModel";
+import { EVERY_OPTIONS, kindLabel, offered, SENTENCE_MAX, sentenceProblem, watchersAbout, watcherInput, watchLine } from "./watchModel";
 
 const READS = ["automation_list", "automation_runs"] as const;
 /** The Select's value for "the bot's default profile". */
@@ -31,7 +31,7 @@ export function Watching(props: { projectRef: ProjectRef; watchers: Automation[]
   return (
     <SettingsSection
       title="Watching"
-      hint="Watchers look at your software on a schedule and say one line in the chat only when something is off."
+      hint={watchersAbout(props.watchable)}
       intro={locked ? BOT_ADMIN_ONLY : undefined}
       aside={editing === "new" || locked ? undefined : <AddButton label="New watcher" disabled={kinds.length === 0} onClick={() => setEditing("new")} />}
       data={{ "data-group": "watching" }}
@@ -144,7 +144,7 @@ function Row(props: { watcher: Automation; defaultProfile: string | undefined; l
           </Text>
         </div>
       ) : null}
-      {history ? <Runs automationId={a.automationId} /> : null}
+      {history ? <Runs automationId={a.automationId} projectRef={a.projectRef} /> : null}
       <Dialog
         open={deleting}
         onOpenChange={(open) => !open && setDeleting(false)}
@@ -222,7 +222,8 @@ function Editor(props: {
   ];
   return (
     <SettingsRow title={w ? `Edit ${w.name}` : "New watcher"}>
-      {w ? null : (
+      {/* A pick of one (Something else alone, as on a bot with no repo) isn't a choice: no switch. */}
+      {w || props.kinds.length < 2 ? null : (
         <Segmented<KnownWatchKind> label="Watch" options={props.kinds.map((k) => ({ value: k, label: kindLabel(k) }))} value={kind} onChange={setKind} />
       )}
       {!w && kind === "other" ? (

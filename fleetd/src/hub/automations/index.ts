@@ -19,6 +19,7 @@ import type {
   AutomationSchedule,
   AutomationTrigger,
   AutomationWatch,
+  ChatMessage,
   HubEvent,
   HubEventType,
   PersonRef,
@@ -31,6 +32,8 @@ import type { Hub } from "../api/hub.ts";
 import { hubZone } from "../attention/index.ts";
 import { uuidFrom } from "../executor/index.ts";
 import { leads } from "../leads/index.ts";
+import { chat } from "../chat/index.ts";
+import { chatPerson } from "../leads/zone.ts";
 import { unknownProject } from "../leads/seams.ts";
 import { intake, type IntakeInput } from "../leads/workstreams.ts";
 import { clip } from "../leads/text.ts";
@@ -44,6 +47,7 @@ import { checkWatch, cronOf, isCheckIn, lastDay, named, PRESETS, watchers } from
 import {
   atMs,
   AUTOMATIONS_PER_PROJECT,
+  firstLine,
   hex,
   invalid,
   kept,
@@ -64,6 +68,7 @@ import {
 
 export {
   AUTOMATIONS_PER_PROJECT,
+  firstLine,
   fromCall,
   nextAfter,
   orderText,
@@ -76,6 +81,9 @@ export {
 
 /** Runs per lead thread `leadTurns` remembers seeing: more than one turn's wakes, steers and chat messages. */
 const RUNS_SEEN = 32;
+
+/** How long after a run's order closed the lead's message still counts as the run's. */
+const MESSAGE_AFTER_MS = 60_000;
 
 /** A new automation: the app's automation_create or the lead's. */
 export type NewAutomation = {
@@ -242,16 +250,80 @@ export class Automations {
     return workstreamGet(this.hub.db.conn, w);
   }
 
-  /** A running run whose order has closed since is over: done or stopped as its order was. */
+  /** A running run whose order has closed since is over: done or stopped as its order was. An ended one finds its message. */
   private settle(run: AutomationRun): AutomationRun {
-    if (run.state !== "running" || run.workstreamId === undefined) return run;
+    if (run.state !== "running" || run.workstreamId === undefined) return this.withMessage(run);
     const ws = this.workstream(run.workstreamId);
     if (ws?.state === "open") return run;
     const out: AutomationRun = ws
       ? { ...run, state: ws.state === "done" ? "done" : "stopped", endedAt: ws.updatedAt }
       : { ...run, state: "stopped", endedAt: isoMs(this.now()) };
+    const found = this.withMessage(out);
+    if (found === out) this.putRun(out);
+    return found;
+  }
+
+  /**
+   * An ended run's message in the bot's chat, kept on the run with its first line once found: the lead's first final
+   * message from when its order opened until a minute after it closed (a lead may close the order, then say so). A
+   * message the chat tags give another order is not it.
+   */
+  private withMessage(run: AutomationRun): AutomationRun {
+    if (run.state === "skipped") return this.skippedFor(run);
+    if (run.messageId !== undefined || run.workstreamId === undefined || run.endedAt === undefined) return run;
+    if (run.state !== "done" && run.state !== "stopped") return run;
+    const a = this.row(run.automationId);
+    const [from, until] = [parseMs(run.at), parseMs(run.endedAt)];
+    if (!a || from === undefined || until === undefined) return run;
+    const rows = this.hub.db.all<{ data: string }>(
+      `SELECT data FROM chat_messages WHERE machine_id = ? AND project_id = ? AND created_ms >= ? AND created_ms <= ?
+         AND json_valid(data) AND json_extract(data, '$.author') = 'lead' ORDER BY seq LIMIT 50`,
+      [a.projectRef.machineId, a.projectRef.projectId, from, until + MESSAGE_AFTER_MS],
+    );
+    for (const { data } of rows) {
+      const m = JSON.parse(data) as ChatMessage;
+      if (m.state !== "final" || m.item !== undefined || m.history !== undefined) continue;
+      if (m.about !== undefined && m.about.workstreamId !== run.workstreamId) continue;
+      const line = firstLine(m.text);
+      if (line === "") continue;
+      const out = storedRun({ ...run, messageId: m.messageId, said: line });
+      this.putRun(out);
+      return out;
+    }
+    return run;
+  }
+
+  /**
+   * A run skipped while an earlier one's order was open links that run's message once it has one, so its row opens
+   * what the run it waited on said. A skip for another reason (paused) finds no run open then and links nothing.
+   */
+  private skippedFor(run: AutomationRun): AutomationRun {
+    if (run.messageId !== undefined) return run;
+    const at = parseMs(run.at);
+    if (at === undefined) return run;
+    const row = this.hub.db.all<{ data: string }>(
+      `SELECT data FROM automation_runs WHERE automation_id = ? AND workstream_id IS NOT NULL AND at_ms <= ? AND run_id <> ?
+       ORDER BY at_ms DESC, rowid DESC LIMIT 1`,
+      [run.automationId, at, run.runId],
+    )[0];
+    if (!row) return run;
+    const before = this.settle(decodeRun(row.data));
+    const ended = before.endedAt === undefined ? undefined : parseMs(before.endedAt);
+    if (before.messageId === undefined || (ended !== undefined && ended < at)) return run;
+    const out = storedRun({ ...run, messageId: before.messageId });
     this.putRun(out);
     return out;
+  }
+
+  /** An order closed: a run of it still recorded as running ends with it now, and says so, so the apps redraw it. */
+  orderEnded(workstreamId: string): void {
+    const rows = this.hub.db.all<{ data: string }>("SELECT data FROM automation_runs WHERE workstream_id = ? AND state = 'running'", [workstreamId]);
+    for (const { data } of rows) {
+      const run = this.settle(decodeRun(data));
+      if (run.state === "running") continue;
+      const a = this.row(run.automationId);
+      if (a) this.runEvent(a, run, `${run.state} with ${workstreamId}`);
+    }
   }
 
   /** The run whose order is still open, if any: any of its runs, since a skipped trigger is newer than the one it skipped for. */
@@ -565,12 +637,15 @@ export class Automations {
     const now = this.now();
     const trigger: AutomationTrigger = start.kind;
     const busy = this.active(id);
+    // In words a person reads beside the run (no run or order ids); the lead's automation_run names the open order.
     const going =
       busy === undefined
         ? undefined
         : busy.workstreamId !== undefined
-          ? `run ${busy.runId} is still going (${busy.workstreamId} is open)`
-          : `run ${busy.runId} is still starting`;
+          ? "the last run's order is still open"
+          : a.watch !== undefined
+            ? "the last look is still going"
+            : "the last run is still starting";
     const webhook = start.kind === "webhook";
     const waiting = webhook ? this.queuedCount(id) : 0;
     const openNow = going !== undefined;
@@ -728,6 +803,65 @@ export class Automations {
     }
   }
 
+  // ---- a person's zone moving ---------------------------------------------------------------------------------------
+
+  /**
+   * Person `personId` moved from zone `from` to `to` (their device sent another, `chat_send`'s tz): every schedule on
+   * `from` of the bots whose schedules follow them (they wrote last in its chat, `chatPerson`; `writing`, where they
+   * write now, counts) moves to `to`, so all their schedules keep one zone. A repeating one keeps its wall-clock time (08:00
+   * stays 08:00 on the new clock); a one-time one keeps its instant. Each bot's chat says what moved. A schedule on
+   * another zone was named on purpose and stays; a one-time one that has run stays as it ran. How many moved.
+   */
+  followZone(personId: string, from: string, to: string, writing?: ProjectRef): number {
+    const rows = this.hub.db.all<{ data: string }>(
+      "SELECT data FROM automations WHERE json_extract(data, '$.schedule.tz') = ? AND json_extract(data, '$.doneAt') IS NULL ORDER BY rowid",
+      [from],
+    );
+    const moved = new Map<string, { r: ProjectRef; n: number }>();
+    const follows = new Map<string, boolean>();
+    for (const { data } of rows) {
+      const a = decode(data);
+      const key = `${a.projectRef.machineId}/${a.projectRef.projectId}`;
+      let theirs = follows.get(key);
+      if (theirs === undefined) {
+        theirs = (writing !== undefined && sameRef(writing, a.projectRef)) || chatPerson(this.hub.db, a.projectRef) === personId;
+        follows.set(key, theirs);
+      }
+      if (!theirs) continue;
+      const s = a.schedule as AutomationSchedule;
+      let next: AutomationSchedule;
+      try {
+        next = s.at === undefined ? kept({ ...s, tz: to }) : kept({ at: isoMs(atMs(s.at, s)), tz: to });
+      } catch (error) {
+        console.warn(`automation ${a.automationId} kept its zone:`, (error as Error).message);
+        continue;
+      }
+      const out: Automation = { ...a, schedule: next, updatedAt: isoMs(this.now()) };
+      if (!a.paused) {
+        try {
+          out.nextRunAt = isoMs(nextAfter(next, this.now()));
+        } catch {
+          delete out.nextRunAt;
+        }
+      }
+      this.put(out);
+      this.changedEvent(out, `moved to ${to} with its person's zone`, "hub");
+      moved.set(key, { r: a.projectRef, n: (moved.get(key)?.n ?? 0) + 1 });
+    }
+    let n = 0;
+    for (const { r, n: count } of moved.values()) {
+      n += count;
+      const what = count === 1 ? "Your automation now runs" : `Your ${String(count)} automations now run`;
+      try {
+        chat(this.hub).systemLine(r, `${what} on ${to} time, the zone of the device you last wrote from. ${count === 1 ? "It was" : "They were"} on ${from}.`);
+      } catch (error) {
+        console.warn("a zone move's chat line not posted:", (error as Error).message);
+      }
+    }
+    if (n > 0) this.signal();
+    return n;
+  }
+
   // ---- removed projects ----------------------------------------------------------------------------------------------
 
   /** Deletes the automations of `r` with their runs: the project is gone, so they start nothing. */
@@ -800,7 +934,7 @@ export class Automations {
               ...run,
               state: "running",
               workstreamId: opened.workstreamId,
-              why: why(`Kept while an earlier run was open; went in ${opened.workstreamId} with ${n} webhook call${n === 1 ? "" : "s"}.`),
+              why: why(`Kept while an earlier run was open; went in one order with ${n} webhook call${n === 1 ? "" : "s"}.`),
             })
           : storedRun({ ...run, state: "failed", why: why(opened.error), endedAt: isoMs(this.now()) });
       this.putRun(out);
@@ -1061,6 +1195,8 @@ export class Automations {
         case "workstream.done":
         case "workstream.state":
           void this.then("an order's end", async () => {
+            const w = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;
+            if (typeof w === "string") this.orderEnded(w);
             await this.deliverAll();
             await this.fireWaiting();
           });

@@ -1783,7 +1783,7 @@
    "lead": true,
    "worker": true,
    "browser": false,
-   "description": "Put a file you made in this bot's chat (a UI screenshot instead of a link, a PDF, a CSV, a document): path inside your working directory, at most 25 MiB, a png, jpeg, webp or gif, PDF, text, CSV, .docx, .xlsx, .pptx or .zip. Returns its attachmentId and the block that shows it: an image inline ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}), anything else a file card ({\"v\":1,\"kind\":\"file\",\"attachmentId\":\"F12\"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.",
+   "description": "Put a file you made in this bot's chat (a UI screenshot instead of a link, a PDF, a CSV, a document): path in your working directory or $TMPDIR, at most 25 MiB, a png, jpeg, webp or gif, PDF, text, CSV, .docx, .xlsx, .pptx or .zip. Returns its attachmentId and the block that shows it: an image inline ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}), anything else a file card ({\"v\":1,\"kind\":\"file\",\"attachmentId\":\"F12\"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it goes after 24 h.",
    "inputSchema": {
     "properties": {
      "path": {

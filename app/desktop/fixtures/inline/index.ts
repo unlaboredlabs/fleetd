@@ -1,6 +1,6 @@
 // The inline chat items' fixtures: the typical lab hub, whose first project's chat holds one message for each state
 // of the two items (fixtures/inline/items.json: the secret field, saved, withdrawn; a command waiting, ran, ran with
-// an error, not run, open again after the node was offline, a denied tool permission, approved and running). devbox
+// an error, not run, open again after the node was offline, a denied tool permission, approved and running, the lead's first visit to a site). devbox
 // gets a real box key so the secret field can seal. inline-items answers Approve and Deny as a hub does;
 // inline-failures fails them and the secret save, for the one-line failure with Retry; inline-reopened reopens two
 // approvals after Approve, as a hub does when the node is offline; inline-offline is that chat from the disk cache

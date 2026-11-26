@@ -337,7 +337,8 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   } else {
     wants = "asks for approval";
   }
-  add("Asked", r.text, { lines: true });
+  // A command's text is the workspace's summary of the fields above ("Run … on … in …: why"), so it isn't said again.
+  if (r.gated === undefined) add("Asked", r.text, { lines: true });
   const hidden = hasHidden(who) || hasHidden(wants) || fields.some((f) => (f.words ?? [f.value]).some((v) => hasHidden(v, f.lines === true)));
   return { title: `${who} ${wants}`, who, wants, risk, fields, hidden };
 };

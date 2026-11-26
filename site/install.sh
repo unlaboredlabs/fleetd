@@ -2,8 +2,8 @@
 # fleetd installer: curl -fsSL https://fleetd.sh | sh
 #
 #   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
-#   sh -s -- --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
-#            [--version <workspace's version>]
+#   FLEETD_JOIN_CODE=<code> sh -s -- --join <workspace url> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
+#            [--mac] [--version <workspace's version>]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
@@ -12,8 +12,10 @@
 # workspace key when it first opens. Every download is checked against the release's checksums. Safe to run again; it
 # replaces what it installed.
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
-# With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
+# With --join and a code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
 # makes this machine a worker of that workspace without asking for its address or code, with or without a terminal.
+# The one-time code comes in FLEETD_JOIN_CODE and goes on to fleetd in its environment, which only this user reads:
+# never in a command's arguments, which any user on the machine can list (ps). --code still works, for older lines.
 # --mac joins the agents' Mac (docs: agents-mac.md): run in Terminal logged in at the Mac's screen (an admin's account
 # is fine), which it checks before it downloads anything; it installs no app there.
 # --version (in the agents' Mac's join line) installs the workspace's own build and channel: a tagged version from its own
@@ -251,9 +253,10 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --no-app      install only the CLI
   --app         install the desktop app on Linux even without a display
   --no-init     don't start the setup wizard (fleetd init) after installing
-  --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
+  --join <url> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
          [--version <version>]
-                join that workspace as a worker (fleetd init --join) after installing:
+                join that workspace as a worker (fleetd init --join) after installing,
+                its one-time code in FLEETD_JOIN_CODE (or --code <code>):
                 the command fleetd pair --worker prints on the workspace's machine;
                 --mac joins the agents' Mac, from Terminal logged in at its screen;
                 --version installs the workspace's own build
@@ -680,7 +683,14 @@ over Screen Sharing), open Terminal there, and paste the join line again; nothin
 # join_hub: `fleetd init --join` with what `fleetd pair --worker` printed, so it doesn't ask for them. The terminal, when there
 # is one, is its stdin, as when the command is typed there.
 join_hub() {
-  set -- init --join "$join" --code "$code"
+  set -- init --join "$join"
+  # The code in fleetd's environment; only a build from before it read it there gets it as --code.
+  if "$bin_dir/fleetd" help 2>/dev/null | grep -q FLEETD_JOIN_CODE; then
+    FLEETD_JOIN_CODE="$code"
+    export FLEETD_JOIN_CODE
+  else
+    set -- "$@" --code "$code"
+  fi
   [ -z "$machine_id" ] || set -- "$@" --machine-id "$machine_id"
   [ -z "$git_identity" ] || set -- "$@" --git-identity "$git_identity"
   [ "$rejoin" = 0 ] || set -- "$@" --rejoin
@@ -782,7 +792,9 @@ main() {
   do_uninstall=0
   run_init=1
   join=""
-  code=""
+  code="${FLEETD_JOIN_CODE:-}"
+  # Read: nothing else this runs gets it, but fleetd init --join (join_hub).
+  unset FLEETD_JOIN_CODE
   machine_id=""
   git_identity=""
   rejoin=0
@@ -820,10 +832,10 @@ main() {
   done
   if [ -n "$join" ] || [ -n "$code" ]; then
     [ -n "$join" ] && [ -n "$code" ] ||
-      die "--join and --code go together: both are in what fleetd pair --worker prints"
+      die "--join and its code go together: both are in what fleetd pair --worker prints (the code in FLEETD_JOIN_CODE or --code)"
     [ "$run_init" = 1 ] || die "--no-init and --join contradict each other: --join runs fleetd init --join"
   elif [ -n "$machine_id$git_identity$hub_version" ] || [ "$rejoin" = 1 ] || [ "$mac" = 1 ]; then
-    die "--machine-id, --git-identity, --rejoin, --mac and --version only go with --join and --code"
+    die "--machine-id, --git-identity, --rejoin, --mac and --version only go with --join and its code"
   fi
   [ "$mac" = 0 ] || agents_mac_user
 

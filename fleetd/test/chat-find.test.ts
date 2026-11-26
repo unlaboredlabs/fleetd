@@ -248,6 +248,12 @@ test("hit lines: one line around the first match, marks inside it, a file's name
   expect(end.marks[0]![0]).toBeLessThanOrEqual(1 + 160 / 3);
   expect(hitText("", [pdf], parseWords("x"))).toEqual({ text: "invoice.pdf", marks: [] });
   expect(hitText("a\n\n  b   c", undefined, [])).toEqual({ text: "a b c", marks: [] });
+  // Plain words, never Markdown read as syntax: a fence and its language, a heading's #, bullets, a quote, a table,
+  // inline code's backticks, italics; snake_case and a lone * stay.
+  const md = "## Primes\n\nHere's *one* way:\n\n```python\ndef first_primes(n):\n    return [2, 3]\n```\n\n- call `first_primes(2)`\n> ~~old~~ new\n\n| n | p |\n|---|---|\n| 1 | 2 |\n\n2 * 3 = 6";
+  const plain = hitText(md, undefined, parseWords("first_primes"));
+  expect(plain.text).toBe("Primes Here's one way: def first_primes(n): return [2, 3] call first_primes(2) old new n · p 1 · 2 2 * 3 = 6");
+  expect(plain.marks.map(([a, b]) => plain.text.slice(a, b))).toEqual(["first_primes", "first_primes"]);
   // Marks are in the text's own code units, past accents and wide characters.
   const s = "🚀 Café CAFE";
   expect(marksOf(s, parseWords("cafe")).map(([a, b]) => s.slice(a, b))).toEqual(["Café", "CAFE"]);
@@ -298,11 +304,11 @@ test("a hit, a pin and the index read a message as the chat shows it: a block by
   expect(hit.text.slice(...hit.marks[0]!)).toBe("published");
   expect(firstLine({ text })).toBe("QA CSV, two rows");
   expect(indexedText({ text })).not.toMatch(/attachmentId|artifact:|fleetd-block|[{}*`]/);
-  // A block with no words of its own says what it is; code a person wrote stays as written.
+  // A block with no words of its own says what it is; code a person wrote stays as written, without its backticks.
   expect(hitText('```fleetd-block\n{"v":1,"kind":"diff","patch":"x"}\n```', undefined, []).text).toBe("A diff");
-  expect(hitText("run `bun test` again", undefined, []).text).toBe("run `bun test` again");
+  expect(hitText("run `bun test` again", undefined, []).text).toBe("run bun test again");
   // Bold marks go, but not underscores in code or inside a word.
-  expect(hitText("fix **this** and __that__ in `__init__.py`, not my__var__name", undefined, []).text).toBe("fix this and that in `__init__.py`, not my__var__name");
+  expect(hitText("fix **this** and __that__ in `__init__.py`, not my__var__name", undefined, []).text).toBe("fix this and that in __init__.py, not my__var__name");
 });
 
 test("the index holds the words the chat shows: a block's JSON or a link's target finds nothing, its words do, and the fill redoes old rows so", async () => {

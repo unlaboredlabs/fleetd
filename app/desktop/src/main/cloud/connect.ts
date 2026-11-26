@@ -9,9 +9,10 @@ import { openJoinLine, type TerminalDeps } from "../pairing/terminal";
 /** Quoted for the shell only when it needs it (the CLI's `q`, fleetd/src/cli/pair.ts). */
 const q = (value: string): string => (value !== "" && /^[A-Za-z0-9_/.,:@%+=-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`);
 
-/** The installer's join line (fleetd/src/cli/pair.ts joinLine) with no machine id. */
+/** The installer's join line (fleetd/src/cli/pair.ts joinLine) with no machine id: its code in the installer's
+ * environment, out of the arguments any user on the computer can list. */
 export const joinLine = (hub: string, code: string, identity?: string): string =>
-  `curl -fsSL https://fleetd.sh | sh -s -- --join ${q(hub)} --code ${q(code)}${identity === undefined ? "" : ` --git-identity ${q(identity)}`}`;
+  `curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=${q(code)} sh -s -- --join ${q(hub)}${identity === undefined ? "" : ` --git-identity ${q(identity)}`}`;
 
 const str = (o: unknown, key: string): string | undefined => {
   const v = typeof o === "object" && o !== null ? (o as Record<string, unknown>)[key] : undefined;

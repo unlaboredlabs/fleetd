@@ -65,6 +65,16 @@ export function watchLine(a: Automation, defaultProfile: string | undefined): st
   return [everyWord(w.every), w.profile ?? defaultProfile ?? "Default profile", usageWord(a)].join(" · ");
 }
 
+/**
+ * What watchers do, said above them: a look at the bot's software where it has a repo to watch (Main's CI is
+ * watchable), else a check on anything; an older hub that doesn't say keeps the first.
+ */
+export function watchersAbout(watchable: readonly WatchKind[] | undefined): string {
+  return watchable === undefined || watchable.includes("main_ci")
+    ? "Watchers look at your software on a schedule and say one line in the chat only when something is off."
+    : "Watchers check something on a schedule and say one line in the chat only when it changes.";
+}
+
 /** The kinds the + offers: what the hub says the bot can watch, less the presets it already has (one of each). */
 export function offered(watchable: readonly WatchKind[] | undefined, have: readonly Automation[]): KnownWatchKind[] {
   const can = (watchable ?? ["other"]) as string[];

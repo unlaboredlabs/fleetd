@@ -21,16 +21,8 @@ import {
   money,
   noBuyWhy,
   periodWord,
-  planChoice,
-  planLine,
-  planTerms,
-  planWord,
-  rateWord,
   sizeWord,
   topLine,
-  usageRows,
-  percentsWord,
-  warningsWhen,
   type BillingState,
   billingReturnOf,
   PAID_READ_EVERY_MS,
@@ -40,6 +32,16 @@ import {
   showsPaid,
   withoutBillingReturn,
 } from "../../../shared/billing";
+import {
+  percentsWord,
+  planChoice,
+  planLine,
+  planTerms,
+  planWord,
+  rateWord,
+  usageRows,
+  warningsWhen,
+} from "../../../shared/billingWords";
 import type { BillingOpen } from "../../../shared/cloud";
 import { BILLING_TERMS } from "../../../shared/legal";
 import type { PairFailure } from "../../../shared/pairing";
@@ -196,7 +198,7 @@ function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: numbe
         <SettingsRow
           reveal="hub.billing.plan"
           title="Plan"
-          hint={<HintLines lines={state.plans.map((p) => [p.name, planTerms(p, state.currency)] as const)} />}
+          hint={<HintLines lines={state.plans.map((p) => [p.name, planTerms(p, state.currency, state.rates)] as const)} />}
           line={[planWord(state), planLine(state, nowMs)].filter((w) => w !== null).join(" · ")}
           control={!can ? undefined : state.plan === null ? <Plans state={state} busy={busy} open={open} /> : portal("Change plan")}
           data={{ "data-plan": state.plan?.key ?? "none" }}

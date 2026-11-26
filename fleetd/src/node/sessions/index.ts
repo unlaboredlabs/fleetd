@@ -636,6 +636,7 @@ export class SessionService {
       claudeBin: this.config.claudeBin,
       projectRoot: (projectId) => this.#projectRoot(projectId),
       sessionCwd: (sessionId) => this.sessionCwd(sessionId),
+      sessionScratch: (sessionId) => this.sessionScratch(sessionId),
       runnerEnv: () => runnerEnv(this.config),
       send: (frame) => this.#outlet?.(frame),
       forgetSignins: (projectId) => this.forgetSignins(projectId),
@@ -756,6 +757,12 @@ export class SessionService {
   /** The working directory this node started a session in. */
   sessionCwd(id: string): string | undefined {
     return this.store.session(id)?.local.cwd;
+  }
+
+  /** The scratch dir ($TMPDIR) a session's runs get. */
+  sessionScratch(id: string): string | undefined {
+    const row = this.store.session(id);
+    return row === undefined ? undefined : join(this.home, "tmp", scratchName(scratchOwner(row)));
   }
 
   /** Loads a session and its runs, applies `f`, settles the summary and commits, then sends what changed. */

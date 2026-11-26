@@ -374,7 +374,7 @@ test("chat_file takes only a file the node reads in the caller's own directory; 
   });
   const outside = await refusal(call("chat_file", asLead("app"), "../shop-lead/shot.png"));
   expect([outside.code, outside.message]).toEqual(["invalid", "../shop-lead/shot.png is outside your working directory."]);
-  expect(outside.fix).toContain("inside your working directory");
+  expect(outside.fix).toContain("in your working directory or your $TMPDIR");
   // The images-only call older nodes sent is no lead call now.
   expect(leadCalls(hub).handler("chat_image")).toBeUndefined();
   expect((await refusal(call("chat_file", asLead("app"), "notes.txt"))).code).toBe("invalid");

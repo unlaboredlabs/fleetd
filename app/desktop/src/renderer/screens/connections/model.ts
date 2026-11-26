@@ -153,6 +153,10 @@ export const needsSignIn = (server: McpServer, tested?: Tested): boolean => {
   return tested !== undefined && !("error" in tested) && tested.result.signIn === true;
 };
 
+/** Whether bots get a custom MCP now, as its switch shows it: on, and not waiting on a sign-in (the workspace holds a
+ * signed-out server back from every bot, so a switch left on would promise a server that can't work). */
+export const onForBots = (server: McpServer, tested?: Tested): boolean => server.enabled && !needsSignIn(server, tested);
+
 /** One header or env variable of the form: its name and the vault item it takes its value from, or a plain value. */
 export interface DraftValue {
   readonly name: string;

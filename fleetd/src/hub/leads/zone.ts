@@ -21,10 +21,33 @@ function policyOn(db: HubDb): string | undefined {
 const ownerOn = (db: HubDb) =>
   db.all<{ person_id: string }>("SELECT person_id FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1")[0]?.person_id;
 
-/** Keeps `tz` as the zone of `person` (undefined: the hub's owner), from a chat message their device sent. */
-export function setZone(db: HubDb, person: string | undefined, tz: string): void {
+/**
+ * Keeps `tz` as the zone of `person` (undefined: the hub's owner), from a chat message their device sent. When that
+ * moves them to another zone: who they are and the zone they had (their device's, else policy.tz, else the hub's).
+ */
+export function setZone(db: HubDb, person: string | undefined, tz: string): { personId: string; from: string } | undefined {
   const id = person ?? ownerOn(db);
-  if (id !== undefined) db.conn.query("UPDATE people SET tz = ? WHERE person_id = ? AND tz IS NOT ?").run(tz, id, tz);
+  if (id === undefined) return undefined;
+  const from = ofPerson(db, id).tz;
+  const changed = db.conn.query("UPDATE people SET tz = ? WHERE person_id = ? AND tz IS NOT ?").run(tz, id, tz).changes > 0;
+  return changed && from !== tz ? { personId: id, from } : undefined;
+}
+
+/** Whose zone `r`'s schedules follow: the person who last wrote in its chat, else the hub's owner. */
+export function chatPerson(db: HubDb, r: ProjectRef): string | undefined {
+  let person: string | undefined;
+  try {
+    const row = db.all<{ data: string }>(
+      `SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+         AND json_valid(data) AND json_extract(data, '$.author') = 'human'
+       ORDER BY seq DESC LIMIT 1`,
+      [r.machineId, r.projectId],
+    )[0];
+    person = row ? (JSON.parse(row.data) as { person?: { personId?: string } }).person?.personId : undefined;
+  } catch {
+    person = undefined;
+  }
+  return person ?? ownerOn(db);
 }
 
 /** The zone of `person` (undefined: the hub's owner): their device's, else `policy.tz`, else the hub machine's. */
@@ -44,17 +67,5 @@ export function ofPerson(db: HubDb, person: string | undefined): Zone {
 
 /** The zone of the person who last wrote in `r`'s chat (none yet: the hub's owner). */
 export function ofChat(db: HubDb, r: ProjectRef): Zone {
-  let person: string | undefined;
-  try {
-    const row = db.all<{ data: string }>(
-      `SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
-         AND json_valid(data) AND json_extract(data, '$.author') = 'human'
-       ORDER BY seq DESC LIMIT 1`,
-      [r.machineId, r.projectId],
-    )[0];
-    person = row ? (JSON.parse(row.data) as { person?: { personId?: string } }).person?.personId : undefined;
-  } catch {
-    person = undefined;
-  }
-  return ofPerson(db, person);
+  return ofPerson(db, chatPerson(db, r));
 }

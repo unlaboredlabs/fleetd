@@ -20,5 +20,5 @@ export const processPlace: Place = {
   stop,
   end: endLeft,
   run: (r) => runConfined(r, [r.cwd]),
-  read: async (root, path, offset, file) => readImage(root, path, offset, file),
+  read: async (root, path, offset, file, scratch) => readImage(root, path, offset, file, scratch),
 };

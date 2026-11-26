@@ -849,6 +849,9 @@ span.changeUndo {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.attention > .attentionOpens {
+  cursor: pointer;
+}
 /* The ×, at the capsule's round end: a circle as far in from the end as from the capsule's top and bottom. */
 .attention > .attentionHide {
   --inset: 4px;

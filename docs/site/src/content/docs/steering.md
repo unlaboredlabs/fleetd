@@ -53,7 +53,8 @@ While a steer is **queued**, click **Withdraw** on its receipt. Once delivered, 
 
 ## Stop {#stop}
 
-- **One agent:** click **Stop** at the top of its panel. It ends at once and frees its slot.
+- **One agent:** click **Stop** at the top of its panel. It ends at once and frees its slot, the chat says so, its
+  item in the Plan goes back to To do, and the lead is told.
 - **The whole bot:** click **Stop** beside Send in the chat. The lead and every agent stop.
 
 ## From a terminal {#cli}

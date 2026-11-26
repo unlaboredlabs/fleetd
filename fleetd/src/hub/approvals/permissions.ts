@@ -158,16 +158,25 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
     await answerByRule(a, machine, threadId, prompt, ALLOW);
     return;
   }
-  const settings = unshown ? undefined : await hooks.approvalSettings(project);
   const risky = action.preview !== undefined || action.site !== undefined;
   // A purchase, a spend, a payment command and a new project are the person's alone: no checker and no YOLO answers them.
   const alone = hooks.alwaysAsks(action) || confirming || proposing || personOnly(prospect(a, project, threadId, prompt, action));
+  // Every mode keeps the floors; YOLO and what never asks skip everything else.
+  const floored = () => {
+    const command = toObject(input).command;
+    return hooks.floor({ ...toObject(input), tool }) ?? (tool === "Bash" && typeof command === "string" ? hooks.shellRefused(command) : undefined);
+  };
+  // Shell commands never ask, in any mode (D311): only one that is a first visit (a site, or a visit the gate can't
+  // read) or a payment goes on to the mode.
+  if (tool === "Bash" && !alone && !risky && visit !== null) {
+    const refused = floored();
+    await answerByRule(a, machine, threadId, prompt, refused !== undefined ? deny(refused) : ALLOW);
+    return;
+  }
+  const settings = unshown ? undefined : await hooks.approvalSettings(project);
   if (!alone && settings?.mode === "yolo") {
     // YOLO skips the checker and every ask, never the floors.
-    const command = toObject(input).command;
-    const refused =
-      hooks.floor({ ...toObject(input), tool }) ??
-      (tool === "Bash" && typeof command === "string" ? hooks.shellRefused(command) : undefined);
+    const refused = floored();
     if (refused !== undefined) {
       await answerByRule(a, machine, threadId, prompt, deny(refused));
       return;

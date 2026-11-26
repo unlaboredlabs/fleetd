@@ -1,5 +1,5 @@
 // The share sheet: what's being shared with a note under it, the recent chats in a row on top, every project and project
-// below with search, and Send. Native lists and bars, Liquid Glass on iOS 26 (materials before it).
+// below with search, each with its bot or picture as the app shows it, and Send. Native lists and bars, Liquid Glass on iOS 26 (materials before it).
 import SwiftUI
 import UIKit
 
@@ -103,13 +103,13 @@ private struct ChatPicker: View {
   var body: some View {
     if model.query.isEmpty && !model.recent.isEmpty {
       Section("Recent") {
-        RecentRow(chats: model.recent, selected: model.selected, select: pick)
+        RecentRow(chats: model.recent, pictures: model.pictures, selected: model.selected, select: pick)
           .listRowInsets(EdgeInsets())
       }
     }
     if !model.projects.isEmpty {
       Section("Projects") {
-        ForEach(model.projects) { chat in ChatRow(chat: chat, selected: model.selected == chat, select: pick) }
+        ForEach(model.projects) { chat in ChatRow(chat: chat, picture: model.pictures[chat.id], selected: model.selected == chat, select: pick) }
       }
     }
     if model.projects.isEmpty {
@@ -127,11 +127,29 @@ private struct ChatPicker: View {
   }
 }
 
-/// What's being shared: the images, the page, or the text.
+/// What's being shared: the images, the page, or the text, then each file.
 private struct SharedPreview: View {
   let preview: ShareModel.Preview
 
   var body: some View {
+    shown
+    ForEach(preview.files.indices, id: \.self) { i in
+      HStack(spacing: 12) {
+        Image(systemName: "doc").font(.title2).foregroundStyle(.secondary)
+          .frame(width: 44, height: 44)
+          .background(Color(.tertiarySystemFill))
+          .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(preview.files[i].name).font(.body.weight(.semibold)).lineLimit(2)
+          Text(Upload.size(preview.files[i].bytes)).font(.subheadline).foregroundStyle(.secondary)
+        }
+      }
+      .padding(.vertical, 4)
+      .accessibilityElement(children: .combine)
+    }
+  }
+
+  @ViewBuilder private var shown: some View {
     if preview.images.count == 1, let image = preview.images.first {
       Image(uiImage: image)
         .resizable()
@@ -176,7 +194,7 @@ private struct SharedPreview: View {
       .padding(.vertical, 4)
     } else if let text = preview.text {
       Text(text).lineLimit(8).padding(.vertical, 4)
-    } else if preview.loading {
+    } else if preview.loading && preview.files.isEmpty {
       HStack {
         Spacer()
         ProgressView()
@@ -190,6 +208,7 @@ private struct SharedPreview: View {
 /// The most recent chats, in a row of avatars, as the system share sheet's people.
 private struct RecentRow: View {
   let chats: [ChatTarget]
+  let pictures: [String: UIImage]
   let selected: ChatTarget?
   let select: @MainActor (ChatTarget) -> Void
 
@@ -199,7 +218,7 @@ private struct RecentRow: View {
         ForEach(chats) { chat in
           Button { select(chat) } label: {
             VStack(spacing: 6) {
-              AvatarView(name: chat.title, size: 58)
+              ChatIcon(chat: chat, picture: pictures[chat.id], size: 58)
                 .overlay(alignment: .bottomTrailing) {
                   if selected == chat {
                     Image(systemName: "checkmark.circle.fill")
@@ -230,13 +249,14 @@ private struct RecentRow: View {
 
 private struct ChatRow: View {
   let chat: ChatTarget
+  let picture: UIImage?
   let selected: Bool
   let select: @MainActor (ChatTarget) -> Void
 
   var body: some View {
     Button { select(chat) } label: {
       HStack(spacing: 12) {
-        AvatarView(name: chat.title, size: 40)
+        ChatIcon(chat: chat, picture: picture, size: 40)
         VStack(alignment: .leading, spacing: 1) {
           Text(chat.title).lineLimit(1)
           Text(chat.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -253,24 +273,62 @@ private struct ChatRow: View {
   }
 }
 
-/// A chat's initials on its color, in a circle as in the app (src/ui/Avatar.tsx): a soft wash of it.
-struct AvatarView: View {
-  let name: String
+/// A chat as the app shows it (src/ui/Avatar.tsx): its picture in a circle once read, else its bot at rest, in its
+/// shape and color, with no circle: its body alone, cropped to fill the box as the app crops it (BotLook.crop).
+struct ChatIcon: View {
+  let chat: ChatTarget
+  let picture: UIImage?
   let size: CGFloat
-  @Environment(\.colorScheme) private var scheme
-
-  /// The app's tints (src/theme.ts), iOS's own colors in the same order.
-  private static let tints: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown, .mint, .red]
 
   var body: some View {
-    let tint = Self.tints[Avatar.tint(name, count: Self.tints.count)]
-    let initials = Avatar.initials(name)
-    Text(initials)
-      .font(.system(size: size * (initials.count > 1 ? 0.36 : 0.42), weight: .semibold))
-      .foregroundStyle(tint)
-      .frame(width: size, height: size)
-      .background(tint.opacity(scheme == .dark ? 0.28 : 0.16), in: Circle())
-      .accessibilityHidden(true)
+    Group {
+      if let picture {
+        Image(uiImage: picture).resizable().scaledToFill().frame(width: size, height: size).clipShape(Circle())
+      } else {
+        BotIcon(color: chat.color, shape: chat.shape)
+      }
+    }
+    .frame(width: size, height: size)
+    .accessibilityHidden(true)
+  }
+}
+
+/// A bot at rest (BotLook.swift, from the desktop's shared/bot.ts): its body in its paint, both eyes on it.
+struct BotIcon: View {
+  let color: String?
+  let shape: String?
+  @Environment(\.colorScheme) private var scheme
+
+  private static let eyes = (PathData.parse(BotLook.eyes.left) ?? []) + (PathData.parse(BotLook.eyes.right) ?? [])
+
+  var body: some View {
+    let name = color.flatMap { BotLook.paint[$0] != nil ? $0 : BotLook.were[$0] } ?? BotLook.defaultColor
+    let paint = BotLook.paint[name] ?? BotLook.paint[BotLook.defaultColor]!
+    let p = scheme == .dark ? paint.dark : paint.light
+    let outline = shape.flatMap { BotLook.bodies[$0] } ?? BotLook.bodies[BotLook.defaultShape] ?? ""
+    ZStack {
+      Outline(ops: PathData.parse(outline) ?? []).fill(Color(UIColor(hex: p.body)))
+      Outline(ops: Self.eyes).fill(Color(UIColor(hex: p.eye)))
+    }
+  }
+}
+
+/// PathData's outline in the 100 box, its crop scaled to fill the frame.
+private struct Outline: Shape {
+  let ops: [PathOp]
+
+  func path(in rect: CGRect) -> Path {
+    let scale = rect.width / BotLook.crop.w
+    let at = { (x: Double, y: Double) in CGPoint(x: rect.minX + (x - BotLook.crop.x) * scale, y: rect.minY + (y - BotLook.crop.y) * scale) }
+    var path = Path()
+    for op in ops {
+      switch op {
+      case let .move(x, y): path.move(to: at(x, y))
+      case let .curve(x1, y1, x2, y2, x, y): path.addCurve(to: at(x, y), control1: at(x1, y1), control2: at(x2, y2))
+      case .close: path.closeSubpath()
+      }
+    }
+    return path
   }
 }
 

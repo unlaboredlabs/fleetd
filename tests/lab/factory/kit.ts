@@ -171,7 +171,7 @@ export async function startHub(dir: string, host = "127.0.0.1"): Promise<Factory
       return fs.readFileSync(out, "utf8").trim();
     },
     enrol: async (machineId) => {
-      const token = /--code (\S+)/u.exec(cli("pair", "--worker", machineId))?.[1];
+      const token = /FLEETD_JOIN_CODE=(\S+)/u.exec(cli("pair", "--worker", machineId))?.[1];
       check(token, "pair --worker printed an enrollment code");
       return token!;
     },

@@ -33,3 +33,28 @@
   align-items: baseline;
   gap: var(--space-2);
 }
+
+/* A run's message, on one line: its first line, clipped, opens it in the chat. */
+.said {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saidLink {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.saidLink:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 2px;
+}
+
+.saidLink:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}

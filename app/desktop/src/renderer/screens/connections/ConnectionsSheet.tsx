@@ -31,6 +31,7 @@ import {
   isTailnetHost,
   serverNameProblem,
   needsSignIn,
+  onForBots,
   onlyText,
   stateOf,
   testLine,
@@ -466,6 +467,8 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
           ? testLine(result, machine("machineId" in result ? result.machineId : ""), server)
           : signIn && server.oauth?.problem !== undefined
             ? { text: server.oauth.problem, tone: "danger" as const }
+            : signIn && server.enabled
+            ? { text: "Off for bots until you sign in.", tone: "quiet" as const }
             : unreached
             ? { text: "On your tailnet: connect Tailscale above to reach it.", tone: "warning" as const }
             : null;
@@ -499,7 +502,9 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
           <Switch
             label=""
             aria-label={`${server.name} on`}
-            checked={server.enabled}
+            // Off and fixed while it waits on a sign-in: no bot gets it until then, whatever the saved switch says.
+            checked={onForBots(server, result)}
+            disabled={signIn}
             onCheckedChange={(on) => {
               setProblem(null);
               save(requestOf(withEnabled(server, on))).catch((e: unknown) => setProblem(errorText(e)));

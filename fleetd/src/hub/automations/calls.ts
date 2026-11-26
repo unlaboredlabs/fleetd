@@ -168,13 +168,15 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
     case "automation_run": {
       a.own(r, id);
       const run = await a.run(id, { kind: "manual", by });
+      // Its why is in a person's words; the lead gets the open order's id too.
+      const open = run.state === "skipped" ? a.runs(id, RUNS_LISTED).find((x) => x.state === "running" && x.workstreamId !== undefined) : undefined;
       const next =
         run.workstreamId !== undefined
           ? `It opened ${run.workstreamId}; it reaches you as a new order.`
           : run.state === "running"
             ? "A watcher: it looks now and says one line in the chat only if something is off."
             : run.why !== undefined
-              ? `Not run: ${run.why}.`
+              ? `Not run: ${run.why}${open?.workstreamId === undefined ? "" : ` (${open.workstreamId})`}.`
               : "";
       return { run, next };
     }

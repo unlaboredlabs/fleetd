@@ -492,7 +492,7 @@ export const stopAll = async () => {
 /** `node join` for a machine on `hubHome`'s hub: an enrollment code from `pair --worker`, the machine's HOME, then the node itself. */
 const joinArgs = (hubUrl: string, hubHome: string, id: string, opts: MachineHomeOptions) => {
   prepareMachineHome(id, opts);
-  const token = /--code (\S+)/u.exec(hubCli(hubHome, "pair", "--worker", id))?.[1];
+  const token = /FLEETD_JOIN_CODE=(\S+)/u.exec(hubCli(hubHome, "pair", "--worker", id))?.[1];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
   return ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)];
 };

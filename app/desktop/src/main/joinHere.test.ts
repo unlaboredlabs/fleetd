@@ -20,7 +20,7 @@ afterEach(() => {
 function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version?: string; nightlyIs?: string; info?: CallOutcome; hubFingerprint?: string } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-join-"));
   homes.push(dir);
-  const ran: Array<{ file: string; args: ReadonlyArray<string> }> = [];
+  const ran: Array<{ file: string; args: ReadonlyArray<string>; env?: Readonly<Record<string, string>> }> = [];
   const fetched: string[] = [];
   const p: JoinPorts = {
     call: (tool) =>
@@ -37,8 +37,8 @@ function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version
       if (url.endsWith("/release.json")) return Promise.resolve(new TextEncoder().encode(JSON.stringify({ cliVersion: over.nightlyIs ?? "0.9.0-nightly.20261020" })));
       return Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(over.sums ?? `${SUM}  fleetd-bun-linux-x64\n${"0".repeat(64)}  fleetd-bun-darwin-arm64\n`) : BUILD);
     },
-    run: (file, args) => {
-      ran.push({ file, args });
+    run: (file, args, env) => {
+      ran.push({ file, args, ...(env === undefined || Object.keys(env).length === 0 ? {} : { env }) });
       return Promise.resolve({ code: over.exit ?? 0, output: over.exit ? "joining http://devbox.example.ts.net:4790\nerror: claude is not installed\n" : "joined\n" });
     },
     fleetdDir: dir,
@@ -74,6 +74,19 @@ describe("joining this computer", () => {
     // Each step went running before it was done, and the code never went to the page.
     expect(seen.map((s) => s.steps.findIndex((x) => x.state === "running"))).toEqual([0, 1, 2, 3, 4, 5, -1]);
     expect(JSON.stringify(seen)).not.toContain(CODE);
+  });
+
+  it("hands a build that reads it the code in FLEETD_JOIN_CODE, never in its arguments, which any user can list", async () => {
+    const { p, dir, ran } = ports();
+    const end = await joinHere({ ...p, readsJoinCode: () => Promise.resolve(true) }, "laptop", () => undefined);
+    expect(end.state).toBe("done");
+    expect(ran).toEqual([
+      {
+        file: path.join(dir, "bin", "fleetd"),
+        args: ["init", "--join", "http://devbox.example.ts.net:4790", "--machine-id", "laptop", "--git-identity", "ada <1+ada@users.noreply.github.com>"],
+        env: { FLEETD_JOIN_CODE: CODE },
+      },
+    ]);
   });
 
   // Edge republishes its names in place: a cache's SHA256SUMS and the next build under the plain name can reach one

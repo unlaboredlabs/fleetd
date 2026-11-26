@@ -26,11 +26,12 @@ are bought, and limits set, in the desktop or web app.
 
 | Plan | Per month | Computer time included | Agents at once |
 |---|---|---|---|
-| Solo | $20 | $30 | 25 |
-| Team | $50 | $60 | 100 |
-| Scale | $200 | $260 | 300 |
+| Solo | $20 | $30 (500 hours) | 25 |
+| Team | $50 | $60 (1,000 hours) | 100 |
+| Scale | $200 | $260 (4,300 hours) | 300 |
 
 - Leads don't count toward agents at once. With credits and no plan, it's 25.
+- Hours are on the smallest computer, at $0.06 an hour; a bigger one uses the same dollars faster.
 - Included time is used before credits, and doesn't roll over.
 - A plan change applies from the next month. Cancelling stops renewal at the end of the paid month.
 - Prices are in US dollars, plus VAT where it applies, shown at checkout.

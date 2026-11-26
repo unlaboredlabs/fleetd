@@ -1,14 +1,15 @@
-// An automation's or a watcher's runs, newest first: when, what started it, its state, and the order it opened or the
-// line it said.
+// An automation's or a watcher's runs, newest first: when, what started it, its state, and the message it wrote in the
+// chat (its first line, which opens it there) or why it was skipped or failed.
+import type { ProjectRef } from "../../../shared/contracts";
 import { StatusChip, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { errorText } from "../settings/hub";
-import { orderHref, runChip, runNote, triggerWord, when } from "./model";
+import { messageHref, runChip, runNote, triggerWord, when } from "./model";
 import { dollars } from "./watchModel";
 import s from "./automations.module.css";
 
-/** Its runs, newest first, each with its trigger, state, the order it opened, and a watcher's line and cost. */
-export function Runs({ automationId }: { automationId: string }) {
+/** Its runs, newest first, each with its trigger, state, its message in the chat, and a watcher's cost. */
+export function Runs({ automationId, projectRef }: { automationId: string; projectRef: ProjectRef }) {
   const runs = useToolQuery("automation_runs", { automationId, limit: 30 });
   if (runs.isError) return <Text tone="danger">{errorText(runs.error)}</Text>;
   if (runs.data === undefined) return <Text tone="quiet">Loading runs…</Text>;
@@ -19,7 +20,7 @@ export function Runs({ automationId }: { automationId: string }) {
         const chip = runChip(r);
         // A watcher's look shows what it cost beside what it said.
         const cost = r.costUsd !== undefined && r.costUsd > 0 ? dollars(r.costUsd) : null;
-        const note = [runNote(r), cost].filter(Boolean).join(" · ") || null;
+        const note = runNote(r);
         return (
           <li key={r.runId} className={s.run}>
             <Text size="xs">{when(r.at)}</Text>
@@ -29,10 +30,17 @@ export function Runs({ automationId }: { automationId: string }) {
             <StatusChip tone={chip.tone} inRow>
               {chip.label}
             </StatusChip>
-            <Text size="xs" tone="quiet">
-              {r.workstreamId ? <a href={orderHref(r.workstreamId)}>Order {r.workstreamId}</a> : null}
-              {r.workstreamId && note ? " · " : null}
-              {note}
+            {/* What it said, on one line: its message's first line opens the message in the chat. */}
+            <Text size="xs" tone="quiet" className={s.said}>
+              {note !== null && r.messageId !== undefined ? (
+                <a className={s.saidLink} href={messageHref(projectRef, r.messageId)} title={`${note}\nOpen in the chat`}>
+                  {note}
+                </a>
+              ) : (
+                note
+              )}
+              {note !== null && cost !== null ? " · " : null}
+              {cost}
             </Text>
           </li>
         );
@@ -40,4 +48,3 @@ export function Runs({ automationId }: { automationId: string }) {
     </ul>
   );
 }
-

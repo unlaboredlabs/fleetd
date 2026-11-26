@@ -258,7 +258,7 @@ function Card(props: { automation: Automation; locked: boolean; onEdit: () => vo
           </Text>
         ) : null}
       </div>
-      {history ? <Runs automationId={a.automationId} /> : null}
+      {history ? <Runs automationId={a.automationId} projectRef={a.projectRef} /> : null}
       <Dialog
         open={deleting}
         onOpenChange={(open) => !open && setDeleting(false)}

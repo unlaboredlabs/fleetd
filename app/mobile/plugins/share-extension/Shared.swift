@@ -136,6 +136,16 @@ struct Problem: Equatable, Error {
     Problem(title: "Can't read \(name)", message: "It isn't an image fleetd can read. Share it as a PNG or JPEG.", retry: false, symbol: "photo")
   }
 
+  /// A file of a kind the hub doesn't take (AttachmentMime::of_file).
+  static func unsent(_ name: String) -> Problem {
+    Problem(
+      title: "Can't send \(name)",
+      message: "\(name) isn't a kind of file fleetd takes: images, PDFs, text, CSV, Word, Excel, PowerPoint and zip files.",
+      retry: false,
+      symbol: "doc"
+    )
+  }
+
   static func tooLarge(_ why: String) -> Problem {
     Problem(title: "Too large to send", message: why, retry: false, symbol: "photo")
   }
@@ -181,6 +191,10 @@ struct ChatTarget: Identifiable, Equatable {
   let machine: String?
   /// When it last spoke, or last did anything (ISO 8601, so it sorts as text).
   let at: String
+  /// Its picture's id (project_avatar_get), when it has one; else its bot shows, in its color and shape.
+  var avatar: String? = nil
+  var color: String? = nil
+  var shape: String? = nil
 
   var id: String { "\(machineId)/\(projectId)" }
   var subtitle: String { machine ?? "Project" }
@@ -201,7 +215,8 @@ struct ChatTarget: Identifiable, Equatable {
       if p["archivedAt"] != nil { return nil }
       return ChatTarget(
         machineId: m, projectId: id, title: title, machine: machines[m],
-        at: spoke["\(m)/\(id)"] ?? p["lastActivityAt"] as? String ?? ""
+        at: spoke["\(m)/\(id)"] ?? p["lastActivityAt"] as? String ?? "",
+        avatar: p["avatar"] as? String, color: p["avatarColor"] as? String, shape: p["avatarShape"] as? String
       )
     }
     return chats.sorted { $0.at != $1.at ? $0.at > $1.at : $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -216,23 +231,56 @@ struct ChatTarget: Identifiable, Equatable {
   }
 }
 
-/// An avatar's initials and tint, as the app's (src/avatar.ts), so a chat looks the same in both.
-enum Avatar {
-  static func initials(_ name: String) -> String {
-    let words = name.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
-    guard let first = words.first?.first else { return name.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "?" }
-    let second = words.count > 1 ? words[1].first.map(String.init) ?? "" : ""
-    return (String(first) + second).uppercased()
-  }
+/// An outline as the app's bots are drawn (BotLook.swift): absolute moves and cubic curves, each closed.
+enum PathOp: Equatable {
+  case move(Double, Double)
+  case curve(Double, Double, Double, Double, Double, Double)
+  case close
+}
 
-  /// FNV-1a of the name's UTF-16, in [0, count).
-  static func tint(_ name: String, count: Int) -> Int {
-    var h: UInt32 = 0x811c_9dc5
-    for unit in name.utf16 {
-      h ^= UInt32(unit)
-      h = h &* 0x0100_0193
+enum PathData {
+  /// `d`'s M, C and Z, in order; nil for any other command or a number short, which draws nothing rather than a
+  /// wrong shape.
+  static func parse(_ d: String) -> [PathOp]? {
+    var ops: [PathOp] = []
+    var command: Character?
+    var numbers: [Double] = []
+    func flush() -> Bool {
+      switch command {
+      case nil: return numbers.isEmpty
+      case "M"?:
+        guard numbers.count == 2 else { return false }
+        ops.append(.move(numbers[0], numbers[1]))
+      case "C"?:
+        guard numbers.count % 6 == 0, !numbers.isEmpty else { return false }
+        for i in stride(from: 0, to: numbers.count, by: 6) {
+          ops.append(.curve(numbers[i], numbers[i + 1], numbers[i + 2], numbers[i + 3], numbers[i + 4], numbers[i + 5]))
+        }
+      case "Z"?:
+        guard numbers.isEmpty else { return false }
+        ops.append(.close)
+      default: return false
+      }
+      numbers = []
+      return true
     }
-    return count <= 0 ? 0 : Int(h % UInt32(count))
+    var word = ""
+    for c in d + " " {
+      if c.isLetter || c == " " || c == "," {
+        if !word.isEmpty {
+          guard let n = Double(word) else { return nil }
+          numbers.append(n)
+          word = ""
+        }
+        if c.isLetter {
+          guard flush() else { return nil }
+          command = c
+        }
+      } else {
+        word.append(c)
+      }
+    }
+    return flush() ? ops : nil
   }
 }
 
@@ -339,6 +387,15 @@ struct Upload: Equatable {
     return "\(stem).\(mime.ext)"
   }
 
+  /// A shared file's own name, as the hub reads its kind from it too (notes.md stays notes.md); at most 120
+  /// characters. One with no extension is named for its kind, as `name` does.
+  static func fileName(_ original: String?, mime: Mime, index: Int) -> String {
+    let name = (original ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let ext = (name as NSString).pathExtension
+    if ext.isEmpty || ext.count > 9 { return Upload.name(original, mime: mime, index: index) }
+    return "\(String((name as NSString).deletingPathExtension.prefix(110))).\(ext)"
+  }
+
   /// The byte ranges it goes up in, each read only as it goes: all but the last with attachment_part, the last with
   /// attachment_put.
   var pieceRanges: [Range<Int>] {
@@ -367,9 +424,9 @@ struct Outgoing: Equatable {
   let text: String
   let textFile: Upload?
 
-  /// The note first, then the shared text, then each link (its title over it), then, for images alone, a line saying
-  /// so: chat_send needs words.
-  static func build(note: String, texts: [String], links: [SharedLink], images: Int) -> Outgoing {
+  /// The note first, then the shared text, then each link (its title over it), then, for images or files alone, a line
+  /// saying so: chat_send needs words.
+  static func build(note: String, texts: [String], links: [SharedLink], images: Int, files: Int = 0) -> Outgoing {
     let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
     // A page shared as its address in text too (some apps do) is one link.
     let shared = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -379,11 +436,13 @@ struct Outgoing: Equatable {
       guard let title = link.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty, title != link.url.absoluteString else { return link.url.absoluteString }
       return "\(title)\n\(link.url.absoluteString)"
     }
-    let said = images == 1 ? "Shared an image." : "Shared \(images) images."
+    let said = files == 0
+      ? (images == 1 ? "Shared an image." : "Shared \(images) images.")
+      : (images + files == 1 ? "Shared a file." : "Shared \(images + files) files.")
     let body = [shared, linkLines.joined(separator: "\n\n")].filter { !$0.isEmpty }.joined(separator: "\n\n")
     let whole = [note, body].filter { !$0.isEmpty }.joined(separator: "\n\n")
     if whole.utf16.count <= Limits.textChars || shared.isEmpty {
-      return Outgoing(text: whole.isEmpty ? (images > 0 ? said : "") : clip(whole), textFile: nil)
+      return Outgoing(text: whole.isEmpty ? (images + files > 0 ? said : "") : clip(whole), textFile: nil)
     }
     // Too long for a message: the shared text goes as a file, the rest as the message.
     let file = Upload(name: Upload.name(nil, mime: .text, index: 0), mime: .text, data: Data(shared.utf8))

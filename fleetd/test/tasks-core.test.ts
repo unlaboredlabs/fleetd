@@ -2,6 +2,8 @@
 // queue, end, recovery, PR lookups, message, cancel, caps and CI waits, against fake ports.
 import { expect, test } from "bun:test";
 import { sendRunId } from "../src/hub/executor/sessions.ts";
+import { chat } from "../src/hub/chat/index.ts";
+import { apply as checklistApply, read as checklistRead } from "../src/hub/checklist/index.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import { slots } from "../src/hub/slots/index.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -243,23 +245,41 @@ test("a message held for a finished task its own Monitor wakes goes to that run,
   k.hub.shutdown.abort();
 });
 
-test("a person stops an agent from its panel: cancelled at once, its slot free, its lead told in a quiet line", async () => {
+test("a person stops an agent from its panel: cancelled at once, its slot free, the plan and chat say so, its lead woken (F1855)", async () => {
   const k = tasksKit();
   // The tool reaches this kit's tasks area, as the hub's own.
   k.hub.area("tasks", () => k.t);
   await k.spawn("Stuck");
+  // The plan has it under Doing, beside an item of another agent and one already done.
+  checklistApply(k.hub.db, P, { items: [
+    { text: "Add notes from the page", state: "doing", link: { taskId: "T1" } },
+    { text: "Someone else's", state: "doing", link: { taskId: "T7" } },
+    { text: "Shipped", state: "done", link: { taskId: "T1" } },
+  ] }, k.clock.ms);
+  k.clock.ms += 72_000;
   expect(slots(k.hub).agents(P).running).toBe(1);
   // An agent key can't: stopping speaks for the person.
   expect(await k.refused(key("operate"), "task_stop", { taskId: "T1" })).toBe("forbidden");
   expect(await k.refused(key("read", { human: true }), "task_stop", { taskId: "T1" })).toBe("forbidden");
   expect(await k.refused(key("operate", { human: true, machines: ["laptop"] }), "task_stop", { taskId: "T1" })).toBe("not_found");
-  const out = await k.ok(key("operate", { human: true }), "task_stop", { taskId: "T1" });
+  const out = await k.ok(key("operate", { human: true, person: { personId: "p_aaaaaaaa", name: "Ada" } }), "task_stop", { taskId: "T1" });
   expect(out.task.state).toBe("cancelled");
+  expect(checklistRead(k.hub.db, P).items.map((i) => i.state)).toEqual(["todo", "doing", "done"]);
+  expect(chat(k.hub).page(P, undefined, undefined, 50).messages.at(-1)).toMatchObject({
+    author: "system",
+    text: "Ada stopped “Stuck” after 1m 12s. Its item in the plan is back under To do.",
+  });
   expect(out.task.result?.tail).toBe("Stopped by the human.");
   expect(k.t.get("T1")?.state).toBe("cancelled");
   expect(k.ports.stops.at(-1)).toEqual({ machineId: "lab-a", threadId: "s1" });
   expect(slots(k.hub).agents(P).running).toBe(0);
-  expect(k.wakes).toEqual([{ kind: "line", line: "quiet", text: "- T1 stopped by the human: Stuck; its slot is free. Start it again only if they ask." }]);
+  expect(k.wakes).toEqual([
+    {
+      kind: "line",
+      line: "human",
+      text: "- T1 stopped by the human: Stuck; its slot is free. Its checklist item 1 went back to todo. The chat already says so: don't repeat it. Start it again only if they ask.",
+    },
+  ]);
   // Again: it is already stopped, and the lead hears it once.
   expect((await k.ok(key("operate", { human: true }), "task_stop", { taskId: "T1" })).task.state).toBe("cancelled");
   expect(k.wakes).toHaveLength(1);

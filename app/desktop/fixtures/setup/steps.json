@@ -358,7 +358,7 @@
               "command": true,
               "label": "In Terminal, logged in at the Mac's screen",
               "note": "Or on the workspace's machine: fleetd pair --worker mac, then add --mac to the line it prints.",
-              "value": "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox:4790 --code <code> --machine-id mac --mac"
+              "value": "curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=<code> sh -s -- --join http://devbox:4790 --machine-id mac --mac"
             }
           ]
         },

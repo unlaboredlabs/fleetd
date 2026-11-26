@@ -25,8 +25,10 @@ const asked = (requestId: string, createdAt = AT): HumanRequest => ({
   text: "Deploy the fix",
 });
 
+// Its text as the workspace writes it for a command: every part of it is on the card already.
 const gated = (requestId: string, createdAt = AT): HumanRequest => ({
   ...asked(requestId, createdAt),
+  text: "Run vercel deploy --prod on m1 in /home/devbox/shop: Ship the checkout fix",
   gated: { argv: ["vercel", "deploy", "--prod"], class: "irreversible", reason: "Ship the checkout fix", timeoutSec: 600, cwd: "/home/devbox/shop" },
 });
 
@@ -208,7 +210,7 @@ describe("approvals", () => {
     expect(out.map((r) => r.requestId)).toEqual(["r1", "r2"]);
   });
 
-  it("leads a gated command with why, its risk and where it runs, the whole command behind Show command", () => {
+  it("leads a gated command with why, its risk and where it runs, the whole command behind Show command, its summary not again", () => {
     expect(approvalView(gated("r1"), "storefront")).toEqual({
       title: "storefront wants to run a command",
       who: "storefront",
@@ -218,7 +220,6 @@ describe("approvals", () => {
         { label: "Why", value: "Ship the checkout fix", prose: true, lines: true },
         { label: "Command", value: "vercel deploy --prod", mono: true, words: ["vercel", "deploy", "--prod"], lines: true, more: true },
         { label: "In", value: "/home/devbox/shop", mono: true },
-        { label: "Asked", value: "Deploy the fix", lines: true },
       ],
       hidden: false,
     });
