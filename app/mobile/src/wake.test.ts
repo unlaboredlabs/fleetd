@@ -168,4 +168,21 @@ describe("a cloud bot waking on the phone", () => {
     s = reduce(s, { t: "status", rows: [row("working")] });
     expect(wakeIn(s, k, false, Date.parse(asked) + 1_000)).toEqual({ phase: "received", since: Date.parse(asked) });
   });
+
+  // S9: with its machine offline mid-turn, the bot's typing dots kept moving beside "thinking".
+  it("says Machine offline in place of the dots while its machine is offline, and the lead's own state once it is back", () => {
+    const k = "devbox/w7";
+    const r = { machineId: "devbox", projectId: "w7" };
+    const asked = "2026-11-22T10:00:00.000Z";
+    const machine = (status: string) => [{ machineId: "devbox", name: "devbox", status, lastSeenAt: asked, nodeVersion: "1" }] as never;
+    const s = {
+      ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }),
+      chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: true, lastSeq: 1 } },
+      chats: { [k]: { messages: [{ messageId: "m1", author: "human", state: "final", createdAt: asked }], leadWaiting: {} } },
+      leadActivity: { [leadLaneId(r)]: { activity: { kind: "thinking" }, since: asked } },
+    } as never as State;
+    const at = Date.parse(asked) + 1_000;
+    expect(wakeIn({ ...s, machines: machine("offline") }, k, false, at)).toEqual({ phase: "held", reason: "Machine offline." });
+    expect(wakeIn({ ...s, machines: machine("online") }, k, false, at)?.phase).toBe("working");
+  });
 });
