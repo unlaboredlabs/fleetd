@@ -1,10 +1,24 @@
-// A fleetd cloud team's billing (fleetd-cloud README "Payments"; the reading is shared/billing.ts): three plain HTTP
-// calls to the team's own address with this device's key. The plan, credits and use are read by anyone of the team;
-// checkout and the portal are Stripe's own pages, whose address the team answers and the browser opens, so no card
-// is ever typed into fleetd; the spend cap is set by an owner or admin. Made for a hub that came with the account
+// A fleetd cloud team's billing (fleetd-cloud README "Payments"; the reading is shared/billing.ts): plain HTTP
+// calls to the team's own address with this device's key. The plan, credits and use are read by anyone of the team
+// (and the spend limits: a member reads their own alone); checkout and the portal are Stripe's own pages, whose
+// address the team answers and the browser opens, so no card is ever typed into fleetd; the spend cap, each person's
+// and bot's limit and the warnings are set by an owner or admin. Made for a hub that came with the account
 // only, so a self-hosted hub is never asked.
-import { BILLING_CAP_PATH, BILLING_CHECKOUT_PATH, BILLING_PATH, BILLING_PORTAL_PATH, readBilling, readCap, readPage } from "../../shared/billing";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome } from "../../shared/cloud";
+import {
+  BILLING_CAP_PATH,
+  BILLING_CHECKOUT_PATH,
+  BILLING_LIMIT_PATH,
+  BILLING_PATH,
+  BILLING_PORTAL_PATH,
+  BILLING_WARNINGS_PATH,
+  readBilling,
+  readCap,
+  readLimit,
+  readPage,
+  readWarningsOn,
+  type LimitOf,
+} from "../../shared/billing";
+import type { BillingCapOutcome, BillingLimitOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, BillingWarningsOutcome } from "../../shared/cloud";
 import type { Fetch } from "../pairing/hubHttp";
 import { call, odd, type KeyedTeam } from "./invites";
 
@@ -35,4 +49,20 @@ export const setBillingCap = async (fetch: Fetch, team: KeyedTeam, capCents: num
   if (!answer.ok) return { ok: false, failure: answer.failure };
   const cap = readCap(answer.body);
   return cap === undefined ? odd(team) : { ok: true, capCents: cap };
+};
+
+/** A person's or a bot's own monthly spend limit in cents, or null for none. */
+export const setBillingLimit = async (fetch: Fetch, team: KeyedTeam, of: LimitOf, limitCents: number | null): Promise<BillingLimitOutcome> => {
+  const answer = await call(fetch, team, "POST", BILLING_LIMIT_PATH, { ...of, limitCents });
+  if (!answer.ok) return { ok: false, failure: answer.failure };
+  const limit = readLimit(answer.body, of);
+  return limit === null ? odd(team) : { ok: true, limit };
+};
+
+/** The spend warnings on or off. */
+export const setBillingWarnings = async (fetch: Fetch, team: KeyedTeam, on: boolean): Promise<BillingWarningsOutcome> => {
+  const answer = await call(fetch, team, "POST", BILLING_WARNINGS_PATH, { on });
+  if (!answer.ok) return { ok: false, failure: answer.failure };
+  const kept = readWarningsOn(answer.body);
+  return kept === undefined ? odd(team) : { ok: true, on: kept };
 };

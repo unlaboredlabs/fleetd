@@ -8,6 +8,10 @@ export const BILLING_PATH = "/billing/v1";
 export const BILLING_CHECKOUT_PATH = "/billing/v1/checkout";
 export const BILLING_PORTAL_PATH = "/billing/v1/portal";
 export const BILLING_CAP_PATH = "/billing/v1/cap";
+/** POST `{ personId, limitCents }` or `{ projectId, limitCents }` (null clears it), an owner's or admin's: answers the row as kept. */
+export const BILLING_LIMIT_PATH = "/billing/v1/limit";
+/** POST `{ on }`, an owner's or admin's: the spend warnings on or off, answered `{ on }`. */
+export const BILLING_WARNINGS_PATH = "/billing/v1/warnings";
 
 /**
  * Where a person writes about a payment, named in full wherever the apps send them to support (the cloud can import it
@@ -42,6 +46,49 @@ export interface BillingNotice {
   readonly action?: "portal" | "buy";
 }
 
+/**
+ * The spend warnings: an email to the owners and admins and a line in each bot on fleetd's computers at each of
+ * `percents` of the cap, and when the credits left cover about a day (`lowCredits`, under the same switch). On unless
+ * an admin turned them off.
+ */
+export interface BillingWarnings {
+  readonly on: boolean;
+  readonly percents: readonly number[];
+  readonly lowCredits: boolean;
+}
+
+/** The warning in force now: this month's highest share of the cap crossed, or credits low. */
+export type BillingWarned = { readonly kind: "cap"; readonly percent: number } | { readonly kind: "low" };
+
+/** A member's or a bot's own monthly limit (null: none) and this UTC month's spend on fleetd's computers against it. */
+export interface SpendLimit {
+  readonly name: string;
+  readonly limitCents: number | null;
+  readonly spentCents: number;
+  /** The month's spend reached the limit: that member's or bot's work on fleetd's computers is stopped. */
+  readonly stopped: boolean;
+}
+
+export interface MemberLimit extends SpendLimit {
+  readonly personId: string;
+}
+
+export interface BotLimit extends SpendLimit {
+  readonly projectId: string;
+}
+
+/**
+ * The limits as the caller may see them: for an owner or admin every person of the workspace and every bot on
+ * fleetd's computers, limit or not; for a member, their own row alone and no bots.
+ */
+export interface BillingLimits {
+  readonly members: readonly MemberLimit[];
+  readonly bots: readonly BotLimit[];
+}
+
+/** What a limit is set on: a person or a bot. */
+export type LimitOf = { readonly personId: string } | { readonly projectId: string };
+
 /** Why the team's boxes are held: no plan and no credits ever, credits used up, or the cap reached this month. */
 export type BillingHeld = "none" | "empty" | "cap";
 
@@ -70,6 +117,11 @@ export interface BillingState {
   readonly plans: ReadonlyArray<{ readonly key: string; readonly name: string; readonly priceCents: number; readonly creditsCents: number; readonly agentsAtOnce?: number }>;
   readonly topUps: ReadonlyArray<{ readonly key: string; readonly priceCents: number; readonly creditsCents: number }>;
   readonly rates: ReadonlyArray<{ readonly cpu: number; readonly memGb: number; readonly centsPerHour: number }>;
+  /** Absent from a cloud before spend warnings. */
+  readonly warnings: BillingWarnings | null;
+  readonly warned: BillingWarned | null;
+  /** Absent from a cloud before spend limits: no limit is offered. */
+  readonly limits: BillingLimits | null;
 }
 
 /** What a buy asks checkout for: a plan or a top-up, by the answer's own key. */
@@ -119,6 +171,58 @@ const expiring = (v: unknown): BillingState["credits"]["expiring"] | undefined =
   return e !== null && int(e.cents, 1) && time(e.at) ? { cents: e.cents, at: e.at } : undefined;
 };
 
+const warnings = (v: unknown): BillingWarnings | null | undefined => {
+  if (v === null || v === undefined) return null;
+  const w = record(v);
+  const percents = w?.percents;
+  const fine = Array.isArray(percents) && percents.length <= 10 && (percents as unknown[]).every((p) => int(p, 1) && p <= 100);
+  return w !== null && typeof w.on === "boolean" && typeof w.lowCredits === "boolean" && fine ? { on: w.on, percents: percents as number[], lowCredits: w.lowCredits } : undefined;
+};
+
+const warned = (v: unknown): BillingWarned | null => {
+  const w = record(v);
+  if (w?.kind === "low") return { kind: "low" };
+  return w?.kind === "cap" && int(w.percent, 1) && w.percent <= 100 ? { kind: "cap", percent: w.percent } : null;
+};
+
+const spend = (r: Record<string, unknown>): SpendLimit | null =>
+  words(r.name, 200) && (r.limitCents === null || int(r.limitCents)) && int(r.spentCents) && typeof r.stopped === "boolean"
+    ? { name: r.name, limitCents: r.limitCents, spentCents: r.spentCents, stopped: r.stopped }
+    : null;
+
+/** Each person and each bot at most a few hundred: a longer list reads as none rather than failing the page. */
+const LIMIT_ROWS = 500;
+
+const limitRows = <T>(v: unknown, one: (row: Record<string, unknown>) => T | null): T[] | null => {
+  if (!Array.isArray(v) || v.length > LIMIT_ROWS) return null;
+  const out: T[] = [];
+  for (const row of v as unknown[]) {
+    const r = record(row);
+    const read = r === null ? null : one(r);
+    if (read === null) return null;
+    out.push(read);
+  }
+  return out;
+};
+
+const member = (r: Record<string, unknown>): MemberLimit | null => {
+  const s = spend(r);
+  return s !== null && words(r.personId, 200) ? { ...s, personId: r.personId } : null;
+};
+
+const bot = (r: Record<string, unknown>): BotLimit | null => {
+  const s = spend(r);
+  return s !== null && words(r.projectId, 200) ? { ...s, projectId: r.projectId } : null;
+};
+
+const limits = (v: unknown): BillingLimits | null | undefined => {
+  if (v === null || v === undefined) return null;
+  const l = record(v);
+  const members = l === null ? null : limitRows(l.members, member);
+  const bots = l === null ? null : limitRows(l.bots, bot);
+  return members === null || bots === null ? undefined : { members, bots };
+};
+
 /**
  * The service's answer to `GET /billing/v1`, checked; null when it isn't one. What a newer field adds to an older
  * answer reads as its quiet default: `providedOn` absent is on (an answer from before the switch had no flag), no
@@ -134,7 +238,9 @@ export const readBilling = (json: unknown): BillingState | null => {
   const p = plan(o.plan);
   const n = notice(o.notice);
   const exp = expiring(credits.expiring);
-  if (p === undefined || n === undefined || exp === undefined) return null;
+  const w = warnings(o.warnings);
+  const l = limits(o.limits);
+  if (p === undefined || n === undefined || exp === undefined || w === undefined || l === undefined) return null;
   if (!int(credits.leftCents, Number.MIN_SAFE_INTEGER) || !(credits.capCents === null || int(credits.capCents))) return null;
   if (credits.capSpentCents !== undefined && !int(credits.capSpentCents)) return null;
   if (!time(usage.from) || !time(usage.to) || !int(usage.seconds) || !int(usage.cents)) return null;
@@ -161,6 +267,9 @@ export const readBilling = (json: unknown): BillingState | null => {
     plans,
     topUps,
     rates,
+    warnings: w,
+    warned: warned(o.warned),
+    limits: l,
   };
 };
 
@@ -168,6 +277,22 @@ export const readBilling = (json: unknown): BillingState | null => {
 export const readPage = (json: unknown): string | null => {
   const url = record(json)?.url;
   return typeof url === "string" && url.length <= 2000 && /^https:\/\/[^\s]+$/u.test(url) ? url : null;
+};
+
+/** POST BILLING_LIMIT_PATH's answer, the row as kept, by what was asked; null when it isn't one. */
+export const readLimit = (json: unknown, of: LimitOf): Omit<SpendLimit, "name"> | null => {
+  const r = record(json);
+  if (r === null) return null;
+  const same = "personId" in of ? r.personId === of.personId : r.projectId === of.projectId;
+  return same && (r.limitCents === null || int(r.limitCents)) && int(r.spentCents) && typeof r.stopped === "boolean"
+    ? { limitCents: r.limitCents, spentCents: r.spentCents, stopped: r.stopped }
+    : null;
+};
+
+/** POST BILLING_WARNINGS_PATH's answer, `{ on }`; undefined when it isn't one. */
+export const readWarningsOn = (json: unknown): boolean | undefined => {
+  const on = record(json)?.on;
+  return typeof on === "boolean" ? on : undefined;
 };
 
 /** `{ capCents }`, the cap as the service keeps it now; undefined when it isn't one. */
@@ -257,7 +382,9 @@ export const topLine = (state: BillingState): { tone: "danger" | "warning"; mess
   if (!state.providedOn) return null;
   if (state.notice !== null) {
     const fix = state.notice.fix === "" ? "" : ` ${state.notice.fix}`;
-    return { tone: "danger", message: `${state.notice.message}${fix}`, fix: state.notice.action ?? null };
+    // A spend warning (the cap's share crossed, credits low) while nothing is stopped yet: a warning, not a stop.
+    const warned = state.held === null ? state.warned : null;
+    return { tone: warned === null ? "danger" : "warning", message: `${state.notice.message}${fix}`, fix: state.notice.action ?? (warned?.kind === "cap" ? "cap" : null) };
   }
   if (state.held === "cap") {
     const cap = state.credits.capCents === null ? "" : ` of ${money(state.credits.capCents, state.currency)}`;
@@ -274,6 +401,29 @@ export const capLine = (state: BillingState): string | null => {
   if (state.credits.capCents === null) return null;
   const spent = `${money(state.credits.capSpentCents, state.currency)} of ${money(state.credits.capCents, state.currency)} this month`;
   return state.held === "cap" ? `${spent}: reached, so bots are stopped` : spent;
+};
+
+/** A list's words: "50%", "50% and 80%", "50%, 80% and 100%". */
+const andList = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1] ?? ""}`);
+
+/** The cap's shares warned at: "50%, 80% and 100%". */
+export const percentsWord = (w: BillingWarnings): string => andList(w.percents.map((p) => `${String(p)}%`));
+
+/** When the warnings go out: "At 50%, 80% and 100% of the cap, and when credits run low." */
+export const warningsWhen = (w: BillingWarnings): string => {
+  const at = w.percents.length === 0 ? null : `At ${percentsWord(w)} of the cap`;
+  return at === null ? "When credits run low." : `${at}${w.lowCredits ? ", and when credits run low" : ""}.`;
+};
+
+/** A limit's line: "$4.10 of $20 this month", or "$4.10 this month" with none. Its caller says when it stopped the work. */
+export const limitLine = (l: Pick<SpendLimit, "limitCents" | "spentCents">, currency: string): string =>
+  l.limitCents === null ? `${money(l.spentCents, currency)} this month` : `${money(l.spentCents, currency)} of ${money(l.limitCents, currency)} this month`;
+
+/** The limits set, people first then bots, each by name: what Billing lists. */
+export const limitsSet = (l: BillingLimits): { members: MemberLimit[]; bots: BotLimit[] } => {
+  const byName = (a: SpendLimit, b: SpendLimit) => a.name.localeCompare(b.name);
+  // Not toSorted: Hermes, which runs the phone, has none.
+  return { members: l.members.filter((m) => m.limitCents !== null).sort(byName), bots: l.bots.filter((b) => b.limitCents !== null).sort(byName) };
 };
 
 /** Dollars as typed into the cap's field, as cents; null for an empty field (no cap); undefined when it isn't money. */

@@ -18,6 +18,7 @@ import {
   Search,
   ScrollText,
   Server,
+  ShieldCheck,
   SlidersHorizontal,
   UserRound,
   Users,
@@ -77,6 +78,7 @@ const HUB_PAGES: ReadonlyArray<{
   { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
   { tab: "hub.providers", label: HUB_PAGES_SHOWN.providers, icon: <KeyRound /> },
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
+  { tab: "hub.signin", label: HUB_PAGES_SHOWN.signin, icon: <ShieldCheck /> },
   { tab: "hub.audit", label: HUB_PAGES_SHOWN.audit, icon: <ScrollText /> },
   { tab: "hub.agents", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
   { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
@@ -195,10 +197,12 @@ function useEntries() {
   const route = useSettingsRoute();
   const administers = useSettledAdministers();
   const vault = useData((st) => vaultServed(st.features));
-  const { id } = useHub();
+  const { id, cloud } = useHub();
   // Billing is a fleetd cloud team's alone, once fleetd's computers are on for it: a self-hosted hub, or a team with
   // nothing to buy yet, has no such page, not even a row that says so.
   const billing = useBillingShown(administers);
+  // Sign-in is a fleetd cloud workspace's alone: its sign-in is the cloud's.
+  const signin = cloud === true;
   const steps = useServes("setup_list");
   // General's Version, as General shows it: not in the web app on fleetd cloud, which updates itself.
   const updates = useServes("hub_update");
@@ -244,7 +248,7 @@ function useEntries() {
     }),
   ];
   const hub: Entry[] | null = administers
-    ? HUB_PAGES.filter((p) => billing || p.tab !== "hub.billing").map((p) => ({
+    ? HUB_PAGES.filter((p) => (billing || p.tab !== "hub.billing") && (signin || p.tab !== "hub.signin")).map((p) => ({
         key: p.tab,
         label: p.label,
         icon: p.icon,
@@ -256,7 +260,7 @@ function useEntries() {
         go: () => navigate({ id: "settings", tab: p.tab, at: id }),
       }))
     : null;
-  return { you, bots, hub, administers, vault, billing, version };
+  return { you, bots, hub, administers, vault, billing, signin, version };
 }
 
 function Item({ entry }: { entry: Entry }) {
@@ -304,11 +308,11 @@ function Group({
 
 /** The sheet's index: its title on the page title's line, a search, then the three groups. */
 function Index() {
-  const { you, bots, hub, administers, vault, billing, version } = useEntries();
+  const { you, bots, hub, administers, vault, billing, signin, version } = useEntries();
   const deletes = useDeletesTeam();
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
-  const results = searchSettings(query, optionsFor(administers, vault, billing, version));
+  const results = searchSettings(query, optionsFor(administers, vault, billing, version, signin));
   return (
     <nav className={n.index} aria-label="Settings">
       <div className={n.indexHead}>

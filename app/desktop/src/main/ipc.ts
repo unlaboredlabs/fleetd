@@ -263,6 +263,11 @@ export const registerIpc = (
   handle(IPC.cloudBilling, (_event, id) => cloud.billing(id));
   handle(IPC.cloudBillingOpen, (_event, id, what) => cloud.billingOpen(id, what));
   handle(IPC.cloudBillingCap, (_event, id, capCents) => cloud.billingCap(id, capCents));
+  handle(IPC.cloudBillingLimit, (_event, id, of, limitCents) => cloud.billingLimit(id, of, limitCents));
+  handle(IPC.cloudBillingWarnings, (_event, id, on) => cloud.billingWarnings(id, on));
+  handle(IPC.cloudSignin, (_event, id) => cloud.signin(id));
+  handle(IPC.cloudSigninSet, (_event, id, { require, domainJoin }) => cloud.signinSet(id, { ...(require === undefined ? {} : { require }), ...(domainJoin === undefined ? {} : { domainJoin }) }));
+  handle(IPC.cloudSigninDomain, (_event, id) => cloud.signinDomain(id));
   handle(IPC.appSessionWindow, (_event, request) => frame.sessionWindows.show(request));
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);

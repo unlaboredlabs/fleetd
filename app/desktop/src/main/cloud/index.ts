@@ -1,11 +1,13 @@
 // fleetd cloud in main: Sign in, Sign out, Connect this computer, a team's invites by email, installing fleetd's
-// GitHub App on a team and its billing, behind one interface, which a fixture (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
+// GitHub App on a team, its billing and its sign-in, behind one interface, which a fixture (fixture.ts) stands in for. Built from config.ts's two build-time values; with neither, `available` is false and
 // the page shows the self-hosted app alone.
 import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cloudDomain, readAccepted, teamOrigin } from "../../shared/accounts";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
+import type { BillingCapOutcome, BillingLimitOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, BillingWarningsOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, SigninDomainOutcome, SigninOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
+import type { LimitOf } from "../../shared/billing";
+import type { SigninChange } from "../../shared/signin";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
@@ -14,7 +16,8 @@ import { realTerminalDeps } from "../pairing/terminal";
 import { systemCAs } from "../trust";
 import { CloudAccount, SavedAccount, type CloudHub } from "./account";
 import type { CloudConfig } from "./config";
-import { openBilling, readTeamBilling, setBillingCap } from "./billing";
+import { openBilling, readTeamBilling, setBillingCap, setBillingLimit, setBillingWarnings } from "./billing";
+import { openSigninDomain, readTeamSignin, setTeamSignin } from "./signin";
 import { connectComputer } from "./connect";
 import { installGithub } from "./github";
 import { deleteTeam, listInvites, makeWorkspace, odd, revokeInvite, sendInvite, type KeyedTeam, accountPreview, deleteAccount } from "./invites";
@@ -45,6 +48,11 @@ export interface Cloud {
   billing(hub: HubId): Promise<BillingOutcome>;
   billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
   billingCap(hub: HubId, capCents: number | null): Promise<BillingCapOutcome>;
+  billingLimit(hub: HubId, of: LimitOf, limitCents: number | null): Promise<BillingLimitOutcome>;
+  billingWarnings(hub: HubId, on: boolean): Promise<BillingWarningsOutcome>;
+  signin(hub: HubId): Promise<SigninOutcome>;
+  signinSet(hub: HubId, change: SigninChange): Promise<SigninOutcome>;
+  signinDomain(hub: HubId): Promise<SigninDomainOutcome>;
 }
 
 /** Asked of a hub that didn't come with the account: the page never offers it there. */
@@ -195,6 +203,26 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     billingCap: async (id, capCents) => {
       const t = team(id);
       return t === null ? NOT_CLOUD : setBillingCap(fetch, t, capCents);
+    },
+    billingLimit: async (id, of, limitCents) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : setBillingLimit(fetch, t, of, limitCents);
+    },
+    billingWarnings: async (id, on) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : setBillingWarnings(fetch, t, on);
+    },
+    signin: async (id) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : readTeamSignin(fetch, t);
+    },
+    signinSet: async (id, change) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : setTeamSignin(fetch, t, change);
+    },
+    signinDomain: async (id) => {
+      const t = team(id);
+      return t === null ? NOT_CLOUD : openSigninDomain(fetch, t, open);
     },
   };
 };

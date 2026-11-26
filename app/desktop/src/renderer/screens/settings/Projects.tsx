@@ -1,7 +1,7 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its bot's shape and color (BotLook.tsx), its name, its repos with their computer (RepoSetting.tsx, SetupSetting.tsx),
 // its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), who merges its PRs (WhoMerges.tsx) and how (MergeMode.tsx), approvals (Approvals.tsx), what it uses of
-// Connections (connections/BotConnections.tsx), its browser's sign-ins and a way to its skills
+// Connections (connections/BotConnections.tsx), on fleetd's computers its spend limit (an admin's, admin/Limits.tsx), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it, and the tagged chat's trial switch. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
 // seals each secret to the project machine's key), project_archive and project_remove. A secret's value is write-only: typed here once,
@@ -23,6 +23,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { BotConnections } from "../connections/BotConnections";
 import { ApprovalsSetting } from "./Approvals";
 import { BOT_ADMIN_ONLY, useBotLocked } from "./botAdmin";
+import { BotLimitSetting } from "../admin/Limits";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
 import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
@@ -211,6 +212,7 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
         <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings?.mergeRules} locked={locked} />
         <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} shared={settings?.mergeShared} locked={locked} />
         <ApprovalsSetting projectRef={ref} locked={locked} />
+        <BotLimitSetting projectId={ref.projectId} administers={!locked} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">
         <BotConnections projectRef={ref} />

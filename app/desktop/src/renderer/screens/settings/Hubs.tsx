@@ -1,7 +1,8 @@
 // Settings › You › Hubs & devices: the hubs this app is paired with, each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. An admin of a hub also
-// restarts it from its row (hubRestart.ts); a member's row has no such button.
+// restarts it from its row (hubRestart.ts); a member's row has no such button. On a cloud workspace where an admin set
+// the person a spend limit, the row says it and this month's spend against it (admin/Limits.tsx): theirs alone.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
@@ -12,7 +13,8 @@ import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 import { HubText } from "../projects/HubText";
-import { useServes, useSettledAdministers } from "../admin/role";
+import { useHubRole, useServes, useSettledAdministers } from "../admin/role";
+import { MyLimitLine } from "../admin/Limits";
 import { ColorPick } from "../shell/ColorPick";
 import { restartLine, useHubRestart } from "./hubRestart";
 import { AddButton, GroupNote, Notice, RowMenu, SettingsRow, SettingsSection } from "./parts";
@@ -141,6 +143,7 @@ function HubSetting({ only }: { only: boolean }) {
   const state = useData((st) => st.hub);
   const store = useKeyStore();
   const administers = useSettledAdministers();
+  const me = useHubRole().me?.personId;
   // fleetd cloud restarts nothing for a team: no button there.
   const restarts = useServes("hub_restart");
   const { step, restart } = useHubRestart();
@@ -195,6 +198,8 @@ function HubSetting({ only }: { only: boolean }) {
         </>
       }
     >
+      {/* On a cloud workspace, the person's own spend limit, once one is set for them. */}
+      {self.cloud === true ? <MyLimitLine personId={me} /> : null}
       {failed ? (
         <Notice tone="danger">
           <HubText>{failed.text}</HubText>

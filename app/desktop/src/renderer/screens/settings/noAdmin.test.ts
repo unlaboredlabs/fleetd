@@ -29,4 +29,12 @@ describe("Settings' search for a member", () => {
     expect(searchSettings("credits", optionsFor(true, true, true))[0]?.tab).toBe("hub.billing");
     expect(optionsFor(false, true, true).some((o) => o.tab === "hub.billing")).toBe(false);
   });
+
+  it("finds Sign-in only on a fleetd cloud workspace, and a bot's spend limit only where Billing is", () => {
+    expect(searchSettings("google only", optionsFor(true, true, false, true, false)).map((o) => o.tab)).not.toContain("hub.signin");
+    expect(searchSettings("google only", optionsFor(true, true, false, true, true))[0]?.tab).toBe("hub.signin");
+    expect(optionsFor(false, true, false, true, true).some((o) => o.tab === "hub.signin")).toBe(false);
+    expect(searchSettings("spend limit", optionsFor(true, true, false)).map((o) => o.key)).not.toContain("projects.limit");
+    expect(searchSettings("spend limit", optionsFor(true, true, true)).map((o) => o.key)).toContain("projects.limit");
+  });
 });

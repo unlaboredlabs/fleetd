@@ -3,7 +3,9 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
+import type { LimitOf } from "../shared/billing";
+import type { SigninChange } from "../shared/signin";
+import type { BillingCapOutcome, BillingLimitOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, BillingWarningsOutcome, SigninDomainOutcome, SigninOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacLeaveOutcome, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -229,6 +231,16 @@ export interface FleetdApi {
     billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
     /** Sets a cloud team's monthly spend cap in cents, null for none. Never rejects. */
     billingCap(hub: HubId, capCents: number | null): Promise<BillingCapOutcome>;
+    /** Sets a person's or a bot's monthly spend limit on a cloud team in cents, null for none. Never rejects. */
+    billingLimit(hub: HubId, of: LimitOf, limitCents: number | null): Promise<BillingLimitOutcome>;
+    /** Turns a cloud team's spend warnings on or off. Never rejects. */
+    billingWarnings(hub: HubId, on: boolean): Promise<BillingWarningsOutcome>;
+    /** A cloud team's sign-in: its required method, email domains and domain join, for its owners and admins. Never rejects. */
+    signin(hub: HubId): Promise<SigninOutcome>;
+    /** Changes a cloud team's required sign-in method or its email-domain join. Never rejects. */
+    signinSet(hub: HubId, change: SigninChange): Promise<SigninOutcome>;
+    /** Opens the page that adds and verifies a cloud team's email domain in the browser. Never rejects. */
+    signinDomain(hub: HubId): Promise<SigninDomainOutcome>;
     /** Skip for now on a cloud team's Get started, kept with the person on every device; the web app's alone. Never rejects. */
     startLater?(hub: HubId): Promise<void>;
     /** The repositories fleetd's GitHub App reaches for a cloud team, for Get started's picker; the web app's alone for now. Never rejects. */

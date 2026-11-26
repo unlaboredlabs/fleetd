@@ -94,6 +94,16 @@ export const IPC = {
   cloudBillingOpen: "cloud:billing-open",
   /** invoke(hub, capCents | null) → BillingCapOutcome. Sets the team's monthly spend cap. */
   cloudBillingCap: "cloud:billing-cap",
+  /** invoke(hub, { personId } | { projectId }, limitCents | null) → BillingLimitOutcome. Sets a person's or a bot's monthly spend limit. */
+  cloudBillingLimit: "cloud:billing-limit",
+  /** invoke(hub, on) → BillingWarningsOutcome. Turns the team's spend warnings on or off. */
+  cloudBillingWarnings: "cloud:billing-warnings",
+  /** invoke(hub) → SigninOutcome. A cloud team's sign-in (GET ACCOUNTS_SIGNIN_PATH with an owner's or admin's key). */
+  cloudSignin: "cloud:signin",
+  /** invoke(hub, SigninChange) → SigninOutcome. Changes the required sign-in method or the email-domain join. */
+  cloudSigninSet: "cloud:signin-set",
+  /** invoke(hub) → SigninDomainOutcome. Opens the page that adds and verifies an email domain, as the team answers it. */
+  cloudSigninDomain: "cloud:signin-domain",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /**

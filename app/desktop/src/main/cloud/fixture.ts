@@ -4,12 +4,13 @@
 // its invites by email are kept here as the team keeps them: an invite is added, an email already invited refused.
 // A sign-in may arrive (`signIn.arrival`): who signed in and the invitations to ask about, as the accounts service
 // answers them; Join and Not now then connect nothing, a fixture's hubs being fixed. Its `billing` is the team's
-// `GET /billing/v1` answer as the service sends it: Change plan, Add credits and Manage payment open nothing, and a cap
-// set is kept here.
+// `GET /billing/v1` answer as the service sends it: Change plan, Add credits and Manage payment open nothing, and a cap,
+// a limit or the warnings set are kept here. Its `signin` is the team's `GET /accounts/v1/signin` answer, changes kept too.
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { readBilling, type BillingState } from "../../shared/billing";
-import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
+import { readBilling, type BillingState, type LimitOf } from "../../shared/billing";
+import { readSignin, type SigninChange, type SigninState } from "../../shared/signin";
+import type { Arrival, BillingCapOutcome, BillingLimitOutcome, BillingWarningsOutcome, SigninDomainOutcome, SigninOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -47,6 +48,8 @@ export const CloudSection = z.object({
   billing: z.unknown().optional(),
   /** Reading the billing fails so, as the team would. */
   billingFailure: Failure.optional(),
+  /** The team's sign-in, as `GET /accounts/v1/signin` answers it (read through shared/signin.ts's readSignin). */
+  signin: z.unknown().optional(),
   /** New workspace is refused so, as the cloud would (the most one person may make). Absent: refused as sample data. */
   newWorkspaceFailure: Failure.optional(),
   /** Delete account is refused so, as the cloud would (the only owner of a workspace with others in it). */
@@ -68,6 +71,7 @@ export class FixtureCloud implements Cloud {
   #next = 0;
   #arrival: Arrival | null = null;
   #billing: BillingState | null;
+  #signin: SigninState | null;
 
   constructor(section: CloudSection | null) {
     this.#section = section;
@@ -75,6 +79,8 @@ export class FixtureCloud implements Cloud {
     this.#invites = [...(section?.invites ?? [])];
     this.#billing = section?.billing === undefined ? null : readBilling(section.billing);
     if (section?.billing !== undefined && this.#billing === null) throw new Error("The fixture's cloud.billing isn't a GET /billing/v1 answer.");
+    this.#signin = section?.signin === undefined ? null : readSignin(section.signin);
+    if (section?.signin !== undefined && this.#signin === null) throw new Error("The fixture's cloud.signin isn't a GET /accounts/v1/signin answer.");
   }
 
   state(): CloudState {
@@ -223,6 +229,44 @@ export class FixtureCloud implements Cloud {
     const held = reached ? "cap" : this.#billing.held === "cap" ? null : this.#billing.held;
     this.#billing = { ...this.#billing, credits, held };
     return Promise.resolve({ ok: true, capCents });
+  }
+
+  billingLimit(_hub: string, of: LimitOf, limitCents: number | null): Promise<BillingLimitOutcome> {
+    const limits = this.#billing?.limits;
+    if (!this.#team() || this.#billing === null || limits === null || limits === undefined) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
+    const set = <T extends { limitCents: number | null; spentCents: number; stopped: boolean }>(row: T): T => ({ ...row, limitCents, stopped: limitCents !== null && row.spentCents >= limitCents });
+    const members = limits.members.map((m) => ("personId" in of && m.personId === of.personId ? set(m) : m));
+    const bots = limits.bots.map((b) => ("projectId" in of && b.projectId === of.projectId ? set(b) : b));
+    const row = "personId" in of ? members.find((m) => m.personId === of.personId) : bots.find((b) => b.projectId === of.projectId);
+    if (row === undefined) return Promise.resolve(failed({ code: "not_found", message: "No such person or bot in this workspace." }));
+    this.#billing = { ...this.#billing, limits: { members, bots } };
+    return Promise.resolve({ ok: true, limit: { limitCents: row.limitCents, spentCents: row.spentCents, stopped: row.stopped } });
+  }
+
+  billingWarnings(_hub: string, on: boolean): Promise<BillingWarningsOutcome> {
+    const warnings = this.#billing?.warnings;
+    if (!this.#team() || this.#billing === null || warnings === null || warnings === undefined) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
+    this.#billing = { ...this.#billing, warnings: { ...warnings, on } };
+    return Promise.resolve({ ok: true, on });
+  }
+
+  signin(): Promise<SigninOutcome> {
+    if (!this.#team() || this.#signin === null) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
+    return Promise.resolve({ ok: true, signin: this.#signin });
+  }
+
+  // Refused as the team refuses: domains joining with none verified.
+  signinSet(_hub: string, change: SigninChange): Promise<SigninOutcome> {
+    const now = this.#signin;
+    if (!this.#team() || now === null) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
+    if (change.domainJoin === true && !now.domains.some((d) => d.state === "verified")) return Promise.resolve(failed({ code: "no_domain", message: "Verify an email domain first." }));
+    this.#signin = { ...now, ...(change.require === undefined ? {} : { require: change.require }), ...(change.domainJoin === undefined ? {} : { domainJoin: change.domainJoin }) };
+    return Promise.resolve({ ok: true, signin: this.#signin });
+  }
+
+  signinDomain(): Promise<SigninDomainOutcome> {
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
+    return Promise.resolve({ ok: true });
   }
 
   installGithub(): Promise<InstallGithubOutcome> {
