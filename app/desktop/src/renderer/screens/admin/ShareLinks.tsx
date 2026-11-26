@@ -151,7 +151,9 @@ function SharePort({ disabled, act }: { disabled: boolean; act: (what: string, r
             <Button
               variant="secondary"
               disabled={disabled || !ok}
-              onClick={() => void act("The port wasn’t shared", () => call("share_port", { machineId: chosen!, port: n }).then(() => setPort("")))}
+              onClick={() => {
+                if (chosen !== undefined) void act("The port wasn’t shared", () => call("share_port", { machineId: chosen, port: n }).then(() => setPort("")));
+              }}
             >
               Share
             </Button>

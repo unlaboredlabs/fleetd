@@ -8583,7 +8583,7 @@ export type SharePortOutput = {
   link: ShareLink;
 };
 
-export type ShareLinksListInput = {};
+export type ShareLinksListInput = { [key: string]: unknown };
 
 export type ShareLinksListOutput = {
   /** Whether links open in this workspace: an admin's switch. */
@@ -8608,7 +8608,7 @@ export type ShareLinkRevokeInput = {
   name: string;
 };
 
-export type ShareLinkRevokeOutput = {};
+export type ShareLinkRevokeOutput = { [key: string]: unknown };
 
 /** `share_link_open`: the link's address with a one-time code that signs this person in on it for a while. */
 export type ShareLinkOpenInput = {

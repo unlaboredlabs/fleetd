@@ -31,7 +31,7 @@ const dev = Bun.serve({
   websocket: {
     open: (ws) => void hmr.add(ws),
     close: (ws) => void hmr.delete(ws),
-    message: (ws, m) => ws.send(`pong ${m}`),
+    message: (ws, m) => void ws.send(`pong ${m}`),
   },
 });
 afterAll(() => dev.stop(true));

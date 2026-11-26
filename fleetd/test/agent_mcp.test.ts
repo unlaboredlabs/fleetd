@@ -73,7 +73,7 @@ describe("agent-mcp", () => {
       "spawn_agent", "message_agent", "agents", "stop_agent", "request_secret", "decide", "brief", "close", "gated_run",
       "remember", "forget", "memory_read", "nudge", "checklist", "skill_install", "skill_save", "project_message",
       "factory_status", "chat_search", "chat_read", "confirm_step", "review_read", "chat_file", "publish_artifact",
-      "share_port", "artifact_read", "attachment_read",
+      "artifact_read", "attachment_read",
     ]) {
       expect(lead).toContain(tool);
     }

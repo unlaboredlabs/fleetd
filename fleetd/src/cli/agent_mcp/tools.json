@@ -1851,10 +1851,10 @@
   {
    "name": "share_port",
    "op": "share_port",
-   "lead": true,
+   "lead": false,
    "worker": true,
    "browser": false,
-   "description": "Share a dev server you started (any local port on your own machine) as a link for the workspace's signed-in members: a person opens it on their computer or phone, hot reload included. port: the dev server's port; minutes: how long it lasts (default 120, at most 1440); label: what it shows, in a few words. Returns the link and a block: put the block in your message or result as a ```fleetd-block fence and the chat shows an Open preview card. Never a public link: only members who sign in open it. Sharing the same port again renews its link.",
+   "description": "Share a dev server you started (a port on your own machine) as a link only the workspace's signed-in members open, on a computer or phone, hot reload included. Returns the link and a block: put the block in your result as a ```fleetd-block fence for an Open preview card. Sharing the port again renews it.",
    "inputSchema": {
     "properties": {
      "label": {
