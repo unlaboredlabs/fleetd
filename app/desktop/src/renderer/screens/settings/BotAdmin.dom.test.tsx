@@ -68,10 +68,12 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-async function render(role: HubRole) {
+/** `role` null: the workspace hasn't said yet who this app's person is (hub_info still on its way). */
+async function render(role: HubRole | null) {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool) => {
+      if (tool === "hub_info" && role === null) return new Promise(() => undefined);
       if (tool === "hub_info") {
         return Promise.resolve({ ok: true, output: { admin: role !== "member", me: { personId: "p-bea", name: "Bea", role, createdAt: AT } } });
       }
@@ -133,4 +135,11 @@ it("an admin changes them, with no such line", async () => {
   expect(find("Rules")).toBeDefined();
   expect(find("Pick a card…")?.disabled).toBe(false);
   expect(find("Delete bot…")?.disabled).toBe(false);
+});
+
+it("shows them off until the workspace says who this person is, so a member never sees them flash on", async () => {
+  await render(null);
+  expect(section("Safety")?.textContent).toContain("Only admins can change this.");
+  expect(buttons("Who merges").every((b) => b.disabled)).toBe(true);
+  expect(find("Delete bot…")).toBeUndefined();
 });

@@ -339,13 +339,14 @@ describe("Settings → Bots", () => {
     expect(page.textContent).toContain("/home/w/src/storefront");
     expect(page.textContent).toContain("acme/web");
     expect(page.textContent).toContain("kept in the bot's vault.…Open Vault");
-    // Its own computer holds its place, off; Delete waits for the worktrees.
+    // Its own computer holds its place, off; Delete waits for the worktrees, and for the workspace to say this person
+    // is an admin.
     const setups = [...document.querySelectorAll<HTMLTextAreaElement>('textarea[aria-label="Setup commands"]')];
     expect(setups.map((t) => [t.disabled, t.value])).toEqual([
       [true, ""],
       [false, "pnpm install"],
     ]);
-    expect(button("Delete bot…").disabled).toBe(true);
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Delete bot…")).toBe(false);
     const sections = [...page.querySelectorAll("section")].length;
     await act(async () => new Promise((r) => setTimeout(r, 400)));
     expect(page.textContent).toContain("2 variables.");

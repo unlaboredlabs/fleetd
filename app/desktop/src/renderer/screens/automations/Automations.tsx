@@ -218,35 +218,35 @@ function Card(props: { automation: Automation; locked: boolean; onEdit: () => vo
           {history ? "Hide runs" : "Runs"}
         </Button>
         {props.locked ? null : (
-        <RowMenu
-          label={a.name}
-          disabled={busy}
-          items={[
-            {
-              label: a.paused ? "Resume" : "Pause",
-              onSelect: () =>
-                act(async () => {
-                  await hubCall("automation_pause", { automationId: a.automationId, paused: !a.paused });
-                  return null;
-                }),
-            },
-            { label: "Edit", onSelect: props.onEdit },
-            ...(a.webhook
-              ? [
-                  {
-                    label: "Rotate webhook URL",
-                    onSelect: () =>
-                      act(async () => {
-                        const out = await hubCall("automation_rotate", { automationId: a.automationId });
-                        props.onUrl({ name: a.name, url: out.webhookUrl });
-                        return null;
-                      }),
-                  },
-                ]
-              : []),
-            { label: "Delete", onSelect: () => setDeleting(true), danger: true },
-          ]}
-        />
+          <RowMenu
+            label={a.name}
+            disabled={busy}
+            items={[
+              {
+                label: a.paused ? "Resume" : "Pause",
+                onSelect: () =>
+                  act(async () => {
+                    await hubCall("automation_pause", { automationId: a.automationId, paused: !a.paused });
+                    return null;
+                  }),
+              },
+              { label: "Edit", onSelect: props.onEdit },
+              ...(a.webhook
+                ? [
+                    {
+                      label: "Rotate webhook URL",
+                      onSelect: () =>
+                        act(async () => {
+                          const out = await hubCall("automation_rotate", { automationId: a.automationId });
+                          props.onUrl({ name: a.name, url: out.webhookUrl });
+                          return null;
+                        }),
+                    },
+                  ]
+                : []),
+              { label: "Delete", onSelect: () => setDeleting(true), danger: true },
+            ]}
+          />
         )}
       </div>
       <div role="status">

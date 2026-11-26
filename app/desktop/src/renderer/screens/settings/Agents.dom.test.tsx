@@ -11,6 +11,9 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AgentsPanel } from "./Agents";
 
+// An admin's app: a bot's max agents is theirs to change (a member's is BotAdmin.dom.test.tsx's).
+vi.mock("./botAdmin", () => ({ BOT_ADMIN_ONLY: "Only admins can change this.", useBotLocked: () => false }));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Settings search reads the platform when it loads, before any test runs.
 vi.hoisted(() => {
