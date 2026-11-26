@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { HELD, install, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
+import { HELD, install, machineHere, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
 
 const SRC = join(import.meta.dir, "../../src/main.ts");
 const ROOT = join(import.meta.dir, "../../..");
@@ -12,11 +12,29 @@ const ROOT = join(import.meta.dir, "../../..");
 const SLOW = 30_000;
 
 describe("how many", () => {
-  test("one per 8 cores, at least 2", () => {
-    expect(slotsFit(32)).toBe(4);
-    expect(slotsFit(8)).toBe(2);
-    expect(slotsFit(1)).toBe(2);
-    expect(slotsFit(64)).toBe(8);
+  const GB = 2 ** 30;
+  // Linux's default ephemeral range, 32768–60999.
+  const LINUX_PORTS = 28_232;
+  test("the fewest of cores left after builds, memory and ports, at least 1", () => {
+    // The devbox: 32 cores, 60 GB (59.5 reported), 3 build slots of 2 jobs, 4 test workers. Cores: (32 − 6) / 4 = 6;
+    // memory: 60 / 8 = 7; ports: 28,232 / 4,000 = 7.
+    expect(slotsFit({ cores: 32, buildSlots: 3, buildJobs: 2, testWorkers: 4, memTotal: 59.5 * GB, ports: LINUX_PORTS })).toBe(6);
+    // Memory: 16 cores, 16 GB: cores (16 − 2) / 4 = 3, memory 2.
+    expect(slotsFit({ cores: 16, buildSlots: 1, buildJobs: 2, testWorkers: 4, memTotal: 16 * GB, ports: LINUX_PORTS })).toBe(2);
+    // Ports: 128 cores, 512 GB, macOS's 16,384 ephemeral ports: 4.
+    expect(slotsFit({ cores: 128, buildSlots: 8, buildJobs: 2, testWorkers: 4, memTotal: 512 * GB, ports: 16_384 })).toBe(4);
+    // A laptop the builds fill: 4 cores, 8 GB, 1 build slot of 4 jobs: none left, still 1.
+    expect(slotsFit({ cores: 4, buildSlots: 1, buildJobs: 4, testWorkers: 4, memTotal: 8 * GB, ports: LINUX_PORTS })).toBe(1);
+    // Unknown memory doesn't limit it.
+    expect(slotsFit({ cores: 64, buildSlots: 2, buildJobs: 2, testWorkers: 4, memTotal: undefined, ports: LINUX_PORTS })).toBe(7);
+  });
+  test("this machine's figures", () => {
+    const m = machineHere(join(process.env.TMPDIR ?? "/tmp", "fleetd-no-node-home"));
+    expect(m.cores).toBeGreaterThan(0);
+    expect(m.buildSlots).toBeGreaterThan(0);
+    expect(m.testWorkers).toBeGreaterThanOrEqual(4);
+    expect(m.ports).toBeGreaterThan(0);
+    expect(slotsFit(m)).toBeGreaterThanOrEqual(1);
   });
   test("node.json's heavySlots sets it (checkSlots, its old name, too), 0 turns turns off", () => {
     const home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-heavy-slots-"));
@@ -32,7 +50,7 @@ describe("how many", () => {
       write({ heavySlots: 1, checkSlots: 5 });
       expect(slotsHere(home)).toBe(1);
       write({});
-      expect(slotsHere(home)).toBeGreaterThanOrEqual(2);
+      expect(slotsHere(home)).toBe(slotsFit(machineHere(home)));
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

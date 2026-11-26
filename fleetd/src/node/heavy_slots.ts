@@ -13,8 +13,11 @@
 import { closeSync, existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import * as buildSlots from "./build_slots.ts";
 import { runInherited, take, writeWrapper } from "./build_slots.ts";
 import { readConfig } from "./config.ts";
+import { buildJobsHere } from "./load/index.ts";
+import { testWorkers } from "./sessions/share.ts";
 
 export const COMMAND = "heavy-slot";
 /** The wrapper's name on agents' PATH. */
@@ -29,10 +32,48 @@ const POLL_MS = 500;
 
 export const dir = (home: string) => join(home, "heavy-slots");
 
-/** The slots `cores` CPUs get: one per 8 cores, at least 2. */
-export const slotsFit = (cores: number) => Math.max(2, Math.floor(cores / 8));
+/** What one heavy run is sized for: memory at its worst (measured peaks are under 2.5 GB), and connections it leaves
+ * in TIME_WAIT (a fleetd-cloud check leaves up to ~850 to its Postgres; the devbox ran out of ports at ~30k, ~3k a run). */
+export const MEM_PER_RUN_GB = 8;
+export const PORTS_PER_RUN = 4_000;
 
-/** node.json's `heavySlots` (`checkSlots` before it), else what the cores fit; undefined when it is 0: no turns. */
+export type Machine = { cores: number; buildSlots: number; buildJobs: number; testWorkers: number; memTotal: number | undefined; ports: number };
+
+/** The heavy runs `m` fits at once, the fewest of: the cores left once every build slot runs its build's jobs, at one
+ * run's test workers each; memory (as sold) at MEM_PER_RUN_GB a run; ephemeral ports at PORTS_PER_RUN a run. At least
+ * one. Unknown memory doesn't limit it. */
+export function slotsFit(m: Machine): number {
+  const cpu = Math.floor((m.cores - m.buildSlots * m.buildJobs) / Math.max(1, m.testWorkers));
+  const mem = m.memTotal === undefined ? Infinity : Math.floor(Math.ceil(m.memTotal / 2 ** 30) / MEM_PER_RUN_GB);
+  const ports = Math.floor(m.ports / PORTS_PER_RUN);
+  return Math.max(1, Math.min(cpu, mem, ports));
+}
+
+/** How many ephemeral ports this machine's kernel hands out: Linux's ip_local_port_range, else the IANA range macOS
+ * uses (49152–65535). */
+export function ephemeralPorts(): number {
+  try {
+    const [lo, hi] = readFileSync("/proc/sys/net/ipv4/ip_local_port_range", "utf8").trim().split(/\s+/).map(Number);
+    if (Number.isInteger(lo) && Number.isInteger(hi) && hi! >= lo!) return hi! - lo! + 1;
+  } catch {}
+  return 65535 - 49152 + 1;
+}
+
+/** This machine as slotsFit reads it. Builds with no turns (`buildSlots` 0) count as the slots memory fits. */
+export function machineHere(home: string): Machine {
+  const jobs = buildJobsHere();
+  const mem = buildSlots.memTotal();
+  return {
+    cores: availableParallelism(),
+    buildSlots: buildSlots.slotsHere(home) ?? buildSlots.slotsFit(mem),
+    buildJobs: jobs,
+    testWorkers: testWorkers(jobs),
+    memTotal: mem,
+    ports: ephemeralPorts(),
+  };
+}
+
+/** node.json's `heavySlots` (`checkSlots` before it), else what the machine fits; undefined when it is 0: no turns. */
 export function slotsHere(home: string): number | undefined {
   let set: number | undefined;
   try {
@@ -41,7 +82,7 @@ export function slotsHere(home: string): number | undefined {
     if (typeof n === "number" && Number.isInteger(n) && n >= 0) set = n;
   } catch {}
   if (set === 0) return undefined;
-  return set ?? slotsFit(availableParallelism());
+  return set ?? slotsFit(machineHere(home));
 }
 
 export function waitingLine(slots: number, ahead: number): string {
