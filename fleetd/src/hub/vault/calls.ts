@@ -135,7 +135,10 @@ export class Fills {
     const plain = this.plain(row, field, secret);
     const box = hubStore(hub).machineGet(host)?.boxPubKey;
     if (!box) {
-      v.audit.settle(auditId, "failed", { message: `${host} publishes no box key` });
+      if (v.audit.settle(auditId, "failed", { message: `${host} publishes no box key` })) {
+        const entry = v.audit.get(auditId);
+        if (entry) v.usedEvent(auditId, entry);
+      }
       throw new ToolError("failed", `${host}'s node takes no sealed values.`, `Update fleetd on ${host}.`);
     }
     const bytes = Buffer.from(JSON.stringify(plain), "utf8");

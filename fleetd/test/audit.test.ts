@@ -1,6 +1,9 @@
 // The workspace's audit log (hub/audit): each kind lands with who did it, members and agent keys can't read it, the
 // CLI's CSV is the app's for the same rows, and a page stays quick over a year of rows.
 import { expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { auditCsv } from "../../app/desktop/src/shared/auditCsv.ts";
 import { start } from "../src/hub/audit/loops.ts";
 import { auditLog, AUDIT_KEEP_MS } from "../src/hub/audit/store.ts";
@@ -14,13 +17,15 @@ import { vault } from "../src/hub/vault/index.ts";
 import { auditCommand, timeArg } from "../src/cli/audit.ts";
 import type { AuditEvent, AuditListOutput, ProjectSummary } from "../src/shared/contracts.ts";
 import { refusal, testHub } from "./people-kit.ts";
+import { PROJECT as VAULT_BOT, vaultHub } from "./vault-kit.ts";
 import { testHub as fileHub } from "./hub-helpers.ts";
 
 const URL_ = "http://devbox.example.ts.net:4790";
 const BOT = { machineId: "lab-a", projectId: "p1" };
 
 function rig() {
-  const t = testHub({ url: URL_ });
+  // A home of its own: Updates' settings are a file in it, never in the tree the tests run from.
+  const t = testHub({ url: URL_, home: mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "audit-")) });
   store(t.hub).projectsUpsertMany(BOT.machineId, [
     { ...BOT, title: "Shop", workspaceRoot: "/srv/shop", lastActivityAt: new Date(t.clock.ms).toISOString(), threads: { failed: 0, idle: 0, running: 0, waiting: 0 } } as unknown as ProjectSummary,
   ]);
@@ -200,4 +205,28 @@ test("a year of rows: every filtered page is quick, and rows past a year go", ()
   }
   t.clock.advance(30 * day);
   expect(log.sweep(t.clock.ms)).toBeGreaterThan(10_000);
+});
+
+test("a bot's card is named as Payments names it, and a fill's row is stamped when it settles, in time order", async () => {
+  const k = vaultHub();
+  try {
+    start(k.hub);
+    const card = await k.call<{ item: { itemId: string } }>(k.ownerDevice, "vault_save", {
+      kind: "card",
+      label: "Visa (Personal)",
+      sealed: k.sealToHub({ number: "4242424242424242", month: "04", year: "2031", cvc: "123", name: "Ada" }),
+    });
+    await k.call(k.ownerDevice, "project_card_set", { ...VAULT_BOT, card: `vault:${card.item.itemId}` });
+    const log = auditLog(k.hub);
+    expect(log.list({ kind: "bot.settings" }).events.map((e) => e.summary)).toEqual(["Set the bot's card to Visa (Personal) ••4242"]);
+    // A fill begun an hour ago and settled now is a row of now: a "since" of the last minute finds it.
+    const begun = k.clock.now() - 3_600_000;
+    const fill = k.v.used({ atMs: begun, itemId: card.item.itemId, action: "fill", outcome: "pending", ...VAULT_BOT, threadId: "t1", data: { label: "Visa (Personal)", site: "shop.example" } });
+    k.v.audit.settle(fill, "ok", {});
+    k.v.usedEvent(fill, { ...k.v.audit.get(fill)!, outcome: "ok" });
+    const recent = log.list({ kind: "vault.filled", since: new Date(k.clock.now() - 60_000).toISOString() }).events;
+    expect(recent.map((e) => [e.summary, Date.parse(e.at)])).toEqual([['Filled "Visa (Personal)" on shop.example', k.clock.now()]]);
+  } finally {
+    k.done();
+  }
 });
