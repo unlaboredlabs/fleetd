@@ -8,8 +8,6 @@ import { NEUTRAL } from "./Avatar";
 
 /** The button's size in points, as iOS 26's glass bar buttons beside it (+, the filters). */
 export const ME_BUTTON = 48;
-/** Drawn at 3x: the phones' scale, so it is sharp; the bar reads it at `scale` 3. */
-const SCALE = 3;
 
 export function MeImage({ initial, photo, dark, onImage }: { initial: string; photo: string | undefined; dark: boolean; onImage: (uri: string) => void }) {
   const ref = useRef<Svg>(null);
@@ -21,12 +19,13 @@ export function MeImage({ initial, photo, dark, onImage }: { initial: string; ph
   useEffect(() => {
     if (!ready) return;
     // After the frame that draws it.
-    const timer = setTimeout(() => ref.current?.toDataURL((b64) => onImage(`data:image/png;base64,${b64}`), { width: ME_BUTTON * SCALE, height: ME_BUTTON * SCALE }), 0);
+    // In points: iOS draws it at the screen's scale (3x on these phones), which the bar reads back (Chats.tsx meItem).
+    const timer = setTimeout(() => ref.current?.toDataURL((b64) => onImage(`data:image/png;base64,${b64}`), { width: ME_BUTTON, height: ME_BUTTON }), 0);
     return () => clearTimeout(timer);
   }, [initial, photo, dark, ready, onImage]);
   return (
     <View pointerEvents="none" style={styles.away} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-      <Svg ref={ref} width={ME_BUTTON} height={ME_BUTTON}>
+      <Svg ref={ref} width={ME_BUTTON} height={ME_BUTTON} viewBox={`0 0 ${ME_BUTTON} ${ME_BUTTON}`}>
         <Defs>
           <LinearGradient id="dome" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={n.top} />

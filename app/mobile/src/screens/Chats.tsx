@@ -15,7 +15,7 @@ import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackHeaderItem, NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, PixelRatio, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { filterChoices, filterLabel, meAvatar, meMark, meSymbol, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
@@ -436,7 +436,7 @@ const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f
 const meItem = (initial: string, label: string, dot: string | undefined, icon: string | undefined, onPress: () => void): NativeStackHeaderItem => ({
   type: "button",
   label: "Settings",
-  icon: icon === undefined ? { type: "sfSymbol", name: meSymbol(initial) } : { type: "image", source: { uri: icon, scale: 3 }, tinted: false },
+  icon: icon === undefined ? { type: "sfSymbol", name: meSymbol(initial) } : { type: "image", source: { uri: icon, scale: PixelRatio.get() }, tinted: false },
   ...(icon === undefined ? {} : { hidesSharedBackground: true }),
   tintColor: MONOGRAM,
   accessibilityLabel: label,
