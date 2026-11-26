@@ -5,6 +5,8 @@
 // own. phone.json on the edge release lists the updates (mobile-release.yml's update job adds each one), and
 // rollout.ts writes what each stage serves into edge's mobile-updates.tar.gz on publish and on every tick.
 //
+// Only the newest update of a runtime version advances: once a newer one is published, an older one still on its way
+// stays at the stage it had reached, so a revert or any later fix stops a bad update from going on to 50% and everyone.
 // A halted update reaches nobody new: each stage serves the newest update before it that reached it. A pulled one
 // also takes back those who have it: every stage serves its back copy, the update everyone had when it was published
 // signed again as a newer one (or expo-updates' rollBackToEmbedded directive when there was none), which its package
@@ -80,12 +82,14 @@ export function served(r: PhoneRollout, now: number): Served[] {
   for (const { runtime, platform } of keys.values()) {
     const mine = r.updates.filter((u) => u.platforms[platform]?.runtime === runtime);
     for (const { percent, dir } of STAGE_DIRS) {
-      for (const u of mine) {
+      for (const [i, u] of mine.entries()) {
         if (u.pulledAt !== undefined) {
           out.push({ dir, runtime, platform, from: u.id, back: true });
           break;
         }
-        if (u.haltedAt !== undefined || phonePercentAt(u, now) < percent) continue;
+        // As far as it got by the time the next newer one was published.
+        const until = i === 0 ? now : Math.min(now, Date.parse(mine[i - 1]!.publishedAt));
+        if (u.haltedAt !== undefined || phonePercentAt(u, until) < percent) continue;
         out.push({ dir, runtime, platform, from: u.id, back: false });
         break;
       }
@@ -96,7 +100,14 @@ export function served(r: PhoneRollout, now: number): Served[] {
 
 /** Whether an update is still on its way to everyone: the ticker keeps ticking. */
 export const phoneMoving = (r: PhoneRollout, now: number): boolean =>
-  r.updates.some((u) => u.haltedAt === undefined && u.pulledAt === undefined && phonePercentAt(u, now) < 100);
+  r.updates.some(
+    (u, i) =>
+      // An older one a newer one stopped (`served`) moves no more.
+      !r.updates.slice(0, i).some((n) => PLATFORMS.some((p) => n.platforms[p] !== undefined && n.platforms[p]?.runtime === u.platforms[p]?.runtime)) &&
+      u.haltedAt === undefined &&
+      u.pulledAt === undefined &&
+      phonePercentAt(u, now) < 100,
+  );
 
 /** Its package's name on the edge release. */
 export const packageOf = (id: string) => `phone-update-${id}.tar.gz`;

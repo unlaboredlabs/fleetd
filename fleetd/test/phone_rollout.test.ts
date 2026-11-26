@@ -54,6 +54,22 @@ test("a halted update reaches nobody new: each stage serves the newest one befor
   expect(phoneMoving({ updates: [halted, u("good", 10 * HOUR)] }, T0)).toBe(false);
 });
 
+test("only the newest update advances: a revert stops a bad update from going on to 50% and everyone", () => {
+  // Good U0 is everyone's; bad U1 went to the first stage 30 minutes before its revert U2 was published.
+  const updates = [u("revert", 0), u("bad", 30 * 60_000), u("good", 10 * HOUR)];
+  const later = (ms: number) => {
+    const s = served({ updates }, T0 + ms).filter((x) => x.platform === "ios");
+    return Object.fromEntries(s.map((x) => [x.dir || "everyone", x.from]));
+  };
+  // At T0 + 2h45m, the bad one would be 3h15m out and everyone's without the rule; it stays at its first stage, which
+  // the revert has taken over, so it reaches nobody more.
+  expect(later(2 * HOUR + 45 * 60_000)).toEqual({ stage10: "revert", stage50: "revert", everyone: "good" });
+  expect(later(3 * HOUR)).toEqual({ stage10: "revert", stage50: "revert", everyone: "revert" });
+  // The ticker stops once the newest is everyone's: the stopped one doesn't keep it going.
+  expect(phoneMoving({ updates }, T0 + 2 * HOUR)).toBe(true);
+  expect(phoneMoving({ updates }, T0 + 3 * HOUR)).toBe(false);
+});
+
 test("a pulled update takes back everyone who has it: every stage serves its back copy until a newer one", () => {
   const pulled = u("bad", 2 * HOUR, "f1", { pulledAt: at(0) });
   expect(ios([pulled, u("good", 10 * HOUR)])).toEqual({ everyone: "bad back", stage50: "bad back", stage10: "bad back" });
