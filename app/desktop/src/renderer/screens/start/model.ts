@@ -5,9 +5,10 @@
 //
 // The real dependencies, in order (fleetd-cloud: accounts, machines, github):
 //   - a team: made at the first sign-in, named from the person (accounts' place); a teammate joins one by its invite;
-//   - where agents run (D558), either one: a computer of the team's, online; or a hosted sandbox provider on the
-//     team's own key, whose agents the hub's runner starts in its boxes;
-//   - Tailscale (optional, skippable, D573): one device the hub runs, through which hosted agents reach the team's
+//   - where agents run (D558), either one, offered side by side: a computer of the team's own, online, free (the join
+//     line, Add machine's); or fleetd's computers on a plan or credits (or, before those, a hosted sandbox provider on
+//     the team's own key, whose agents the hub's runner starts in its boxes);
+//   - Tailscale (optional, D573), in that same step: one device the hub runs, through which agents reach the team's
 //     tailnet (a Claude endpoint on it, MCP servers); one click and a sign-in at Tailscale, nothing pasted;
 //   - Claude: the hub's API key with its endpoint (Anthropic's own prefilled; one on the tailnet wants Tailscale), or
 //     the way in each place has of its own: a computer's login (machine_claude_login: its sign-in page, then the code it
@@ -35,12 +36,24 @@ export interface TeamProject {
   readonly busy: boolean;
 }
 
+/** fleetd's computers, beside a computer of the team's own while neither runs agents yet. */
+export interface ComputersChoice {
+  /** Why they stopped, in Billing's words, on a team that had a plan or credits before; none on a new one. */
+  readonly message?: string;
+  /** An owner or admin: Pick a plan opens Billing. */
+  readonly canBuy: boolean;
+}
+
 export type ComputerStep =
-  /** No computer yet: the join line to paste, which renews itself when its code runs out; null while it is made. */
+  /**
+   * Nothing runs agents yet: a computer of the team's own, by the join line to paste (renewed when its code runs out;
+   * null while it is made), and, once they are on for the team, fleetd's computers beside it.
+   */
   | {
       readonly at: "line";
       readonly line: string | null;
       readonly error?: string;
+      readonly computers?: ComputersChoice;
     }
   /** Joined before, and offline now: agents run there once it is back. */
   | { readonly at: "offline"; readonly machine: string }
@@ -53,18 +66,15 @@ export type ComputerStep =
   /** Not ready past the bounded wait (setup/hostedWait.ts): why in the hub's words, its fix, and Try again. */
   | { readonly at: "hosted_failed"; readonly provider: string; readonly reason: string; readonly fix: string; readonly trying?: boolean }
   /** Agents run in the provider's sandboxes once Claude reaches them; on a cloud team, fleetd's computers. */
-  | { readonly at: "hosted"; readonly provider: string }
-  /** fleetd's computers, held (no plan or credits, the cap reached): Billing's own line, and Pick a plan for an admin. */
-  | { readonly at: "computers_held"; readonly message: string; readonly canBuy: boolean };
+  | { readonly at: "hosted"; readonly provider: string };
 
-/** The team's Tailscale, as the hub runs its one device (tailnet_get). */
+/** The team's Tailscale, as the hub runs its one device (tailnet_get): a line of Where agents run, optional. */
 export type TailscaleStep =
   | { readonly at: "todo"; readonly busy?: boolean; readonly error?: string }
   /** Waiting on the person: Tailscale's sign-in page, opened again from a click. */
   | { readonly at: "signin"; readonly url?: string }
   /** Signed in: an admin of the tailnet approves the device in Tailscale's admin console. */
   | { readonly at: "approve" }
-  | { readonly at: "skipped" }
   | { readonly at: "done"; readonly tailnet: string };
 
 /** The hub's API key being saved from the step: busy, or why it wasn't. */
@@ -124,7 +134,7 @@ export type StartView =
       readonly who: "owner";
       readonly team: string;
       readonly computer: ComputerStep;
-      /** Absent on a hub with no Tailscale device to run (an older one, or one whose OS can't). */
+      /** Where agents run's Tailscale line; absent on a hub with no Tailscale device to run (an older one, or one whose OS can't). */
       readonly tailscale?: TailscaleStep;
       readonly claude: ClaudeStep;
       /** Whether Tailscale is connected: the Claude step's endpoint on the tailnet says so when it isn't. */
@@ -139,7 +149,7 @@ export type StartView =
       readonly projects: readonly TeamProject[];
     };
 
-export type StepId = "computer" | "tailscale" | "claude" | "github" | "project";
+export type StepId = "computer" | "claude" | "github" | "project";
 
 /** The Claude step's facts (state.ts reads them from the hub): what reaches the agents, and the steps before it. */
 export interface ClaudeFacts {
@@ -178,23 +188,20 @@ export const claudeStepOf = (f: ClaudeFacts): ClaudeStep =>
 /** GitHub needs nothing more for now: connected, skipped, or asked of an organization's owner. */
 const githubSettled = (github: GithubStep): boolean => github.at === "done" || github.at === "skipped" || github.at === "requested";
 
-/** Whether a step needs nothing more. A skipped GitHub or Tailscale counts: neither is needed to go on. */
+/** Whether a step needs nothing more. A skipped GitHub counts: it isn't needed to go on. */
 export const stepDone = (view: StartView, step: StepId): boolean => {
   if (step === "github") return githubSettled(view.github);
   if (view.who === "teammate") return false;
   if (step === "computer") return view.computer.at === "ready" || view.computer.at === "hosted";
-  if (step === "tailscale") return view.tailscale === undefined || view.tailscale.at === "done" || view.tailscale.at === "skipped";
   if (step === "claude") return view.claude.at === "done";
   return view.project.at === "made";
 };
 
 /**
- * The steps the page shows, in order: Tailscale, optional, right before Claude (where a hub has it). A teammate's team
- * has its computers and bots already: theirs open first, and their own GitHub is one row under them, its button at its
- * end.
+ * The steps the page shows, in order; Tailscale is a line of the first. A teammate's team has its computers and bots
+ * already: theirs open first, and their own GitHub is one row under them, its button at its end.
  */
-export const stepsOf = (view: StartView): readonly StepId[] =>
-  view.who === "owner" ? ["computer", ...(view.tailscale === undefined ? [] : (["tailscale"] as const)), "claude", "github", "project"] : ["project", "github"];
+export const stepsOf = (view: StartView): readonly StepId[] => (view.who === "owner" ? ["computer", "claude", "github", "project"] : ["project", "github"]);
 
 /** The one step open now: the first not done; for a teammate, always the team's bots. */
 export const currentStep = (view: StartView): StepId => (view.who === "teammate" ? "project" : (stepsOf(view).find((s) => !stepDone(view, s)) ?? "project"));

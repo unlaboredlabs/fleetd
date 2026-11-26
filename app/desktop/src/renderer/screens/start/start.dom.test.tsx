@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Get started on a fleetd cloud team in the web app, from the team's own state: where a fresh team lands, each step as
-// the hub's state moves it on (a computer, Tailscale's Connect or Skip, Claude's login or the hub's key with its
+// the hub's state moves it on (a computer of the team's own or fleetd's computers, Tailscale's Connect, Claude's login or the hub's key with its
 // endpoint, GitHub in one trip, a repository), GitHub's way back, a teammate's page, and that nothing of it shows on the
 // desktop.
 import { act } from "react";
@@ -308,14 +308,58 @@ it("with fleetd's computers on, step 1 is done on them: no join line made, no pr
   stop();
 });
 
-it("fleetd's computers held for no plan: step 1 says so in Billing's words, and Pick a plan opens Billing", async () => {
+const way = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("[role=radio]")].find((b) => b.textContent.startsWith(name));
+const pick = async (name: string) => {
+  await act(async () => {
+    way(name)?.click();
+    await Promise.resolve();
+  });
+};
+
+it("a new workspace with no plan: step 1 offers its own machine, free, beside fleetd's computers, and never says paying is needed", async () => {
+  billing = BILLING_SAMPLES.none;
+  const stop = await render({ tailnet: { status: "off" } });
+  expect(screen()).toBe("start.computer");
+  // Its own machine first: the join line, ready to copy, waiting for it to connect.
+  expect([...host.querySelectorAll("[role=radio]")].map((b) => b.textContent)).toEqual(["Your own machineFree · Mac or Linux", "fleetd's computersOn a plan or credits"]);
+  expect(way("Your own machine")?.getAttribute("aria-checked")).toBe("true");
+  expect(calls.some((c) => c.tool === "machine_join")).toBe(true);
+  expect(host.textContent).toContain("--code 7QK4-M2XD");
+  expect(host.textContent).toContain("Waiting for it to connect");
+  expect(host.textContent).not.toContain("no plan and no credits");
+  // Tailscale under them, for a machine on a tailnet: one click.
+  expect(host.textContent).toContain("Machine or services on a tailnet?");
+  // fleetd's computers, one click over: Pick a plan opens Billing.
+  await pick("fleetd's computers");
+  expect(host.textContent).not.toContain("--code 7QK4-M2XD");
+  expect(host.textContent).not.toContain("no plan and no credits");
+  await click("Pick a plan");
+  expect(window.location.hash).toBe("#/settings/hub/billing");
+  stop();
+});
+
+it("a workspace's own machine joining ticks step 1 with no plan, Claude next", async () => {
   billing = BILLING_SAMPLES.none;
   const stop = await render({});
   expect(screen()).toBe("start.computer");
-  expect(host.textContent).toContain("This team has no plan and no credits");
-  expect(calls.some((c) => c.tool === "machine_join")).toBe(false);
-  await click("Pick a plan");
-  expect(window.location.hash).toBe("#/settings/hub/billing");
+  await act(async () => {
+    send({ t: "snapshot", snapshot: { cursor: 2, attention: [], machines: [machine({ status: "degraded", degradedReason: "claude is not logged in" })], projects: [] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  await settle();
+  expect(screen()).toBe("start.claude");
+  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("devbox");
+  stop();
+});
+
+it("fleetd's computers that stopped (the cap reached): step 1 opens on them, in Billing's words, its own machine one click over", async () => {
+  billing = BILLING_SAMPLES.cap;
+  const stop = await render({});
+  expect(screen()).toBe("start.computer");
+  expect(way("fleetd's computers")?.getAttribute("aria-checked")).toBe("true");
+  expect(host.textContent).toContain("spend cap");
+  await pick("Your own machine");
+  expect(host.textContent).toContain("--code 7QK4-M2XD");
   stop();
 });
 
@@ -612,32 +656,33 @@ it("never on the desktop: the page goes home", async () => {
   stop();
 });
 
-it("Tailscale, right before Claude: Connect opens Tailscale's sign-in, and Skip goes on and never asks again", async () => {
-  const stop = await render({ machines: [machine()], tailnet: { status: "off" } });
-  await until("start.tailscale");
-  expect([...host.querySelectorAll("[data-step]")].map((s) => s.getAttribute("data-step"))).toEqual(["computer", "tailscale", "claude", "github", "project"]);
+it("Tailscale is a line of where agents run: Connect opens Tailscale's sign-in there, and the steps go on without it", async () => {
+  const stop = await render({ tailnet: { status: "off" } });
+  await until("start.computer");
+  expect([...host.querySelectorAll("[data-step]")].map((s) => s.getAttribute("data-step"))).toEqual(["computer", "claude", "github", "project"]);
   await click("Connect Tailscale");
   expect(calls.filter((c) => c.tool === "tailnet_connect")).toHaveLength(1);
   expect(shell.openExternal).toHaveBeenCalledWith("https://login.tailscale.com/a/standin");
   expect(host.textContent).toContain("Waiting for you to sign in to Tailscale");
-  // Skip, even half way through the sign-in, goes on: devbox's claude is logged in, so Claude is done and GitHub is
-  // next. The step keeps a quiet Connect.
-  await click("Skip");
-  expect(readKept("sam").tailscale).toBe("skipped");
-  expect(screen()).toBe("start.github");
-  expect(host.querySelector('[data-step="tailscale"]')?.textContent).toContain("Connect");
+  // The join line stays beside it: the computer joins while Tailscale signs in.
+  expect(host.textContent).toContain("--code 7QK4-M2XD");
   stop();
+  act(() => root.unmount());
+  host.remove();
+  // A computer that joined: Tailscale asks nothing more of the steps.
+  const again = await render({ machines: [machine()], tailnet: { status: "off" } });
+  expect(screen()).toBe("start.github");
+  again();
 });
 
-it("a hub with no Tailscale device leaves the step out", async () => {
-  const stop = await render({ machines: [machine()] });
-  expect(host.querySelector('[data-step="tailscale"]')).toBeNull();
-  expect(screen()).toBe("start.github");
+it("a hub with no Tailscale device leaves its line out", async () => {
+  const stop = await render({});
+  expect(screen()).toBe("start.computer");
+  expect(host.textContent).not.toContain("Connect Tailscale");
   stop();
 });
 
 it("the hub's key with a tailnet endpoint: says so while Tailscale is off, with Connect, then seals the key with the endpoint", async () => {
-  window.localStorage.setItem("fleetd.start.sam", JSON.stringify({ tailscale: "skipped" }));
   const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedCause: "claude_login", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them.", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" });
   const sandbox = [{ provider: "boat", connected: true, ok: true }];
   const stop = await render({ machines: [runner], sandbox, tailnet: { status: "off" } });
@@ -658,8 +703,9 @@ it("the hub's key with a tailnet endpoint: says so while Tailscale is off, with 
   expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
   await click("Connect Tailscale");
   expect(calls.filter((c) => c.tool === "tailnet_connect")).toHaveLength(1);
-  // Signing in reopens Tailscale's step, where the sign-in page is a click away.
-  expect(screen()).toBe("start.tailscale");
+  // Signing in waits on the person: Tailscale's sign-in page is a click away, right beside the endpoint.
+  expect(screen()).toBe("start.claude");
+  expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("Open the sign-in page");
   stop();
   act(() => root.unmount());
   host.remove();

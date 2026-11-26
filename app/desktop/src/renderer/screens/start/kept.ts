@@ -1,5 +1,5 @@
 // What only this browser knows of a team's Get started (state.ts): GitHub skipped (or asked of an organization's
-// owner), Tailscale skipped, and Skip for now pressed. Small, for the first run and the You menu to read without the page.
+// owner), and Skip for now pressed. Small, for the first run and the You menu to read without the page.
 import { useEffect, useState } from "react";
 import { parseHash, type Screen } from "../shell/routes";
 import { githubReturnOf, withoutGithubReturn, type GithubReturn } from "./model";
@@ -7,7 +7,6 @@ import { githubReturnOf, withoutGithubReturn, type GithubReturn } from "./model"
 /** What this browser keeps for a team: GitHub skipped (or asked of an owner), and Skip for now pressed. */
 export interface Kept {
   readonly github?: "skipped" | "requested";
-  readonly tailscale?: "skipped";
   readonly later?: true;
 }
 
@@ -17,10 +16,9 @@ export const readKept = (hub: string): Kept => {
   try {
     const raw: unknown = JSON.parse(window.localStorage.getItem(keyOf(hub)) ?? "{}");
     if (typeof raw !== "object" || raw === null) return {};
-    const { github, tailscale, later } = raw as Record<string, unknown>;
+    const { github, later } = raw as Record<string, unknown>;
     return {
       ...(github === "skipped" || github === "requested" ? { github } : {}),
-      ...(tailscale === "skipped" ? { tailscale } : {}),
       ...(later === true ? { later } : {}),
     };
   } catch {

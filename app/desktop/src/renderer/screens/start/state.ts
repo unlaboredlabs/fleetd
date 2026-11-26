@@ -2,7 +2,7 @@
 // whether their claude is logged in, the hub's Tailscale device (tailnet_get) and its Claude API key
 // (claude_accounts_get), the person's GitHub and the App's installations (github_app_get), the team's
 // bots, the repositories the App reaches (the cloud's GITHUB_REPOS_PATH), New bot's flow while it makes one. The two
-// things only this browser knows, a skipped GitHub or Tailscale and Skip for now, are kept in its storage per team. Shown only on a
+// things only this browser knows, a skipped GitHub and Skip for now, are kept in its storage per team. Shown only on a
 // fleetd cloud team in the web app; the self-hosted hub and the desktop keep their own first run (setup/FirstRun).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClaudeAccountRequest } from "../../../shared/ipc";
@@ -112,17 +112,19 @@ export function useStart(
     refetch(["github_app_get"]);
   }, [back, hub.id, refetch]);
 
-  // The join line, made while no computer has joined, and again each time its code runs out.
+  // The join line, made while nothing runs agents, and again each time its code runs out.
   const owner = cloudTeam && !teammate && !role.pending;
   // fleetd's computers, once the cloud has them on (GET /billing/v1): where agents run, never a key of the team's own.
-  // Read before anything else, so no join line is made for a team that needs none.
+  // Read before anything else, so no join line is made for a team whose agents run on them already.
   const billing = useBilling(owner && live);
   const provided = billing.data?.providedOn === true ? billing.data : undefined;
+  const held = provided === undefined ? null : topLine(provided);
   const settled = !billing.isLoading;
   // Before that, a hosted provider connected in Settings on the team's own key still counts: its connection and last check.
   const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: owner && live && settled && provided === undefined });
   const hosted = sandboxes.data?.providers.find((p) => p.connected && p.check?.ok === true);
-  const wantLine = page && owner && live && settled && !sandboxes.isLoading && provided === undefined && listed.length === 0 && hosted === undefined;
+  // Held fleetd's computers (no plan or credits yet) leave a computer of the team's own as the free way, side by side.
+  const wantLine = page && owner && live && settled && !sandboxes.isLoading && (provided === undefined ? hosted === undefined : held !== null) && listed.length === 0;
   const [join, setJoin] = useState<{
     readonly out: MachineJoinOutput | null;
     readonly error?: string;
@@ -171,7 +173,6 @@ export function useStart(
   const joined = ready ?? loggedOut ?? null;
 
   const providerName = provided !== undefined ? COMPUTERS : hosted === undefined ? "" : specOf(hosted.provider).name;
-  const held = provided === undefined ? null : topLine(provided);
   // The hosted sandboxes wait on a Claude account (the hub's runner says so): the Claude step's, not this one's.
   const needsClaude = runnerNeedsClaude(runnerMachine);
   const hostedWaits = ready === null && hosted !== undefined && listed.length === 0 && runnerMachine?.status !== "online" && !needsClaude;
@@ -183,11 +184,9 @@ export function useStart(
   const computer: ComputerStep =
     ready !== null
       ? { at: "ready", machine: ready.name }
-      : provided !== undefined
-        ? held === null
-          ? { at: "hosted", provider: COMPUTERS }
-          : { at: "computers_held", message: held.message, canBuy: provided.canBuy }
-      : hosted !== undefined && listed.length === 0
+      : provided !== undefined && held === null
+        ? { at: "hosted", provider: COMPUTERS }
+      : provided === undefined && hosted !== undefined && listed.length === 0
         ? !hostedWaits
           ? { at: "hosted", provider: providerName }
           : hostedFailed !== undefined
@@ -203,9 +202,13 @@ export function useStart(
                   at: "line",
                   line: join.out?.line ?? null,
                   ...(join.error === undefined ? {} : { error: join.error }),
+                  // A new team's are just not bought yet: no warning for that, only for ones that stopped.
+                  ...(provided === undefined || held === null
+                    ? {}
+                    : { computers: { canBuy: provided.canBuy, ...(provided.held === "none" ? {} : { message: held.message }) } }),
                 };
 
-  // Tailscale: the hub's one device, on a hub that runs it. Read here rather than
+  // Tailscale, a line of Where agents run: the hub's one device, on a hub that runs it. Read here rather than
   // through Settings' row (settings/Tailscale.tsx), which the You menu's first load would then carry.
   const tailnetRead = useToolQuery("tailnet_get", noInput, { enabled: owner && live });
   const tailnetState = tailnetRead.data;
@@ -223,18 +226,15 @@ export function useStart(
       ? undefined
       : tailnetState.status === "connected"
         ? { at: "done", tailnet: tailnetState.tailnet ?? "Connected" }
-        : // Skipped stays skipped, a sign-in left half way included; Connect again clears it.
-          kept.tailscale === "skipped"
-          ? { at: "skipped" }
-          : tailnetState.status === "login" || tailnetState.status === "starting"
-            ? { at: "signin", ...(tailnetState.loginUrl === undefined ? {} : { url: tailnetState.loginUrl }) }
-            : tailnetState.status === "approve"
-              ? { at: "approve" }
-              : {
-                  at: "todo",
-                  ...(tailnetBusy ? { busy: true } : {}),
-                  ...(tailnetProblem !== null ? { error: tailnetProblem } : tailnetState.status === "failed" && tailnetState.problem !== undefined ? { error: tailnetState.problem } : {}),
-                };
+        : tailnetState.status === "login" || tailnetState.status === "starting"
+          ? { at: "signin", ...(tailnetState.loginUrl === undefined ? {} : { url: tailnetState.loginUrl }) }
+          : tailnetState.status === "approve"
+            ? { at: "approve" }
+            : {
+                at: "todo",
+                ...(tailnetBusy ? { busy: true } : {}),
+                ...(tailnetProblem !== null ? { error: tailnetProblem } : tailnetState.status === "failed" && tailnetState.problem !== undefined ? { error: tailnetState.problem } : {}),
+              };
 
   // Claude: the hub's API key (with its endpoint) reaches every place; else each place's own way in.
   const accounts = useToolQuery("claude_accounts_get", noInput, { enabled: owner && live });
@@ -456,7 +456,6 @@ export function useStart(
       );
     },
     onTailscale: () => {
-      writeKept(hub.id, { tailscale: null });
       setTailnetBusy(true);
       setTailnetProblem(null);
       call("tailnet_connect", noInput, { timeoutMs: 180_000 })
@@ -478,7 +477,6 @@ export function useStart(
       const url = tailnetState?.status === "approve" ? "https://login.tailscale.com/admin/machines" : tailnetState?.loginUrl;
       if (url !== undefined) void window.fleetd.openExternal(url);
     },
-    onTailscaleSkip: () => writeKept(hub.id, { tailscale: "skipped" }),
     onRepo: (owner, name) => {
       // On the computer, else in the hosted sandboxes (the hub's runner).
       const on = joined?.machineId ?? (computer.at === "hosted" ? runnerMachine?.machineId : undefined);
