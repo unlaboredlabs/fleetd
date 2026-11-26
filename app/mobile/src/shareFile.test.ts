@@ -24,34 +24,12 @@ vi.mock("expo-file-system", () => ({
 }));
 vi.mock("expo-crypto", () => ({ getRandomBytes: (n: number) => new Uint8Array(n).fill(0xab) }));
 vi.mock("react-native", () => ({ Share: { share: async ({ url }: { url: string }) => void shared.push(url) } }));
-const previewed: string[] = [];
-/** What Quick Look says it shows: a file named here it can't. */
-let unshowable = "";
-vi.mock("expo", () => ({
-  requireOptionalNativeModule: (name: string) =>
-    name === "FleetdQuickLook" ? { preview: async (uri: string) => (uri.endsWith(unshowable) && unshowable !== "" ? false : (previewed.push(uri), true)) } : null,
-}));
 
-const { openFile, shareFile } = await import("./shareFile");
+const { shareFile } = await import("./shareFile");
 
 beforeEach(() => {
   written.length = 0;
   shared.length = 0;
-  previewed.length = 0;
-  unshowable = "";
-});
-
-it("opens a file in iOS's previewer, not the share sheet", async () => {
-  await openFile({ name: "temps.csv", mime: "text/csv", dataB64: "YSxi" } as never);
-  expect(previewed).toEqual(["file:///cache/shared/abababababababab/temps.csv"]);
-  expect(shared).toEqual([]);
-});
-
-it("shares a file the previewer can't show", async () => {
-  unshowable = "all.zip";
-  await openFile({ name: "all.zip", mime: "application/zip", dataB64: "" } as never);
-  expect(previewed).toEqual([]);
-  expect(shared).toEqual(["file:///cache/shared/abababababababab/all.zip"]);
 });
 
 it("shares a file from a folder of its own, never beside the app's cache", async () => {

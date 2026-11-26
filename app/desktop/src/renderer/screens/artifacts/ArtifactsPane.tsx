@@ -1,7 +1,7 @@
 // A chat's Artifacts (W367, D292): the reports its lead or agents published with publish_artifact, the newest
 // first, each one line, its title and when (who published it, its format and version in its hover); then the files
-// sent in the chat, each opening here as its chat card's Open does (screens/files: in the wide panel, or this
-// computer's app for Word, PowerPoint and zips), or saved. One artifact (`artifacts/<name>[/<version>]`, the
+// sent in the chat, each opening in this computer's app for its type or saved, as its chat card does
+// (main/files.ts). One artifact (`artifacts/<name>[/<version>]`, the
 // wide panel) shows its newest version, or the one a card or link named, with a picker for every kept version:
 // Markdown rendered in the app's own style (no raw HTML), HTML in a sandboxed frame of its own (HtmlFrame) with its
 // scripts on and no network or reach into the app. Reads artifacts_list and artifact_get; artifacts.changed reads
@@ -17,8 +17,6 @@ import { errorText } from "../settings/hub";
 import { GroupLabel, PanelEmpty } from "../panel/folds";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
-import { FileView } from "../files/FileView";
-import { openChatFile } from "../files/open";
 import { FormatIcon } from "./FormatIcon";
 import { HtmlFrame } from "./HtmlFrame";
 import { fileDetail, formatWord, metaLine, rowDetail, versionLabel } from "./model";
@@ -33,13 +31,12 @@ const open = (project: ProjectKey, artifact: string | null, version?: number) =>
 export { FormatIcon };
 
 /** One artifact asks for the frame's wide width, so a report reads at a comfortable measure. */
-export function ArtifactsTabView(props: { project: ProjectKey; artifact: string | null; version: number | undefined; file?: string | undefined; onWide: (wide: boolean) => void }) {
-  const { project, artifact, version, file, onWide } = props;
+export function ArtifactsTabView(props: { project: ProjectKey; artifact: string | null; version: number | undefined; onWide: (wide: boolean) => void }) {
+  const { project, artifact, version, onWide } = props;
   useLayoutEffect(() => {
-    onWide(artifact !== null || file !== undefined);
-  }, [artifact, file, onWide]);
+    onWide(artifact !== null);
+  }, [artifact, onWide]);
   useLayoutEffect(() => () => onWide(false), [onWide]);
-  if (artifact === null && file !== undefined) return <FileView key={file} project={project} attachmentId={file} />;
   return artifact === null ? <ArtifactsPane project={project} /> : <ArtifactView key={artifact} project={project} name={artifact} version={version} />;
 }
 
@@ -117,14 +114,13 @@ export function ArtifactsPane({ project }: { project: ProjectKey }) {
   );
 }
 
-/** A file sent in the chat: opens as its card's Open does, or saves. */
+/** A file sent in the chat: opens in this computer's app for its type, or saves. */
 function FileRow({ project, file, now }: { project: ProjectRef; file: ChatFile; now: number }) {
   const { hub } = useDataLayer();
   const [busy, setBusy] = useState(false);
   const Glyph = GLYPHS[glyphOf(file.mime)];
   const act = async (what: "open" | "save") => {
     if (busy) return;
-    if (what === "open" && openChatFile(project, file)) return;
     setBusy(true);
     const request = { projectRef: project, attachmentId: file.attachmentId };
     const out = await (what === "open" ? window.fleetd.files.open(hub, request) : window.fleetd.files.save(hub, request)).catch((e: unknown) => ({ ok: false as const, message: String(e) }));

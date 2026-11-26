@@ -4,7 +4,7 @@
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.
 import { Check, Paperclip, Pin, PinOff, Reply, Send, SmilePlus, Tag } from "lucide-react";
-import { Suspense, useContext, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
@@ -22,8 +22,6 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  preloadable,
-  preloadWhenIdle,
   Text,
   Tooltip,
   Truncate,
@@ -31,7 +29,7 @@ import {
 import { useBubbleActions } from "./actions";
 import { fmtBytes, imageFit, pngDensity } from "./attachments";
 import { FileCard } from "./blocks/FileCard";
-import { ChatShotsContext, ImageViewerContext, useOpenImage } from "./viewing";
+import { ImageViewer, ImageViewerContext, useOpenImage } from "./ImageViewer";
 import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, unshownOnly, type Bubble, type Tapback } from "./bubbles";
 import { MessageReceipt, ReceiptMarkView } from "./Composer";
@@ -40,7 +38,7 @@ import { authorLabel, ENTER_MS, isMineRow, viaOf, type Arrival, type Row } from 
 import { Picture } from "./picture";
 import { plainText } from "./plain";
 import { useLooked } from "./looked";
-import { shotsOf, viewerShots } from "./shots";
+import { shotsOf } from "./shots";
 import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
@@ -48,10 +46,6 @@ import { Message } from "./text";
 import { TagLine } from "./lens/Lens";
 import { aboutOf, partAbout } from "./lens/tags";
 import s from "./view.module.css";
-
-// The picture viewer comes after the first chat, once the app is idle.
-const ImageViewerView = preloadable(() => import("./ImageViewer").then((m) => m.ImageViewer));
-preloadWhenIdle(ImageViewerView);
 
 /**
  * An attachment as a chip. A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to
@@ -351,8 +345,6 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
   const box = useRef<HTMLDivElement>(null);
   useLooked(box, i.id);
   const shots = useMemo(() => shotsOf(i, bubbles), [i, bubbles]);
-  // The chat's pictures, where the chat gives them, so the viewer steps on past this message's: read only while open.
-  const chatPictures = useContext(ChatShotsContext);
   const via = viaOf(i);
   const [viewing, setViewing] = useState<string | undefined>(undefined);
   return (
@@ -433,11 +425,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
           </div>
         ) : null}
         {mine && actions !== undefined ? <MessageReceipt project={actions.project} item={i} latest={mineLatest} /> : null}
-        {viewing !== undefined && actions !== undefined ? (
-          <Suspense fallback={null}>
-            <ImageViewerView project={actions.project} shots={viewerShots(chatPictures?.(), shots, viewing)} at={viewing} onAt={setViewing} />
-          </Suspense>
-        ) : null}
+        {viewing !== undefined && actions !== undefined ? <ImageViewer project={actions.project} shots={shots} at={viewing} onAt={setViewing} /> : null}
       </div>
     </ImageViewerContext.Provider>
   );

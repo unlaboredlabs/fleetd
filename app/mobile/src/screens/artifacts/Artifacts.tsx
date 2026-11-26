@@ -1,6 +1,6 @@
 // A chat's Artifacts, pushed from its Info: the reports its lead and agents published, the newest first, each a row
 // with its title and a line of its format, who, when and its version. Tapping one opens it (Artifact.tsx). Under them,
-// the files sent in the chat: tapping one opens it in iOS's own previewer, as its bubble does. The list reads again on
+// the files sent in the chat: tapping one opens the share sheet, as its bubble does. The list reads again on
 // artifacts.changed and on a message in the chat, so a new one shows while it is open.
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,7 +15,7 @@ import { haptics } from "../../ui/haptics";
 import { Icon } from "../../ui/Icon";
 import { ListSection } from "../../ui/List";
 import { GLYPHS } from "../../ui/Media";
-import { openFile } from "../../shareFile";
+import { shareFile } from "../../shareFile";
 import { EmptyState } from "../../ui/States";
 import { errorWords, Problem, Symbol, useRead } from "../manage/parts";
 import { useNow } from "../time";
@@ -102,14 +102,14 @@ function FileRow({ chatKey, file, when }: { chatKey: string; file: ChatFile; whe
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${file.name}, ${line}`}
-      accessibilityHint="Opens it"
+      accessibilityHint="Opens the share sheet to save it or open it in another app"
       disabled={busy}
       onPress={() => {
         haptics.tap();
         setBusy(true);
         void session
           .attachment(chatKey, file.attachmentId)
-          .then((got) => (got.ok ? openFile(got.output) : Alert.alert(`Couldn't open ${file.name}`, got.error.message)))
+          .then((got) => (got.ok ? shareFile(got.output) : Alert.alert(`Couldn't open ${file.name}`, got.error.message)))
           .catch((e: unknown) => Alert.alert(`Couldn't open ${file.name}`, e instanceof Error ? e.message : String(e)))
           .finally(() => setBusy(false));
       }}
