@@ -14,6 +14,7 @@ import {
   offered,
   SENTENCE_MAX,
   sentenceProblem,
+  watchersAbout,
   watcherInput,
   watchLine,
   type HubError,
@@ -25,8 +26,6 @@ import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { CheckRow, confirmDestructive, errorWords, FieldRow, Note, Problem, sheetOptions, useBotLocked, useRead } from "./parts";
-
-const ABOUT = "Each looks at your software on a schedule and says one line in the chat only when something is off.";
 
 /** The phone's zone, which a new watcher's daily look keeps to. */
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -74,7 +73,7 @@ export function Watching({ navigation, route }: ChatInfoProps<"Watching">) {
       style={{ backgroundColor: t.grouped }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={read.reload} tintColor={t.secondary} />}
     >
-      <ListSection footer={ABOUT}>
+      <ListSection footer={list?.ok === true ? watchersAbout(list.output.watchable) : undefined}>
         {watchers === undefined ? (
           <ListRow title={list?.ok === false ? "Couldn't read its watchers" : "Reading…"} />
         ) : (
@@ -194,7 +193,8 @@ export function Watcher({ navigation, route }: ChatInfoProps<"Watcher">) {
   if (list === undefined) return <ScrollView style={{ backgroundColor: t.grouped }} contentInsetAdjustmentBehavior="automatic" />;
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
-      {w === undefined ? (
+      {/* A pick of one (Something else alone, as on a bot with no repo) isn't a choice: no list. */}
+      {w === undefined && kinds.length > 1 ? (
         <ListSection header="Watch">
           {kinds.map((k) => (
             <CheckRow key={k} title={kindLabel(k)} checked={kind === k} disabled={busy !== null} onPress={() => setKind(k)} />

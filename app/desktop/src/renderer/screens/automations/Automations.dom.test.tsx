@@ -2,10 +2,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Automation, AutomationRun, MemoryRefreshJob, ToolInput, ToolName } from "../../../shared/contracts";
+import type { Automation, AutomationRun, MemoryRefreshJob, ToolInput, ToolName, WatchKind } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
-import { live, project, snapshot } from "../../src/data/fixtures.test-util";
+import { event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { Automations } from "./Automations";
 import { chooseFromRow } from "../settings/rowMenu.testing";
@@ -41,6 +41,8 @@ function fakeHub() {
   const calls: Array<{ tool: string; input: unknown }> = [];
   // The nightly memory refresh, as automation_list lists it.
   const refresh: { job: MemoryRefreshJob; why?: string } = { job: { on: true, at: "04:00", tz: "Europe/Berlin", nextRunAt: "2026-10-18T02:00:00.000Z" } };
+  // What the bot can watch: its repo's CI, or (no repo) only Something else.
+  const bot: { watchable: WatchKind[] } = { watchable: ["main_ci", "other"] };
   let n = 0;
   const ok = (output: unknown) => Promise.resolve({ ok: true as const, output });
   const find = (id: string) => automations.find((a) => a.automationId === id) as Automation;
@@ -53,7 +55,7 @@ function fakeHub() {
         return ok({
           automations: automations.map((a) => ({ ...a, ...(runs.find((r) => r.automationId === a.automationId) ? { lastRun: runs.find((r) => r.automationId === a.automationId) } : {}) })),
           memoryRefresh: refresh.job,
-          watchable: ["main_ci", "other"],
+          watchable: bot.watchable,
         });
       }
       if (name === "profiles_list") return ok({ profiles: [{ id: 1, name: "opus", default: true }], allowed: ["opus", "sonnet"], efforts: [], models: [] });
@@ -114,7 +116,7 @@ function fakeHub() {
     chat: () => Promise.resolve(),
   };
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
-  return { api, calls, automations, runs, refresh, send: (f: Parameters<typeof send>[0]) => send(f) };
+  return { api, calls, automations, runs, refresh, bot, send: (f: Parameters<typeof send>[0]) => send(f) };
 }
 
 const flush = async () => {
@@ -164,7 +166,7 @@ const fill = (field: HTMLInputElement | HTMLTextAreaElement, value: string) => {
 const editor = () => host.querySelector("section[aria-label='New automation'], section[aria-label^='Edit ']") as HTMLElement;
 const card = (name: string) => host.querySelector<HTMLElement>(`section[aria-label='${name}']`);
 
-it("makes, edits, pauses, runs and deletes an automation and shows its runs with their orders", async () => {
+it("makes, edits, pauses, runs and deletes an automation and shows its runs, each linked to its message in the chat", async () => {
   // Its zone is this computer's, named in the preview.
   vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Berlin" }).resolvedOptions() });
   const hub = await mount();
@@ -195,14 +197,28 @@ it("makes, edits, pauses, runs and deletes an automation and shows its runs with
   expect(c.textContent).toContain("At 09:00, Monday to Friday (Europe/Berlin) · Webhook");
   expect(c.textContent).toContain("Not run yet");
 
-  // Run now: the run opens an order, and Runs lists it linked to the order's page.
+  // Run now: the run opens an order, and Runs lists it, with no order number.
   await click(button("Run now", c));
   expect(c.textContent).toContain("Running. Follow it in the chat.");
   const after = card("Dependency check") as HTMLElement;
   await click(button("Runs", after));
-  const link = after.querySelector("ul[aria-label='Runs'] a") as HTMLAnchorElement;
-  expect(link.getAttribute("href")).toBe("#/factory/time/order/W7");
-  expect(after.querySelector("ul[aria-label='Runs']")?.textContent).toContain("Run now");
+  const runs = () => after.querySelector("ul[aria-label='Runs']") as HTMLElement;
+  expect(runs().textContent).toContain("Run now");
+  expect(runs().textContent).not.toContain("W7");
+  expect(runs().querySelector("a")).toBeNull();
+  expect(after.textContent).toContain("Last run Sat 17 Oct, 10:00: running");
+  // Its end comes as an event: the row stops saying Running, and the run opens its message in the chat.
+  hub.runs[0] = { ...(hub.runs[0] as AutomationRun), state: "done", endedAt: AT, messageId: "m42", said: "3 dependencies have updates" };
+  await act(async () => {
+    hub.send(event(2, "automation.run", { automationId: "au_test001", runId: hub.runs[0]?.runId, state: "done", projectRef: project }));
+    await new Promise((done) => setTimeout(done, 150));
+  });
+  await flush();
+  expect(runs().textContent).not.toContain("Running");
+  expect(after.textContent).toContain("Last run Sat 17 Oct, 10:00: done");
+  const link = runs().querySelector("a") as HTMLAnchorElement;
+  expect(link.textContent).toBe("3 dependencies have updates");
+  expect(link.getAttribute("href")).toBe("#/project/devbox/storefront?message=m42");
 
   // Pause and resume.
   await chooseFromRow("Dependency check", "Pause");
@@ -315,4 +331,20 @@ it("watches Main's CI from the Watching group: + picks it, how often and the pro
   await click(button("Daily", group()));
   await click(button("Save", group()));
   expect(hub.calls.find((c) => c.tool === "automation_update")?.input).toEqual({ automationId: "au_test001", watch: { kind: "main_ci", every: "day" } });
+});
+
+it("on a bot with no repo, says watchers check anything and asks only what to watch, with no switch of one", async () => {
+  const hub = await mount((h) => (h.bot.watchable = ["other"]));
+  const group = () => host.querySelector("[data-group='watching']") as HTMLElement;
+  expect(group().textContent).toContain("Watchers check something on a schedule and say one line in the chat only when it changes.");
+  expect(group().textContent).not.toContain("your software");
+  await click(button("New watcher", group()));
+  expect(() => button("Something else", group())).toThrow();
+  expect(group().querySelector("[role='radiogroup'][aria-label='Watch']")).toBeNull();
+  fill(group().querySelector("input") as HTMLInputElement, "Tell me if the headphones drop below 300 dollars");
+  await click(button("Watch", group()));
+  expect(hub.calls.find((c) => c.tool === "automation_create")?.input).toMatchObject({
+    name: "Tell me if the headphones drop below 300 dollars",
+    watch: { kind: "other", every: "hour" },
+  });
 });

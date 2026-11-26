@@ -233,10 +233,11 @@ export class Watchers {
     return out;
   }
 
-  private end(run: AutomationRun, state: "done" | "failed", extra: { why?: string; said?: string; costUsd?: number }): AutomationRun {
+  private end(run: AutomationRun, state: "done" | "failed", extra: { why?: string; said?: string; messageId?: string; costUsd?: number }): AutomationRun {
     const out: AutomationRun = { ...run, state, endedAt: isoMs(this.now()) };
     if (extra.why !== undefined) out.why = why(extra.why);
     if (extra.said !== undefined) out.said = extra.said;
+    if (extra.messageId !== undefined) out.messageId = extra.messageId;
     if (extra.costUsd !== undefined) out.costUsd = Math.round(extra.costUsd * 10_000) / 10_000;
     const saved = this.save(out);
     this.ended(saved);
@@ -369,8 +370,8 @@ export class Watchers {
       return this.end(run, "failed", { why: `Its answer couldn't be read: ${(error as Error).message}`, ...cost });
     }
     const line = verdict(text);
-    if (line !== undefined) chat(this.hub).systemLine(a.projectRef, `${a.name}: ${line}`);
-    const out = this.end(run, "done", { ...(line === undefined ? {} : { said: line }), ...cost });
+    const posted = line === undefined ? undefined : chat(this.hub).systemLine(a.projectRef, `${a.name}: ${line}`);
+    const out = this.end(run, "done", { ...(line === undefined || posted === undefined ? {} : { said: line, messageId: posted.messageId }), ...cost });
     this.firstDay(a, out);
     return out;
   }

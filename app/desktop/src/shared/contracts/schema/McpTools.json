@@ -2070,6 +2070,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId",
+          "description": "Its message in the bot's chat: the line a watcher posted, or the lead's first message for the run's order."
+        },
         "payloadBytes": {
           "description": "A webhook run: the size of the body it carried. The body itself is in automation_runs only.",
           "maximum": 9007199254740991,
@@ -2080,7 +2084,7 @@
           "$ref": "#/$defs/AutomationRunId"
         },
         "said": {
-          "description": "A watcher's run that spoke up: the line it posted in the chat.",
+          "description": "Its message's first line: what a watcher said when it spoke up, or how the lead's message for the run opens.",
           "maxLength": 300,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"

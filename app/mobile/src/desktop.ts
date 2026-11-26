@@ -191,7 +191,7 @@ export {
 } from "../../desktop/src/renderer/screens/connections/model";
 export { canConnect as tailnetCanConnect, lineOf as tailnetLineOf, MACHINES_URL as TAILSCALE_MACHINES_URL, waiting as tailnetWaits, wordOf as tailnetWordOf } from "../../desktop/src/renderer/screens/settings/tailscaleModel";
 export { FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
-export { EVERY_OPTIONS, isWatcher, kindLabel, offered, SENTENCE_MAX, sentenceProblem, watcherInput, watchLine } from "../../desktop/src/renderer/screens/automations/watchModel";
+export { EVERY_OPTIONS, isWatcher, kindLabel, offered, SENTENCE_MAX, sentenceProblem, watchersAbout, watcherInput, watchLine } from "../../desktop/src/renderer/screens/automations/watchModel";
 export { linesOf, mergesOf, RULES_WORDS, rulesText, WHO_MERGES, WHO_MERGES_WORDS } from "../../desktop/src/renderer/screens/settings/whoMergesModel";
 export { MERGE_MODE_WORDS, MERGE_MODES, mergeModeOf, sharedText, upToDateText } from "../../desktop/src/renderer/screens/settings/mergeModeModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";

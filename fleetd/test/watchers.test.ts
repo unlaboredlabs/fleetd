@@ -153,6 +153,9 @@ test("a look that finds a failed check posts one line with its evidence, opens n
   expect(done.workstreamId).toBeUndefined();
   expect(orders(hub)).toBe(0);
   expect(chatLines(hub)).toEqual([`Main's CI: ${done.said}`]);
+  // Its run links that line, so its row opens it in the chat.
+  const line = hub.db.all<{ n: number }>("SELECT n FROM chat_messages ORDER BY seq DESC LIMIT 1")[0]!.n;
+  expect(done.messageId).toBe(`m${line}`);
   // Its end is an automation.run event, so the apps read the row and its runs again.
   const ran = events(hub).page(0, ["automation.run"]).events;
   expect(ran.at(-1)?.data).toMatchObject({ runId: done.runId, state: "done", automationId: a.automationId });

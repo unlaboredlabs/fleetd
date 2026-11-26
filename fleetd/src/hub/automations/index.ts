@@ -19,6 +19,7 @@ import type {
   AutomationSchedule,
   AutomationTrigger,
   AutomationWatch,
+  ChatMessage,
   HubEvent,
   HubEventType,
   PersonRef,
@@ -76,6 +77,15 @@ export {
 
 /** Runs per lead thread `leadTurns` remembers seeing: more than one turn's wakes, steers and chat messages. */
 const RUNS_SEEN = 32;
+
+/** How long after a run's order closed the lead's message still counts as the run's. */
+const MESSAGE_AFTER_MS = 60_000;
+
+/** A message's first line as a run's `said`: its first non-empty line, Markdown marks off, at most 300 characters. */
+export function firstLine(text: string): string {
+  const line = text.split("\n").map((l) => l.replace(/^[#>*\-\s]+/u, "").replace(/[*_`]+/gu, "").trim()).find((l) => l !== "") ?? "";
+  return [...line].length > 300 ? `${[...line].slice(0, 299).join("")}…` : line;
+}
 
 /** A new automation: the app's automation_create or the lead's. */
 export type NewAutomation = {
@@ -242,16 +252,57 @@ export class Automations {
     return workstreamGet(this.hub.db.conn, w);
   }
 
-  /** A running run whose order has closed since is over: done or stopped as its order was. */
+  /** A running run whose order has closed since is over: done or stopped as its order was. An ended one finds its message. */
   private settle(run: AutomationRun): AutomationRun {
-    if (run.state !== "running" || run.workstreamId === undefined) return run;
+    if (run.state !== "running" || run.workstreamId === undefined) return this.withMessage(run);
     const ws = this.workstream(run.workstreamId);
     if (ws?.state === "open") return run;
     const out: AutomationRun = ws
       ? { ...run, state: ws.state === "done" ? "done" : "stopped", endedAt: ws.updatedAt }
       : { ...run, state: "stopped", endedAt: isoMs(this.now()) };
-    this.putRun(out);
-    return out;
+    const found = this.withMessage(out);
+    if (found === out) this.putRun(out);
+    return found;
+  }
+
+  /**
+   * An ended run's message in the bot's chat, kept on the run with its first line once found: the lead's first final
+   * message from when its order opened until a minute after it closed (a lead may close the order, then say so). A
+   * message the chat tags give another order is not it.
+   */
+  private withMessage(run: AutomationRun): AutomationRun {
+    if (run.messageId !== undefined || run.workstreamId === undefined || run.endedAt === undefined) return run;
+    if (run.state !== "done" && run.state !== "stopped") return run;
+    const a = this.row(run.automationId);
+    const [from, until] = [parseMs(run.at), parseMs(run.endedAt)];
+    if (!a || from === undefined || until === undefined) return run;
+    const rows = this.hub.db.all<{ data: string }>(
+      `SELECT data FROM chat_messages WHERE machine_id = ? AND project_id = ? AND created_ms >= ? AND created_ms <= ?
+         AND json_valid(data) AND json_extract(data, '$.author') = 'lead' ORDER BY seq LIMIT 50`,
+      [a.projectRef.machineId, a.projectRef.projectId, from, until + MESSAGE_AFTER_MS],
+    );
+    for (const { data } of rows) {
+      const m = JSON.parse(data) as ChatMessage;
+      if (m.state !== "final" || m.item !== undefined || m.history !== undefined) continue;
+      if (m.about !== undefined && m.about.workstreamId !== run.workstreamId) continue;
+      const line = firstLine(m.text);
+      if (line === "") continue;
+      const out = storedRun({ ...run, messageId: m.messageId, said: line });
+      this.putRun(out);
+      return out;
+    }
+    return run;
+  }
+
+  /** An order closed: a run of it still recorded as running ends with it now, and says so, so the apps redraw it. */
+  orderEnded(workstreamId: string): void {
+    const rows = this.hub.db.all<{ data: string }>("SELECT data FROM automation_runs WHERE workstream_id = ? AND state = 'running'", [workstreamId]);
+    for (const { data } of rows) {
+      const run = this.settle(decodeRun(data));
+      if (run.state === "running") continue;
+      const a = this.row(run.automationId);
+      if (a) this.runEvent(a, run, `${run.state} with ${workstreamId}`);
+    }
   }
 
   /** The run whose order is still open, if any: any of its runs, since a skipped trigger is newer than the one it skipped for. */
@@ -1061,6 +1112,8 @@ export class Automations {
         case "workstream.done":
         case "workstream.state":
           void this.then("an order's end", async () => {
+            const w = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;
+            if (typeof w === "string") this.orderEnded(w);
             await this.deliverAll();
             await this.fireWaiting();
           });

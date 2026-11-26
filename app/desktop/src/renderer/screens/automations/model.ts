@@ -162,6 +162,9 @@ export const triggerWord = (t: AutomationTrigger): string => (TRIGGER_WORD as Re
 /** The order's own page: its timeline. */
 export const orderHref = (workstreamId: string): string => toHash({ id: "time", orderId: workstreamId });
 
+/** A run's message in its bot's chat. */
+export const messageHref = (project: ProjectRef, messageId: string): string => toHash({ id: "project", project, message: messageId });
+
 /** "Mon 19 Oct, 09:00", in the app's zone. */
 export const when = (iso: string): string =>
   new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
