@@ -3,12 +3,13 @@ import type { ProjectRow } from "../../src/data/selectors";
 import { homeProject, hubName, nextWanting, stepProject, toSidebar, type MarksIn, type SidebarProject } from "./model";
 
 // Rows as the data layer hands them over: by title.
-const row = (projectId: string, marks: Partial<Pick<ProjectRow, "needsYou" | "working" | "running" | "lastSeq">> = {}): ProjectRow =>
+const row = (projectId: string, marks: Partial<Pick<ProjectRow, "needsYou" | "working" | "leadWorking" | "status" | "running" | "lastSeq">> = {}): ProjectRow =>
   ({
     key: `devbox/${projectId}`,
     project: { machineId: "devbox", projectId, title: projectId, lastActivityAt: "2026-11-08T09:00:00.000Z" },
     needsYou: false,
     working: false,
+    leadWorking: false,
     running: 0,
     state: "idle",
     ...marks,
@@ -21,13 +22,54 @@ describe("sidebar bots", () => {
     expect(toSidebar([row("api", { needsYou: true, working: true, running: 3 })])).toEqual([
       {
         ...row("api", { needsYou: true, working: true, running: 3 }),
-        want: { word: undefined, count: 1, label: "The lead is waiting on you" },
+        want: { word: undefined, count: 1, label: "The lead is waiting on you", waiting: { kind: "unknown", count: 1 } },
         unread: false,
         warning: undefined,
         line: "",
+        say: { text: "Waiting for you", tone: "want" },
         at: "2026-11-08T09:00:00.000Z",
         pinned: false,
       },
+    ]);
+  });
+
+  it("says in each row's line what waits on you, else that its lead works, else its lead's status line, else its newest", () => {
+    const P = (id: string) => ({ machineId: "devbox", projectId: id });
+    const marks: MarksIn = {
+      requests: [
+        { projectRef: P("ops"), kind: "approval", state: "open", text: "Run the stock migration on staging" },
+        { projectRef: P("ops"), kind: "approval", state: "open", text: "Install the scanner" },
+        { projectRef: P("app"), kind: "secret", state: "open", text: "The App Store Connect key" },
+        // Someone else's waits on them, not you.
+        { projectRef: P("web"), kind: "approval", state: "open", text: "Deploy", for: { personId: "p_ada" } },
+      ],
+      blocked: new Map([["devbox/box", "buildbox is offline"]]),
+      latest: { "devbox/web": { text: "Merged.", at: "2026-11-08T11:00:00.000Z" }, "devbox/deck": { text: "Draft is up.", at: "2026-11-08T11:00:00.000Z" } },
+      me: "p_me",
+    };
+    const rows = toSidebar(
+      [
+        row("ops", { needsYou: true }),
+        row("app", { needsYou: true }),
+        row("ask", { needsYou: true, status: "Need your yes on the Friday deck" }),
+        row("box"),
+        row("run", { working: true, leadWorking: true, status: "Deck sent" }),
+        row("deck", { status: "Deck sent to the printer" }),
+        row("web", { working: true, running: 2 }),
+        row("new"),
+      ],
+      marks,
+    );
+    expect(rows?.map((p) => [p.project.title, p.say])).toEqual([
+      ["ops", { lead: "2 to approve:", text: "Run the stock migration on staging", tone: "want" }],
+      ["app", { lead: "Enter a secret:", text: "The App Store Connect key", tone: "want" }],
+      ["ask", { text: "Need your yes on the Friday deck", tone: "want" }],
+      ["box", { lead: "Blocked:", text: "buildbox is offline", tone: "want" }],
+      ["run", { text: "Working…", tone: "working" }],
+      ["deck", { text: "Deck sent to the printer" }],
+      // Agents at work with the lead idle: its bot moves, its line stays its newest.
+      ["web", { text: "Merged." }],
+      ["new", { text: "No messages yet" }],
     ]);
   });
 

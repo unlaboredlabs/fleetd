@@ -7,6 +7,8 @@ const row = (id: string, extra: Partial<ChatRow> = {}): ChatRow => ({
   project: { machineId: "m1", projectId: id, title: id, workspaceRoot: `/home/devbox/${id}`, lastActivityAt: "2026-10-31T10:00:00Z", threads: { running: 0, waiting: 0, failed: 0, idle: 0 } },
   archived: false,
   want: undefined,
+  waiting: undefined,
+  status: undefined,
   working: false,
   approvals: 0,
   preview: "Done.",

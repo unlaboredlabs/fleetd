@@ -238,6 +238,10 @@ export interface ProjectRow {
   readonly working: boolean;
   /** Agents at work, the lead not counted. */
   readonly running: number;
+  /** The lead itself is mid-turn: its row says "Working…". */
+  readonly leadWorking: boolean;
+  /** The lead's own line on where things stand (the chat state's `status`), while no one wrote since. */
+  readonly status?: string | undefined;
   /** The chat's newest message seq, when the hub has its chat state: the sidebar's unread mark. */
   readonly lastSeq?: number | undefined;
 }
@@ -250,7 +254,14 @@ const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean
 
 /** The sidebar's and status's projects, by title; undefined until loaded. */
 const sameRow = (a: ProjectRow, b: ProjectRow): boolean =>
-  a.project === b.project && a.needsYou === b.needsYou && a.running === b.running && a.working === b.working && a.state === b.state && a.lastSeq === b.lastSeq;
+  a.project === b.project &&
+  a.needsYou === b.needsYou &&
+  a.running === b.running &&
+  a.working === b.working &&
+  a.leadWorking === b.leadWorking &&
+  a.status === b.status &&
+  a.state === b.state &&
+  a.lastSeq === b.lastSeq;
 
 // The rows last handed out: a lane frame (4 Hz on the strip) that changes no row's fields hands back the same rows
 // and the same list, so the sidebar and the chat's top bar don't re-render for it.
@@ -270,7 +281,7 @@ export const selectProjectList = memo(
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
         const needsYou = waitsOnMe(chat, me);
         const working = running > 0 || leadWorking;
-        const row = { key, project, needsYou, running, working, state: projectStateWord(needsYou, working), lastSeq: chat?.lastSeq };
+        const row = { key, project, needsYou, running, working, leadWorking, status: chat?.status?.line, state: projectStateWord(needsYou, working), lastSeq: chat?.lastSeq };
         const prior = before.get(key);
         return prior !== undefined && sameRow(prior, row) ? prior : row;
       })
@@ -303,7 +314,8 @@ export const selectShownProjects = memo(
         const before = fresh ? lastLive.get(key) : undefined;
         const running = before?.running ?? 0;
         const working = before?.working ?? false;
-        return { key, project, needsYou, running, working, state: projectStateWord(needsYou, working), lastSeq: chats[key]?.lastSeq };
+        const leadWorking = before?.leadWorking ?? false;
+        return { key, project, needsYou, running, working, leadWorking, status: chats[key]?.status?.line, state: projectStateWord(needsYou, working), lastSeq: chats[key]?.lastSeq };
       })
       .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
   },

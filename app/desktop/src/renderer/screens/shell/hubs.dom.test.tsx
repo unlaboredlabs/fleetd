@@ -327,7 +327,8 @@ describe.each([
     await settle();
     expect(currentRoute()).toMatchObject({ id: "project", project: { projectId: "ledger" }, at: "a1b2" });
     expect(streaming()).toBe("a1b2:ledger");
-    expect(bots("storefront", "Ada", "billing", "ledger")).toEqual(["ledger", "billing"]);
+    // billing waits on you: it comes first.
+    expect(bots("storefront", "Ada", "billing", "ledger")).toEqual(["billing", "ledger"]);
     // Picking the hub already on screen changes nothing.
     pickHub("Acme");
     await settle();
@@ -655,14 +656,15 @@ it("⌘1–9 open the rows on show: the hub on show's, the screen's until anothe
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
 });
 
-it("orders the list from its ⋯ by name or the ones that want you first, draws it compact, and keeps that on this computer", async () => {
+it("orders the list the ones that want you first, or from its ⋯ by name, draws it compact, and keeps that on this computer", async () => {
   await mount([{ id: "hub", label: "devbox" }]);
   act(() => {
     hub("hub").send(live());
     hub("hub").send(withTwo("devbox", "storefront", "Ada"));
   });
   await settle();
-  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  // storefront waits on you: first, though Ada spoke last.
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
   const pick = (name: string) => {
     openMenu(host.querySelector<HTMLElement>("[data-opens='list-menu']"));
     act(() => [...document.querySelectorAll<HTMLElement>("[role='menu'] [role='menuitemradio'], [role='menu'] [role='menuitemcheckbox']")].find((r) => r.textContent === name)?.click());

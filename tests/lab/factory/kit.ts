@@ -31,6 +31,8 @@ export interface Factory {
   readonly until: typeof until;
   /** fleetd's lead tools as the project's lead calls them, through the node's socket in the project's root. */
   readonly lead: Lead;
+  /** The same as another of the machine's projects' lead calls them, from its root. */
+  readonly leadAt: (root: string) => Lead;
   /** Opens a workstream (an order) the harness drives itself; returns its id. */
   readonly workstream: (title: string) => string;
   /** Spawns a writer under `workstreamId` with spawn_agent; returns the task as spawned. */
@@ -269,6 +271,7 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
       cursor,
       until,
       lead,
+      leadAt: (root) => leadIn(root, { HOME: machineHome, PATH, FLEETD_NODE_SOCK: nodeSock }),
       workstream: (title) => openWorkstream(check, lead, title, { why: "the factory lab", doneWhen: ["the harness closes it"] }),
       spawnWriter: (workstreamId, title, prompt) => {
         const out = lead("spawn_agent", { workstreamId, title, kind: "write", profile: "medium", prompt });

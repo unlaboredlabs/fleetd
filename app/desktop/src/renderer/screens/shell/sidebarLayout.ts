@@ -1,6 +1,6 @@
 // What the sidebar shows (W694, W714): one hub at a time, picked from its name in the hub row; its pins, then its bots,
-// your sections under quiet labels. The list's ⋯ orders the bots (newest first, by name, or the ones that want you
-// first) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
+// your sections under quiet labels. The list's ⋯ orders the bots (the ones that want you first, then newest first; or
+// by name) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
 // another hub shows that hub. The rows on show, in order, are what ⌘1–9 count (shownRows). A computer that kept the
 // old List or Rail layout (fleetd.sidebarLayout) just shows this. Switching to another hub (its switcher, the swipe,
 // the marks, ⇧⌘[ / ⇧⌘]) takes the screen with it (openHub). A section's label folds it (W798): which are folded is
@@ -9,12 +9,12 @@ import { useSyncExternalStore } from "react";
 import { currentRoute, navigate } from "./navigation";
 import { HOME } from "./routes";
 
-/** How the hub's bots are ordered under the pins, in each section: newest first, by name, or the ones that want you first. */
-export type SidebarSort = "recent" | "name" | "needs";
+/** How the hub's bots are ordered under the pins, in each section: the ones that want you first, then newest first
+ * (W950); or by name. A computer that kept the old "Needs you first" has Recent, which now does it. */
+export type SidebarSort = "recent" | "name";
 export const SORTS: ReadonlyArray<{ readonly id: SidebarSort; readonly label: string }> = [
   { id: "recent", label: "Recent" },
   { id: "name", label: "Name" },
-  { id: "needs", label: "Needs you first" },
 ];
 
 const LIST = "fleetd.sidebarList";
@@ -103,11 +103,12 @@ interface Shown {
   readonly project: { readonly title: string };
 }
 
-/** Bots in the list's order: as they came (newest first, held while the pointer is over the list), by name, or the ones that want you first. */
+/** Bots in the list's order: the ones that want you first, then as they came (newest first, held while the pointer is
+ * over the list); or by name. */
 export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarSort): ReadonlyArray<P> =>
   sort === "name"
     ? rows.toSorted((a, b) => a.project.title.localeCompare(b.project.title, undefined, { sensitivity: "base" }))
-    : sort === "needs"
+    : rows.some((r) => r.want !== undefined)
       ? rows.toSorted((a, b) => Number(b.want !== undefined) - Number(a.want !== undefined))
       : rows;
 

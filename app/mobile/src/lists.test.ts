@@ -150,11 +150,31 @@ describe("lists' order and previews", () => {
     expect(lists({ projects, chatStates, requests: [] })?.chats.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
   });
 
-  it("keeps a working chat's newest message as its line, saying Working… only while it has none", () => {
-    const row = { preview: "Sent both.", working: true, want: undefined, empty: false };
-    expect(rowLine(row)).toBe("Sent both.");
-    expect(rowLine({ ...row, preview: undefined })).toBe("Working…");
-    expect(rowLine({ ...row, preview: undefined, working: false, want: "Waiting for your reply" })).toBe("Waiting for your reply");
+  it("says what waits on you first, then Working…, then the lead's status line, then the newest message", () => {
+    const row = { preview: "Sent both.", working: false, waiting: undefined, status: undefined, empty: false };
+    expect(rowLine(row)).toEqual({ text: "Sent both." });
+    expect(rowLine({ ...row, status: "Need your yes on the Friday deck" })).toEqual({ text: "Need your yes on the Friday deck" });
+    expect(rowLine({ ...row, status: "Deck sent", working: true })).toEqual({ text: "Working…", tone: "working" });
+    expect(rowLine({ ...row, working: true, waiting: { kind: "approve", count: 1, what: "Deploy the fix" } })).toEqual({ lead: "Approve:", text: "Deploy the fix", tone: "want" });
+    // A reply it waits for says the lead's own line, when it wrote one.
+    expect(rowLine({ ...row, waiting: { kind: "reply", count: 1 }, status: "Need your yes on the Friday deck" })).toEqual({ text: "Need your yes on the Friday deck", tone: "want" });
+    expect(rowLine({ ...row, waiting: { kind: "reply", count: 1 } })).toEqual({ text: "Waiting for your reply", tone: "want" });
+    expect(rowLine({ ...row, preview: undefined, empty: true })).toEqual({ text: "No messages yet" });
+  });
+
+  it("puts a chat that waits on you on top, with what it waits for: the first approval's words", () => {
+    const projects = { "m1/shop": project("shop", "shop", { lastActivityAt: "2026-10-28T08:00:00Z" }), "m1/a": project("a", "Ada", { lastActivityAt: "2026-10-28T09:00:00Z" }) };
+    const rows = chatList({ projects, chatStates: {}, requests: [asked("r1"), asked("r2")] }, noPrefs) ?? [];
+    expect(rows.map((r) => [r.project.title, rowLine(r)])).toEqual([
+      ["shop", { lead: "2 to approve:", text: "Deploy the fix", tone: "want" }],
+      ["Ada", { text: "" }],
+    ]);
+  });
+
+  it("shows the lead's status line from the chat state", () => {
+    const projects = { "m1/a": project("a", "Ada") };
+    const chatStates = { "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 4, leadWorking: false, needsYou: false, status: { line: "Inbox at 3", at: AT } } };
+    expect(lists({ projects, chatStates, requests: [] })?.chats.map((r) => rowLine(r).text)).toEqual(["Inbox at 3"]);
   });
 
   it("draws again only the row whose chat changed: the rows are made anew with each change to the state", () => {
@@ -354,7 +374,7 @@ describe("chatList", () => {
     expect(chatList(s, prefs, "pinned", ["m1/a", "m1/shop"])?.map((r) => r.key)).toEqual(["m1/a", "m1/shop"]);
   });
 
-  it("floats a chat with an approval waiting above the pinned, and Needs you shows only those", () => {
+  it("floats a chat that waits on you above the pinned, and Needs you shows only those with an approval", () => {
     const waiting = { ...s, requests: [gated("r1"), { ...gated("r2"), projectRef: { machineId: "m1", projectId: "a" } }, { ...gated("r3"), state: "approved" as const, projectRef: { machineId: "m1", projectId: "b" } }] };
     const prefs = { ...noPrefs, pinned: ["m1/b"] };
     const rows = chatList(waiting, prefs);
@@ -365,10 +385,11 @@ describe("chatList", () => {
       ["m1/b", 0],
     ]);
     expect(chatList(waiting, prefs, "needsYou")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
-    // A secret to enter or a lead waiting for a reply isn't an approval: it stays where it was.
+    // A secret to enter or a lead waiting for a reply isn't an approval, so not under Needs you; but it waits on you, so
+    // it floats above the pinned too.
     const asking = { ...s, chatStates: { ...chatStates, "m1/a": { ...chatStates["m1/a"], needsYou: true } }, requests: [{ ...asked("s1"), kind: "secret" as const }] };
     expect(chatList(asking, prefs, "needsYou")).toEqual([]);
-    expect(chatList(asking, prefs)?.map((r) => r.key)).toEqual(["m1/b", "m1/shop", "m1/a"]);
+    expect(chatList(asking, prefs)?.map((r) => r.key)).toEqual(["m1/shop", "m1/a", "m1/b"]);
   });
 });
 

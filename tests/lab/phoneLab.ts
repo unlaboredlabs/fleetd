@@ -22,10 +22,12 @@ if (runDir === undefined || host === undefined) throw new Error("usage: node pho
 
 type Rgb = readonly [number, number, number];
 
-/** Each project's chat: the person's messages, each with the lead's reply; `picture`, the two colours of its avatar. */
-const PROJECTS: ReadonlyArray<{ readonly title: string; readonly picture?: readonly [Rgb, Rgb]; readonly chat: ReadonlyArray<readonly [string, string]> }> = [
+/** Each project's chat: the person's messages, each with the lead's reply; `picture`, the two colours of its avatar;
+ * `status`, the line its lead wrote on where things stand (checklist's `status`), which the chats list shows. */
+const PROJECTS: ReadonlyArray<{ readonly title: string; readonly picture?: readonly [Rgb, Rgb]; readonly status?: string; readonly chat: ReadonlyArray<readonly [string, string]> }> = [
   {
     title: "inventory",
+    status: "Need your OK to ship the alert fix",
     chat: [
       [
         "Low-stock alerts fire twice for the same SKU. Can you find out why?",
@@ -36,6 +38,7 @@ const PROJECTS: ReadonlyArray<{ readonly title: string; readonly picture?: reado
   },
   {
     title: "storefront",
+    status: "Checkout up 3.2%; mobile Safari still lags",
     picture: [
       [236, 174, 132],
       [196, 98, 84],
@@ -53,6 +56,7 @@ const PROJECTS: ReadonlyArray<{ readonly title: string; readonly picture?: reado
       [128, 178, 160],
       [52, 102, 110],
     ],
+    status: "Stripe secret rotation due Friday",
     chat: [["Rotate the Stripe webhook secret before Friday.", "Noted. I'll ask you for the new secret when it's time; nothing to do yet."]],
   },
   {
@@ -164,6 +168,10 @@ await withFactory(
           cursor = await f.cursor();
           await must("chat_send", { projectRef: ref, text, clientRequestId: randomUUID() });
           await turnEnds(`${p.title}'s lead answers "${text}"`, threadId, cursor);
+        }
+        if (p.status !== undefined) {
+          const set = f.leadAt(p.title === "inventory" ? f.project.root : path.join(machineHome, p.title))("checklist", { status: p.status });
+          check(set.code === 0, `${p.title}'s status: ${set.text}`);
         }
         seeded.push(ref);
         ok(`seeded ${p.title} (${projectId})`);

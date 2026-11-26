@@ -56,6 +56,25 @@
       ],
       "type": "object"
     },
+    "ChatStatusLine": {
+      "description": "A bot's status line, as its lead last wrote it (`checklist`'s `status`): where things stand, in one short line.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "line": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "at"
+      ],
+      "type": "object"
+    },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
@@ -121,6 +140,10 @@
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
+        },
+        "status": {
+          "$ref": "#/$defs/ChatStatusLine",
+          "description": "Where things stand, in the lead's own short line (`checklist`'s `status`): what the sidebar and the phone's chat list show\nunder the bot's name. Absent: none written, a person wrote since, or an older hub."
         }
       },
       "required": [

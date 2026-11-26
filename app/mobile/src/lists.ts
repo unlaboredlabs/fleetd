@@ -1,9 +1,10 @@
-// The home list, as plain view data: what needs you on top, then every other chat, newest first. A project wants you
+// The home list, as plain view data: what needs you on top, then every other chat, newest first, each with its line
+// (shared/rowLine.ts: what waits on you, "Working…", its lead's status line or its newest message). A project wants you
 // as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or its lead waiting for
 // your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, proposal, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, proposal, rowSay, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary, type RowLine, type Waiting } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -14,6 +15,10 @@ export interface Row {
   readonly archived: boolean;
   /** Why it wants you, in a few words; undefined when it doesn't. */
   readonly want: string | undefined;
+  /** What waits on you, for the row's line (shared/rowLine.ts); undefined when nothing does. */
+  readonly waiting: Waiting | undefined;
+  /** The lead's own line on where things stand (the chat state's `status`), while no one wrote since. */
+  readonly status: string | undefined;
   readonly working: boolean;
   /** The open approvals it asks: the row's badge. */
   readonly approvals: number;
@@ -56,6 +61,30 @@ const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] |
   if (signIns > 0) return `${plural(signIns, "sign-in", "sign-ins")} to fill in`;
   if (secrets > 0) return `${plural(secrets, "secret", "secrets")} to enter on the desktop`;
   return needsYou ? "Waiting for your reply" : undefined;
+};
+
+/** Each Waiting made once per what it says, so a row that says the same is the same (sameChatRow). */
+const waitings = new Map<string, Waiting>();
+const waitingAs = (w: Waiting): Waiting => {
+  const k = `${w.kind}|${String(w.count)}|${w.what ?? ""}`;
+  const known = waitings.get(k);
+  if (known !== undefined) return known;
+  waitings.set(k, w);
+  return w;
+};
+
+/** What waits on you in a chat, as its row's line says it: the same order as wantOf. */
+const waitingOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] | undefined, me: string | undefined): Waiting | undefined => {
+  const open = requests?.filter((r) => r.state === "open" && keyOf(r.projectRef) === key && mine(r, me)) ?? [];
+  const approvals = open.filter((r) => r.kind === "approval");
+  const signIns = open.filter((r) => r.secureInput?.signIn !== undefined);
+  const secrets = open.filter((r) => r.kind === "secret" && r.secureInput?.signIn === undefined);
+  // A command says why it runs, in the lead's words, over its request's line.
+  const first = (rs: readonly HumanRequest[], kind: Waiting["kind"]): Waiting => waitingAs({ kind, count: rs.length, what: rs[0]?.gated?.reason ?? rs[0]?.text });
+  if (approvals.length > 0) return first(approvals, "approve");
+  if (signIns.length > 0) return first(signIns, "signIn");
+  if (secrets.length > 0) return first(secrets, "secret");
+  return needsYou ? waitingAs({ kind: "reply", count: 1 }) : undefined;
 };
 
 /**
@@ -131,6 +160,8 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
         project,
         archived: isArchived(project),
         want: wantOf(key, waitsOnMe(chat, s.me), s.requests, s.me),
+        waiting: waitingOf(key, waitsOnMe(chat, s.me), s.requests, s.me),
+        status: chat?.status?.line,
         working: chat?.leadWorking === true,
         approvals: openFor(key, s.requests, "approval", s.me),
         preview: previewFor(s, key),
@@ -149,11 +180,11 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
 };
 
 /**
- * A row's one line: its newest message, kept while its lead works (the glyph in front says so: a turn lasts minutes),
- * "Working…" only while it has none; else why it wants you.
+ * A row's line, as the desktop's sidebar says it (shared/rowLine.ts): what waits on you, else "Working…" while its lead
+ * works, else its lead's status line, else its newest message; blank until its newest messages are read.
  */
-export const rowLine = (row: Pick<Row, "preview" | "working" | "want" | "empty">): string =>
-  row.preview ?? (row.working ? "Working…" : (row.want ?? (row.empty ? "No messages yet" : "")));
+export const rowLine = (row: Pick<Row, "preview" | "working" | "waiting" | "status" | "empty">): RowLine =>
+  rowSay({ waiting: row.waiting, leadWorking: row.working, status: row.status, newest: row.preview ?? (row.empty ? "No messages yet" : "") });
 
 /**
  * The chats list's filters, as chat apps' folders: everything, what you haven't read, the chats with an approval
@@ -182,11 +213,11 @@ export const sameChatRow = (a: ChatRow, b: ChatRow): boolean => {
   return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k]);
 };
 
-/** A chat with an approval open floats above the rest, pinned ones too: answering it is what the phone is for. */
-const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Number(a.approvals > 0);
+/** A chat that waits on you floats above the rest, pinned ones too: answering it is what the phone is for. */
+const waitingFirst = (a: Row, b: Row): number => Number(b.want !== undefined) - Number(a.want !== undefined);
 
 /**
- * The chats list, as chat apps keep it: one list, the chats with an approval waiting on top, then the pinned ones in the
+ * The chats list, as chat apps keep it: one list, the chats that wait on you on top, then the pinned ones in the
  * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it,
  * and whether it's muted (its count goes grey). Archived projects are only under Archived, except while an approval of
  * theirs waits. `pinned`: this hub's pins, in the person's order (prefs.ts pinsOf).

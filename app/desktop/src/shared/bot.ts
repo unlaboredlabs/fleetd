@@ -112,9 +112,9 @@ export const botShapeLabel = (shape: BotShapeName): string => shape.charAt(0).to
 export const CROP = { x: 10, y: 14.6, w: 80 } as const;
 export const VIEW_BOX = `${CROP.x} ${CROP.y} ${CROP.w} ${CROP.w}`;
 /** How far past its crop, in the drawing's units, whatever draws a bot leaves room on each side (the desktop's canvas,
- * the phone's Svg), so no body is ever clipped: Bunny's ears in a Needs-you hop reach about 17 above it, the most of
+ * the phone's Svg), so no body is ever clipped: Bunny's ears in a Needs-you hop reach about 23 above it, the most of
  * any shape in any state (bot.test.ts holds every body inside it). */
-export const REACH = 20;
+export const REACH = 24;
 /** The size a bot in a `box` px box is drawn at, as if its whole 100 box showed: its size for newRig. */
 export const drawnAt = (box: number): number => {
   "worklet";
@@ -224,7 +224,7 @@ export const STEP = 1 / 120;
 // ---- The loops, each adding to the pose, scaled by its amplitude
 
 const BREATH = 0;
-const READ = 1;
+const SCAN = 1;
 const PONDER = 2;
 const PERK = 3;
 const SWAY = 4;
@@ -234,6 +234,9 @@ const GLANCE = 6;
 const LOOPS = 7;
 
 const TAU = Math.PI * 2;
+/** Working's lean to each side, in degrees, and needs-you's hop, in the drawing's units, at a large bot's full motion. */
+const SCAN_LEAN = 4.5;
+const HOP = 7;
 
 const bump = (p: number, a: number, b: number): number => {
   "worklet";
@@ -251,16 +254,18 @@ const loops = (t: number, a: readonly number[], o: number[], B: number): void =>
     o[LIFT] = (o[LIFT] ?? 0) + 0.63 * br * B * s;
     o[GY] = (o[GY] ?? 0) - 0.045 * br * s;
   }
-  // Reading: four fixations across a line, a saccade back, and a small nod at each new line (2.7 s).
-  const rd = a[READ] ?? 0;
-  if (rd !== 0) {
-    const p = (t / 2.7) % 1;
-    const x = p < 0.84 ? -1 + (2 * Math.floor((p / 0.84) * 4)) / 3 : -1;
-    const nod = bump(p, 0.8, 1);
-    o[GX] = (o[GX] ?? 0) + 0.5 * rd * x;
-    o[GY] = (o[GY] ?? 0) + 0.24 * rd * nod;
-    o[LIFT] = (o[LIFT] ?? 0) - 1.35 * rd * B * nod;
-    o[SQUASH] = (o[SQUASH] ?? 0) + 0.03 * rd * B * nod;
+  // Working: a steady scan side to side (4.4 s), the whole body leaning into it so its outline moves even at 20 px,
+  // the look with it, and a small bob as it swings across; it rests a moment at each side, as eyes do at a line's end,
+  // so a list of working bots isn't redrawn every frame (W950: working must read at sidebar size).
+  const sc = a[SCAN] ?? 0;
+  if (sc !== 0) {
+    const s = Math.sin((TAU * t) / 4.4);
+    const side = Math.max(-1, Math.min(1, 3 * s));
+    const swing = 1 - side * side;
+    o[LEAN] = (o[LEAN] ?? 0) + SCAN_LEAN * sc * B * side;
+    o[GX] = (o[GX] ?? 0) + 0.4 * sc * side;
+    o[LIFT] = (o[LIFT] ?? 0) + 1.2 * sc * B * swing;
+    o[SQUASH] = (o[SQUASH] ?? 0) - 0.02 * sc * B * swing;
   }
   // Pondering: the look drifts in a slow circle (3.8 s), a slow sway.
   const pd = a[PONDER] ?? 0;
@@ -270,13 +275,17 @@ const loops = (t: number, a: readonly number[], o: number[], B: number): void =>
     o[GY] = (o[GY] ?? 0) + 0.15 * pd * Math.cos(w);
     o[LEAN] = (o[LEAN] ?? 0) + 2.7 * pd * B * Math.sin((TAU * t) / 5.6);
   }
-  // Attentive: a small perk up every 3.2 s, the eyes a touch wider at its top, a slow curious tilt.
+  // Needs you: a clear hop every 3.2 s, crouch, air and landing, its eyes widest at the top, and a slow curious tilt
+  // (W950: it must read at 20 px by its outline, not its eyes).
   const pk = a[PERK] ?? 0;
   if (pk !== 0) {
-    const q = bump((t / 3.2) % 1, 0, 0.24);
-    o[LIFT] = (o[LIFT] ?? 0) + 1.8 * pk * B * q;
-    o[SQUASH] = (o[SQUASH] ?? 0) - 0.045 * pk * B * q;
-    o[EYES] = (o[EYES] ?? 0) + 0.045 * pk * q;
+    const p = (t / 3.2) % 1;
+    const crouch = bump(p, 0, 0.13);
+    const air = p > 0.13 && p < 0.37 ? Math.sin((Math.PI * (p - 0.13)) / 0.24) : 0;
+    const land = bump(p, 0.36, 0.5);
+    o[LIFT] = (o[LIFT] ?? 0) + pk * B * (HOP * air - 1 * crouch);
+    o[SQUASH] = (o[SQUASH] ?? 0) + pk * B * (0.08 * crouch - 0.035 * air + 0.07 * land);
+    o[EYES] = (o[EYES] ?? 0) + 0.06 * pk * air;
     o[LEAN] = (o[LEAN] ?? 0) + 1.65 * pk * B * Math.sin((TAU * t) / 6.4);
   }
   // Content: a slow sway (5 s), the look trailing it.
@@ -314,9 +323,9 @@ interface Mood {
   readonly kick: readonly number[];
 }
 
-const amps = (l: { breath?: number; read?: number; ponder?: number; perk?: number; sway?: number; sigh?: number; glance?: number }): number[] => [
+const amps = (l: { breath?: number; scan?: number; ponder?: number; perk?: number; sway?: number; sigh?: number; glance?: number }): number[] => [
   l.breath ?? 0,
-  l.read ?? 0,
+  l.scan ?? 0,
   l.ponder ?? 0,
   l.perk ?? 0,
   l.sway ?? 0,
@@ -330,11 +339,12 @@ export const MOODS: { readonly [S in BotState]: Mood } = {
   idle: { pose: channels({}), loops: amps({ breath: 1, glance: 1 }), blink: [2, 4.6], twice: 0.2, slow: false, kick: kicks({}) },
   // Looks up and aside, head tilted; the look drifts in a slow circle. Arrives with a small lift.
   thinking: { pose: channels({ gx: -0.62, gy: -0.74, lean: -2.4, eyes: 0.97 }), loops: amps({ breath: 0.7, ponder: 1 }), blink: [2.4, 4.8], twice: 0.1, slow: false, kick: kicks({ lift: 7 }) },
-  // Looks down, lids a touch lower, and reads. Arrives with a squish.
-  working: { pose: channels({ gy: 0.68, up: 0.1, squash: 0.018 }), loops: amps({ breath: 0.45, read: 1 }), blink: [3.4, 6], twice: 0, slow: false, kick: kicks({ squash: 0.28 }) },
-  // Sits up taller, eyes bigger with a faint glow, looks at you, perks up. Arrives with a hop.
-  needs: { pose: channels({ lift: 3, squash: -0.042, eyes: 1.1, gy: -0.16, glow: 1, lean: 3.2 }), loops: amps({ breath: 0.5, perk: 1 }), blink: [2, 3.8], twice: 0.45, slow: false, kick: kicks({ lift: 24, squash: -0.5 }) },
-  // Crescent eyes from the lower lid, settled a touch wider; a deeper breath and a slow sway. A happy squish.
+  // Looks down, lids a touch lower, and scans side to side, leaning into it. Arrives with a squish.
+  working: { pose: channels({ gy: 0.6, up: 0.1, squash: 0.018 }), loops: amps({ breath: 0.45, scan: 1 }), blink: [3.4, 6], twice: 0, slow: false, kick: kicks({ squash: 0.28 }) },
+  // Sits up taller, eyes wide with a faint glow, looks at you, and hops every few seconds. Arrives with a hop.
+  needs: { pose: channels({ lift: 3, squash: -0.042, eyes: 1.14, gy: -0.16, glow: 1, lean: 3.2 }), loops: amps({ breath: 0.5, perk: 1 }), blink: [2, 3.8], twice: 0.45, slow: false, kick: kicks({ lift: 24, squash: -0.5 }) },
+  // Crescent eyes from the lower lid, settled a touch wider; a deeper breath and a slow sway. Arrives with a happy
+  // squish, then one small jump (JUMP), no sparks (the person's no-sparkle rule).
   done: { pose: channels({ low: 0.68, up: 0.04, squash: 0.03, lift: -0.6 }), loops: amps({ breath: 1.35, sway: 1 }), blink: null, twice: 0, slow: false, kick: kicks({ squash: 0.6 }) },
   // Lids drop, lower at the outer corners; looks down, sinks and slumps; dimmer eyes; a sigh every 6 s. A slump.
   error: { pose: channels({ up: 0.42, slope: 0.6, gy: 0.72, gx: 0.16, squash: 0.065, lift: -2.8, lean: -3.8, dim: 1, eyes: 0.96 }), loops: amps({ sigh: 1 }), blink: [4, 7], twice: 0, slow: true, kick: kicks({ lift: -9, squash: 0.35 }) },
@@ -376,6 +386,8 @@ export interface Rig {
   nextGlance: number;
   /** It keeps moving until then, though idle in a list: a moment's or a change's springs settling. */
   awake: number;
+  /** When it last arrived in its state by a change (-1: it was made in it), for done's one jump. */
+  since: number;
   // Its size's rules.
   eyeK: number;
   gapK: number;
@@ -398,13 +410,23 @@ const rnd = (r: Rig): number => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-/** The channels' targets now: the pose, each loop on top, and the idle glance. */
+/** Done's one jump as it arrives, after the squish: how long after, how long in the air, and how high (in the drawing's
+ * units, at a large bot's full motion). Small, so it reads at 20 px as a hop of joy, not a bounce. */
+const JUMP = { after: 0.16, air: 0.56, high: 9 } as const;
+
+/** The channels' targets now: the pose, each loop on top, done's one jump, and the idle glance. */
 const target = (r: Rig, calm: boolean): number[] => {
   "worklet";
   const m = MOODS[r.state];
   const o = m.pose.slice();
   if (!calm) {
     loops(r.t + r.phase, r.amp, o, r.B);
+    const d = r.t - r.since - JUMP.after;
+    if (r.state === "done" && r.since >= 0 && d > 0 && d < JUMP.air) {
+      const arc = Math.sin((Math.PI * d) / JUMP.air);
+      o[LIFT] = (o[LIFT] ?? 0) + JUMP.high * r.B * arc;
+      o[SQUASH] = (o[SQUASH] ?? 0) - 0.06 * r.B * arc;
+    }
     const g = r.amp[GLANCE] ?? 0;
     o[GX] = (o[GX] ?? 0) + r.gx * g;
     o[GY] = (o[GY] ?? 0) + r.gy * g;
@@ -436,6 +458,7 @@ export const newRig = (state: BotState, size: number, seed: number, solo = size 
     glanceEnd: -1,
     nextGlance: 0,
     awake: -1,
+    since: -1,
     eyeK: 1 + 0.2 * o,
     gapK: 1 + 0.05 * o,
     B: 1 - 0.2 * o,
@@ -467,6 +490,7 @@ export const setRigState = (r: Rig, state: BotState, calm: boolean): void => {
   "worklet";
   if (state === r.state) return;
   r.state = state;
+  r.since = r.t;
   // Its springs settle in about 2.5 s (with reduced motion, well under a second).
   r.awake = r.t + (calm ? 0.6 : 2.5);
   if (calm) return;

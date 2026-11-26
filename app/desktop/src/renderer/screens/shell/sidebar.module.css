@@ -216,6 +216,13 @@
 .row[data-unread] .when {
   color: var(--text);
 }
+/* It waits on you: the line says what, in the warning's colour, its verb a step stronger. */
+.row .line[data-tone="want"] {
+  color: var(--warning);
+}
+.lineLead {
+  font-weight: var(--weight-medium);
+}
 
 
 /* Every row's mark sits in one column at the row's far end, on the line's centre, 18 px tall: a dot alone, or a small

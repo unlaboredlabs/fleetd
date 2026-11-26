@@ -7,7 +7,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Start a fleetd agent (a task). title is what the human sees: a short plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind write (its own worktree and branch), read, or review (needs pr). repo: which of the bot's repos; absent, pr's, else the bot's own. profile: one your first message lists; absent, the default (reviews always use it). A full board queues it. A writer that repeats work in flight is refused; when it is different work, call again with notDuplicateOf and notDuplicateWhy. The answer names work it may overlap. Its result comes in a later wake: end your turn.",
+   "description": "Start a fleetd agent (a task). title is what the human sees: a short plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind write (its own worktree and branch), read, or review (needs pr). repo: which of the bot's repos; absent, pr's, else the bot's own. profile: one your first message lists; absent, the default (reviews always use it). A full board queues it. A writer that repeats work in flight is refused; when it is different work, call again with notDuplicateOf and notDuplicateWhy. Its result comes in a later wake: end your turn.",
    "inputSchema": {
     "properties": {
      "kind": {
@@ -124,7 +124,7 @@
    "lead": true,
    "worker": true,
    "browser": false,
-   "description": "The bot's agents (tasks), newest first: each one's title, state, branch, paths, PR (result.prUrl) and result. One by taskId, or by state or workstream. A long result is cut in its middle; with taskId, fullResult holds it whole (up to 32 KB), and a writer's files changed so far. For a task the list opens with the bot's newest notes (agent_message to [\"bot\"]), live a day at most: read them before you touch something shared outside your files; your brief and lead outrank them.",
+   "description": "The bot's agents (tasks), newest first: each one's title, state, branch, paths, PR (result.prUrl) and result. One by taskId, or by state or workstream. A long result is cut in its middle; with taskId, fullResult holds it whole, and a writer's files changed so far. For a task the list opens with the bot's newest notes (agent_message to [\"bot\"]): read them before you touch something shared outside your files; your brief and lead outrank them.",
    "inputSchema": {
     "properties": {
      "state": {
@@ -290,7 +290,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Ask the human for a secret (a key, a token, a password): a masked field in the chat; the value is sealed to the sink's machine, written there, and never enters a transcript. Its fingerprint arrives in a later wake. For a variable an agent asked for, sink order:<machine>:<its order>.",
+   "description": "Ask the human for a secret: a masked field in the chat; the value is sealed to the sink's machine, written there, and never enters a transcript. Its fingerprint arrives in a later wake. For a variable an agent asked for, sink order:<machine>:<its order>.",
    "inputSchema": {
     "properties": {
      "envName": {
@@ -569,7 +569,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Remove one memory entry that no longer holds: entry quotes its words exactly, scope and topic as for remember, reason why. To change an entry, remember with replaces. The chat shows it with Undo.",
+   "description": "Remove one memory entry that no longer holds: entry quotes its words exactly, scope and topic as for remember, reason why. To change an entry, remember with replaces.",
    "inputSchema": {
     "properties": {
      "entry": {
@@ -652,7 +652,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Flag the message you end this turn with for the human's look, reason in a few words (\"the Machines page redesign\"): the app shows it until they have seen it, a day at most, a newer one clearing the oldest. Only for a showcase, something to try or a risk. Call it, then write the message last. No notification goes out.",
+   "description": "Flag the message you end this turn with for the human's look, reason in a few words (\"the Machines page redesign\"). Only for a showcase, something to try or a risk. Call it, then write the message last.",
    "inputSchema": {
     "properties": {
      "reason": {
@@ -979,7 +979,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Keep the bot's checklist: the human's to-dos beside the chat, each todo, doing or done. An item's text is a short plain outcome (\"Gift cards apply before tax\"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by id (text, state, link to its PR, agent or workstream) or remove it; replace sets the whole list.",
+   "description": "Keep the bot's checklist: the human's to-dos beside the chat, each todo, doing or done. An item's text is a short plain outcome (\"Gift cards apply before tax\"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by id (text, state, link to its PR, agent or workstream) or remove it; replace sets the whole list. status: one line for the chat list on where things stand, what you need first.",
    "inputSchema": {
     "properties": {
      "items": {
@@ -1035,6 +1035,10 @@
      },
      "replace": {
       "type": "boolean"
+     },
+     "status": {
+      "maxLength": 80,
+      "type": "string"
      }
     },
     "type": "object"
@@ -1146,7 +1150,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Only on the person's yes: make a GitHub repo for your bot with its GitHub connection and add it as repo_add does: name, private as the person said (ask if they didn't), owner only for an organisation. It starts with a README; you are woken when its clone is ready, or fails, with the fix. A refusal names the one step the connection lacks: pass it on, never ask for a token or a hand-made repo.",
+   "description": "Only on the person's yes: make a GitHub repo for your bot with its GitHub connection and add it as repo_add does: name, private as the person said (ask if they didn't), owner only for an organisation. You are woken when its clone is ready, or fails, with the fix. A refusal names the one step the connection lacks: pass it on, never ask for a token or a hand-made repo.",
    "inputSchema": {
     "properties": {
      "description": {
@@ -1462,7 +1466,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Search all of your own chat for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. Newest first, 20 a page, each with its id, time, author (human or lead: you) and its text around the words; before (a page's last id) reads the next. Read-only.",
+   "description": "Search all of your own chat for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. Newest first, 20 a page, each with its id, time, author (human or lead: you) and its text around the words; before (a page's last id) reads the next.",
    "inputSchema": {
     "properties": {
      "before": {
@@ -1801,7 +1805,7 @@
    "lead": true,
    "worker": true,
    "browser": false,
-   "description": "Publish a report too long or rich for chat: Markdown (format md) or a whole HTML page (html). name: lowercase-hyphen words (sweep-report); title: what the human reads. Give content, or path (.html/.htm is html unless format says). The chat shows a card; the same name keeps a new version. Link it as `[Title](artifact:name)` or `artifact:name@2`. HTML is sandboxed offline: inline every script, style, font, image (data: URLs).",
+   "description": "Publish a report too long or rich for chat: Markdown (format md) or a whole HTML page (html). name: lowercase-hyphen words; title: what the human reads. Give content, or path (.html/.htm is html unless format says). The chat shows a card; the same name keeps a new version. Link it as `[Title](artifact:name)` or `artifact:name@2`. HTML is sandboxed offline: inline every script, style, font, image (data: URLs).",
    "inputSchema": {
     "properties": {
      "content": {
@@ -3082,6 +3086,9 @@
    },
    "/replace": {
     "expected": "a boolean"
+   },
+   "/status": {
+    "expected": "a string"
    }
   },
   "skill_install": {

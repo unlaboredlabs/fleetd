@@ -114,8 +114,9 @@ export const RULES: Record<string, Record<string, (call: Call) => string | undef
       const items = (call.items ?? []) as Call[];
       if (call.replace === true) {
         if (items.some((edit) => some(edit.id))) return "replace sets the whole list: leave ids out";
-      } else if (items.length === 0) {
-        return "give items to change, or replace to set the whole list";
+      } else if (items.length === 0 && !some(call.status)) {
+        // A status line alone leaves the list as it is (hub/checklist/calls.ts).
+        return "give items to change, replace to set the whole list, or status";
       }
     },
   },

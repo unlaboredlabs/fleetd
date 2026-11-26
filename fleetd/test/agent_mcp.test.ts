@@ -148,6 +148,9 @@ describe("agent-mcp", () => {
       'Invalid arguments for remember: expected a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory, got "memory".',
     );
     expect(why("checklist", { items: [{}] })).toBe("Invalid arguments for checklist: a new item needs text.");
+    expect(why("checklist", {})).toBe("Invalid arguments for checklist: give items to change, replace to set the whole list, or status.");
+    // A status line alone goes to the hub, which keeps it and leaves the list as it is.
+    expect(callOf("lead", "checklist", { status: "Need your yes on the Friday deck" })).toMatchObject({ op: "checklist", status: "Need your yes on the Friday deck" });
     expect(why("session_start", { purpose: "x", kind: "zzz" })).toBe(
       "Invalid arguments for session_start: unknown variant `zzz`, expected one of `browser`, `android`, `ios`, `linux_desktop`, `mac`.",
     );

@@ -2,7 +2,7 @@
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
 // project flow, a project's allowed profiles, its watchers' words, its approvals', who merges' and payments' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
-// state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, the device a phone screen shows (deviceModel), Connections' named services (Paper, Notion), custom MCPs and Tailscale's words, a cloud bot waking and the working row (wake.ts), steps in plain words (steps.ts),
+// state glyph's frames, the lead's turn line's words and how it holds steady, a chat row's second line, the New screen picker's machines, the device a phone screen shows (deviceModel), Connections' named services (Paper, Notion), custom MCPs and Tailscale's words, a cloud bot waking and the working row (wake.ts), steps in plain words (steps.ts),
 // fleetd cloud's accounts call, and the agent providers (Anthropic, Google) with their models. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
@@ -222,6 +222,7 @@ export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../..
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor, workedToward, type TurnSpan } from "../../desktop/src/shared/turnWords";
+export { lineWords, rowLine as rowSay, type RowLine, type Waiting } from "../../desktop/src/shared/rowLine";
 export {
   askedAt,
   ColdTurns,

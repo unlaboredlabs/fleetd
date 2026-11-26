@@ -9,9 +9,12 @@
 // drag a chat up among them to pin it there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
-// so a row never moves under a click. A row ends in a dot while its chat wants you (a reply, an approval, a secret, a
-// block: the warning's colour, why in its tooltip) or has a new message (the accent's, its line in full voice), else
-// says a red main or the agents at work; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of
+// so a row never moves under a click. A row's second line says what its chat wants of you, in the warning's colour
+// ("Approve: Run the stock migration", a secret, a reply, a block), else "Working…" while its lead works, else the line
+// its lead last wrote on where things stand, else its newest message (shared/rowLine.ts, W950); the chats that want you
+// come first. Its bot says the same at any size: it hops while it needs you, scans while it works, and jumps once when
+// a turn lands (shared/bot.ts). A row ends in a dot for a new message (the accent's, its line in full voice), else says
+// a red main; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of
 // the times on the first nine rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins
 // it, renames it, copies its path, archives it (Undo in the toast) or deletes it (from its settings, which list its
 // worktrees and ask for its name first). An archived project is in none (the ⋯'s Archived bots, Settings › Projects,
@@ -39,6 +42,7 @@ import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../proj
 import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
+import { lineWords } from "../../../shared/rowLine";
 import { useHubState } from "./hubFeed";
 import { switchHub, useHubSwipe } from "./hubSwipe";
 import { useHubRows } from "./hubRows";
@@ -267,35 +271,30 @@ export const whenShort = (iso: string, now = new Date()): string => {
   return whenFormat(at.getFullYear() === now.getFullYear() ? "date" : "dateYear", at);
 };
 
-/** The row's one mark: a dot while it wants you or has a new message, else a red main, else how many agents work. */
+/** The row's one mark: a dot for a new message, else a red main. What waits on you and what works, its line and its bot
+ * say (W950): the bot hops while it needs you and moves while it works, at any size. */
 const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: string } | null => {
-  const want = p.want;
-  // A dot, the whole message (the human's call, W530): the warning's for one that waits on you, the accent's for a new
-  // message; its words in the tooltip and the row's description.
-  if (want !== undefined) return { node: <span className={s.dot} data-want={want.word ?? "you"} aria-hidden />, tip: want.label };
   if (p.unread) return { node: <span className={s.dot} aria-hidden />, tip: UNREAD };
   // It stops nothing, so the word without the weight that asks for you.
   if (p.warning !== undefined) return { node: <span className={s.red}>CI red</span>, tip: p.warning };
-  if (p.running > 0) {
-    return {
-      node: (
-        <span className={s.work}>
-          <StateGlyph state="working" size="sm" />
-          {String(p.running)}
-        </span>
-      ),
-      tip: `${String(p.running)} ${p.running === 1 ? "agent" : "agents"} working`,
-    };
-  }
-  if (p.working) return { node: <StateGlyph state="thinking" size="sm" />, tip: "The lead is working" };
   return null;
 };
 
 /** What the row knows of its bot beyond the project's row: why it wants you, and a reply you haven't seen. */
 const botOwn = (p: SidebarProject): Partial<BotIn> => ({ needs: p.want !== undefined && p.want.word !== "blocked", blocked: p.want?.word === "blocked", done: p.unread });
 
-/** The row's line: its newest, else while its lead works that it does, else why it wants you, else that it is new. */
-const lineOf = (p: SidebarProject): string => p.line || (p.working ? "Working…" : (p.want?.label ?? "No messages yet"));
+/** The row's line, as words: what waits on you, "Working…", its lead's status line, or its newest (shared/rowLine.ts). */
+const lineOf = (p: SidebarProject): string => lineWords(p.say);
+
+/** The row's line, drawn: what to do a step stronger, in the line's tone. */
+function Line({ p }: { readonly p: SidebarProject }) {
+  return (
+    <span className={s.line} data-tone={p.say.tone} data-empty={p.line === "" && p.say.tone === undefined && p.status === undefined ? true : undefined}>
+      {p.say.lead === undefined ? null : <span className={s.lineLead}>{p.say.lead} </span>}
+      <HubText>{p.say.text}</HubText>
+    </span>
+  );
+}
 
 interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly p: SidebarProject;
@@ -367,9 +366,7 @@ function Row({ p, current, jump, asOf, into, avatar = AVATAR, dense = false, ...
           )}
         </span>
         <span className={s.bottom}>
-          <span className={s.line} data-empty={p.line === "" || undefined}>
-            <HubText>{lineOf(p)}</HubText>
-          </span>
+          <Line p={p} />
           {m === null ? null : (
             <Tooltip content={tip === undefined ? undefined : <HubText>{tip}</HubText>}>
               <span className={s.mark}>{m.node}</span>

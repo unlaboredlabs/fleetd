@@ -38,7 +38,7 @@ Each tool below says when only one of them gets it.
 
 - <span id="brief"></span>`brief`: Open an order: its goal, why, and when it's done. Lead only.
 - <span id="close"></span>`close`: Close an order once it's done. Lead only.
-- <span id="checklist"></span>`checklist`: Keep the to-do list shown beside the chat. Lead only.
+- <span id="checklist"></span>`checklist`: Keep the to-do list shown beside the chat, and say where things stand for the chat list. Lead only.
 - <span id="decide"></span>`decide`: Record a decision, so it's never asked twice. Lead only.
 - <span id="decisions_search"></span>`decisions_search`: Search the bot's decisions.
 - <span id="nudge"></span>`nudge`: Flag its last message for you to look at. Lead only.

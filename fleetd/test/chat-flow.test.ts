@@ -5,6 +5,8 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { excerpt, registerLeadCalls, when } from "../src/hub/chat/calls.ts";
 import { chat } from "../src/hub/chat/index.ts";
+import { chatState } from "../src/hub/chat/flow.ts";
+import { answer as answerChecklist } from "../src/hub/checklist/calls.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import { accounts } from "../src/hub/claude_accounts/tools.ts";
 import { leads } from "../src/hub/leads/index.ts";
@@ -296,6 +298,40 @@ test("chat_stop stops every open order once per clientRequestId; an agent key ma
   expect(call(human, "chat_stop", {})).rejects.toThrow("missing field");
   const counts = await call(human, "project_stop", { projectRef: PROJECT, reason: "enough" });
   expect(counts).toMatchObject({ stopped: 0, cancelled: 0, next: "Tell the lead in the chat what to do next." });
+  done();
+});
+
+test("checklist's status keeps the lead's line for the chat list until it writes another or the person writes", async () => {
+  const { hub, clock, call, done } = withFlow();
+  const lead = { projectRef: PROJECT, by: "lead:lab-a/p1", agent: { kind: "lead" as const } };
+  const checklist = (more: Record<string, unknown>) => answerChecklist(hub, lead, { op: "checklist", ...more } as never);
+  expect(chatState(hub, PROJECT).status).toBeUndefined();
+  // Alone, it leaves the list as it is.
+  expect(checklist({ status: "  Need your yes on the Friday deck " })).toEqual({
+    next: "Status kept: the chat list shows it under your bot's name until you write another, or the person writes.",
+  });
+  expect(chatState(hub, PROJECT).status).toEqual({ line: "Need your yes on the Friday deck", at: new Date(clock.ms).toISOString() });
+  // As agent-mcp sends it, with the schema's empty items filled in.
+  expect(checklist({ items: [], status: "Need your yes on the Friday deck" })).toEqual({
+    next: "Status kept: the chat list shows it under your bot's name until you write another, or the person writes.",
+  });
+  // Announced with the chat's state.
+  expect(events(hub).page(0).events.filter((e) => e.type === "chat.waiting").at(-1)?.data).toMatchObject({ status: { line: "Need your yes on the Friday deck" } });
+  // A person's message since sets it aside: the row falls back to the newest message.
+  clock.ms += 1000;
+  await call(human, "chat_send", { projectRef: PROJECT, text: "yes, send it", clientRequestId: "c1" });
+  expect(chatState(hub, PROJECT).status).toBeUndefined();
+  // With items, both.
+  clock.ms += 1000;
+  const both = checklist({ items: [{ text: "Deck at the printer" }], status: "Deck sent to the printer" });
+  expect(both).toMatchObject({ items: [{ text: "Deck at the printer" }] });
+  expect(String(both.next)).toEndWith("Status kept: the chat list shows it under your bot's name until you write another, or the person writes.");
+  expect(chatState(hub, PROJECT).status?.line).toBe("Deck sent to the printer");
+  // A bad line changes nothing, the list included.
+  expect(await refusal(() => checklist({ items: [{ text: "x" }], status: "x".repeat(81) }))).toBe("status: keep it to 80 characters, one glance; it is 81.");
+  expect(await refusal(() => checklist({ status: "two\nlines" }))).toBe("status: one line, no line breaks.");
+  expect(await refusal(() => checklist({ status: " " }))).toContain("status: say where things stand");
+  expect(chatState(hub, PROJECT).status?.line).toBe("Deck sent to the printer");
   done();
 });
 

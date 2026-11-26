@@ -140,6 +140,7 @@
     "./hub/chat/find_rules": "./fleetd/src/hub/chat/find_rules.ts",
     "./hub/chat/rules": "./fleetd/src/hub/chat/rules.ts",
     "./hub/chat/schema": "./fleetd/src/hub/chat/schema.ts",
+    "./hub/chat/status_line": "./fleetd/src/hub/chat/status_line.ts",
     "./hub/chat_sections/rules": "./fleetd/src/hub/chat_sections/rules.ts",
     "./hub/checklist/list": "./fleetd/src/hub/checklist/list.ts",
     "./hub/claude_accounts/refusal": "./fleetd/src/hub/claude_accounts/refusal.ts",

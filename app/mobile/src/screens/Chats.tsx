@@ -1,6 +1,7 @@
 // Chats, as Messages and other chat apps list them: your pinned chats as Messages' grid of large avatars over the list
-// (Pinned.tsx), then the chats with an approval waiting for you on top with its count, then whatever spoke last, each a full-bleed row with its avatar, its newest message
-// and when, and a dot for what you haven't read (grey when muted) or what waits on you (orange). Its bars are Messages' on iOS 26: a compact top
+// (Pinned.tsx), then the chats that wait on you on top, then whatever spoke last, each a full-bleed row with its avatar, its
+// line (what waits on you in orange, "Working…", its lead's status line, or its newest message: shared/rowLine.ts) and when,
+// and a count for what you haven't read (grey when muted); its bot hops while it needs you and moves while it works. Its bars are Messages' on iOS 26: a compact top
 // with the person's avatar on the left, which opens Settings and shows the link to the hub as a dot, and + on the
 // right; at the bottom, a round button whose menu narrows the list to the unread, the chats that need you, the pinned,
 // or the archived, beside the search field (ui/Toolbar.tsx). A build without that bar keeps search on top
@@ -28,7 +29,7 @@ import { MAX_PINNED, pinsOf, sectionsOf, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
 import { sectionLines, type SectionLine } from "../sections";
-import { phaseOf, type ChatMessage } from "../desktop";
+import { lineWords, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { archiveWords, UNDO_MS } from "../archive";
@@ -44,7 +45,6 @@ import { HoldMenu } from "../ui/HoldMenu";
 import type { MenuItem } from "../ui/Menu";
 import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
 import { SkeletonRow } from "../ui/Skeleton";
-import { StateGlyph } from "../ui/StateGlyph";
 import { Badge, EmptyState } from "../ui/States";
 import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
@@ -572,12 +572,12 @@ const SwipingChat = memo(function SwipingChat({ row, separator, open, acts: late
 }, sameSwipingChat);
 
 const rowLabel = (row: ChatRow): string => {
-  const line = row.working && row.preview !== undefined ? `Working, ${row.preview}` : rowLine(row);
+  const said = rowLine(row);
+  const line = said.tone === "want" ? `Waiting for you: ${lineWords(said)}` : lineWords(said);
   const counts = [
     row.pinned ? "Pinned" : undefined,
     row.muted ? "Muted" : undefined,
     row.unread > 0 ? `${String(row.unread)} unread` : row.markedUnread ? "Unread" : undefined,
-    row.approvals > 0 ? `${String(row.approvals)} waiting for approval` : line === row.want ? undefined : row.want,
   ];
   return [row.project.title, line, ...counts].filter((s) => s !== undefined && s !== "").join(", ");
 };
@@ -588,10 +588,11 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
   const line = useAnimatedStyle(() => ({ opacity: 1 - lifted.value }));
   const now = useNow();
   // Blank until its newest messages are read, rather than a stand-in that flickers away.
-  const text = rowLine(row);
-  const accentLine = row.preview === undefined && (row.working || row.want !== undefined);
+  const said = rowLine(row);
+  const text = said.text;
+  const want = said.tone === "want";
   const unread = row.unread > 0;
-  const mine = !accentLine && text.startsWith("You: ");
+  const mine = said.tone === undefined && said.lead === undefined && text.startsWith("You: ");
   // A reply you haven't read: its bot is done.
   const bot = useBot(row.key, unread || row.markedUnread);
   return (
@@ -612,24 +613,16 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
           </Text>
         </View>
         <View style={styles.bottom}>
-          {row.working ? (
-            <View style={styles.glyph}>
-              <StateGlyph state="thinking" phase={phaseOf(row.key)} />
-            </View>
-          ) : null}
-          <Text style={[type.subhead, styles.preview, { color: accentLine ? t.accent : t.secondary }]} numberOfLines={accentLine ? 1 : 2}>
+          <Text style={[type.subhead, styles.preview, { color: want ? t.warning : t.secondary }]} numberOfLines={2}>
+            {said.lead === undefined ? null : <Text style={styles.lineLead}>{said.lead} </Text>}
             {mine ? <Text style={{ color: t.label }}>You: </Text> : null}
             <Names text={mine ? text.slice(5) : text} plain />
           </Text>
           <View style={styles.marks}>
-            {row.approvals > 0 ? (
-              <Badge tone="warning" label={`${String(row.approvals)} waiting for approval`} />
-            ) : unread ? (
+            {unread ? (
               <Badge muted={row.muted} label={`${String(row.unread)} unread`} />
             ) : row.markedUnread ? (
               <Badge muted={row.muted} label="Unread" />
-            ) : row.want !== undefined ? (
-              <Badge />
             ) : row.pinned ? (
               <Icon name="pinned" size={14} color={t.tertiary} />
             ) : null}
@@ -697,8 +690,8 @@ const styles = StyleSheet.create({
   // Two lines kept for every row, as chat apps do, so rows keep one rhythm whatever their preview.
   bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },
   preview: { flex: 1 },
-  /** The lead's glyph, centred on the preview's first line, as the desktop's sidebar shows a working lead. */
-  glyph: { height: 20, justifyContent: "center" },
+  /** What to do, in a line that waits on you: a step stronger than the thing it names. */
+  lineLead: { fontWeight: "600" },
   /** The row's one mark, centred on the preview's first line. */
   marks: { flexDirection: "row", alignItems: "center", gap: 4, height: 20 },
   match: { fontWeight: "600" },

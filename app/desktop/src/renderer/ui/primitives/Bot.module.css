@@ -1,5 +1,6 @@
-/* The bot's box (Bot.tsx), and the canvas ui/lib/botLife.ts draws it on: a quarter of the box past each side (PAD), so
-   its hops and slumps reach past the box with nothing of its own clipping them. */
+/* The bot's box (Bot.tsx), and the canvas ui/lib/botLife.ts draws it on: three tenths of the box past each side (PAD,
+   REACH over the crop: botLife.dom.test.ts holds the two together), so its hops and slumps reach past the box with
+   nothing of its own clipping them. */
 .bot {
   position: relative;
   display: block;
@@ -7,9 +8,9 @@
 }
 .canvas {
   position: absolute;
-  left: -25%;
-  top: -25%;
-  width: 150%;
-  height: 150%;
+  left: -30%;
+  top: -30%;
+  width: 160%;
+  height: 160%;
   pointer-events: none;
 }

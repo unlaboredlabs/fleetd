@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { advanceRig, bodyOf, drawnAt, newRig, traceEyes, type BotState, type Rig } from "../../../shared/bot";
-import { bringToLife, type Living } from "./botLife";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { bringToLife, PAD, type Living } from "./botLife";
 
 // A canvas that keeps what each frame drew: a draw begins the eyes' path once, after the body's matrix.
 let draws = 0;
@@ -135,4 +137,16 @@ it("still draws a change of state at once, blending from where it is", () => {
   vi.advanceTimersByTime(600);
   // The hop's frames come at the list's clock at most, half the display's rate.
   expect(draws).toBeGreaterThan(8);
+});
+
+it("places its canvas past the box by PAD, as the CSS draws it (the app's and the site's), so a bot is never drawn small or off centre", () => {
+  const app = /\.canvas\s*\{([^}]*)\}/u.exec(readFileSync(join(__dirname, "../primitives/Bot.module.css"), "utf8"))?.[1] ?? "";
+  const site = /\.pb canvas\s*\{([^}]*)\}/u.exec(readFileSync(join(__dirname, "../../../../../../site/home.html"), "utf8"))?.[1] ?? "";
+  for (const rule of [app, site]) {
+    const pct = (prop: string) => Number(new RegExp(`${prop}:\\s*(-?[\\d.]+)%`, "u").exec(rule)?.[1]);
+    expect(pct("left")).toBeCloseTo(-PAD * 100, 6);
+    expect(pct("top")).toBeCloseTo(-PAD * 100, 6);
+    expect(pct("width")).toBeCloseTo((1 + 2 * PAD) * 100, 6);
+    expect(pct("height")).toBeCloseTo((1 + 2 * PAD) * 100, 6);
+  }
 });
