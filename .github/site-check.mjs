@@ -41,6 +41,11 @@ const isFile = (p) => fs.statSync(`site${p}`, { throwIfNoEntry: false })?.isFile
 /** The file under site/ that Vercel serves for a path, or a reason it serves none. */
 function served(urlPath) {
   const p = urlPath.split(/[?#]/u)[0];
+  // A Vercel function of the site's (site/api/<name>.mjs, as /download/mac's) answers /api/<name>.
+  if (/^\/api\/[a-z0-9-]+$/u.test(p)) {
+    const fn = [".mjs", ".js", ".ts"].map((ext) => `${p}${ext}`).find(isFile);
+    return fn === undefined ? { error: `no function in site/api/ serves ${p}` } : { file: fn };
+  }
   if (clean && p.endsWith(".html")) return { error: `cleanUrls is on, so Vercel serves ${p} only as ${p.slice(0, -5)}` };
   const tries = p.endsWith("/") ? [`${p}index.html`] : [p, ...(clean ? [`${p}.html`] : []), `${p}/index.html`];
   const file = tries.find((t) => !(clean && t === p && t.endsWith(".html")) && isFile(t));
