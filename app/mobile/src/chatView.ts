@@ -110,6 +110,12 @@ export const outgoing = (
   return { text: words === "" ? replyText(reply.quote, "").trim() : replyText(reply.quote, words), replyTo: { messageId: reply.id, part: reply.part } };
 };
 
+/**
+ * Whether a send keeps the thread where it is: a reply sent from further up does, so the next older bubble can be
+ * answered too, and the button down shows it went. Any other send, and a reply at the newest end, goes to the newest.
+ */
+export const sendStays = (reply: boolean, away: boolean): boolean => reply && away;
+
 /** A message that replies to a bubble: the quote and the words under it; undefined for any other text. */
 export const replyOf = (text: string): { readonly quote: string; readonly body: string } | undefined => {
   const m = /^> ([^\n]+)\n\n(?!>)([\s\S]*\S[\s\S]*)$/u.exec(text);

@@ -41,8 +41,8 @@ const hasFolder = (data: DataTransfer): boolean =>
 
 export interface ChatComposerProps {
   project: ProjectRef;
-  /** After a message leaves the box: the list scrolls to it. */
-  onSent?: () => void;
+  /** After a message leaves the box: the list scrolls to it, or keeps its place for a reply (`reply`). */
+  onSent?: (reply: boolean) => void;
   autoFocus?: boolean;
   /** Your newest message's words, which ↑ brings back into an empty box. */
   recall?: string | undefined;
@@ -128,7 +128,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     }
     // The words leave the box at once; the layer's item holds them (queued when offline, with Edit to take back).
     setDraft(() => ({ text: "", attached: [] }));
-    onSent?.();
+    onSent?.(replyTo !== undefined);
     // The quote stays in the text for every client; the hub gives the lead the whole bubble `replyTo` names.
     const text = replyTo === undefined || replyTo.quote === "" ? checked.text : replyText(replyTo.quote, checked.text);
     const reply = replyTo === undefined ? {} : { replyTo: { messageId: replyTo.id, part: replyTo.part } };

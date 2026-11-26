@@ -32,7 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
-import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendStays, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { onHome } from "../split";
@@ -548,12 +548,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const spring = glideOf(newestFirst);
   const rowsGlide = useMemo(() => glide(spring), [spring]);
 
-  // What you send shows at once, as in Messages, wherever the thread was scrolled to. The composer's words go as a
-  // reply while its banner shows; a quick answer or a starter never does, and leaves the banner for what you type. In a
-  // lens, it is about the lens's order.
+  // What you send shows at once, as in Messages, at the newest end; a reply from further up keeps the place, so the
+  // next older bubble can be answered too. The composer's words go as a reply while its banner shows; a quick answer or
+  // a starter never does, and leaves the banner for what you type. In a lens, it is about the lens's order.
   const send = (body: string, files: readonly AttachmentRef[] = [], reply?: DraftReply) => {
     const out = outgoing(body, files.length, reply);
     if (out === null) return;
+    // A reply from further up goes in under the view, held still there, and the button down shows to go to it.
+    if (sendStays(out.replyTo !== undefined, heldAt !== null || awayFrom !== null || state.windows[chatKey] !== undefined)) {
+      setAwayFrom((a) => a ?? heldAt ?? heldFrom);
+      session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });
+      return;
+    }
     setAwayFrom(null);
     setHeldAt(null);
     // It goes at the newest end: a window far back makes way for it.

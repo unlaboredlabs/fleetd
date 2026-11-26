@@ -159,6 +159,17 @@ describe("the chat's rows", () => {
     expect(latestLabel(rows([]), newestKey(rows([])))).toBe("Latest");
   });
 
+  it("say a reply sent from up the chat went, until the lead's answer comes in under it", () => {
+    const before = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))]);
+    const from = newestKey(before);
+    const replied = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1)), item("c", "human", at(19, 9, 2))]);
+    expect(latestLabel(replied, from, true)).toBe("Sent");
+    const answered = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1)), item("c", "human", at(19, 9, 2)), item("d", "lead", at(19, 9, 3))]);
+    expect(latestLabel(answered, from, true)).toBe("1 new");
+    // Back at the end: no way down to show.
+    expect(latestLabel(replied, undefined, true)).toBeUndefined();
+  });
+
   it("count a teammate's message as new while scrolled up, and yours not", () => {
     const by = (personId: string) => ({ person: { personId, name: personId } }) as ChatItem["message"];
     const items = [item("a", "lead", at(19, 9)), item("b", "human", at(19, 9, 1), { message: by("P1") }), item("c", "human", at(19, 9, 2), { message: by("P2") })];

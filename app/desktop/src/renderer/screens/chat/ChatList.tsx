@@ -281,6 +281,8 @@ export function ChatList(props: {
   openPart?: string | undefined;
   /** Bumped when the reader sends: back to the end. */
   sent?: number;
+  /** Bumped when the reader sends a reply: scrolled up, it stays, and Latest says it went; at the end, as a send. */
+  replied?: number;
   /** What came in while the chat was open, by row key (arrivalsOf). */
   entering?: ReadonlyMap<string, Arrival> | undefined;
   /** It scrolls under the window's top row: its first row starts below it, and a row shown is brought in below it. */
@@ -401,7 +403,24 @@ export function ChatList(props: {
     };
   }, []);
   const inWindow = props.window;
-  const latest = inWindow !== undefined ? "Latest" : latestLabel(rows, awayFrom);
+  // A reply sent from up the chat stays there, until the reader is back at the end; one sent at the end goes to it.
+  const { replied } = props;
+  const away = awayFrom !== undefined || inWindow !== undefined;
+  const [sentAway, setSentAway] = useState(false);
+  const [repliedWas, setRepliedWas] = useState(replied);
+  if (replied !== repliedWas) {
+    setRepliedWas(replied);
+    if (away) setSentAway(true);
+  }
+  if (sentAway && !away) setSentAway(false);
+  useEffect(() => {
+    const v = virtualizer.current;
+    if (replied === undefined || replied === 0 || !v || away) return;
+    v.scrollToIndex(rows.length - 1, { align: "end" });
+    // Once per reply.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replied]);
+  const latest = inWindow !== undefined ? (sentAway ? "Sent" : "Latest") : latestLabel(rows, awayFrom, sentAway);
   const toLatest = () => {
     unpin.current?.();
     if (inWindow !== undefined) inWindow.onLatest();
