@@ -178,7 +178,9 @@ Each update is made for one native fingerprint, a hash of everything native in t
 versions, the build settings), so it only ever reaches builds that have the same native code. A change to native
 code makes a new build instead.
 
-Pick the channel when you run **Mobile release**: `edge` gets each change merged to `main` within minutes, `stable`
-each tagged release. A fork that wants its own updates makes its own key with
+Pick the channel when you run **Mobile release**: `edge` gets each change merged to `main`, `stable` each tagged
+release. An edge update goes out in stages: about 1 phone in 10 within minutes, half after an hour, every phone after
+three hours. Which stage a phone is in comes from a random id it keeps for itself. A halted update reaches no more
+phones; a pulled one takes the phones that have it back to the version before it. A fork that wants its own updates makes its own key with
 `npm exec -- expo-updates codesigning:generate` in `app/mobile`, sets `UPDATES_PRIVATE_KEY_PEM`, `UPDATES_CERT_PEM` and
 `FLEETD_UPDATES_URL`, and serves its own `site/`.
