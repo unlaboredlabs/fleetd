@@ -3,7 +3,6 @@
 // by hand: React Native's URL has no searchParams. It imports the desktop's pairing module itself, not the ../desktop
 // barrel, so it loads outside the phone too (the package's `fleetd/apps/pair_link`), with no React.
 import { CLOUD_TEAM_LINK, inDomain } from "../../../desktop/src/shared/accounts";
-import { sameHub } from "../devices";
 import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../../desktop/src/shared/pairing";
 
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
@@ -67,6 +66,9 @@ export const pairAgainTitle = (device: string): string => `Pair This ${device ==
 
 /** Why, in the person's words: the workspace's own reason names keys by their ids ("agent key fld_… was revoked"). */
 export const refusedWords = (device: string, hubName: string): string => `${hubName} no longer accepts this ${device}'s key. Pair it again with a new code from the workspace.`;
+
+/** One hub's address however it ends (devices.ts sameHub, kept here: the package's pair_link imports nothing else). */
+const sameHub = (a: string, b: string): boolean => a.replace(/\/+$/u, "") === b.replace(/\/+$/u, "");
 
 /** What a pairing link does, by where it came from. */
 export type LinkStep =
