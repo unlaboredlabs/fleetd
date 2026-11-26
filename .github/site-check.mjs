@@ -2,7 +2,7 @@
 //   node .github/site-check.mjs <file holding `fleetd help` output>
 // Fails on an index.* at the root of site/, on a vercel.json rewrite or redirect that lands on no file (or `/` not
 // serving home.html to a browser and install.sh to curl; the phone app's update manifests, which the Vercel build
-// fetches, are left out), on a line of site/.stale-terms in the page's text or the docs' sources
+// fetches, are left out), on a redirect whose address with a trailing slash would 404, on a line of site/.stale-terms in the page's text or the docs' sources
 // (docs/site/src/content/docs/**/*.md and .mdx), and on a `fleetd <command>` written as code that `fleetd help` doesn't list.
 // Capture blocks (home.html's markers, the docs' ```console capture=NAME) are fleetd's own output
 // (tests/lab/site-capture.ts), so the command check skips them; the stale terms still apply there, since a block nobody
@@ -55,6 +55,10 @@ for (const [kind, rules] of [["rewrites", vercel.rewrites ?? []], ["redirects", 
     const { error } = served(destination);
     if (error) errors.push(`site/vercel.json: ${kind} ${source} -> ${destination}: ${error}`);
   }
+}
+// An old page's link with a trailing slash (/docs/cli/) matches no file and no plain /docs/cli source, so it 404s.
+for (const { source } of vercel.redirects ?? []) {
+  if (!source.endsWith("{/}?")) errors.push(`site/vercel.json: redirect ${source} must end in {/}? so its address with a trailing slash redirects too`);
 }
 /** What `/` serves to a user agent: the filesystem first (an index.* at the root, caught above), then the first rewrite
  * whose source is `/` and whose header conditions all match. */

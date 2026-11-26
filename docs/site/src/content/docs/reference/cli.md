@@ -51,7 +51,7 @@ fleetd init [--yes] [--listen <host:port>] [--url <url>]
     [--git-identity "Name <email>"] [--no-service]
 ```
 
-### fleetd init --join {#init-join}
+### fleetd init -\-join {#init-join}
 
 Make this machine a worker of that workspace, without SSH from the workspace's machine.
 
@@ -60,7 +60,7 @@ fleetd init --join <workspace url> --code <code> [--machine-id <id>] [--git-iden
     [--rejoin] [--claude-config-dir <dir>] [--mac] [--no-service]
 ```
 
-### fleetd init --step {#init-step}
+### fleetd init -\-step {#init-step}
 
 Open one of the workspace's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later.
 
@@ -110,7 +110,7 @@ The most agents the machine runs at once (admin key), up to the fleet cap, in pl
 fleetd machine set <id> --max-agents <n>|auto [--workspace <url>]
 ```
 
-### fleetd machine set --roles {#machine-set-roles}
+### fleetd machine set -\-roles {#machine-set-roles}
 
 What the machine is for (admin key): agents, sessions (screens: browsers and devices) or both, and the most screens it hosts at once (1 to 64; auto: what it fits).
 
@@ -126,7 +126,7 @@ Print a one-time code (15 min) that pairs the fleetd app with this workspace, an
 fleetd pair [--name <device>] [--role <read|operate|admin>] [--no-qr]
 ```
 
-### fleetd pair --worker {#pair-worker}
+### fleetd pair -\-worker {#pair-worker}
 
 Print the one command that makes another machine a worker of this workspace, with a one-time code (15 min).
 
@@ -134,7 +134,7 @@ Print the one command that makes another machine a worker of this workspace, wit
 fleetd pair --worker <machine-id>
 ```
 
-### fleetd pair --worker-codes {#pair-worker-codes}
+### fleetd pair -\-worker-codes {#pair-worker-codes}
 
 List the worker codes that can still be used, the agents' Mac's 6-digit setup code among them.
 
@@ -142,7 +142,7 @@ List the worker codes that can still be used, the agents' Mac's 6-digit setup co
 fleetd pair --worker-codes
 ```
 
-### fleetd pair --worker-revoke {#pair-worker-revoke}
+### fleetd pair -\-worker-revoke {#pair-worker-revoke}
 
 Take back the open worker code with that id (from `--worker-codes`).
 
@@ -258,7 +258,7 @@ fleetd project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <d
     [--use-existing] [--yes] [--workspace <url>]
 ```
 
-### fleetd project add --new {#project-add-new}
+### fleetd project add -\-new {#project-add-new}
 
 Start a new, empty bot: the machine makes its folder (`~/fleetd/projects/<name>` by default, or `--dest`; one that holds files is refused).
 
@@ -336,7 +336,7 @@ fleetd project set <machine>/<bot> --max-agents <n>|default [--pause-extras] [--
 fleetd project set --fleet-cap <n> [--workspace <url>]
 ```
 
-### fleetd project set --profiles {#project-set-profiles}
+### fleetd project set -\-profiles {#project-set-profiles}
 
 The task profiles its lead may run agents on besides the workspace's default, which every bot allows.
 
@@ -344,7 +344,7 @@ The task profiles its lead may run agents on besides the workspace's default, wh
 fleetd project set <machine>/<bot> --profiles <name>,...|none [--workspace <url>]
 ```
 
-### fleetd project set --merges {#project-set-merges}
+### fleetd project set -\-merges {#project-set-merges}
 
 Who merges its PRs: you (the train reviews them and keeps them up to date, merges only those its merges-itself rules allow, and the lead says when each other one is ready) or fleetd (the train merges each one once it is reviewed and green).
 
@@ -352,7 +352,7 @@ Who merges its PRs: you (the train reviews them and keeps them up to date, merge
 fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key> [--workspace <url>]
 ```
 
-### fleetd project set --merge-mode {#project-set-merge-mode}
+### fleetd project set -\-merge-mode {#project-set-merge-mode}
 
 How the train merges its PRs: test (ready PRs merge in batches whose combined tree passed CI) or verify (each PR merges on its own green CI, up to 4 side by side, and a red main is bisected and reverted).
 
@@ -417,7 +417,7 @@ Create an agent key for the MCP endpoint.
 fleetd workspace key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>]
 ```
 
-### fleetd workspace key create --agent {#workspace-key-create-agent}
+### fleetd workspace key create -\-agent {#workspace-key-create-agent}
 
 A named agent's key, to write in a bot's chat (`fleetd chat --key-file`).
 
@@ -425,7 +425,7 @@ A named agent's key, to write in a bot's chat (`fleetd chat --key-file`).
 fleetd workspace key create --agent <name> [--machines <'*'|id,id>] [--out <file>]
 ```
 
-### fleetd workspace key create --human {#workspace-key-create-human}
+### fleetd workspace key create -\-human {#workspace-key-create-human}
 
 A key for a person's device (the desktop app).
 

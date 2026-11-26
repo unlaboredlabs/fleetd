@@ -20,6 +20,8 @@ describe("docs", () => {
 
   test("md text escapes markup", () => {
     expect(mdText("<workspace url>/mcp *a* | b")).toBe("\\<workspace url\\>/mcp \\*a\\* \\| b");
+    // Smart punctuation would make `--join` an en dash.
+    expect(mdText("init --join")).toBe("init -\\-join");
   });
 
   test("parses the real help", () => {
@@ -56,6 +58,7 @@ describe("docs", () => {
   test("every command is on the CLI page", () => {
     const page = cliPage();
     for (const group of parseHelp(usageText())) for (const e of group.entries) expect(page).toContain(`fleetd ${e.synopsis[0]}`);
+    expect(page).toContain("### fleetd init -\\-join {#init-join}");
   });
 
   test("every tool, blocked tool and switch is on the page", () => {
