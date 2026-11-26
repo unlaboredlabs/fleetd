@@ -397,8 +397,45 @@ exit 28
   );
   const out = await r.sh(`PATH=${bin}:$PATH sh "$INSTALLER" --no-init`);
   expect(out.code, out.stderr).toBe(1);
-  expect(out.stderr).toContain("download failed");
+  expect(out.stderr).toContain("this machine can't reach");
   expect(existsSync(join(r.home, ".fleetd/bin/.fleetd.new")), "the partial download is gone").toBe(false);
+});
+
+// With no network the installer asked again for SHA256SUMS and then the nightly release, each up to 90 s on a network
+// that never answers (6 min of spinner), and then named nightly's files and the channel, not the connection.
+test("with no network it stops at the first file and says the connection is the problem", async () => {
+  const r = release();
+  const bin = join(r.dir, "bin");
+  mkdirSync(bin);
+  // Every curl can't connect (curl's exit 7), as with the network down; each call is counted.
+  script(join(bin, "curl"), `echo x >>"${join(r.dir, "curls")}"\nexit 7\n`);
+  const out = await r.sh(`PATH=${bin}:$PATH sh "$INSTALLER" --no-init`);
+  expect(out.code, out.stderr).toBe(1);
+  expect(readFileSync(join(r.dir, "curls"), "utf8").split("\n").length - 1, "one try, not one a file").toBe(1);
+  expect(out.stderr).toContain("this machine can't reach");
+  expect(out.stderr).toContain("Check this machine's connection");
+  expect(out.stderr).not.toContain("nightly");
+  expect(existsSync(join(r.home, ".fleetd/bin/fleetd"))).toBe(false);
+});
+
+// A full disk showed as "download failed … Check this machine's connection".
+test("a full disk says so, not the connection", async () => {
+  const r = release();
+  const bin = join(r.dir, "bin");
+  mkdirSync(bin);
+  // The lists download; the CLI's write fails as on a full disk (curl's exit 23).
+  script(
+    join(bin, "curl"),
+    `dest=""; url=""
+while [ $# -gt 0 ]; do case "$1" in -o) dest="$2"; shift ;; -*) ;; *) url="$1" ;; esac; shift; done
+case "$url" in */assets/fleetd-bun-*) exit 23 ;; *) cp "\${url#file://}" "$dest" ;; esac
+`,
+  );
+  const out = await r.sh(`PATH=${bin}:$PATH sh "$INSTALLER" --no-init`);
+  expect(out.code, out.stderr).toBe(1);
+  expect(out.stderr).toContain("the disk is full");
+  expect(out.stderr).toContain("df -h ~/.fleetd/bin");
+  expect(out.stderr).not.toContain("connection");
 });
 
 // ~/.local/bin off PATH: `fleetd` alone wasn't found, in this shell or the next. Its line goes in the shell's

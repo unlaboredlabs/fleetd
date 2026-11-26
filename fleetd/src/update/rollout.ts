@@ -12,7 +12,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { Failure, type Feed, HttpFeed, release, REPO, replaceFile, type Sums, sums as releaseSums } from "./index.ts";
+import { Failure, type Feed, HttpFeed, release, REPO, replaceFile, type Sums, sums as releaseSums, UNREACHED } from "./index.ts";
 import { versionCmp } from "./version.ts";
 
 export type Speed = "fast" | "steady";
@@ -146,7 +146,8 @@ export async function readRollout(feed: Feed): Promise<Rollout | undefined> {
     bytes = await feed.get("rollout.json");
   } catch (e) {
     if (/\b404\b/.test((e as Error).message)) return undefined;
-    throw new Failure("download", `couldn't read the release's rollout.json: ${(e as Error).message}`);
+    const said = (e as Error).message;
+    throw new Failure("download", said.startsWith(UNREACHED) ? said : `couldn't read the release's rollout.json: ${said}`);
   }
   try {
     return parseRollout(new TextDecoder().decode(bytes));

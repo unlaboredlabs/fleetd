@@ -292,11 +292,34 @@ pin() {
   tr -d ' \t\r\n' < "$tmp/release.json" | sed -n "s/.*\"sha256\":{[^}]*\"$name\":\"\([0-9a-f]\{64\}\)\".*/\1/p"
 }
 
-# lists: the release's release.json, else (a release from before it) its SHA256SUMS, into $tmp.
+# offline <curl's exit status>: curl got no answer at all (no DNS, no connection, a timeout, TLS cut off): this machine's
+# network, which asking for another file or release doesn't get past.
+offline() { case "$1" in 6 | 7 | 28 | 35 | 52 | 56) return 0 ;; *) return 1 ;; esac; }
+
+# lists: the release's release.json, else (a release from before it) its SHA256SUMS, into $tmp. With no network it
+# stops at the first: each further try waited up to 90 s on one that never answers.
 lists() {
-  get -o "$tmp/release.json" "$base/release.json" 2>/dev/null && return 0
+  rc=0
+  get -o "$tmp/release.json" "$base/release.json" 2>/dev/null || rc=$?
+  [ "${rc}" != 0 ] || return 0
   rm -f "$tmp/release.json"
+  ! offline "${rc}" || return "${rc}"
   get -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+}
+
+# fetch_failed <curl's exit status> <url> <dest>: die with what stopped <url>'s download into <dest>, and what to do.
+fetch_failed() {
+  host="$(printf '%s' "$2" | sed 's#^[a-z]*://##; s#/.*##')"
+  case "$1" in
+    23) die "could not write to $(tilde "$(dirname "$3")"): the disk is full, or that folder can't be written
+Free some space (df -h $(tilde "$(dirname "$3")") shows how much is left), then run the installer again." ;;
+    6) die "could not download fleetd: this machine can't look up ${host}
+Check this machine's network and DNS, then run the installer again." ;;
+    7 | 28 | 35 | 52 | 56) die "could not download fleetd: this machine can't reach ${host}
+Check this machine's connection (and its proxy, if it uses one), then run the installer again." ;;
+    *) die "download failed: $2
+Check this machine's connection and run the installer again." ;;
+  esac
 }
 
 # fetch <asset> <dest> <what>: download one release asset and check it. Edge republishes its names in place, and a
@@ -308,8 +331,9 @@ fetch() {
   expected="$(pin "$1")"
   if [ -n "$expected" ]; then
     file="$(pinned "$1" "$expected")"
-    download "$base/$file" "$2" "$3" || die "download failed: $base/$file
-Check this machine's connection and run the installer again."
+    rc=0
+    download "$base/$file" "$2" "$3" || rc=$?
+    [ "${rc}" = 0 ] || fetch_failed "${rc}" "$base/$file" "$2"
     actual="$(sha256 "$2")"
     [ "$actual" = "$expected" ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing
 Run the installer again; if it keeps failing, report it at https://github.com/$REPO/issues."
@@ -322,8 +346,9 @@ Check this machine's connection and run the installer again."
   while :; do
     expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
     [ -n "$expected" ] || return 1
-    download "$base/$1" "$2" "$3" || die "download failed: $base/$1
-Check this machine's connection and run the installer again."
+    rc=0
+    download "$base/$1" "$2" "$3" || rc=$?
+    [ "${rc}" = 0 ] || fetch_failed "${rc}" "$base/$1" "$2"
     actual="$(sha256 "$2")"
     if [ "$actual" = "$expected" ]; then
       checked "$actual"
@@ -895,7 +920,11 @@ Install it with this machine's package manager (sudo apt install curl, say), the
   trap 'exit 1' INT TERM
   as_root
   # release.json first: it names the channel's build and pins its assets (fetch). A release without one has SHA256SUMS.
-  if ! spin Release "looking for the $channel release" lists; then
+  found=0
+  spin Release "looking for the $channel release" lists || found=$?
+  # No answer at all: the network, which no other release or file gets past.
+  ! offline "${found}" || fetch_failed "${found}" "$base/release.json" "$tmp/release.json"
+  if [ "${found}" != 0 ]; then
     # Until the first edge build is out, the nightly release has the newest; from then on it is a copy of edge.
     if [ "$base" = "https://github.com/$REPO/releases/download/edge" ]; then
       base="https://github.com/$REPO/releases/download/nightly"
