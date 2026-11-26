@@ -1,6 +1,6 @@
 // Settings › Workspace › Sign-in on a fleetd cloud workspace, for its owners and admins (the workspace refuses anyone
-// else): the one sign-in method its members must use, from each person's next sign-in, and that owners are never
-// refused; its email
+// else): the one sign-in method its admins and members must use, from each person's next sign-in, and that owners
+// are let in however they sign in; its email
 // domains, each added and verified on WorkOS's domain verification page, which the workspace's answer opens in the
 // browser (main: src/main/cloud/signin.ts); and whether people of its verified domains join by themselves. A
 // self-hosted workspace has no such page: its sign-in is its own.
@@ -132,11 +132,11 @@ function SigninBody({ state }: { state: SigninState }) {
     <>
       <SettingsSection>
         <SettingsRow
-          title="Members sign in with"
+          title="Sign-in method"
           hint={requireLine(state.require)}
           control={
             <Select
-              aria-label="Members sign in with"
+              aria-label="Sign-in method"
               value={requireChoice(state.require)}
               options={REQUIRE_CHOICES}
               disabled={busy}
@@ -151,17 +151,20 @@ function SigninBody({ state }: { state: SigninState }) {
         {error === null ? null : <GroupNote tone="danger">{error}</GroupNote>}
         <GroupNote>{BREAK_GLASS}</GroupNote>
       </SettingsSection>
-      <SettingsSection title="Email domains" hint="Each one is verified with a DNS record, so only the company that owns a domain can claim it.">
+      <SettingsSection
+        title="Email domains"
+        hint="Each one is verified with a DNS record, so only the company that owns a domain can claim it."
+        aside={state.domains.length === 0 ? undefined : addButton("Manage domains")}
+      >
         {state.domains.length === 0 ? (
           <SettingsRow title="Email domain" line="None yet" control={addButton("Add domain")} data={{ "data-domain": "none" }} />
         ) : (
-          state.domains.map((d, i) => (
+          state.domains.map((d) => (
             <SettingsRow
               key={d.domain}
               title={d.domain}
               line={domainWord(d)}
               lineTone={d.state === "verified" ? "success" : d.state === "failed" ? "danger" : undefined}
-              control={i === 0 ? addButton("Manage") : undefined}
               data={{ "data-domain": d.state }}
             />
           ))

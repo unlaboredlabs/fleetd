@@ -18,7 +18,7 @@ describe("a cloud workspace's sign-in", () => {
     expect(atDomains(verifiedDomains(s))).toBe("@a.com and @c.com");
     expect(s.domains.map(domainWord)).toEqual(["Verified", "Not verified", "Verified"]);
     expect([requireChoice(null), requireChoice("google"), requireOf("any"), requireOf("google")]).toEqual(["any", "google", null, "google"]);
-    expect(requireLine("google")).toBe("Members sign in with their Google account only; any other way is refused.");
+    expect(requireLine("google")).toBe("Admins and members sign in with their Google account only; any other way is refused.");
     expect(requireLine(null)).toContain("GitHub");
   });
 });

@@ -36,6 +36,7 @@ import {
   sizeWord,
   usageRows,
   periodWord,
+  percentsWord,
   warningsWhen,
   type BillingBuy,
   type BillingState,
@@ -233,7 +234,7 @@ export function Billing() {
           {...(state.canBuy && busy === null ? { onPress: capPrompt } : {})}
         />
         {state.warnings === null ? null : (
-          <ListRow title="Spend Warnings" value={state.warnings.on ? "On" : "Off"} {...(state.warnings.on ? { detail: warningsWhen(state.warnings) } : {})} />
+          <ListRow title="Spend Warnings" value={state.warnings.on ? "On" : "Off"} {...(state.warnings.on ? { detail: warningsDetail(state) } : {})} />
         )}
       </ListSection>
       <Limits state={state} />
@@ -241,6 +242,14 @@ export function Billing() {
     </>,
   );
 }
+
+/** When the warnings go: with no cap, only low credits warn, which the desktop says the same way. */
+const warningsDetail = (state: BillingState): string => {
+  const w = state.warnings;
+  if (w === null) return "";
+  if (state.credits.capCents !== null) return warningsWhen(w);
+  return w.lowCredits ? `When credits run low. Set a cap to be warned at ${percentsWord(w)} of it too.` : `Set a cap to be warned at ${percentsWord(w)} of it.`;
+};
 
 /**
  * The spend limits set, a person's or a bot's, this month's spend against each, read only: they are set on the desktop
@@ -253,12 +262,15 @@ function Limits({ state }: { state: BillingState }) {
   if (members.length + bots.length === 0) return null;
   return (
     <ListSection header="Spend Limits" footer="Reaching one stops only that person's work or that bot on fleetd's computers. Set them on the desktop or web app.">
-      {[...members.map((m) => ({ key: `person:${m.personId}`, row: m })), ...bots.map((b) => ({ key: `bot:${b.projectId}`, row: b }))].map(({ key, row }) => (
+      {[
+        ...members.map((m) => ({ key: `person:${m.personId}`, row: m, stopped: "Reached: their work is stopped" })),
+        ...bots.map((b) => ({ key: `bot:${b.projectId}`, row: b, stopped: "Reached: its work is stopped" })),
+      ].map(({ key, row, stopped }) => (
         <ListRow
           key={key}
           title={row.name}
           value={limitLine(row, state.currency).replace(/ this month$/u, "")}
-          {...(row.stopped ? { detail: "Reached: its work is stopped", detailColor: t.warning } : {})}
+          {...(row.stopped ? { detail: stopped, detailColor: t.warning } : {})}
         />
       ))}
     </ListSection>

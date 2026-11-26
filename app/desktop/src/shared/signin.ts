@@ -1,5 +1,5 @@
 // A fleetd cloud workspace's sign-in as its owners and admins read it (`GET /accounts/v1/signin` on the workspace's
-// own address): the sign-in method its members must use, its email domains (added and verified on WorkOS's domain
+// own address): the sign-in method its admins and members must use, its email domains (added and verified on WorkOS's domain
 // verification page, which the workspace's answer opens), and whether people of its verified domains join by
 // themselves. Shared by the desktop's main and page, and importable from the package (`fleetd/apps/signin`) so the
 // cloud can test its answers through the apps' own reading. Checked by hand, as billing.ts is: the package takes no
@@ -9,7 +9,7 @@ export const ACCOUNTS_SIGNIN_PATH = "/accounts/v1/signin";
 /** POST `{}`: the page that adds and verifies a domain, `{ url }`, good for minutes: asked on each click. */
 export const ACCOUNTS_SIGNIN_DOMAIN_PATH = "/accounts/v1/signin/domain";
 
-/** The one sign-in method members must use; null: any. Owners are never refused, however they sign in. */
+/** The one sign-in method admins and members must use; null: any. Owners are let in however they sign in. */
 export type SigninRequire = "google" | null;
 
 export interface SigninDomain {
@@ -74,7 +74,10 @@ export const requireOf = (choice: string): SigninRequire => (choice === "google"
 
 /** Who may sign in now, as the method's hint says it. */
 export const requireLine = (r: SigninRequire): string =>
-  r === "google" ? "Members sign in with their Google account only; any other way is refused." : "Members sign in with Google, GitHub or an emailed code.";
+  r === "google"
+    ? "Admins and members sign in with their Google account only; any other way is refused."
+    : "Everyone signs in with Google, GitHub or an emailed code.";
 
 /** The owners' way in whatever is required, and when a change applies, said under the method. */
-export const BREAK_GLASS = "Owners are never refused, however they sign in, so nobody gets locked out. A change applies from each person's next sign-in; anyone already signed in stays signed in.";
+export const BREAK_GLASS =
+  "Owners are let in however they sign in, so nobody gets locked out. A change applies from each person's next sign-in; anyone already signed in stays signed in.";

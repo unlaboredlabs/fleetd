@@ -170,19 +170,21 @@ it("shows the workspace's sign-in to an owner, and changes the method and the do
   await render(<SigninPage />);
   expect(host.querySelector("[data-screen='settings.hub.signin']")).not.toBeNull();
   expect(host.querySelector("[data-require='google']")).not.toBeNull();
-  expect(host.textContent).toContain("Owners are never refused, however they sign in, so nobody gets locked out.");
+  expect(host.textContent).toContain("Owners are let in however they sign in, so nobody gets locked out.");
   expect(host.textContent).toContain("A change applies from each person's next sign-in; anyone already signed in stays signed in.");
   expect(host.querySelector("[data-domain='verified']")?.textContent).toContain("acme.com");
   expect(host.querySelector("[data-domain='pending']")?.textContent).toContain("Waiting for its DNS record");
   expect(host.textContent).toContain("People with @acme.com join automatically");
-  await pick("Members sign in with", "Any method");
+  await pick("Sign-in method", "Any method");
   expect(asked.signin).toEqual([{ require: null }]);
   expect(host.querySelector("[data-require='any']")).not.toBeNull();
   const join = toggle("data-domain-join");
   if (join === null) throw new Error("no join switch");
   await click(join);
   expect(asked.signin).toEqual([{ require: null }, { domainJoin: false }]);
-  await click(button("Manage"));
+  // One Manage domains for the section, none on a domain's row.
+  expect(host.querySelector("[data-domain='verified'] button")).toBeNull();
+  await click(button("Manage domains"));
   expect(asked.domain).toBe(1);
 });
 
