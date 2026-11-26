@@ -67,7 +67,9 @@ Ask in the chat and the lead changes its own bot: add or remove a repo, rename i
 
 Each change posts one line in the chat with **Open** and **Undo**.
 
-Some things stay yours alone: approval mode, models, agent limits, the card it pays with, secrets, MCP servers, and deleting the bot. The lead can propose a new bot, but only you can tap **Create it**.
+Ask it to be stricter and it makes the bot's approvals or merges stricter too: "ask me before every send" or "I'll merge myself". It can never make them looser, and like a change in Settings it needs an owner or admin to ask. The change posts one line in the chat, with no **Undo**: loosen it again in Settings.
+
+Some things stay yours alone: loosening approvals or merges, models, agent limits, the card it pays with, secrets, MCP servers, and deleting the bot. The lead can propose a new bot, but only you can tap **Create it**.
 
 ## Organize the sidebar {#sidebar}
 

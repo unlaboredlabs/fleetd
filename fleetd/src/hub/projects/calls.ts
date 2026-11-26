@@ -1,8 +1,8 @@
 // A lead's setup calls for its own project (W614): `repo_add`, `repo_create` (W762), `repo_remove` and `project_setup`, and a person's
 // `project_setup_undo`. They are a lead's alone, pinned to its own project by its session (lead_calls), and do what a
 // person does in the project's settings: add and remove repos, and set the title, icon, picture and color, the
-// project's Instructions, its setup commands, plain variables and archive. What guards people has no field here and
-// is refused in one place (people_only.ts).
+// project's Instructions, its setup commands, plain variables and archive, and make its approvals and merges stricter,
+// never looser (tighten.ts). What guards people has no field here and is refused in one place (people_only.ts).
 //
 // Every change posts one system line in the project's chat, in every approval mode, and keeps what was there before
 // (`project_setup_changes`): a person's Undo on the line, from their own device, puts it back. A clone runs on after
@@ -10,10 +10,13 @@
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type {
+  ApprovalMode,
   BotColor,
   BotShape,
   ChatMessageId,
   EnvVarSet,
+  Merger,
+  MergeMode,
   ProjectIcon,
   ProjectProblem,
   ProjectRef,
@@ -47,6 +50,7 @@ import * as icon from "./icon.ts";
 import { peopleOnly } from "./people_only.ts";
 import * as propose from "./propose.ts";
 import * as create from "./repo_create_rules.ts";
+import { applyTighten, checkTighten, tightening } from "./tighten.ts";
 import { type AddHooks, addTo, removeFrom } from "./repos.ts";
 import { announce, BOT_COLOR_DEFAULT, BOT_SHAPE_DEFAULT, botColorOf, projectSettings, rename, repoNamed, setColor, setEnv, setShape } from "./settings.ts";
 
@@ -73,6 +77,10 @@ type SetupCall = {
   picture?: string;
   setup?: { commands: string[]; repo?: RepoName };
   title?: string;
+  // Only stricter than now (tighten.ts).
+  approvals?: ApprovalMode;
+  merges?: Merger;
+  mergeMode?: MergeMode;
 };
 
 const invalid = (why: string, fix?: string) => new ToolError("invalid", why, fix);
@@ -380,8 +388,9 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
 
   // Everything is checked before anything changes.
   if (Object.keys(c).every((k) => k === "op" || (c as Record<string, unknown>)[k] === undefined)) {
-    throw invalid("project_setup changes nothing as sent.", "Give any of title, icon, picture, color, instructions, setup, env or archive");
+    throw invalid("project_setup changes nothing as sent.", "Give any of title, icon, picture, color, instructions, setup, env, archive, approvals, merges or mergeMode");
   }
+  const stricter = tightening(c) ? checkTighten(hub, r, c) : undefined;
   if (c.icon !== undefined && c.picture !== undefined) throw invalid("Give icon or picture, not both: an icon replaces a picture.");
   if (c.archive === false) throw invalid("archive takes true only: a person brings an archived bot back, from the app.");
   const title = c.title?.trim();
@@ -521,6 +530,8 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
     });
   }
 
+  if (stricter !== undefined) await step(() => applyTighten(hub, projectOf(hub, r), stricter));
+
   if (c.archive === true) {
     await step(() => {
       if (projectOf(hub, r).archivedAt !== undefined) return undefined;
@@ -535,9 +546,15 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
 
   if (said.length === 0) return { changed: [], next: "Nothing changed: the bot already has all of it." };
   const archived = c.archive === true ? " The bot is archived: say so in one line and end your turn; nothing wakes you until a person brings it back." : "";
+  // A stricter setting has no Undo: undoing it would loosen it, which only a person does in the bot's settings.
+  const strict = said.some((l) => l.startsWith("Made stricter"));
+  const undo =
+    strict && said.length === 1
+      ? "It is one line in the chat; only a person loosens it again, in the bot's settings."
+      : `Each is one line in the chat, which the person can undo${strict ? ", but only a person loosens the stricter settings, in the bot's settings" : ""}.`;
   return {
     changed: said,
-    next: `${said.join(". ")}. Each is one line in the chat, which the person can undo.${archived}`,
+    next: `${said.join(". ")}. ${undo}${archived}`,
   };
 }
 

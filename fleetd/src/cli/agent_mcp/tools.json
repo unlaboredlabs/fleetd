@@ -1204,11 +1204,17 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Change your own bot when a person asks: title, icon or picture (an image in your working directory), color, shape, instructions (what its every agent is told; empty clears), setup (each new worktree's commands), env (plain variables; secrets via request_secret), archive.",
+   "description": "When a person asks: title, icon or picture (an image file), color, shape, instructions (every agent's; empty clears), setup (new worktrees' commands, run with sh -c; none turns it off), env (plain variables; secrets via request_secret), archive; approvals and merges only stricter.",
    "inputSchema": {
     "properties": {
+     "approvals": {
+      "enum": [
+       "checker",
+       "ask"
+      ],
+      "type": "string"
+     },
      "archive": {
-      "description": "Its chat leaves the list and its lead stops.",
       "type": "boolean"
      },
      "color": {
@@ -1308,6 +1314,18 @@
       "maxLength": 64000,
       "type": "string"
      },
+     "mergeMode": {
+      "enum": [
+       "test_first"
+      ],
+      "type": "string"
+     },
+     "merges": {
+      "enum": [
+       "people"
+      ],
+      "type": "string"
+     },
      "picture": {
       "maxLength": 1000,
       "minLength": 1,
@@ -1315,10 +1333,8 @@
       "type": "string"
      },
      "setup": {
-      "description": "No commands turns it off.",
       "properties": {
        "commands": {
-        "description": "Each run with `sh -c` in the worktree.",
         "items": {
          "maxLength": 2000,
          "minLength": 1,
@@ -1329,7 +1345,6 @@
         "type": "array"
        },
        "repo": {
-        "description": "Absent: the bot's.",
         "pattern": "^[a-z0-9-]{1,32}$",
         "type": "string"
        }

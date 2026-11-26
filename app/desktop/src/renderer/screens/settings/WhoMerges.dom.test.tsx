@@ -134,10 +134,13 @@ const click = async (b: HTMLElement) => {
 it("reads fleetd while the hub says nothing, saves a pick at once, and follows the hub", async () => {
   const next = await render(undefined);
   expect(pressed()).toBe("fleetd");
+  // The picked choice says what it does in one line, under the title (the longer words stay in the hover).
+  expect(document.body.textContent).toContain("fleetd: the merge train merges each PR once it's reviewed and green.");
   // Rules are for a bot whose people merge.
   expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Rules")).toBe(false);
   await click(button("You"));
   expect(pressed()).toBe("You");
+  expect(document.body.textContent).toContain("You: fleetd reviews each PR and keeps it ready; you merge it on GitHub.");
   expect(sets()).toEqual([{ machineId: "devbox", projectId: "p1", merges: "people" }]);
   await next(snapshot("people", 2));
   expect(pressed()).toBe("You");
@@ -164,4 +167,6 @@ it("says why when the hub refuses, and shows the saved pick again", async () => 
   await click(button("fleetd"));
   expect(pressed()).toBe("You");
   expect(document.body.textContent).toContain("Only a person picks who merges a bot's PRs.");
+  // The refusal takes the line's place until the next pick.
+  expect(document.body.textContent).not.toContain("You: fleetd reviews each PR");
 });

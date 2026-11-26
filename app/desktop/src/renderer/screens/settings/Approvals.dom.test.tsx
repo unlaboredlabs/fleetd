@@ -108,6 +108,16 @@ const click = async (el: HTMLElement) => {
 };
 const rows = () => [...document.querySelectorAll('[role="list"][aria-label="Ran without asking"] [role="listitem"]')];
 
+describe("Approvals", () => {
+  it("shows the picked mode's one line under the choice", async () => {
+    await render();
+    const line = document.querySelector("[data-picked-line]");
+    expect(line?.textContent).toBe("YOLO: nothing asks; each action shows in the log.");
+    // It sits right under the radios, not in the hover.
+    expect(line?.previousElementSibling?.getAttribute("role")).toBe("radiogroup");
+  });
+});
+
 describe("Ran without asking", () => {
   it("shows the newest five, repeats folded, and reads only the first page", async () => {
     await render();
