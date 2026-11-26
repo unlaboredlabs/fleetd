@@ -32,7 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
-import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendStays, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendStays, sentSays, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { onHome } from "../split";
@@ -364,6 +364,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Nothing new below while near the newest end: no button down, and what came in is read. A window far back is never
   // at the newest end.
   const atNewest = win === undefined && awayFrom === null && cameSince === 0;
+  // A reply sent from up the thread: the button down says it went, until the lead answers (its count) or the reader
+  // goes down.
+  const [sentUp, setSentUp] = useState(false);
+  if (sentUp && !sentSays(atNewest, cameSince)) setSentUp(false);
   // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
   // opened at its newest end never scrolls, and older pages come in without a scroll).
   const scrolled = useRef({ y: 0, length: 0 });
@@ -557,6 +561,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     // A reply from further up goes in under the view, held still there, and the button down shows to go to it.
     if (sendStays(out.replyTo !== undefined, heldAt !== null || awayFrom !== null || state.windows[chatKey] !== undefined)) {
       setAwayFrom((a) => a ?? heldAt ?? heldFrom);
+      setSentUp(true);
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });
       return;
     }
@@ -839,13 +844,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               <Glass interactive appear style={styles.downButton}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={cameSince > 0 ? `Scroll to the newest, ${String(cameSince)} new` : "Scroll to the newest"}
-                  style={styles.downHit}
+                  accessibilityLabel={cameSince > 0 ? `Scroll to the newest, ${String(cameSince)} new` : sentUp ? "Sent. Scroll to the newest" : "Scroll to the newest"}
+                  style={[styles.downHit, sentUp && styles.downSent]}
                   onPress={() => {
                     haptics.tap();
                     backToNewest();
                   }}
                 >
+                  {sentUp ? (
+                    <Text style={[type.subhead, styles.downSentText, { color: t.label }]} maxFontSizeMultiplier={1.3}>
+                      Sent
+                    </Text>
+                  ) : null}
                   <Icon name="down" size={18} color={t.label} weight="semibold" />
                 </Pressable>
               </Glass>
@@ -1824,8 +1834,11 @@ const styles = StyleSheet.create({
   // Clear of the scroll-down button on the right.
   turnBand: { position: "absolute", left: space.md, right: space.md + 44 + space.sm },
   down: { position: "absolute", right: space.md },
-  downButton: { width: 44, height: 44, borderRadius: 22 },
-  downHit: { flex: 1, alignItems: "center", justifyContent: "center" },
+  downButton: { minWidth: 44, height: 44, borderRadius: 22 },
+  downHit: { flex: 1, minWidth: 44, alignItems: "center", justifyContent: "center" },
+  // Sent: a pill, its word before the arrow.
+  downSent: { flexDirection: "row", gap: space.xs, paddingHorizontal: space.md },
+  downSentText: { fontWeight: "600" },
   downCount: { position: "absolute", top: -6, alignSelf: "center", minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   downCountText: { fontWeight: "600" },
   sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingLeft: space.lg, paddingRight: space.sm, paddingVertical: space.sm },

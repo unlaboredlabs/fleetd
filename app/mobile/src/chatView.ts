@@ -116,6 +116,9 @@ export const outgoing = (
  */
 export const sendStays = (reply: boolean, away: boolean): boolean => reply && away;
 
+/** Whether the button down still says such a reply was sent: until the lead answers (its count) or the reader is down. */
+export const sentSays = (atNewest: boolean, cameSince: number): boolean => !atNewest && cameSince === 0;
+
 /** A message that replies to a bubble: the quote and the words under it; undefined for any other text. */
 export const replyOf = (text: string): { readonly quote: string; readonly body: string } | undefined => {
   const m = /^> ([^\n]+)\n\n(?!>)([\s\S]*\S[\s\S]*)$/u.exec(text);
