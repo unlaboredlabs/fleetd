@@ -89,7 +89,9 @@ their own); it shows at the missing address, so its links and assets are absolut
 (home, pricing, the legal pages and support) and the docs' own sitemap. `favicon.ico` and `apple-touch-icon.png` come from `npm run icons` in
 `app/mobile`, with `icon.svg`. `card.jpg` is the link card (og:image) of home, pricing and the docs: the page's own hero
 at 1200x630 and 2x, shot in Chrome from `node .github/docs-serve.mjs` with the header's nav, the stage, the facts
-line and everything under the hero hidden, once the bot has its first colour. Shoot it again when the hero changes.
+line and everything under the hero hidden and the hero 75 px lower, once the bot has its first colour: Pebble in blue
+(the hero's plan starts there), never a later step, whose body may be another (a kitty, a bunny). Shoot it again when
+the hero changes.
 
 The legal pages, `terms.html`, `privacy.html`, `refunds.html` and `imprint.html` (`/terms`, `/privacy`, `/refunds`,
 `/imprint`), and `support.html` (`/support`, the App Store's Support URL) share `legal.css`: pricing's header and footer,
