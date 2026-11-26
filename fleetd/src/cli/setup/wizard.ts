@@ -275,7 +275,9 @@ export function pastedJoin(line: string): PastedJoin | undefined {
     const at = words.indexOf(flag);
     return at < 0 ? undefined : words[at + 1];
   };
-  const [hub, code] = [after("--join"), after("--code")];
+  // The code in the line's FLEETD_JOIN_CODE=…, or after --code in an older one.
+  const code = after("--code") ?? words.find((w) => w.startsWith("FLEETD_JOIN_CODE="))?.slice("FLEETD_JOIN_CODE=".length);
+  const hub = after("--join");
   if (hub === undefined || !URL.canParse(hub) || code === undefined) return undefined;
   const machineId = after("--machine-id");
   const idText = after("--git-identity");

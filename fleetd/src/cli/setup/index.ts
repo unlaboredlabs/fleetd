@@ -212,7 +212,13 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
 }
 
 
-function initOptions(argv: string[]): InitOptions | number {
+/** Where a join's one-time code may come instead of --code: a process's environment is its own user's to read, while
+ * its arguments are any user's on the machine (ps). The join lines put it there. */
+export const JOIN_CODE_ENV = "FLEETD_JOIN_CODE";
+
+/** `fleetd init`'s options; a join's code from --code, else from FLEETD_JOIN_CODE, which is then taken out of `env` so
+ * nothing this starts inherits it. */
+export function initOptions(argv: string[], env: Record<string, string | undefined> = process.env): InitOptions | number {
   const v = parse(argv, {
     options: {
       listen: "str",
@@ -249,9 +255,11 @@ function initOptions(argv: string[]): InitOptions | number {
   if (idText !== undefined && identity === undefined) {
     return usage(`--git-identity must look like "Name <email>", got '${idText}'`);
   }
-  const [joinHub, code] = [v.str("join"), v.str("code")];
+  const fromEnv = env[JOIN_CODE_ENV]?.trim() || undefined;
+  delete env[JOIN_CODE_ENV];
+  const [joinHub, code] = [v.str("join"), v.str("code") ?? (v.str("join") === undefined ? undefined : fromEnv)];
   if ((joinHub === undefined) !== (code === undefined)) {
-    return usage("--join and --code go together: both are in what fleetd pair --worker prints");
+    return usage(`--join and its code go together: both are in what fleetd pair --worker prints (the code in ${JOIN_CODE_ENV} or --code)`);
   }
   if (v.flag("mac") && joinHub === undefined) {
     return usage("--mac goes with --join and --code: the line Add machine › A Mac for agents shows");

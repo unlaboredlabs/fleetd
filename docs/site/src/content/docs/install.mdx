@@ -56,8 +56,9 @@ curl -fsSL https://fleetd.sh | sh -s -- --no-init
 - `--no-init`: install, but don't start the setup wizard.
 - `--no-app`: install the CLI only.
 - `--app`: install the desktop app on Linux even with no display.
-- `--join <url> --code <code>`: join a workspace as a machine instead of running the wizard. `fleetd pair --worker` prints
-  this line for you. See [Machines](/docs/machines#join).
+- `--join <url>`, with the one-time code in `FLEETD_JOIN_CODE`: join a workspace as a machine instead of running the
+  wizard. `fleetd pair --worker` prints this line for you. The code stays out of the command's arguments, which other
+  users on the machine can list; `--code <code>` still works. See [Machines](/docs/machines#join).
 - `--mac`: with `--join`, join as [the agents' Mac](/docs/agents-mac).
 - `--uninstall`: stop and remove fleetd's services on this machine, then the CLI and the app. See
   [Updating & uninstall](/docs/updating-and-uninstall#remove).

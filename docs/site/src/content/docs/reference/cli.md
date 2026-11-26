@@ -53,10 +53,11 @@ fleetd init [--yes] [--listen <host:port>] [--url <url>]
 
 ### fleetd init -\-join {#init-join}
 
-Make this machine a worker of that workspace, without SSH from the workspace's machine.
+Make this machine a worker of that workspace, without SSH from the workspace's machine. Its one-time code comes in
+`FLEETD_JOIN_CODE`, which other users on the machine can't read, or `--code`.
 
 ```text
-fleetd init --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
+fleetd init --join <workspace url> [--code <code>] [--machine-id <id>] [--git-identity "Name <email>"]
     [--rejoin] [--claude-config-dir <dir>] [--mac] [--no-service]
 ```
 

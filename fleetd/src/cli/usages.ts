@@ -22,10 +22,11 @@ export const SETUP_USAGE = `  init [--yes] [--listen <host:port>] [--url <url>]
              the workspace (default http://<listen>); --git-identity is the commit author for every
              machine (the GitHub noreply address for public repos); --no-service prepares
              everything but leaves starting the workspace to you
-  init --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
+  init --join <workspace url> [--code <code>] [--machine-id <id>] [--git-identity "Name <email>"]
        [--rejoin] [--claude-config-dir <dir>] [--mac] [--no-service]
              make this machine a worker of that workspace, without SSH from the workspace's
-             machine: the command fleetd pair --worker prints there. Run again, it keeps the node's
+             machine: the command fleetd pair --worker prints there. Its one-time code comes in
+             FLEETD_JOIN_CODE, which other users on the machine can't read, or --code. Run again, it keeps the node's
              enrolment and repairs the rest; --rejoin enrols again with a new code; --mac joins the
              agents' Mac, from Terminal logged in at its screen (no claude there);
              --no-service enrols the node but leaves running it to you, and prints how

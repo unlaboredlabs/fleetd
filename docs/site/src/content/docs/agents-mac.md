@@ -44,7 +44,7 @@ Store, and an iOS runtime with `xcodebuild -downloadPlatform iOS`.
 #### The join line {#join}
 
 ```sh
-curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code <code> --machine-id mac --mac --version <workspace version>
+curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=<code> sh -s -- --join http://devbox.example.ts.net:4790 --machine-id mac --mac --version <workspace version>
 ```
 
 Run it logged in at the Mac's screen, or over Screen Sharing. The code works once, for 15 minutes.

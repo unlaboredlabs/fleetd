@@ -303,7 +303,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             [
               command(
                 "In Terminal, logged in at the Mac's screen",
-                `curl -fsSL https://fleetd.sh | sh -s -- --join ${base} --code <code> --machine-id mac${macFlags(version)}`,
+                `curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=<code> sh -s -- --join ${base} --machine-id mac${macFlags(version)}`,
                 `Or on the workspace's machine: fleetd pair --worker mac, then add${macFlags(version)} to the line it prints.`,
               ),
             ],

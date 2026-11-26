@@ -30,8 +30,10 @@ export interface JoinPorts {
   call<T extends "machine_join" | "hub_info">(tool: T, input: ToolInput<T>): Promise<CallOutcome>;
   /** The body of a URL, or an error that says why not. */
   download(url: string): Promise<Uint8Array>;
-  /** Runs the CLI with no terminal; its exit code and everything it printed. */
-  run(file: string, args: ReadonlyArray<string>): Promise<{ code: number; output: string }>;
+  /** Runs the CLI with no terminal, `env` added to this app's; its exit code and everything it printed. */
+  run(file: string, args: ReadonlyArray<string>, env?: Readonly<Record<string, string>>): Promise<{ code: number; output: string }>;
+  /** Whether the CLI at `file` takes a join's code in FLEETD_JOIN_CODE (its help says so); absent, it doesn't. */
+  readsJoinCode?(file: string): Promise<boolean>;
   /** The fleetd dir: FLEETD_HOME, else ~/.fleetd, as the CLI has it. */
   fleetdDir: string;
   /** This computer's fingerprint (machineFingerprint). */
@@ -57,6 +59,30 @@ function str(o: unknown, key: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/** Where the CLI takes a join's one-time code (fleetd/src/cli/setup/index.ts JOIN_CODE_ENV). */
+export const JOIN_CODE_ENV = "FLEETD_JOIN_CODE";
+
+/**
+ * How `fleetd init --join` gets its code: in its environment, which only this computer's own user reads, never in its
+ * arguments, which any user on it can list (ps); --code only for an older workspace's build, which reads nothing else.
+ */
+export async function joinCode(ports: Pick<JoinPorts, "readsJoinCode">, bin: string, code: string): Promise<{ args: string[]; env: Record<string, string> }> {
+  return (await ports.readsJoinCode?.(bin)) === true ? { args: [], env: { [JOIN_CODE_ENV]: code } } : { args: ["--code", code], env: {} };
+}
+
+const runCli: JoinPorts["run"] = (file, args, env) =>
+  new Promise((done) => {
+    const child = spawn(file, [...args], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
+    let output = "";
+    const keep = (chunk: Buffer) => {
+      output = (output + chunk.toString("utf8")).slice(-20_000);
+    };
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    child.once("error", (error) => done({ code: 127, output: String(error) }));
+    child.once("close", (code) => done({ code: code ?? 1, output }));
+  });
+
 export const realPorts = (call: JoinPorts["call"]): JoinPorts => ({
   call,
   download: async (url) => {
@@ -64,18 +90,8 @@ export const realPorts = (call: JoinPorts["call"]): JoinPorts => ({
     if (!response.ok) throw new Error(`${url} answered ${response.status}`);
     return new Uint8Array(await response.arrayBuffer());
   },
-  run: (file, args) =>
-    new Promise((done) => {
-      const child = spawn(file, [...args], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
-      let output = "";
-      const keep = (chunk: Buffer) => {
-        output = (output + chunk.toString("utf8")).slice(-20_000);
-      };
-      child.stdout.on("data", keep);
-      child.stderr.on("data", keep);
-      child.once("error", (error) => done({ code: 127, output: String(error) }));
-      child.once("close", (code) => done({ code: code ?? 1, output }));
-    }),
+  run: runCli,
+  readsJoinCode: async (file) => (await runCli(file, ["help"])).output.includes(JOIN_CODE_ENV),
   fleetdDir: fleetdDir(),
   fingerprint: () => machineFingerprint(),
   baseOverride: process.env["FLEETD_BASE_URL"],
@@ -313,8 +329,9 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
   const bin = installed.bin;
 
   next();
-  const args = ["init", "--join", hub, "--code", code, "--machine-id", machineId, ...(identity ? ["--git-identity", identity] : [])];
-  const ran = await ports.run(bin, args);
+  const given = await joinCode(ports, bin, code);
+  const args = ["init", "--join", hub, ...given.args, "--machine-id", machineId, ...(identity ? ["--git-identity", identity] : [])];
+  const ran = await ports.run(bin, args, given.env);
   if (ran.code !== 0) {
     return fail(`fleetd init --join stopped (exit ${ran.code}). Its output says why; once that's fixed, try again for a new code.`, lastLines(ran.output));
   }

@@ -349,7 +349,7 @@ export const preparedPlatform = (p: Prepared) => `${p.facts.platform}-${p.facts.
 /** The join to run again after one that stopped before it enrolled. */
 function joinAgain(a: AddArgs, hub: string, code: string, machineId: string): string {
   if (a.mac) return "the join line you pasted again (it has --mac and the workspace's version)";
-  let line = `fleetd init --join ${q(hub)} --code ${q(code)} --machine-id ${q(machineId)}`;
+  let line = `FLEETD_JOIN_CODE=${q(code)} fleetd init --join ${q(hub)} --machine-id ${q(machineId)}`;
   if (a.gitIdentity) line += ` --git-identity ${q(`${a.gitIdentity.name} <${a.gitIdentity.email}>`)}`;
   if (a.claudeConfigDir !== undefined) line += ` --claude-config-dir ${q(a.claudeConfigDir)}`;
   if (a.noService) line += " --no-service";

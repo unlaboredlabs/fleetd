@@ -15,6 +15,10 @@ const INSTALLER = join(import.meta.dir, "../../../site/install.sh");
 
 /** What the stub fleetd writes: one argument a line. */
 const STUB = '#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a"; done >"$HOME/fleetd-args"\n';
+/** A build that takes a join's code in FLEETD_JOIN_CODE, as its help says: it writes its arguments, then the code it got. */
+const STUB_ENV =
+  '#!/bin/sh\nif [ "$1" = help ]; then echo "its one-time code comes in FLEETD_JOIN_CODE"; exit 0; fi\n' +
+  'for a in "$@"; do printf \'%s\\n\' "$a"; done >"$HOME/fleetd-args"\nprintf \'env:%s\\n\' "${FLEETD_JOIN_CODE:-}" >>"$HOME/fleetd-args"\n';
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -24,7 +28,7 @@ afterEach(() => {
 });
 
 /** A release on disk: the Bun build for each OS and arch, and their SHA256SUMS. */
-function release() {
+function release(stub = STUB) {
   const home = tempHome();
   cleanups.push(home.done);
   const dir = home.dir;
@@ -35,8 +39,8 @@ function release() {
   for (const os of ["linux", "darwin"]) {
     for (const arch of ["x64", "arm64"]) {
       const name = `fleetd-bun-${os}-${arch}`;
-      writeFileSync(join(assets, name), STUB);
-      sums += `${sha256(STUB)}  ${name}\n`;
+      writeFileSync(join(assets, name), stub);
+      sums += `${sha256(stub)}  ${name}\n`;
     }
   }
   writeFileSync(join(assets, "SHA256SUMS"), sums);
@@ -64,13 +68,35 @@ function release() {
   return { dir, assets, home: join(dir, "home"), sh, fleetdArgs };
 }
 
-test("the printed join command installs and joins with the given arguments", async () => {
-  let r = release();
-  // What `fleetd pair --worker` prints, with the installer read from disk instead of fleetd.sh.
+test("the printed join command installs and joins with the given arguments, its code in no command's arguments", async () => {
+  let r = release(STUB_ENV);
+  // What `fleetd pair --worker` prints, with the installer read from disk instead of fleetd.sh. Its code is in the
+  // installer's environment, which only this user reads: never in the arguments any user can list (ps).
   const line = joinLine("http://devbox.example.ts.net:4790", "abc123", "laptop", "O'Neil Ada <1+ada@users.noreply.github.com>");
+  expect(line.slice(line.indexOf("sh -s --"))).not.toContain("abc123");
   const local = line.replace("curl -fsSL https://fleetd.sh |", 'cat "$INSTALLER" |');
-  expect(local).not.toBe(line);
   let out = await r.sh(local);
+  expect(out.code, out.stderr).toBe(0);
+  expect(r.fleetdArgs(), "the installer ran fleetd, the code in its environment").toEqual([
+    "init",
+    "--join",
+    "http://devbox.example.ts.net:4790",
+    "--machine-id",
+    "laptop",
+    "--git-identity",
+    "O'Neil Ada <1+ada@users.noreply.github.com>",
+    "env:abc123",
+  ]);
+  // An older line's --code goes on the same way.
+  r = release(STUB_ENV);
+  out = await r.sh('sh "$INSTALLER" --join http://hub:4790 --code c');
+  expect(out.code, out.stderr).toBe(0);
+  expect(r.fleetdArgs()).toEqual(["init", "--join", "http://hub:4790", "env:c"]);
+
+  // A build from before it read FLEETD_JOIN_CODE (an older workspace's --version) still gets --code.
+  r = release();
+  expect(local).not.toBe(line);
+  out = await r.sh(local);
   expect(out.code, out.stderr).toBe(0);
   expect(r.fleetdArgs(), "the installer ran fleetd").toEqual([
     "init",
@@ -208,13 +234,13 @@ mv "$dest.whole" "$dest"
 
 test("join options that cannot work stop before anything is downloaded", async () => {
   for (const [args, says] of [
-    ["--join http://hub:4790", "--join and --code go together"],
-    ["--code c", "--join and --code go together"],
+    ["--join http://hub:4790", "--join and its code go together"],
+    ["--code c", "--join and its code go together"],
     ["--join", "--join needs a value"],
     ["--join http://hub:4790 --code", "--code needs a value"],
-    ["--machine-id laptop", "only go with --join and --code"],
-    ["--mac", "only go with --join and --code"],
-    ["--version 0.9.2", "only go with --join and --code"],
+    ["--machine-id laptop", "only go with --join and its code"],
+    ["--mac", "only go with --join and its code"],
+    ["--version 0.9.2", "only go with --join and its code"],
     ["--no-init --join http://hub:4790 --code c", "contradict"],
     ["--joint x", "unknown option: --joint"],
   ] as const) {
