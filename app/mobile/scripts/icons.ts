@@ -12,7 +12,7 @@
 // It writes:
 // - app/mobile/assets/: icon.png, icon-dark.png and icon-tinted.png (1024, opaque, as the App Store asks), the
 //   adaptive icon's three layers, notification-icon.png (the silhouette in white) and splash-icon.png (the tile).
-// - app/desktop/build/: icon.png (the tile at 1024), icon.icns (macOS, every size, the small master at 16 and 32 px)
+// - app/desktop/build/: icon.png (the tile at 1024), icon.icns (macOS, every size from 32 px, the small master at 32)
 //   and icons/<n>x<n>.png (Linux, the same).
 // - app/desktop/src/main/trayIcon.ts: the menu bar's template image, at 1x and 2x.
 // - The favicons: tab.svg as site/icon.svg (fleetd.sh), docs/site/public/favicon.svg and the web app's
@@ -120,13 +120,13 @@ write("app/mobile/assets/splash-icon.png", png(mac, 1024));
 
 // The desktop app.
 write("app/desktop/build/icon.png", tile(1024));
-// The types macOS reads PNGs from: 16, 32, 64, 128, 256, 512 and 1024 px, as 1x and 2x of the point sizes.
+// The types macOS reads PNGs from: 32, 64, 128, 256, 512 and 1024 px, as 1x and 2x of the point sizes. Not icp4 and
+// icp5 (16 and 32 px at 1x): macOS decodes a PNG there as coloured noise, which showed as fleetd's 16 pt icon in Finder
+// and a disk image's title bar; 16 and 32 pt come from ic11 and ic12 (the small master at 32 px, and 64) instead.
 write(
   "app/desktop/build/icon.icns",
   icns([
-    ["icp4", tile(16)],
     ["ic11", tile(32)],
-    ["icp5", tile(32)],
     ["ic12", tile(64)],
     ["ic07", tile(128)],
     ["ic13", tile(256)],
