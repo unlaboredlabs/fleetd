@@ -232,8 +232,9 @@ export class AckFlow {
     return this.target >= START_KBPS ? undefined : this.target;
   }
 
-  /** The link as the panel shows it (contracts' LinkPerf), from what the acks measured. */
-  stats(now: number): Omit<LinkPerf, "skipped"> {
+  /** The link as the panel shows it (contracts' LinkPerf), from what the acks measured: nothing before the first. */
+  stats(now: number): Omit<LinkPerf, "skipped"> | undefined {
+    if (this.acked === 0) return undefined;
     const kbps = this.kbps();
     return {
       rttMs: Math.round(this.networkBase()),
@@ -382,9 +383,12 @@ export class FrameSender<T> {
     this.pump();
   }
 
-  /** The link's measures, and the frames skipped since the last read (contracts' LinkPerf). */
-  stats(): LinkPerf {
-    const out = { ...this.flow.stats(this.now()), skipped: this.skipped };
+  /** The link's measures, and the frames skipped since the last read (contracts' LinkPerf); nothing before the first
+   * ack, the skips kept for the first read that has one. */
+  stats(): LinkPerf | undefined {
+    const flow = this.flow.stats(this.now());
+    if (flow === undefined) return undefined;
+    const out = { ...flow, skipped: this.skipped };
     this.skipped = 0;
     return out;
   }

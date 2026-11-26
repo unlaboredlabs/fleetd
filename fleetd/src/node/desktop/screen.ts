@@ -4,7 +4,7 @@
 // The JPEG is Bun's own (`Bun.Image`, libjpeg-turbo), from the screen's BGRA wrapped as a top-down 32-bit BMP: no
 // native helper. Bun's encoder takes no chroma table, so colour goes 4:2:0 at QUALITY, where the Rust node keeps it
 // 4:4:4 at a coarser quality (red or blue text on a dark terminal comes out a little softer here).
-import type { BrowserControl } from "../../shared/contracts.ts";
+import type { BrowserControl, ScreenPerf } from "../../shared/contracts.ts";
 import type { BrowserRtcFrame, BrowserRtcReport } from "../../shared/screens_wire.ts";
 import type { StreamFrame, StreamRun } from "../screen/live.ts";
 
@@ -108,7 +108,8 @@ export type Launched = { pid: number; exited?: { code: number | null; output: st
 /** What a display that reads itself where it runs sends a session (a box's, ./box_frames.ts): a frame for the
  * watchers, as the hub takes it but for whose session it is, its seq and who drives; or one for the video, JPEG or
  * H.264 (an access unit, Annex B). */
-export type LiveFrame = { seq?: number; width: number; height: number; jpegB64?: string; h264B64?: string; key?: boolean };
+/** `perf`: the second's measures, stamped where the frame was made (../screen/perf.ts). */
+export type LiveFrame = { seq?: number; width: number; height: number; jpegB64?: string; h264B64?: string; key?: boolean; perf?: ScreenPerf };
 export type VideoFrame = { kind: "jpeg"; data: Uint8Array } | { kind: "h264"; key: boolean; size: [number, number]; data: Uint8Array };
 
 /** What the watchers asked for, as a session tells its picture (undefined: nobody watches). */

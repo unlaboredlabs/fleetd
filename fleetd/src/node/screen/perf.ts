@@ -18,10 +18,12 @@ export type MachineNow = { cores: number; cpuPct?: number; memPct?: number };
 export const STAMP_EVERY_MS = 1_000;
 
 type Notes = { encoder?: ScreenEncoder; capFps?: number; capBy?: ScreenPerf["capBy"]; encodes: number[] };
-type Seen = { at: number; frames: number; bytes: number; total: number };
+type Seen = { at: number; frames: number; bytes: number; total: number; lastSeq: number };
 
 const notes = new Map<string, Notes>();
 const seen = new Map<string, Seen>();
+/** Sessions whose frames come with their measures from where they're made (a box's display): left as they come. */
+const relays = new Set<string>();
 
 const noteOf = (sessionId: string): Notes => {
   let n = notes.get(sessionId);
@@ -51,6 +53,14 @@ export function encoded(sessionId: string, ms: number): void {
 export function forget(sessionId: string): void {
   notes.delete(sessionId);
   seen.delete(sessionId);
+  relays.delete(sessionId);
+}
+
+/** `sessionId`'s frames are made elsewhere, which stamps them (`on`), or here again. */
+export function relay(sessionId: string, on: boolean): void {
+  if (on) relays.add(sessionId);
+  else relays.delete(sessionId);
+  seen.delete(sessionId);
 }
 
 const median = (xs: number[]): number | undefined => {
@@ -63,13 +73,17 @@ const median = (xs: number[]): number | undefined => {
  * machine's from `machine`. Without it they're left out: where this process isn't on the screen's machine (fleetd
  * cloud's own link to its computers), they would be another machine's. */
 export function stamp(frame: BrowserFrame, now = performance.now(), machine?: (now: number) => MachineNow): void {
+  if (relays.has(frame.sessionId)) return;
   const bytes = Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3;
   const s = seen.get(frame.sessionId);
   if (s === undefined) {
     // The second's rates count the frames after this one.
-    seen.set(frame.sessionId, { at: now, frames: 0, bytes: 0, total: 1 });
+    seen.set(frame.sessionId, { at: now, frames: 0, bytes: 0, total: 1, lastSeq: frame.seq });
     return;
   }
+  // The newest frame again, for a watcher that just came: sent once, counted once.
+  if (frame.seq <= s.lastSeq) return;
+  s.lastSeq = frame.seq;
   s.frames++;
   s.total++;
   s.bytes += bytes;
@@ -93,5 +107,5 @@ export function stamp(frame: BrowserFrame, now = performance.now(), machine?: (n
   };
   n.encodes.length = 0;
   n.capBy = undefined;
-  seen.set(frame.sessionId, { at: now, frames: 0, bytes: 0, total: s.total });
+  seen.set(frame.sessionId, { at: now, frames: 0, bytes: 0, total: s.total, lastSeq: frame.seq });
 }

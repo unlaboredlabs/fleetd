@@ -9,7 +9,7 @@
 // input is refused as any other's. A watch that acks its frames gets them through a
 // FrameSender (./flow.ts): as many on their way as the acks' round trip needs, none taken while a queue stands, and its
 // budget from the same acks. One that doesn't ack gets each frame as it comes.
-import type { BrowserFrame, BrowserInput, ScreenPerf } from "../../shared/contracts.ts";
+import type { BrowserFrame, BrowserInput, LinkPerf, ScreenPerf } from "../../shared/contracts.ts";
 import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
 import type { BrowserRtcReport } from "../../shared/screens_wire.ts";
 import { allows } from "../auth/index.ts";
@@ -144,6 +144,9 @@ function offPeer(c: Connection): void {
   c.watch.key();
 }
 
+/** A screen's measures with its viewer's link's, once the link has measured anything (its first ack). */
+const withLink = (perf: ScreenPerf, link: LinkPerf | undefined): ScreenPerf => (link === undefined ? perf : { ...perf, link });
+
 /** Each frame's text, made once for every connection watching it: the frame is the node's, the same for all. */
 const texts = new WeakMap<BrowserFrame, string>();
 function textOf(frame: BrowserFrame): string {
@@ -243,7 +246,7 @@ export function browserWatch(
             // A frame whose own measures an earlier one carried goes without them: one measure a frame number.
             const text =
               perf !== undefined
-                ? JSON.stringify({ ...f.data, perf: { ...perf, link: sender.stats() }, t: "browser_frame" })
+                ? JSON.stringify({ ...f.data, perf: withLink(perf, sender.stats()), t: "browser_frame" })
                 : f.data.perf === undefined
                   ? textOf(f.data)
                   : JSON.stringify({ ...f.data, perf: undefined, t: "browser_frame" });

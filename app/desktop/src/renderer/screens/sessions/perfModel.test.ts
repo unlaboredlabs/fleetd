@@ -94,6 +94,14 @@ describe("verdictOf", () => {
       line: "Only 4 a second get through, at 6.0 Mbit/s",
     });
   });
+  it("isn't slowed here for a single frame lost at a few frames a second", () => {
+    expect(verdictOf(now({ viewer: { measured: true, made: 8, arrived: 8, drawn: 7, kbps: 300 } })).word).toBe(
+      "Smooth",
+    );
+    expect(verdictOf(now({ viewer: { measured: true, made: 8, arrived: 8, drawn: 6, kbps: 300 } })).word).toBe(
+      "Slowed here",
+    );
+  });
   it("doesn't blame a phone for frames its sender paced away", () => {
     expect(
       verdictOf(
@@ -235,7 +243,8 @@ describe("a screen whose machine sends no measures", () => {
     const n = now({ viewer, perf: undefined, history: c.history });
     expect(verdictOf(n)).toEqual({
       word: "Not measured",
-      line: "Its machine doesn’t send measures: 30 a second shown here",
+      line: "30 a second shown here",
+      detail: "This machine doesn’t send measures yet",
       tone: "quiet",
     });
     const rows = groupsOf(n, {

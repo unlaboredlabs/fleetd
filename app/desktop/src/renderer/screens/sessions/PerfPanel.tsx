@@ -113,6 +113,11 @@ export function PerfPanel({
           <Text size="xs" tone="quiet">
             {verdict.line}
           </Text>
+          {verdict.detail === undefined ? null : (
+            <Text size="xs" tone="faint">
+              {verdict.detail}
+            </Text>
+          )}
         </div>
         <Graph history={now?.history ?? []} />
         {groups.map((g) => (

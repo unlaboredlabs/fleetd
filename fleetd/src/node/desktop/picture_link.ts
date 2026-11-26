@@ -3,6 +3,7 @@
 // This is the holder's side, with nothing of the machine's (docs/CONTRIBUTING.md "The package").
 import type { Duplex } from "node:stream";
 import type { BrowserRtcReport } from "../../shared/screens_wire.ts";
+import type { ScreenPerf } from "../../shared/contracts.ts";
 import type { PictureRun, PictureSink, Shot } from "./screen.ts";
 
 /** How long a holder waits for box-frames to answer once connected (the display's first connection). */
@@ -58,8 +59,10 @@ export async function openPicture(s: Duplex, cookie: Uint8Array, session: string
       const width = Number(live.width) || 0;
       const height = Number(live.height) || 0;
       const seq = typeof live.seq === "number" ? { seq: live.seq } : {};
-      if (typeof live.h264B64 === "string") return on.live({ ...seq, width, height, h264B64: live.h264B64, key: live.key === true });
-      if (typeof live.jpegB64 === "string") return on.live({ ...seq, width, height, jpegB64: live.jpegB64 });
+      // The box's measures, as its own peers stamped them (../screen/perf.ts): passed on as they are.
+      const perf = typeof live.perf === "object" && live.perf !== null ? { perf: live.perf as ScreenPerf } : {};
+      if (typeof live.h264B64 === "string") return on.live({ ...seq, width, height, h264B64: live.h264B64, key: live.key === true, ...perf });
+      if (typeof live.jpegB64 === "string") return on.live({ ...seq, width, height, jpegB64: live.jpegB64, ...perf });
       return;
     }
     const rtc = line.rtc as BrowserRtcReport | undefined;
