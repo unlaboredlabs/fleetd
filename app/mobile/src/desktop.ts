@@ -82,6 +82,7 @@ export type {
   LiveFrame,
   McpServer,
   McpTestResult,
+  SignIns,
   BrowserFrame,
   BrowserInput,
   BrowserSession,

@@ -412,3 +412,10 @@
   gap: var(--space-2);
   padding: 12px 24px 20px;
 }
+/* A row's own action under its line ("Give the workspace an https address"): its words start where the line's do. */
+.inlineAction {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-sm);
+}

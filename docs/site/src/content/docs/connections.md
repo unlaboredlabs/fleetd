@@ -39,8 +39,8 @@ You can connect Paper or Notion with more than one account, for example a person
 Each account gets its own row and is counted on its own in **Connected**. Each one signs in, takes its own **Bots**
 and is disconnected separately. Disconnecting one leaves the others connected.
 
-Paper and Notion only accept an https sign-in address. If your workspace has no https address, sign in from the workspace's
-machine itself. See [Troubleshooting](/docs/troubleshooting#workspace).
+Paper, Notion and many other services only send you back to an https address. See
+[Self-hosted workspaces without https](#return-page).
 
 ## Connect Tailscale {#tailscale}
 
@@ -67,6 +67,26 @@ service's developer settings, allow the **Redirect URL** the dialog shows, and e
 
 fleetd renews sign-ins by itself. Agents never hold the token. If the service ends the sign-in, the row shows **Sign
 in needed** and each bot's chat says so once. Press **Sign in** on the row to sign in again.
+
+### Self-hosted workspaces without https {#return-page}
+
+A self-hosted workspace on a plain http address (a tailnet or home network address) signs in through fleetd's return
+page, `https://accounts.fleetd.dev/oauth/return`. The service sends your browser there, and the page sends it straight
+on to your workspace's own address. Your browser makes that last step, so fleetd never reaches your workspace. The page
+gets the one-time sign-in code and nothing else. It keeps nothing and logs nothing. The code is useless without a key
+that only your workspace holds.
+
+It's on by default. An admin can turn it off at the foot of **Connections**, with **Sign-in return page**. While the
+page can't be reached, sign-ins come back to the workspace's own address, as they did before. You can also give the
+workspace an https address, which signs in directly. With Tailscale running on the workspace's computer, press **Give
+the workspace an https address** there. It runs Tailscale Serve for the workspace on https port 443, or 8443 when
+another site already uses 443. Or run it yourself, with the port your workspace listens on:
+
+```sh
+tailscale serve --bg --https=8443 4790
+```
+
+A workspace with an https address never uses the return page.
 
 ## What agents may do without asking {#policy}
 

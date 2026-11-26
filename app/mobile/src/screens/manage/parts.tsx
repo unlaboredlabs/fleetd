@@ -9,6 +9,8 @@ import { botLocked, type HubError } from "../../desktop";
 import { useHub, useSession } from "../../hubContext";
 import { shape, space, type, useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
+import type { Hub } from "./api";
+import { addHttps, httpsLine } from "./namedApi";
 
 /** An SF Symbol, with its Material match for Android, for what the app's Icon set doesn't name. */
 export function Symbol({ ios, android, size = 20, color, weight = "regular" }: { ios: SFSymbol; android: AndroidSymbol; size?: number; color: string; weight?: "regular" | "medium" | "semibold" }) {
@@ -172,3 +174,25 @@ const styles = StyleSheet.create({
   mark: { width: 22, alignItems: "flex-end" },
   problem: { marginHorizontal: space.lg * 2, paddingTop: 7 },
 });
+
+/**
+ * After a sign-in refused for want of https: an admin is offered the address in one tap, then the sign-in again;
+ * anyone else is told an admin can. `said` gets the fix by hand when the workspace can't give itself one.
+ */
+export function offerHttps(hub: Hub, label: string, admin: boolean, again: () => void, said: (text: string) => void): void {
+  if (!admin) {
+    Alert.alert(httpsLine(label), "An admin can give the workspace an https address in Connections.");
+    return;
+  }
+  Alert.alert(httpsLine(label), "fleetd can give the workspace one with Tailscale, then sign in again.", [
+    { text: "Not Now", style: "cancel" },
+    {
+      text: "Give It One",
+      onPress: () =>
+        void addHttps(hub).then((out) => {
+          if (out.ok) again();
+          else said(errorWords(out.error));
+        }),
+    },
+  ]);
+}

@@ -7,13 +7,13 @@
 // else to set. Agents also get their machine's own Claude MCP servers, with no switch for it (W817). What replaced
 // Settings' Integrations, MCP servers and Machines' Network.
 import { Dialog as D } from "radix-ui";
-import { ArrowLeft, Ellipsis, Plus, X } from "lucide-react";
+import { ArrowLeft, Ellipsis, LockKeyhole, Plus, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { McpServer, McpServerSetOutput, ProjectRef, TailnetState } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQueries, useToolQuery } from "../../src/data/react";
-import { Button, cx, Dialog, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuTrigger, Switch, Tooltip } from "../../ui";
+import { Button, cx, Dialog, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuTrigger, Switch, Toggle, Tooltip } from "../../ui";
 import { useSettledAdministers } from "../admin/role";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { accountLabel, accountsOf, accountState, NAMED, nameFor, namedInput, turnOnInput, type Named } from "../settings/namedServers";
@@ -21,6 +21,7 @@ import { useProjects } from "../settings/parts";
 import { useTailnet, type Tailnet } from "../settings/Tailscale";
 import { canConnect, lineOf, MACHINES_URL, waiting, wordOf } from "../settings/tailscaleModel";
 import { CustomForm } from "./CustomForm";
+import { hostOfHttps, useSignIns } from "./SignInAddress";
 import { Mark, Monogram, TailscaleMark } from "./marks";
 import {
   botsText,
@@ -116,6 +117,7 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
   const bots = useBots();
   const own = useOwn(bots);
   const tailnet = useTailnet();
+  const signIns = useSignIns();
   const [view, setView] = useState<View>({ kind: "list" });
   const [dialog, setDialog] = useState<Dialogs | null>(null);
   const tests = useTests();
@@ -204,6 +206,16 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
                   ))
                 )}
               </ul>
+              {admin && signIns.state !== undefined ? (
+                <>
+                  <div className={c.label}>
+                    <h3 className={c.labelText}>Signing in</h3>
+                  </div>
+                  <ul className={c.group} aria-label="Signing in">
+                    <SignInRow signIns={signIns} />
+                  </ul>
+                </>
+              ) : null}
             </div>
           )}
           {dialog?.kind === "signin" ? (
@@ -514,6 +526,34 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
         </>
       }
     />
+  );
+}
+
+/**
+ * Where services send a sign-in back, an admin's: the workspace's https address once it has one; else fleetd's return
+ * page with its switch, and the one-click https address beside it (SignInAddress.tsx).
+ */
+function SignInRow({ signIns }: { signIns: ReturnType<typeof useSignIns> }) {
+  const { state, busy, problem } = signIns;
+  if (state === undefined) return null;
+  if (state.https !== undefined) {
+    return (
+      <Row tile={<LockKeyhole aria-hidden className={c.mark} />} name="Sign-in address" line={{ text: `Services send you back to \`${hostOfHttps(state.https)}\`.`, tone: "quiet" }} data={{ "data-sign-ins": "https" }} />
+    );
+  }
+  const line = problem !== null ? { text: problem, tone: "danger" as const } : state.returnPage ? { text: "Sign-ins that need https come back through fleetd.dev.", tone: "quiet" as const } : { text: "Off: services that need https can't sign in.", tone: "warning" as const };
+  return (
+    <Row
+      tile={<LockKeyhole aria-hidden className={c.mark} />}
+      name="Sign-in return page"
+      line={line}
+      data={{ "data-sign-ins": state.returnPage ? "return-page" : "off" }}
+      controls={<Toggle aria-label="Sign-in return page" checked={state.returnPage} disabled={busy !== null} onCheckedChange={signIns.setReturnPage} />}
+    >
+      <Button variant="link" className={c.inlineAction} disabled={busy !== null} onClick={() => void signIns.addHttps()}>
+        {busy === "https" ? "Giving it one…" : "Give the workspace an https address"}
+      </Button>
+    </Row>
   );
 }
 

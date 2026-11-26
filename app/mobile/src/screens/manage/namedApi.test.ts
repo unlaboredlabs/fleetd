@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NAMED, namedState, type McpServer } from "../../desktop";
 import type { Hub } from "./api";
-import { connect, disconnect, readServers, rowOf, signInPage, test, TEST_MS, testLine, turnOn } from "./namedApi";
+import { connect, disconnect, httpsLine, needsHttps, readServers, rowOf, signInPage, test, TEST_MS, testLine, turnOn } from "./namedApi";
 
 /** The team's: connected once for every bot (D592). */
 const scope = { kind: "global" as const };
@@ -93,4 +93,10 @@ describe("the team's named services on the phone", () => {
     expect(testLine({ machineId: "devbox", result: { signIn: true, error: "401" } }, "devbox")).toEqual({ text: "Sign in needed.", signIn: true });
     expect(testLine({ machineId: "devbox", result: { error: "timed out" } }, "devbox").text).toBe("Failed on devbox: timed out");
   });
+});
+
+it("a sign-in refused for want of https says one line, and only that refusal offers the https address", () => {
+  expect(needsHttps({ code: "failed", message: "x", reason: "needs_https" })).toBe(true);
+  expect(needsHttps({ code: "failed", message: "Couldn't sign in to notion: mcp.notion.com can't be reached" })).toBe(false);
+  expect(httpsLine("Notion")).toBe("Notion only signs in to a workspace with an https address.");
 });
