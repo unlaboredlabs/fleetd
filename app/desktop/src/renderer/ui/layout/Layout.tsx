@@ -10,7 +10,7 @@ import {
   type TransitionEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, PanelLeft } from "lucide-react";
 import { cx } from "../lib/cx";
 import { Tooltip } from "../primitives/Tooltip";
 import { Text } from "../text/Text";
@@ -32,7 +32,11 @@ const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undef
  * The sidebar and the aside slide in from the window's edge as their toggle opens them and out to it as it closes
  * them (useSlide): the frame lays out once, at the toggle, and only their transform moves after it, so the chat
  * beside never lays out again mid-way. Anything else that brings or takes one (another screen) swaps it at once.
- * `sidebarEdge` sits on the sidebar's right edge, over the top row too, while the sidebar shows.
+ * `sidebarEdge` sits on the sidebar's right edge, over the top row too, while the sidebar shows. `sidebarToggle` is the
+ * sidebar's button, right of the traffic lights as in Finder and Notes: on macOS it stays put, in the sidebar's empty
+ * first strip while it shows and before the top row's pill while it doesn't; elsewhere the sidebar's first row is its
+ * own, so the button shows only while the sidebar is closed. Transparent until pointed at, over the see-through
+ * sidebar as it slides.
  */
 export function AppFrame(props: {
   topBar: ReactNode;
@@ -42,6 +46,8 @@ export function AppFrame(props: {
   sidebarOpen?: boolean;
   /** On the sidebar's right edge while it shows: what resizes it. */
   sidebarEdge?: ReactNode;
+  /** The sidebar's show and hide button: what it runs, and the shortcut that does the same, for its tooltip. */
+  sidebarToggle?: { readonly onPress: () => void; readonly shortcut: string } | undefined;
   aside?: ReactNode;
   /** Whether the aside's toggle has it open, as `sidebarOpen`. */
   asideOpen?: boolean;
@@ -59,7 +65,7 @@ export function AppFrame(props: {
   return (
     <SetTitleSlot.Provider value={setSlot}>
       <TitleSlot.Provider value={slot}>
-        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, props.under && s.under, props.translucent && s.translucent, props.className)}>
+        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.sidebarToggle) && s.withToggle, Boolean(props.aside) && s.withAside, props.under && s.under, props.translucent && s.translucent, props.className)}>
           {side.kept === null ? null : (
             <div id="sidebar" className={s.side} {...side.attrs}>
               <div className={s.sideTop}>{side.kept[1]}</div>
@@ -73,6 +79,7 @@ export function AppFrame(props: {
           {/* After the top row: the edge reaches a few pixels over it, and a control under a drag box that comes after
               it loses its click (base.css). */}
           {props.sidebar && props.sidebarEdge ? <div className={s.sideEdge}>{props.sidebarEdge}</div> : null}
+          {props.sidebarToggle ? <SidebarToggle {...props.sidebarToggle} shown={Boolean(props.sidebar)} /> : null}
           {aside.kept === null ? null : (
             <div className={s.aside} {...aside.attrs}>
               {aside.kept[0]}
@@ -81,6 +88,18 @@ export function AppFrame(props: {
         </div>
       </TitleSlot.Provider>
     </SetTitleSlot.Provider>
+  );
+}
+
+/** The sidebar's button: after the top row and the sidebar's first strip, so its no-drag box wins over their drag ones. */
+function SidebarToggle(props: { onPress: () => void; shortcut: string; shown: boolean }) {
+  const words = props.shown ? "Hide sidebar" : "Show sidebar";
+  return (
+    <Tooltip content={`${words} · ${props.shortcut}`} side="bottom">
+      <button type="button" className={s.sideToggle} aria-label={words} aria-expanded={props.shown} aria-controls={props.shown ? "sidebar" : undefined} onClick={props.onPress}>
+        <PanelLeft aria-hidden />
+      </button>
+    </Tooltip>
   );
 }
 

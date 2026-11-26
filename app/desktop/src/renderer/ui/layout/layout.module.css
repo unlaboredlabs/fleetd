@@ -180,9 +180,53 @@
   background: linear-gradient(to bottom, var(--bg) 0, var(--bg) 83%, color-mix(in srgb, var(--bg) 60%, transparent) 92%, transparent);
   pointer-events: none;
 }
-/* With the sidebar hidden, the top row starts after the traffic lights. */
+/* With the sidebar hidden, the top row starts after the traffic lights, and after the sidebar's button where there is one. */
 .noSidebar > .topBar {
   padding-inline-start: max(var(--space-3), var(--traffic-lights-inset));
+}
+.noSidebar.withToggle > .topBar {
+  padding-inline-start: calc(var(--side-toggle-x) + var(--control) + var(--space-2));
+}
+
+/* The sidebar's button (AppFrame's sidebarToggle), as Finder's and Notes' sit: on macOS its glyph as far after the
+   traffic lights (which end at 80 px) as the pill is after it, 14 px each side; elsewhere in from the window's edge
+   by the top row's own inset. A plain glyph, no fill until pointed at, so nothing solid moves over the see-through
+   sidebar as it slides. On macOS it stays put in the sidebar's empty first strip while that shows; elsewhere that row
+   is the sidebar's own, so the button is only there while the sidebar is closed. */
+.frame {
+  --side-toggle-x: max(var(--space-2), calc(var(--traffic-lights-inset) + var(--space-1)));
+}
+.sideToggle {
+  position: absolute;
+  z-index: 3;
+  top: calc((var(--top-bar-height) - var(--control)) / 2);
+  left: var(--side-toggle-x);
+  display: grid;
+  place-items: center;
+  width: var(--control);
+  height: var(--control);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--quiet);
+  -webkit-app-region: no-drag;
+}
+.sideToggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sideToggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.sideToggle > svg {
+  width: 16px;
+  height: 16px;
+}
+:root:not([data-platform="darwin"]) .frame:not(.noSidebar) > .sideToggle,
+:root[data-shell="web"] .frame:not(.noSidebar) > .sideToggle {
+  display: none;
 }
 .topCenter {
   display: flex;
