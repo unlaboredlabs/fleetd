@@ -547,9 +547,20 @@ export class Executors {
       if (at >= 0) upserts[at] = t;
       else upserts.push(t);
     }
+    // A snapshot's projects first: its sessions' rows go only to projects the hub has.
+    if (applied.projects.length > 0) {
+      try {
+        store(this.hub).projectsUpsertMany(machineId, applied.projects as never);
+      } catch (error) {
+        console.error("executor: project write failed:", error);
+      }
+    }
     // TODO(executor): a long reply's headline from a thread read, once the thread views are ported.
     for (const u of upserts) {
       try {
+        // A session its node kept of a removed project is no row of the hub's: each start's erase of what deleted
+        // projects left found them again and erased them for 20 s before machines could link.
+        if (!store(this.hub).projectKnown({ machineId, projectId: u.summary.projectId })) continue;
         // A computer that went to sleep or woke changes no status: its chat is told here.
         const was = store(this.hub).threadGet(threadRef(machineId, u.summary.threadId))?.thread.asleep === true;
         if (was !== (u.summary.asleep === true)) {
@@ -559,13 +570,6 @@ export class Executors {
         store(this.hub).threadUpsert(fromStored(u));
       } catch (error) {
         console.error("executor: thread write failed:", error);
-      }
-    }
-    if (applied.projects.length > 0) {
-      try {
-        store(this.hub).projectsUpsertMany(machineId, applied.projects as never);
-      } catch (error) {
-        console.error("executor: project write failed:", error);
       }
     }
     if (applied.present) {

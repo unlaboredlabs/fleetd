@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import { parseQuietHours, quietUntil, quietWindows } from "../src/hub/attention/index.ts";
 import { executorHooks } from "../src/hub/executor/hooks.ts";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
+import { pruneOrphans } from "../src/hub/project_lead/erase.ts";
 import { link } from "../src/hub/link/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -98,6 +99,25 @@ test("a link subscribes from a fresh snapshot, goes live, and the stream fills t
   await settle();
   expect(store(k.hub).projectGet({ machineId: "devbox", projectId: "app" })).toBeUndefined();
   expect(events(k.hub).page(1).events.map((e) => [e.type, e.summary])).toEqual([["project.removed", `Bot "App" on devbox was removed`]]);
+});
+
+test("a node's sessions of a removed project leave no rows, so each start erases nothing", async () => {
+  const k = kit();
+  store(k.hub).machineUpsert(machine());
+  const node = fakeNode(k);
+  await node.ex.awaitLive("devbox");
+  // The node still has a session of "gone", a project it no longer lists: before, its row came back with every
+  // snapshot, and every start's erase found the project again, for 20 s on the devbox.
+  node.event({
+    type: "snapshot",
+    projects: [{ projectId: "app", title: "App", workspaceRoot: "/w/app", updatedAt: AT }],
+    sessions: [session("s1"), session("s2", { projectId: "gone" })],
+  });
+  node.event({ type: "session_updated", ...session("s2", { projectId: "gone", status: "running" }) });
+  await settle();
+  expect(store(k.hub).threadGet({ machineId: "devbox", threadId: "s1" })).toBeDefined();
+  expect(store(k.hub).threadGet({ machineId: "devbox", threadId: "s2" })).toBeUndefined();
+  expect(pruneOrphans(k.hub)).toBe(0);
 });
 
 test("an older link never takes over, and a dropped one leaves the machine stale", async () => {

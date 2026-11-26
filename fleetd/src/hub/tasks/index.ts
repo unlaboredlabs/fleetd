@@ -51,7 +51,7 @@ import {
   type Rebuilt,
   type TaskPorts,
 } from "./ports.ts";
-import { type StoredTask, type TaskFilter, TaskRecords } from "./records.ts";
+import { numberOf, type StoredTask, type TaskFilter, TaskRecords } from "./records.ts";
 import * as recovery from "./recovery.ts";
 import {
   branchFor,
@@ -1974,7 +1974,7 @@ export class Tasks {
     if (task?.state !== "done") return undefined;
     const ci = openCiWaits(this.db, except).get(taskId);
     if (ci?.length) return `wait_ci on ${ci.join(", ")}`;
-    const monitor = this.tryDb(() => TaskRecords.monitorWaits(this.db, task.projectRef, this.nowIso()).get(taskId));
+    const monitor = this.tryDb(() => TaskRecords.monitorWait(this.db, numberOf(taskId), this.nowIso()));
     if (!monitor) return undefined;
     return monitor.watching.length > 0 ? `a Monitor (${monitor.watching.join(", ")})` : "a Monitor";
   }

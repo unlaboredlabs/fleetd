@@ -409,6 +409,12 @@ export class HubStore {
     return row ? withRepos(this.conn, JSON.parse(row.data) as ProjectSummary) : undefined;
   }
 
+  /** Whether the hub has the project; a hub-wide (empty) id counts as had. */
+  projectKnown(r: ProjectRef): boolean {
+    if (r.machineId === "" || r.projectId === "") return true;
+    return this.conn.query("SELECT 1 FROM projects WHERE machine_id = ? AND project_id = ?").get(r.machineId, r.projectId) !== null;
+  }
+
   /** Drops the project, its cached threads, its settings and its repos, once its node no longer has it. */
   projectRemove(r: ProjectRef): void {
     this.db.transaction((conn) => {

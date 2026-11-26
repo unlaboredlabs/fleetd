@@ -79,6 +79,15 @@ function write(db: Database, stored: StoredTask): void {
   ).run(t.state, t.threadRef?.threadId ?? null, t.endedAt ?? null, stored.pendingMessage ?? null, JSON.stringify(t), numberOf(t.taskId));
 }
 
+/** A thread's `watching`, as JSON: the strings in it; none for anything else. */
+function watchingOf(json: string | null): string[] {
+  try {
+    const parsed: unknown = json === null ? [] : JSON.parse(json);
+    if (Array.isArray(parsed)) return parsed.filter((w): w is string => typeof w === "string");
+  } catch {}
+  return [];
+}
+
 /** Over the hub's one SQLite connection. */
 export const TaskRecords = {
   get(db: Database, taskId: TaskId): StoredTask | undefined {
@@ -278,6 +287,18 @@ export const TaskRecords = {
       .map((row) => decode(db, row.data));
   },
 
+  /** `monitorWaits` of one task, by its number: what it watches and until when, or undefined. */
+  monitorWait(db: Database, n: number, now: string): MonitorWait | undefined {
+    const row = db
+      .query<{ until: string; watching: string | null }, [number, string]>(
+        `SELECT json_extract(th.data, '$.watchingUntil') AS until, json_extract(th.data, '$.watching') AS watching
+           FROM tasks t JOIN threads th ON th.machine_id = json_extract(t.data, '$.threadRef.machineId') AND th.thread_id = t.thread_id
+           WHERE t.n = ? AND t.state = 'done' AND json_extract(th.data, '$.watchingUntil') > ?`,
+      )
+      .get(n, now);
+    return row === null ? undefined : { watching: watchingOf(row.watching), until: row.until };
+  },
+
   /** The project's done tasks a Monitor of their own may still wake (their thread's `watchingUntil` is ahead of
    * `now`), by task id: what it watches and until when. */
   monitorWaits(db: Database, r: ProjectRef, now: string): Map<string, MonitorWait> {
@@ -289,14 +310,7 @@ export const TaskRecords = {
       )
       .all(r.machineId, r.projectId, now);
     const out = new Map<string, MonitorWait>();
-    for (const row of rows) {
-      let watching: string[] = [];
-      try {
-        const parsed: unknown = row.watching === null ? [] : JSON.parse(row.watching);
-        if (Array.isArray(parsed)) watching = parsed.filter((w): w is string => typeof w === "string");
-      } catch {}
-      out.set(row.task_id, { watching, until: row.until });
-    }
+    for (const row of rows) out.set(row.task_id, { watching: watchingOf(row.watching), until: row.until });
     return out;
   },
 

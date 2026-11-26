@@ -114,6 +114,9 @@ const fail = (message: string): never => {
   throw new GithubError(message);
 };
 
+/** How many opened secrets `open` keeps: the App's key, its webhook secret, a few people's tokens. */
+const OPENED_KEPT = 16;
+
 /** The hub's App: creating it, and its tokens. `githubApps(hub)`. */
 export class GithubApps {
   private ep: Endpoints = DEFAULT_ENDPOINTS;
@@ -126,6 +129,14 @@ export class GithubApps {
   readonly accounts = new Mutex();
   /** The orders' token problems last logged (sessions.ts): each is logged again only once it changes. */
   readonly warned = new Map<string, string>();
+
+  /** The workspace's box key, read once: every GitHub call through the App opens its key with it. */
+  private key: Uint8Array | undefined;
+  /**
+   * What `open` opened, by the sealed bytes: each GitHub call through the App opens the App's key, and opening one is
+   * an X25519 exchange, a tenth of the workspace's CPU when it ran for each call.
+   */
+  private readonly opened_ = new Map<string, string>();
 
   constructor(readonly hub: Hub) {}
 
@@ -147,8 +158,10 @@ export class GithubApps {
   }
 
   boxKey(): Uint8Array {
+    if (this.key) return this.key;
     try {
-      return loadOrCreateBoxKey(this.hub.config.home);
+      this.key = loadOrCreateBoxKey(this.hub.config.home);
+      return this.key;
     } catch (error) {
       console.error("workspace box key:", error);
       return fail("the workspace can't read its box key: check the workspace's home directory");
@@ -161,8 +174,15 @@ export class GithubApps {
 
   /** The text sealed in `sealed`, or undefined when it wasn't sealed to the hub's box key. */
   open(sealed: Uint8Array): string | undefined {
+    const id = Buffer.from(sealed).toString("base64");
+    const kept = this.opened_.get(id);
+    if (kept !== undefined) return kept;
     const plain = openSealed(this.boxKey(), sealed);
-    return plain ? new TextDecoder().decode(plain) : undefined;
+    if (!plain) return undefined;
+    const text = new TextDecoder().decode(plain);
+    if (this.opened_.size >= OPENED_KEPT) this.opened_.delete(this.opened_.keys().next().value!);
+    this.opened_.set(id, text);
+    return text;
   }
 
   /** One call to GitHub's API: the answer's JSON, or GitHub's reason (thrown). */
