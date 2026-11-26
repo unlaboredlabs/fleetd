@@ -2,6 +2,7 @@
 // terminal or its default without one (or with --yes). Ported: a worker joining a hub (`--join … --code …`, the line
 // `fleetd pair --worker` prints) and a joined worker run again, which keeps its enrolment and repairs what it runs.
 // The hub's own setup (where it listens, its logins, workers, a first project, the app) is listed in PORT_MAP.md.
+import { isIP } from "node:net";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NotImplemented } from "../../shared/errors.ts";
@@ -460,10 +461,11 @@ export function joinIdentity(given: GitIdentity | undefined, machineGit: GitIden
   if (machineGit !== undefined) return machineGit;
   let host = "";
   try {
-    host = new URL(hub.trim()).hostname;
+    host = new URL(hub.trim()).hostname.replace(/^\[|\]$/gu, "");
   } catch {}
-  const name = hubNameOf(hub.trim());
-  return { name: name === "" ? "fleetd" : name, email: `noreply@${host === "" ? "fleetd.invalid" : host}` };
+  // An address with no name in it (an IP, localhost) names nothing: "fleetd", not "127".
+  if (host === "" || isIP(host) !== 0 || host === "localhost") return { name: "fleetd", email: "noreply@fleetd.invalid" };
+  return { name: hubNameOf(hub.trim()) || "fleetd", email: `noreply@${host}` };
 }
 
 /** The hub's host, as the rows name it. */

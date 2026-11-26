@@ -11,5 +11,10 @@ test("the join line's identity first, then the machine's own git user, else the 
   expect(joinIdentity(undefined, own, "https://sweep-9.fleetd.dev")).toEqual(own);
   expect(joinIdentity(undefined, undefined, "https://sweep-9.fleetd.dev")).toEqual({ name: "sweep-9", email: "noreply@sweep-9.fleetd.dev" });
   expect(joinIdentity(undefined, undefined, "http://devbox.tailnet.ts.net:4790")).toEqual({ name: "devbox", email: "noreply@devbox.tailnet.ts.net" });
-  expect(joinIdentity(undefined, undefined, "not a url")).toEqual({ name: "not a url", email: "noreply@fleetd.invalid" });
+  // An address with no name in it names nothing.
+  const fleetd = { name: "fleetd", email: "noreply@fleetd.invalid" };
+  expect(joinIdentity(undefined, undefined, "not a url")).toEqual(fleetd);
+  expect(joinIdentity(undefined, undefined, "http://127.0.0.1:4790")).toEqual(fleetd);
+  expect(joinIdentity(undefined, undefined, "http://100.101.102.103:4790")).toEqual(fleetd);
+  expect(joinIdentity(undefined, undefined, "http://[fd7a:115c:a1e0::1]:4790")).toEqual(fleetd);
 });

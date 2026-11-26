@@ -8,7 +8,7 @@
 // variables' values as live text in 7-character Deltas, 10 ms apart, then answers. Shutdown exits. Its environment goes to
 // <dir>/env.json, its arguments to <dir>/argv.json. One with `monitor-late:` arms a Monitor that ends while the turn's last
 // answer is written, as a check already done does: the turn ends with its notice untold, and 500 ms later claude runs
-// a turn of its own for it (run `woke-<run>`), unless it was shut down first. With ANTHROPIC_BASE_URL set (claude.env),
+// a turn of its own for it (run `woke-<run>`), unless it was shut down first. With ANTHROPIC_BASE_URL a stand-in on loopback (claude.env),
 // each turn first asks that endpoint, as claude asks the API: a 529 fails the turn Overloaded, as claude does once its
 // own retries give up, and a 401 fails it as a refused key; Sends meanwhile queue behind it. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
 // of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
@@ -103,7 +103,9 @@ Bun.listen({
         } else if (cmd?.Send) {
           const { run_id, text } = cmd.Send;
           emit({ RunStarted: { run_id } });
-          if (process.env.ANTHROPIC_BASE_URL) {
+          // Only a test's own stand-in on this machine: an account's endpoint elsewhere (a tailnet gateway in a test's
+          // settings) is never called, as it may answer for real or never.
+          if (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/u.test(process.env.ANTHROPIC_BASE_URL ?? "")) {
             void viaApi(run_id, text);
             continue;
           }
