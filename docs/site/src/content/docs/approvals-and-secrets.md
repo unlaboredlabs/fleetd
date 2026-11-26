@@ -89,7 +89,7 @@ For a key every agent should have, add it to the bot's Vault yourself.
 
 ### A secret for one piece of work {#order-variables}
 
-An agent can ask for a variable it needs. The card then says it's for that work only. The value reaches only those agents and is deleted when the work ends.
+An agent can ask for a variable it needs. The card then says it's for that work only. The value reaches only those agents and is deleted when the work ends. The agents already running get it at their next command, in every repo of the bot they work in, and it shows in their variable list.
 
 ## Secrets stay hidden {#masking}
 

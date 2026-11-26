@@ -257,11 +257,12 @@ function SecretItem({ item, read, asker }: { item: SecretRequestItem; read: numb
   }, [outcome, draft, key]);
 
   // The value goes from the field to main, which seals it, and is dropped here once the save succeeds; a failed save
-  // keeps it, so Retry sends it again without pasting.
+  // keeps it, so Retry sends it again without pasting. Sealed to the workspace's key when the request names it, so the
+  // vault keeps it and delivers it wherever its agents run (an order's in each repo checkout); else to the machine's.
   const save = (): void => {
     if (!target.ok || !live || busy || draft === "") return;
     run("save", async () => {
-      const out = await window.fleetd.secret.submit(layer.hub, { requestId: item.requestId, boxPubKey: target.boxPubKey, value: draft });
+      const out = await window.fleetd.secret.submit(layer.hub, { requestId: item.requestId, boxPubKey: item.sealTo ?? target.boxPubKey, value: draft });
       if (!out.ok) return out;
       patchLocal(key, { draft: "" });
       return { ok: true, sent: { state: "stored", fingerprint: out.fingerprint } };

@@ -406,6 +406,7 @@ export class Approvals {
         this.now(),
       );
       if (why !== undefined) throw refuse("failed", why, "Enter it again; the request is still open.");
+      await this.deps.hooks.vaultTakeIn(m);
     }
     if (signIn) return this.stored(caller, r, fingerprint, undefined, signIn.save());
     return this.stored(caller, r, fingerprint, `Saved on ${m}; the lead hears it in its next wake.`);
