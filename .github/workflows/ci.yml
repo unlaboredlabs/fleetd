@@ -3,15 +3,18 @@ name: CI
 # Every pull request's and every main push's checks but Desktop QA's (desktop-qa.yml), in one run: fleetd itself (the
 # hub, the node and the CLI), the site, the desktop app and the phone app. One workflow, so a push starts two runs.
 #
-# Everything runs on GitHub-hosted runners, which are free for public repos. No job here runs on macOS
-# (ci.no-macos-on-prs). `desktop (mac layout)` packs the mac app and checks its layout on Linux. What only a Mac can run
-# (macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml (Nightly), and before each release;
+# Everything runs on GitHub-hosted runners, which are free for public repos. No pull request's job runs on macOS
+# (ci.no-macos-on-prs). One job runs there on main only, after a merge that changed the phone app's native iOS inputs:
+# `mobile (ios build)` compiles the iOS app, and a red one is the merge train's to bisect and revert, like any check on
+# main. `desktop (mac layout)` packs the mac app and checks its layout on Linux. What else only a Mac can run (macOS
+# desktop QA, the packed mac app, the iOS simulator app) runs nightly in mac.yml (Nightly), and before each release;
 # the iOS simulator build also on its own in a manual run of mac.yml with `only: ios`.
 #
 # Each job has its own scope: one whose paths didn't change reports success at once (fleetd, desktop) or is skipped
 # (the phone app's), so its check reports on every PR and a check that never comes never holds one. On a push to main
 # every job runs in full: the merge train checks each merge on main's own run, bisecting and reverting a red one, and
-# edge.yml builds only a main commit whose run passed, so no job may pass there without running.
+# edge.yml builds only a main commit whose run passed, so no job may pass there without running. All but the iOS
+# build, which keeps its scope on main too: half an hour of it on every merge would hold every edge build that long.
 
 on:
   pull_request:
@@ -496,23 +499,24 @@ jobs:
     # Whether the app's checks and the Android build have work: each needs this job and is skipped (which passes,
     # required or not) when the paths didn't change: app/mobile, the desktop modules the app imports
     # (app/mobile/src/desktop.ts), and site/vercel.json, whose update route the checks test. A manual run builds
-    # everything.
+    # everything. The iOS build (`ios`, main's only) has a narrower scope of its own, kept on main.
     name: mobile scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       app: ${{ steps.scope.outputs.app }}
+      ios: ${{ steps.scope.outputs.ios }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
       - id: scope
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
           # A manual run builds everything: it is how a fork gets its own builds (docs: fleetd.sh/docs/mobile).
           base=
           if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then base=$(git rev-parse -q --verify HEAD^1 || true); fi
-          # Main builds everything: a merge is checked on main's own run, and edge builds only a commit it passed.
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then base=; fi
           # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed.
           scope() {
             out=$1
@@ -525,6 +529,28 @@ jobs:
             fi
             echo "$out=$run" | tee -a "$GITHUB_OUTPUT"
           }
+          # What `expo prebuild` makes the iOS project from, or Xcode compiles into it: the local native modules (their
+          # Swift and podspecs), the config plugins (the extensions' Swift, the project edits), patches to libraries,
+          # the Expo config, and the dependencies (any of which may bring native code or a pod), with the SDK check the
+          # build runs. The build is main's alone, and scoped there, unlike the rest: against the commit before the push
+          # (it may hold several), and in full when that one is unknown. A pull request's is `false`: it never builds.
+          ios_paths=(app/mobile/ios app/mobile/modules app/mobile/plugins app/mobile/patches app/mobile/app.config.ts
+            app/mobile/package.json app/mobile/package-lock.json ':(glob)app/mobile/**/*.swift' ':(glob)app/mobile/**/*.m'
+            ':(glob)app/mobile/**/*.mm' ':(glob)app/mobile/**/*.h' ':(glob)app/mobile/**/Podfile*' .github/release/ios-sdk.sh)
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            base=
+            if [ -n "${BEFORE//0/}" ]; then
+              git cat-file -e "$BEFORE^{commit}" 2>/dev/null || git fetch -q --depth=1 origin "$BEFORE" || true
+              if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then base=$BEFORE; fi
+            fi
+            scope ios "mobile (ios build)" "${ios_paths[@]}"
+            # Main builds everything else: a merge is checked on main's own run, and edge builds only a commit it passed.
+            base=
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            scope ios "mobile (ios build)" "${ios_paths[@]}"
+          else
+            echo "ios=false" | tee -a "$GITHUB_OUTPUT"
+          fi
           scope app "mobile" app/mobile app/desktop/src/shared app/desktop/src/renderer/src/data/chat.ts \
             app/desktop/src/renderer/src/data/chat-contract.ts \
             app/desktop/src/renderer/screens/updates/model.ts app/desktop/src/renderer/screens/updates/flow.ts \
@@ -625,3 +651,71 @@ jobs:
           path: app/mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+  ios:
+    # The iOS app compiled as TestFlight gets it (mobile-release.yml's archive): Release, for devices, on the same
+    # Xcode 27 image, unsigned (CODE_SIGNING_ALLOWED=NO; nothing here reads a secret), its JavaScript bundled in. On a
+    # push to main (and a manual run) only, never a pull request's (ci.no-macos-on-prs): after a merge that changed the
+    # native inputs (mobile-scope's `ios`), so a native module, pod, plugin or config that breaks the iOS build turns
+    # main's run red, the train bisects and reverts its PR, and Mobile release on merge, which starts only on a green
+    # run, sends TestFlight nothing broken. Writers changing native code compile on the agents' Mac before their PR.
+    # `xcode-27` is GitHub's standard Xcode 27 image, free here (`xcode-27-xlarge` is the paid one). A cold build takes
+    # about half an hour; Xcode's compilation cache (Swift and C alike, by content, so a fresh `expo prebuild` still
+    # hits it) and CocoaPods' downloads carry over from main's last build.
+    name: mobile (ios build)
+    needs: mobile-scope
+    if: >-
+      ${{ !cancelled() && needs.mobile-scope.outputs.ios != 'false'
+      && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      CAS: ${{ github.workspace }}/.xcode-cas
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - name: Xcode
+        id: xcode
+        run: |
+          xcodebuild -version
+          echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v5
+        with:
+          path: |
+            .xcode-cas
+            ~/Library/Caches/CocoaPods
+          key: ios-build-${{ steps.xcode.outputs.version }}-${{ github.sha }}
+          restore-keys: ios-build-${{ steps.xcode.outputs.version }}-
+      - run: npm ci --no-audit --no-fund
+      # Installs the pods too.
+      - run: npx expo prebuild --platform ios --clean
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_CAS_PATH="$CAS" \
+            build > "$RUNNER_TEMP/build.log" 2>&1 || {
+            # The compiler's errors on the PR, where its author sees them, not only at the end of a long log.
+            grep -E '^/.+:[0-9]+:([0-9]+:)? error: ' "$RUNNER_TEMP/build.log" | sort -u | head -n 20 |
+              sed -E -e "s#^$GITHUB_WORKSPACE/##" -e 's#^([^:]+):([0-9]+):([0-9]+:)? error: (.*)$#::error file=\1,line=\2::\4#' || true
+            tail -n 200 "$RUNNER_TEMP/build.log"
+            exit 1
+          }
+          tail -n 20 "$RUNNER_TEMP/build.log"
+      - name: iOS SDK
+        run: ../../.github/release/ios-sdk.sh build/Build/Products/Release-iphoneos/fleetd.app/Info.plist
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .xcode-cas
+            ~/Library/Caches/CocoaPods
+          key: ios-build-${{ steps.xcode.outputs.version }}-${{ github.sha }}
