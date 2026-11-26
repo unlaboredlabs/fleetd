@@ -40,7 +40,7 @@ import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { LATE_AFTER_MS } from "../wakes/index.ts";
 import { profiles } from "../projects/profiles.ts";
-import { checkWatch, cronOf, lastDay, named, PRESETS, watchers } from "../watchers/index.ts";
+import { checkWatch, cronOf, isCheckIn, lastDay, named, PRESETS, watchers } from "../watchers/index.ts";
 import {
   atMs,
   AUTOMATIONS_PER_PROJECT,
@@ -135,7 +135,7 @@ const BUSY_THREAD = new Set(["running", "waiting"]);
  * `watchingUntil`, which a done task between two of its Monitor's wakes has), an approval or secret request of it
  * open, or a PR of it on the train.
  */
-function inFlight(hub: Hub, r: ProjectRef, w: string): boolean {
+export function inFlight(hub: Hub, r: ProjectRef, w: string): boolean {
   const [m, p] = [r.machineId, r.projectId];
   const any = (sql: string, params: (string | number)[]) => hub.db.all(sql, params).length > 0;
   return (
@@ -341,7 +341,7 @@ export class Automations {
     const watch = input.watch === undefined ? undefined : this.watchOf(r, input.watch);
     if (watch !== undefined) {
       // A preset is one per bot; "Something else" as many as the person writes.
-      if (PRESETS.includes(watch.kind as never) && this.list(r).some((x) => x.watch?.kind === watch.kind)) {
+      if ((PRESETS.includes(watch.kind as never) || isCheckIn(watch)) && this.list(r).some((x) => x.watch?.kind === watch.kind)) {
         throw invalid(`The bot already has a ${named(watch, "").name} watcher.`, "Change that one's frequency or profile instead.");
       }
       const preset = named(watch, input.prompt);
@@ -445,7 +445,7 @@ export class Automations {
     const w = a.watch as AutomationWatch;
     if (edit.webhook === true) throw invalid("A watcher has no webhook.", "Leave webhook out.");
     if (edit.schedule !== undefined) throw invalid("A watcher's schedule follows how often it looks.", "Give watch with every 15m, hour or day.");
-    const preset = PRESETS.includes(w.kind as never);
+    const preset = PRESETS.includes(w.kind as never) || isCheckIn(w);
     if (preset && (edit.prompt !== undefined || edit.name !== undefined)) {
       throw invalid(`${a.name} is a preset: what it looks at is fleetd's.`, "Change how often it looks or its profile; for something else, add a watcher with one sentence.");
     }

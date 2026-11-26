@@ -53,6 +53,7 @@ import { completedRuns, leadMessages, leadSource, leadText, madeUpAt, madeUpLine
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
+import { OFFER_SOURCE, offerOptions, tapped } from "../watchers/checkin.ts";
 import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
 import { unanswered } from "./unanswered.ts";
@@ -295,8 +296,10 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
     attachments.check(hub, caller, ids);
     await ensure(hub, r);
     // Only a lead message of this chat is answered; any other names nothing, and the text goes as it is.
-    const answered = input.replyTo ? repliedIn(hub, r, input.replyTo) : undefined;
-    const replyTo = answered ? input.replyTo : undefined;
+    // A tap on a check-in offer's button answers that offer, so the lead reads what the person said yes to.
+    const tap = writer.author === "human" && input.replyTo === undefined ? offerTapped(hub, r, input.text) : undefined;
+    const answered = input.replyTo ? repliedIn(hub, r, input.replyTo) : tap?.message;
+    const replyTo = answered ? (input.replyTo ?? tap?.replyTo) : undefined;
     const about = writer.author === "human" ? humanAbout(hub, r, input.about, answered, replyTo?.part) : undefined;
     // A link the person wrote is a site they gave their project: allowed before its lead reads the message.
     if (writer.author === "human") allowPasted(hub, r, input.text, writer.by);
@@ -469,6 +472,27 @@ export function when(hub: Hub, message: ChatMessage): string {
 function repliedIn(hub: Hub, r: ProjectRef, to: ChatReplyTo): ChatMessage | undefined {
   const m = chat(hub).byId(to.messageId);
   return m && same(m.projectRef, r) && m.author === "lead" ? m : undefined;
+}
+
+/**
+ * The daily check-in's newest offer, when `text` is one of its buttons and nobody wrote after it: the person's tap, as
+ * a reply to the offer's bubble.
+ */
+function offerTapped(hub: Hub, r: ProjectRef, text: string): { message: ChatMessage; replyTo: ChatReplyTo } | undefined {
+  const row = hub.db.all<{ seq: number; data: string }>(
+    `SELECT seq, data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND source LIKE ?3 ORDER BY seq DESC LIMIT 1`,
+    [r.machineId, r.projectId, `${OFFER_SOURCE}%`],
+  )[0];
+  if (!row) return undefined;
+  const later = hub.db.all(
+    `SELECT 1 FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq > ?3 AND json_extract(data, '$.author') = 'human' LIMIT 1`,
+    [r.machineId, r.projectId, row.seq],
+  );
+  if (later.length > 0) return undefined;
+  const message = JSON.parse(row.data) as ChatMessage;
+  const options = offerOptions(message.text);
+  if (message.author !== "lead" || options === undefined || !tapped(options, text)) return undefined;
+  return { message, replyTo: { messageId: message.messageId, part: 0 } };
 }
 
 /** The lead message a reply answers. */

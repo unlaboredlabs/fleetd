@@ -6,6 +6,9 @@
 // "<name>: <line>". A look at the same evidence as the last one starts no session. Each run keeps what its session
 // cost, so a watcher's row shows its last day, and its first day ends with one line saying what it cost.
 //
+// The daily check-in (checkin.ts) is a watcher too: the hub reads what stalled or waits, and its session's answer is
+// an offer the chat shows as the lead's message with buttons, or nothing.
+//
 // The schedule, Run now, pause and the run history are the automation's (hub/automations); this area starts and ends
 // the runs' sessions. A session still going after RUN_LIMIT_MS is stopped and its run failed.
 import type { Automation, AutomationRun, HubEvent, KnownWatchKind, ProjectRef, ThreadRef, WatchKind } from "../../shared/contracts.ts";
@@ -27,6 +30,10 @@ import { systemGh } from "../train/gh.ts";
 import { latest, TrainGitHub, type CheckRun } from "../train/github.ts";
 import { fresh } from "../train/seams.ts";
 import { storedRun, why } from "../automations/model.ts";
+import { block } from "../chat/parts.ts";
+import { store } from "../store/hub_store.ts";
+import { checkInEvidence, checkInMessage, isCheckIn, OFFER_SOURCE, offerOf, offerText } from "./checkin.ts";
+import { checkInFacts } from "./checkin_facts.ts";
 import {
   DAY_MS,
   type Deployment,
@@ -42,6 +49,7 @@ import {
 } from "./rules.ts";
 
 export * from "./rules.ts";
+export * from "./checkin.ts";
 
 /** How long a repo's "has deployments" answer is kept. */
 const DEPLOYS_FRESH_MS = 30 * 60_000;
@@ -283,7 +291,20 @@ export class Watchers {
     if (!w) return run;
     const r = a.projectRef;
     let evidence: Evidence | undefined;
-    if (PRESETS.includes(w.kind as KnownWatchKind)) {
+    let prompt: string | undefined;
+    if (isCheckIn(w)) {
+      // A quiet day, or one like the last, starts no session and posts nothing.
+      const got = checkInEvidence(checkInFacts(this.hub, r), this.now());
+      const seen = hash(`${w.kind}\n${got?.key ?? ""}`);
+      if (got === undefined || this.lastSeen(a.automationId, run.runId) === seen) {
+        const out = this.end(run, "done", { why: got === undefined ? "Nothing waits today." : "Nothing new since the last check-in.", costUsd: 0 });
+        this.save(out, { seen });
+        return out;
+      }
+      this.save(run, { seen });
+      evidence = got;
+      prompt = checkInMessage(store(this.hub).projectGet(r)?.title ?? r.projectId, got);
+    } else if (PRESETS.includes(w.kind as KnownWatchKind)) {
       const got = await this.evidence(a);
       if ("error" in got) return this.end(run, "failed", { why: got.error });
       evidence = got;
@@ -317,11 +338,11 @@ export class Watchers {
     } catch {}
     const input: LaunchInput = {
       projectId: r.projectId,
-      prompt: message(w, a.prompt, evidence, tools),
+      prompt: prompt ?? message(w, a.prompt, evidence, tools),
       profile,
       // Its node refuses any tool not in onlyTools.
       runtimeMode: "approval-required",
-      title: [...`fleetd watcher: ${a.name}`].slice(0, 80).join(""),
+      title: [...`fleetd ${isCheckIn(w) ? "check-in" : "watcher"}: ${a.name}`].slice(0, 80).join(""),
       clientRequestId: `fleetd-watch:${run.runId}`,
     };
     let threadId: string;
@@ -368,6 +389,7 @@ export class Watchers {
     } catch (error) {
       return this.end(run, "failed", { why: `Its answer couldn't be read: ${(error as Error).message}`, ...cost });
     }
+    if (isCheckIn(a.watch)) return this.offer(a, run, text, cost);
     const line = verdict(text);
     if (line !== undefined) chat(this.hub).systemLine(a.projectRef, `${a.name}: ${line}`);
     const out = this.end(run, "done", { ...(line === undefined ? {} : { said: line }), ...cost });
@@ -375,8 +397,24 @@ export class Watchers {
     return out;
   }
 
+  /**
+   * A check-in session's answer: OK posts nothing; an offer goes in the chat as the lead's message with its buttons,
+   * which start nothing until the person taps one. An answer that isn't either fails the run and posts nothing.
+   */
+  private offer(a: Automation, run: AutomationRun, text: string | undefined, cost: { costUsd?: number }): AutomationRun {
+    const got = offerOf(text);
+    if (got === undefined) return this.end(run, "done", { why: "Nothing worth offering today.", ...cost });
+    if (typeof got === "string") return this.end(run, "failed", { why: got, ...cost });
+    const body = offerText(got);
+    const checked = block(body.slice(body.indexOf("\n") + 1, body.lastIndexOf("\n")));
+    if (checked.block === undefined) return this.end(run, "failed", { why: `Its offer couldn't show: ${checked.why ?? "it isn't a block"}.`, ...cost });
+    chat(this.hub).add(a.projectRef, { author: "lead", text: body, source: `${OFFER_SOURCE}${run.runId}` });
+    return this.end(run, "done", { said: got.text, ...cost });
+  }
+
   /** The watcher's first finished look a day after it was made: one line with what that day cost. */
   private firstDay(a: Automation, run: AutomationRun): void {
+    if (isCheckIn(a.watch)) return;
     const made = parseMs(a.createdAt);
     const at = parseMs(run.at);
     if (made === undefined || at === undefined || at < made + DAY_MS) return;

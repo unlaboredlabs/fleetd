@@ -4738,6 +4738,11 @@
           "const": "other",
           "description": "The one plain sentence in its prompt, through the bot's connections.",
           "type": "string"
+        },
+        {
+          "const": "checkin",
+          "description": "The daily check-in: what stalled or waits on the person, offered once a day with buttons. Only a person switches it on, in the app.",
+          "type": "string"
         }
       ],
       "x-open": true

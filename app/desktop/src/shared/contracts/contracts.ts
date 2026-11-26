@@ -11483,9 +11483,10 @@ export interface HubEventDataMap {
 
 /**
  * What a watcher watches: `main_ci` the checks on the default branch of the bot's GitHub repo, `deploys` its GitHub
- * deployments' statuses, `other` the one plain sentence in its prompt, through the bot's connections.
+ * deployments' statuses, `other` the one plain sentence in its prompt, through the bot's connections, `checkin` the
+ * daily check-in: what stalled or waits on the person, offered once a day with buttons (only a person switches it on).
  */
-export type KnownWatchKind = "main_ci" | "deploys" | "other";
+export type KnownWatchKind = "main_ci" | "deploys" | "other" | "checkin";
 /** KnownWatchKind, or a value from a newer hub. */
 export type WatchKind = KnownWatchKind | (string & {});
 

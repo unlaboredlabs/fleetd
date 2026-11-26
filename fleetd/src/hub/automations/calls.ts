@@ -13,6 +13,7 @@ import { decisions } from "../ledger/decisions.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
 import { requireLeadForAdmin } from "../api/bot_admin.ts";
 import { ownerOn } from "../people/store.ts";
+import { isCheckIn } from "../watchers/checkin.ts";
 import { automations, type Edit, fromCall, WEBHOOK_BODY_MAX } from "./index.ts";
 
 /** A schedule in the lead's calls: a tz left out is the person's (`AutomationScheduleCall`). */
@@ -84,6 +85,14 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
   }
   switch (call.op) {
     case "automation_create": {
+      // The daily check-in is the person's to switch on, in the bot's settings.
+      if (isCheckIn(call.watch as AutomationWatch | undefined)) {
+        throw new ToolError(
+          "forbidden",
+          "Only the person switches the daily check-in on.",
+          "Tell them it is in the bot's settings, under Automations (on the phone, the bot's Info).",
+        );
+      }
       const schedule = call.schedule as AutomationScheduleCall | undefined;
       const [automation] = a.create({
         projectRef: r,
@@ -119,7 +128,10 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
       return { automations: list, ...(list.length === 0 ? { next: "No automations yet; automation_create makes one." } : {}) };
     }
     case "automation_update": {
-      a.own(r, id);
+      // A lead may switch the check-in off for the person, never on or to something else.
+      if (isCheckIn(a.own(r, id).watch) && (call.paused !== true || Object.entries(call).some(([k, v]) => v !== undefined && !["op", "automationId", "paused"].includes(k)))) {
+        throw new ToolError("forbidden", "Only the person changes the daily check-in.", "Pausing it is all a lead may do; the person switches it in the bot's settings.");
+      }
       const schedule: Edit["schedule"] =
         call.removeSchedule === true
           ? null

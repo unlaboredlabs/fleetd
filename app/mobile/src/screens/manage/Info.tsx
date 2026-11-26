@@ -4,7 +4,7 @@
 // avatar, or Edit under it, opens its icon's sheet: its bot, or a photo: IconPicker.tsx), then what
 // runs there now (Agents: agents_list, then the DMs its agents sent each other: screens/dms), its open orders (orders_board), its To-do (its checklist) and its recent
 // merges with their PRs, read-only; then its name, the profiles its agents may run on, where it lives and its Computer
-// (Computer.tsx: its setup and the image its agents start from). Then the
+// (Computer.tsx: its setup and the image its agents start from). Then its Daily check-in switch (CheckIn.tsx), and the
 // desktop's sections, each pushed: Who merges (WhoMerges.tsx), Approvals, Payments, its Vault, Skills and the chat's Artifacts
 // (screens/artifacts); its named MCP servers (Paper: Named.tsx), connected with one tap; Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them; Archive.
 // Delete last, red, in a sheet that erases everything fleetd keeps for it, with a tickbox for its folder, once its
@@ -35,6 +35,7 @@ import { artifactsShown } from "../artifacts/model";
 import { vaultShown } from "../vault/model";
 import { countValue, dmsShown } from "../dms/model";
 import { TypedDelete } from "./TypedDelete";
+import { CheckIn } from "./CheckIn";
 
 /** Each project's screen as last read this launch: it opens on that at once, as chat apps' profiles do, while its reads go again. */
 const lastRead = new Map<string, InfoRead>();
@@ -325,6 +326,8 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <ListRow title="Folder" value={tilde(p.workspaceRoot)} selectable />
         <ListRow title="Computer" onPress={() => navigation.navigate("Computer", { key })} />
       </ListSection>
+
+      <CheckIn chatKey={key} live={live} />
 
       <ListSection>
         <ListRow title="Who merges" icon="pr" value={mergesOf(p) === "people" ? "You" : "fleetd"} {...(live ? { onPress: () => navigation.navigate("WhoMerges", { key }) } : {})} />

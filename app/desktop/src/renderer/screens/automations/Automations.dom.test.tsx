@@ -316,3 +316,32 @@ it("watches Main's CI from the Watching group: + picks it, how often and the pro
   await click(button("Save", group()));
   expect(hub.calls.find((c) => c.tool === "automation_update")?.input).toEqual({ automationId: "au_test001", watch: { kind: "main_ci", every: "day" } });
 });
+
+it("keeps the daily check-in off until it is switched on, then lists it apart from watchers and automations", async () => {
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Berlin" }).resolvedOptions() });
+  const hub = await mount();
+  const row = () => card("Daily check-in") as HTMLElement;
+  const toggle = () => row().querySelector("button[role='switch']") as HTMLElement;
+  // Off by default: nothing made, and the row says what it would do.
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
+  expect(row().textContent).toContain("It starts nothing until you say yes, and on a quiet day it says nothing.");
+  expect(hub.automations).toEqual([]);
+
+  await click(toggle());
+  expect(hub.calls.find((c) => c.tool === "automation_create")?.input).toMatchObject({
+    projectRef: project,
+    schedule: { tz: "Europe/Berlin" },
+    watch: { kind: "checkin", every: "day" },
+  });
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+  expect(row().textContent).toContain("Next ");
+  // Not a watcher row, nor an automation card.
+  expect(host.textContent).toContain("Nothing watched yet.");
+  expect(host.textContent).toContain("storefront has no automations yet.");
+
+  // Off deletes it.
+  await click(toggle());
+  expect(hub.calls.some((c) => c.tool === "automation_delete")).toBe(true);
+  expect(hub.automations).toEqual([]);
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
+});

@@ -5,7 +5,7 @@ import type { AutomationRun, AutomationUsage, AutomationWatch, KnownWatchEvery, 
 import { ToolError } from "../../shared/errors.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 
-export const WATCH_KINDS: readonly KnownWatchKind[] = ["main_ci", "deploys", "other"];
+export const WATCH_KINDS: readonly KnownWatchKind[] = ["main_ci", "deploys", "other", "checkin"];
 export const PRESETS: readonly KnownWatchKind[] = ["main_ci", "deploys"];
 export const EVERY: readonly KnownWatchEvery[] = ["15m", "hour", "day"];
 
@@ -13,7 +13,7 @@ export const EVERY: readonly KnownWatchEvery[] = ["15m", "hour", "day"];
 export const EVERY_CRON: Record<KnownWatchEvery, string> = { "15m": "*/15 * * * *", hour: "0 * * * *", day: "0 9 * * *" };
 
 /** A preset's name, which its row and chat line show. */
-export const PRESET_NAME: Record<string, string> = { main_ci: "Main's CI", deploys: "Deploys" };
+export const PRESET_NAME: Record<string, string> = { main_ci: "Main's CI", deploys: "Deploys", checkin: "Daily check-in" };
 
 /** A run's session is stopped and the run failed after this long. */
 export const RUN_LIMIT_MS = 10 * 60_000;
@@ -33,6 +33,8 @@ export function checkWatch(w: AutomationWatch): AutomationWatch {
     throw invalid(`'${w.kind}' is not something a watcher watches.`, "Use main_ci, deploys, or other with one plain sentence as the prompt.");
   }
   if (!EVERY.includes(w.every as KnownWatchEvery)) throw invalid(`'${w.every}' is not a watcher's frequency.`, "Use 15m, hour or day.");
+  // The daily check-in is daily.
+  if (w.kind === "checkin" && w.every !== "day") throw invalid("The daily check-in runs once a day.", "Use every day.");
   return { kind: w.kind, every: w.every, ...(w.profile === undefined ? {} : { profile: w.profile }) };
 }
 

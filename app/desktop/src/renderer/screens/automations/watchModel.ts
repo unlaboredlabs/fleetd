@@ -3,7 +3,7 @@
 import type { Automation, AutomationCreateInput, AutomationWatch, KnownWatchEvery, KnownWatchKind, ProjectRef, WatchKind } from "../../../shared/contracts";
 
 /** What each kind is called where a person picks it. */
-export const KIND_LABEL: Readonly<Record<KnownWatchKind, string>> = { main_ci: "Main's CI", deploys: "Deploys", other: "Something else" };
+export const KIND_LABEL: Readonly<Record<KnownWatchKind, string>> = { main_ci: "Main's CI", deploys: "Deploys", other: "Something else", checkin: "Daily check-in" };
 
 export const EVERY_OPTIONS: ReadonlyArray<{ value: KnownWatchEvery; label: string }> = [
   { value: "15m", label: "15 min" },
@@ -16,7 +16,30 @@ const EVERY_WORD: Readonly<Record<KnownWatchEvery, string>> = { "15m": "Every 15
 /** The longest sentence a "Something else" watcher takes. */
 export const SENTENCE_MAX = 300;
 
-export const isWatcher = (a: Automation): boolean => a.watch !== undefined;
+/** The daily check-in: a watcher of its own kind, shown as the bot's one switch rather than in Watching. */
+export const isCheckIn = (a: Automation): boolean => a.watch?.kind === "checkin";
+
+export const isWatcher = (a: Automation): boolean => a.watch !== undefined && !isCheckIn(a);
+
+export const CHECKIN_TITLE = "Daily check-in";
+
+export const CHECKIN_ABOUT =
+  "Once a day at 09:00 your time, the lead offers to pick up stalled work, approvals waiting on you and follow-ups it promised. It starts nothing until you say yes, and on a quiet day it says nothing.";
+
+/** The check-in as the hub makes it when it is switched on: daily, in the zone of whoever switched it on. */
+export function checkInInput(projectRef: ProjectRef, tz: string, clientRequestId: string): AutomationCreateInput {
+  return { projectRef, name: CHECKIN_TITLE, prompt: CHECKIN_TITLE, schedule: { tz }, watch: { kind: "checkin", every: "day" }, clientRequestId };
+}
+
+/** How its last check-in went, in words; undefined before the first. */
+export function checkInLast(a: Automation): string | undefined {
+  const r = a.lastRun;
+  if (r === undefined) return undefined;
+  if (r.state === "running") return "Checking in now";
+  if (r.state === "failed") return "Last check-in didn't finish";
+  if (r.state === "skipped") return "Last check-in skipped";
+  return r.said !== undefined ? "Last check-in offered help" : "Last check-in: nothing to offer";
+}
 
 export const kindLabel = (k: WatchKind): string => (KIND_LABEL as Record<string, string>)[k] ?? k;
 
