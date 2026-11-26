@@ -364,10 +364,12 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Nothing new below while near the newest end: no button down, and what came in is read. A window far back is never
   // at the newest end.
   const atNewest = win === undefined && awayFrom === null && cameSince === 0;
-  // A reply sent from up the thread: the button down says it went, until the lead answers (its count) or the reader
-  // goes down.
-  const [sentUp, setSentUp] = useState(false);
-  if (sentUp && !sentSays(atNewest, cameSince)) setSentUp(false);
+  // A reply sent from up the thread: the button down says it went, until the lead answers it or the reader goes down.
+  // Counted from the seq it was sent at, so each reply in a row says so, whatever count the one before left.
+  const [sentFrom, setSentFrom] = useState<number | null>(null);
+  const sinceSent = useMemo(() => (sentFrom === null ? 0 : chat.messages.filter((m) => m.author !== "human" && m.seq > sentFrom).length), [sentFrom, chat.messages]);
+  if (sentFrom !== null && !sentSays(atNewest, sinceSent)) setSentFrom(null);
+  const sentUp = sentFrom !== null;
   // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
   // opened at its newest end never scrolls, and older pages come in without a scroll).
   const scrolled = useRef({ y: 0, length: 0 });
@@ -561,7 +563,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     // A reply from further up goes in under the view, held still there, and the button down shows to go to it.
     if (sendStays(out.replyTo !== undefined, heldAt !== null || awayFrom !== null || state.windows[chatKey] !== undefined)) {
       setAwayFrom((a) => a ?? heldAt ?? heldFrom);
-      setSentUp(true);
+      setSentFrom(chatState?.lastSeq ?? newestSeq);
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });
       return;
     }
@@ -844,7 +846,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               <Glass interactive appear style={styles.downButton}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={cameSince > 0 ? `Scroll to the newest, ${String(cameSince)} new` : sentUp ? "Sent. Scroll to the newest" : "Scroll to the newest"}
+                  accessibilityLabel={`${sentUp ? "Sent. " : ""}Scroll to the newest${cameSince > 0 ? `, ${String(cameSince)} new` : ""}`}
                   style={[styles.downHit, sentUp && styles.downSent]}
                   onPress={() => {
                     haptics.tap();

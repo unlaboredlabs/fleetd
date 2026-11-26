@@ -116,8 +116,11 @@ export const outgoing = (
  */
 export const sendStays = (reply: boolean, away: boolean): boolean => reply && away;
 
-/** Whether the button down still says such a reply was sent: until the lead answers (its count) or the reader is down. */
-export const sentSays = (atNewest: boolean, cameSince: number): boolean => !atNewest && cameSince === 0;
+/**
+ * Whether the button down still says such a reply was sent: until the lead answers after it (`sinceSent`, counted from
+ * the reply's own send, not from where the reader scrolled up) or the reader is down.
+ */
+export const sentSays = (atNewest: boolean, sinceSent: number): boolean => !atNewest && sinceSent === 0;
 
 /** A message that replies to a bubble: the quote and the words under it; undefined for any other text. */
 export const replyOf = (text: string): { readonly quote: string; readonly body: string } | undefined => {

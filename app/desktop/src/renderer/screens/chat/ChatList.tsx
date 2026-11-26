@@ -406,13 +406,13 @@ export function ChatList(props: {
   // A reply sent from up the chat stays there, until the reader is back at the end; one sent at the end goes to it.
   const { replied } = props;
   const away = awayFrom !== undefined || inWindow !== undefined;
-  const [sentAway, setSentAway] = useState(false);
+  const [sentFrom, setSentFrom] = useState<string>();
   const [repliedWas, setRepliedWas] = useState(replied);
   if (replied !== repliedWas) {
     setRepliedWas(replied);
-    if (away) setSentAway(true);
+    if (away) setSentFrom(newestKey(rows));
   }
-  if (sentAway && !away) setSentAway(false);
+  if (sentFrom !== undefined && !away) setSentFrom(undefined);
   useEffect(() => {
     const v = virtualizer.current;
     if (replied === undefined || replied === 0 || !v || away) return;
@@ -420,7 +420,7 @@ export function ChatList(props: {
     // Once per reply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replied]);
-  const latest = inWindow !== undefined ? (sentAway ? "Sent" : "Latest") : latestLabel(rows, awayFrom, sentAway);
+  const latest = inWindow !== undefined ? (sentFrom !== undefined ? "Sent" : "Latest") : latestLabel(rows, awayFrom, sentFrom);
   const toLatest = () => {
     unpin.current?.();
     if (inWindow !== undefined) inWindow.onLatest();

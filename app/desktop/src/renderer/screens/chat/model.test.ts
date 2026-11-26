@@ -163,11 +163,14 @@ describe("the chat's rows", () => {
     const before = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))]);
     const from = newestKey(before);
     const replied = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1)), item("c", "human", at(19, 9, 2))]);
-    expect(latestLabel(replied, from, true)).toBe("Sent");
+    expect(latestLabel(replied, from, from)).toBe("Sent");
     const answered = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1)), item("c", "human", at(19, 9, 2)), item("d", "lead", at(19, 9, 3))]);
-    expect(latestLabel(answered, from, true)).toBe("1 new");
+    expect(latestLabel(answered, from, from)).toBe("1 new");
+    // A second reply in a row says so too, though the first one's answer came in since the reader scrolled up.
+    const again = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1)), item("c", "human", at(19, 9, 2)), item("d", "lead", at(19, 9, 3)), item("e", "human", at(19, 9, 4))]);
+    expect(latestLabel(again, from, newestKey(answered))).toBe("Sent");
     // Back at the end: no way down to show.
-    expect(latestLabel(replied, undefined, true)).toBeUndefined();
+    expect(latestLabel(replied, undefined, from)).toBeUndefined();
   });
 
   it("count a teammate's message as new while scrolled up, and yours not", () => {
