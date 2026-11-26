@@ -31,6 +31,7 @@ import { tokensOf } from "./find_rules.ts";
 import { parts as partsOf } from "./parts.ts";
 import { tagLead } from "./tags.ts";
 import { messageFor } from "./whom.ts";
+import { statusShown } from "./status_line.ts";
 import {
   AGENT_PER_MINUTE,
   ATTACHMENTS_MAX,
@@ -97,7 +98,7 @@ const VERSIONS = `CREATE TEMP TABLE IF NOT EXISTS chat_versions (machine_id TEXT
     INSERT OR REPLACE INTO chat_versions VALUES (OLD.machine_id, OLD.project_id, random()); END;`;
 
 /** What a project's chat state takes from its messages, kept until they change (`Chat.state`). */
-type StateParts = { version: number | null | undefined; last?: ChatMessage; openItems: ChatOpenItem[]; waiting: (PersonId | undefined)[] };
+type StateParts = { version: number | null | undefined; last?: ChatMessage; openItems: ChatOpenItem[]; waiting: (PersonId | undefined)[]; humanMs?: number };
 
 /** The hub's chat, `chat(hub)`. */
 export const chat = (hub: Hub) => hub.area("chat", (h) => new Chat(h));
@@ -116,6 +117,8 @@ export class Chat {
   private readonly sendingLocks = new Map<string, Promise<void>>();
   /** Per project, what its chat state takes from its messages, under the chat version it was read at. */
   private readonly states = new Map<string, StateParts>();
+  /** Per project, its lead's status line as kept (`checklist`'s `status`), read once; null for none. */
+  private readonly statuses = new Map<string, { line: string; atMs: number } | null>();
 
   constructor(private readonly hub: Hub) {
     this.db = hub.db;
@@ -714,12 +717,14 @@ export class Chat {
           return [{ messageId: m.messageId, kind, ...(person ? { for: person } : {}) } as ChatOpenItem];
         })
         .slice(0, CHAT_OPEN_ITEMS_MAX);
-      parts = { version, ...(recent.length > 0 ? { last: recent[recent.length - 1] } : {}), openItems, waiting: waiters(this.asked(r), open) };
+      const human = parseMs(this.lastHuman(r)?.createdAt ?? "");
+      parts = { version, ...(recent.length > 0 ? { last: recent[recent.length - 1] } : {}), openItems, waiting: waiters(this.asked(r), open), ...(human !== undefined ? { humanMs: human } : {}) };
       if (version !== undefined) this.states.set(k, parts);
     }
     const { last, openItems } = parts;
     const waits = waitsFor(parts.waiting, (p) => this.onHub(p));
     const nudges = this.nudgesListed(r);
+    const status = statusShown(this.statusOf(r), parts.humanMs);
     return {
       projectRef: r,
       needsYou: waits.needsYou,
@@ -731,7 +736,32 @@ export class Chat {
       ...(last ? { lastMessageAt: last.createdAt } : {}),
       ...(openItems.length > 0 ? { openItems } : {}),
       ...(nudges.length > 0 ? { nudges } : {}),
+      ...(status ? { status: { line: status.line, at: isoMs(status.atMs) } } : {}),
     } as ProjectChatState;
+  }
+
+  /** The project's status line as its lead last wrote it (status_line.ts), whether or not a person wrote since. */
+  statusOf(r: ProjectRef): { line: string; atMs: number } | undefined {
+    const k = key(r);
+    if (!this.statuses.has(k)) {
+      const row = this.db.conn
+        .query<{ line: string; at_ms: number }, [string, string]>("SELECT line, at_ms FROM chat_status_lines WHERE machine_id = ?1 AND project_id = ?2")
+        .get(r.machineId, r.projectId);
+      this.statuses.set(k, row ? { line: row.line, atMs: row.at_ms } : null);
+    }
+    return this.statuses.get(k) ?? undefined;
+  }
+
+  /** Keeps `line` as the project's status line, now (a line statusLineProblem passed). */
+  setStatus(r: ProjectRef, line: string): void {
+    const atMs = this.now();
+    this.db.conn
+      .query(
+        `INSERT INTO chat_status_lines (machine_id, project_id, line, at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET line = excluded.line, at_ms = excluded.at_ms`,
+      )
+      .run(r.machineId, r.projectId, line, atMs);
+    this.statuses.set(key(r), { line, atMs });
   }
 
   /** The project's chat version (`VERSIONS`): null before its first write here, undefined on a read-only database. */
@@ -848,6 +878,7 @@ export class Chat {
       state.leadAsleep ?? false,
       (state.openItems ?? []).map((i) => i.messageId),
       (state.nudges ?? []).map((n) => n.messageId),
+      state.status?.line ?? null,
     ]);
     const k = key(state.projectRef);
     const before = this.said.get(k);

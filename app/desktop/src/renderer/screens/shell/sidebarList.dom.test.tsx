@@ -41,10 +41,12 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
   needsYou: false,
   state: "idle",
   working: false,
+  leadWorking: false,
   running: 0,
   want: undefined,
   unread: false,
   line: "",
+  say: { text: "No messages yet" },
   at: "2026-10-26T09:00:00.000Z",
   pinned: false,
 });
@@ -126,7 +128,7 @@ const rightClick = (el: HTMLElement) =>
 
 describe("one list", () => {
   it("has every bot in one unlabelled list, in its order, each row its name, time and line, numbered while ⌘ is held", () => {
-    mount([{ ...ADA, line: "You: ship it" }, HOME, STOREFRONT]);
+    mount([{ ...ADA, line: "You: ship it", say: { text: "You: ship it" } }, HOME, STOREFRONT]);
     expect(host.querySelector("[class*=sidebarSectionHead]")).toBeNull();
     expect(host.textContent).not.toMatch(/Projects/u);
     const names = [...host.querySelectorAll("[data-reorder-row] [class*=name]")].map((n) => n.textContent);
@@ -143,7 +145,7 @@ describe("one list", () => {
   });
 
   it("numbers the pins first while ⌘ is held, each in its dot's place before its name, then the list on from them", () => {
-    const want = { word: "approve" as const, count: 1, label: "A command to approve" };
+    const want = { word: "approve" as const, count: 1, waiting: { kind: "approve" as const, count: 1 } };
     mount([{ ...ADA, pinned: true, want }, { ...HOME, pinned: true }, STOREFRONT], true);
     const pins = [...host.querySelectorAll<HTMLElement>("[class*=pinCell]")];
     expect(pins.map((c) => [c.querySelector("[class*=jump]")?.textContent, c.querySelector("[class*=pinTitle]")?.textContent])).toEqual([
@@ -230,15 +232,23 @@ describe("one list", () => {
     }
   });
 
-  it("marks a chat that wants you or has a new message with a dot alone, why in its description", () => {
-    const want = { word: "approve" as const, count: 2, label: "2 commands to approve" };
-    mount([{ ...ADA, want, line: "Ship it?" }, { ...HOME, unread: true }, STOREFRONT]);
-    expect(button("Ada").querySelector("[class*=dot]")?.getAttribute("data-want")).toBe("approve");
-    expect(button("Ada").querySelector("[class*=mark]")?.textContent).toBe("");
-    expect(button("Ada").getAttribute("aria-description")).toBe("2 commands to approve");
+  it("says in its line what a chat wants of you, with no dot, and marks a new message with the dot alone", () => {
+    const want = { word: "approve" as const, count: 2, waiting: { kind: "approve" as const, count: 2, what: "Run the stock migration" } };
+    mount([
+      { ...ADA, want, line: "Ship it?", say: { lead: "2 to approve:", text: "Run the stock migration", tone: "want" } },
+      { ...HOME, unread: true },
+      { ...STOREFRONT, running: 3, working: true, leadWorking: true, say: { text: "Working…", tone: "working" } },
+    ]);
+    const line = button("Ada").querySelector("[class*=line]");
+    expect(line?.textContent).toBe("2 to approve: Run the stock migration");
+    expect(line?.getAttribute("data-tone")).toBe("want");
+    expect(button("Ada").querySelector("[class*=dot]")).toBeNull();
+    expect(button("Ada").querySelector("[class*=mark]")).toBeNull();
     expect(button("Home").querySelector("[class*=dot]")?.hasAttribute("data-want")).toBe(false);
     expect(button("Home").getAttribute("aria-description")).toBe("New message from the lead");
-    expect(button("storefront").querySelector("[class*=dot]")).toBeNull();
+    // A working bot says so in its line; its agents aren't counted on the row.
+    expect(button("storefront").querySelector("[class*=line]")?.textContent).toBe("Working…");
+    expect(button("storefront").querySelector("[class*=mark]")).toBeNull();
   });
 
   it("leaves the list empty with no bots, its one empty state and Add a bot in the main area, and nothing while they load", () => {

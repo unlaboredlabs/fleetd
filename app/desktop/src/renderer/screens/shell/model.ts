@@ -4,6 +4,7 @@ import { WAKE_QUIET_MS, type HubState } from "../../../shared/hub";
 import { RESTART_HOLD_MS } from "../../src/data/store";
 import type { ProjectRow } from "../../src/data/selectors";
 import type { ProjectKey } from "./routes";
+import { requestWhat, rowLine, type RowLine, type Waiting } from "../../../shared/rowLine";
 
 /** Why a project wants you: a secret to enter, a command to approve, a reply, or something outside the work. */
 export type WantWord = "secret" | "approve" | "reply" | "blocked";
@@ -13,8 +14,8 @@ export interface Want {
   readonly word: WantWord | undefined;
   /** How many of that kind wait: secrets or approvals; 1 otherwise. */
   readonly count: number;
-  /** The row's tooltip and accessible name for the mark. */
-  readonly label: string;
+  /** What waits, for the row's line (shared/rowLine.ts). */
+  readonly waiting: Waiting;
 }
 
 /** A project row with the sidebar's two marks. */
@@ -27,6 +28,8 @@ export interface SidebarProject extends ProjectRow {
   readonly warning?: string | undefined;
   /** Its newest line (latest.ts): "You: ship it", "Asks for your approval"; empty while unknown or there is none. */
   readonly line: string;
+  /** Its second line: what waits on you, else "Working…", else its lead's status line, else `line` (shared/rowLine.ts). */
+  readonly say: RowLine;
   /** When that line was written, else when the chat or project last moved (ISO): the sidebar's order. */
   readonly at: string;
   /** You pinned it (pins.ts): on top, in your order, whatever moves. */
@@ -40,6 +43,12 @@ export interface RequestIn {
   readonly projectRef: ProjectKey;
   readonly kind: "secret" | "approval";
   readonly state: string;
+  /** Its one line on why the lead needs it. */
+  readonly text?: string | undefined;
+  /** A command's: why it runs, in the lead's words, which the row says over `text`. */
+  readonly gated?: { readonly reason?: string | undefined } | undefined;
+  /** A field or a sign-in the person fills in: its label and site, which the row says over `text`. */
+  readonly secureInput?: { readonly label: string; readonly site: { readonly name: string }; readonly signIn?: unknown } | undefined;
   /** The person it waits on (requests_list's `for`); absent: anyone. */
   readonly for?: { readonly personId: string } | undefined;
 }
@@ -70,25 +79,31 @@ export interface MarksIn {
   readonly sections?: ReadonlyArray<{ readonly id: string; readonly chats: ReadonlyArray<ProjectKey> }> | undefined;
 }
 
-const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
-
 /** The most pressing reason first: a secret or an approval blocks a run now; a reply, then a block outside the work. */
 const wantOf = ({ key, needsYou }: ProjectRow, marks: MarksIn): Want | undefined => {
   // A teammate's card shows in the chat, but marks only their sidebar.
   const mine = (r: RequestIn) => r.for === undefined || marks.me === undefined || r.for.personId === marks.me;
   const open = marks.requests?.filter((r) => r.state === "open" && projectId(r.projectRef) === key && mine(r));
-  const secrets = open?.filter((r) => r.kind === "secret").length ?? 0;
-  const approvals = open?.filter((r) => r.kind === "approval").length ?? 0;
-  if (secrets > 0) return { word: "secret", count: secrets, label: `The lead needs ${plural(secrets, "secret", "secrets")} from you` };
-  if (approvals > 0) return { word: "approve", count: approvals, label: `${plural(approvals, "command", "commands")} to approve` };
+  const secrets = open?.filter((r) => r.kind === "secret") ?? [];
+  const approvals = open?.filter((r) => r.kind === "approval") ?? [];
+  const what = (rs: readonly RequestIn[]) => (rs[0] === undefined ? undefined : requestWhat(rs[0]));
+  if (secrets.length > 0) {
+    // A sign-in form says its site; any other secret what it is for.
+    const signIn = secrets.every((r) => r.secureInput?.signIn !== undefined);
+    return { word: "secret", count: secrets.length, waiting: { kind: signIn ? "signIn" : "secret", count: secrets.length, what: what(secrets) } };
+  }
+  if (approvals.length > 0) {
+    return { word: "approve", count: approvals.length, waiting: { kind: "approve", count: approvals.length, what: what(approvals) } };
+  }
   if (needsYou) {
     return marks.requests === undefined
-      ? { word: undefined, count: 1, label: "The lead is waiting on you" }
-      : { word: "reply", count: 1, label: "The lead is waiting for your reply" };
+      ? { word: undefined, count: 1, waiting: { kind: "unknown", count: 1 } }
+      : { word: "reply", count: 1, waiting: { kind: "reply", count: 1 } };
   }
   if (marks.blocked?.has(key) === true) {
     const why = marks.blocked.get(key);
-    return { word: "blocked", count: 1, label: why === undefined || why === "" ? "Blocked" : `Blocked: ${why}` };
+    const said = why === undefined || why === "" ? undefined : why;
+    return { word: "blocked", count: 1, waiting: { kind: "blocked", count: 1, what: said } };
   }
   return undefined;
 };
@@ -107,7 +122,10 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
     const by = latest?.person;
     const name = by === undefined ? "" : (marks.names?.get(by.id) ?? by.name);
     const who = by === undefined || latest?.text === "" ? "" : by.id === "" || by.id === marks.me || name === "" ? "You: " : `${name.split(/\s+/u)[0] ?? name}: `;
-    return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key), line: `${who}${latest?.text ?? ""}`, at, pinned: marks.pins?.includes(r.key) === true, section: section.get(r.key) };
+    const want = wantOf(r, marks);
+    const line = `${who}${latest?.text ?? ""}`;
+    const say = rowLine({ waiting: want?.waiting, leadWorking: r.leadWorking, status: r.status, newest: line === "" ? "No messages yet" : line });
+    return { ...r, want, unread, warning: marks.warnings?.get(r.key), line, say, at, pinned: marks.pins?.includes(r.key) === true, section: section.get(r.key) };
   });
 };
 

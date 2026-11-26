@@ -2,7 +2,7 @@
 // width apart so they read as one group (one to three make a centred row, four are three and one, nine fill three
 // rows), each name under it at medium weight in the text's own colour. Unread, its newest message rises out of the
 // avatar in a bubble, with a dot before the name, which turns semibold; while its lead works, a typing bubble with the
-// working glyph takes the bubble's place; an approval waiting is an orange dot on the avatar, as the rows mark it (pinnedGrid.ts). A tap
+// working glyph takes the bubble's place; an approval waiting is an orange dot on the avatar, since a pin has no line to say it in (pinnedGrid.ts). A tap
 // opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute, Move to Section…) in
 // iOS's menu. A pin grows into its place and an unpinned one shrinks away, on the app's snap curve.
 import type { ComponentProps } from "react";

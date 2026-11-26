@@ -1,6 +1,6 @@
 // What the sidebar shows (W694, W714): one hub at a time, picked from its name in the hub row; its pins, then its bots,
-// your sections under quiet labels. The list's ⋯ orders the bots (newest first, by name, or the ones that want you
-// first) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
+// your sections under quiet labels. The list's ⋯ orders the bots (the ones that want you first, then newest first; or
+// by name) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
 // another hub shows that hub. The rows on show, in order, are what ⌘1–9 count (shownRows). A computer that kept the
 // old List or Rail layout (fleetd.sidebarLayout) just shows this. Switching to another hub (its switcher, the swipe,
 // the marks, ⇧⌘[ / ⇧⌘]) takes the screen with it (openHub). A section's label folds it (W798): which are folded is
@@ -9,12 +9,12 @@ import { useSyncExternalStore } from "react";
 import { currentRoute, navigate } from "./navigation";
 import { HOME } from "./routes";
 
-/** How the hub's bots are ordered under the pins, in each section: newest first, by name, or the ones that want you first. */
-export type SidebarSort = "recent" | "name" | "needs";
+/** How the hub's bots are ordered under the pins, in each section: the ones that want you first, then newest first
+ * (W950); or by name. A computer that kept the old "Needs you first" has Recent, which now does it. */
+export type SidebarSort = "recent" | "name";
 export const SORTS: ReadonlyArray<{ readonly id: SidebarSort; readonly label: string }> = [
   { id: "recent", label: "Recent" },
   { id: "name", label: "Name" },
-  { id: "needs", label: "Needs you first" },
 ];
 
 const LIST = "fleetd.sidebarList";
@@ -103,11 +103,13 @@ interface Shown {
   readonly project: { readonly title: string };
 }
 
-/** Bots in the list's order: as they came (newest first, held while the pointer is over the list), by name, or the ones that want you first. */
-export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarSort): ReadonlyArray<P> =>
+/** Bots in the list's order: the ones that want you first, then as they came (newest first); or by name. While the
+ * pointer is over the list (`held`: sidebarState.ts holdRows) the frame already keeps them as they were drawn, the
+ * ones that wanted you first among them, so none moves under it, not even one that starts or stops wanting you. */
+export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarSort, held = false): ReadonlyArray<P> =>
   sort === "name"
     ? rows.toSorted((a, b) => a.project.title.localeCompare(b.project.title, undefined, { sensitivity: "base" }))
-    : sort === "needs"
+    : !held && rows.some((r) => r.want !== undefined)
       ? rows.toSorted((a, b) => Number(b.want !== undefined) - Number(a.want !== undefined))
       : rows;
 
@@ -173,12 +175,12 @@ const NO_FOLDS: ReadonlySet<string> = new Set();
  * in no section, then each section, in the order the frame arranged them), each group in the list's order. A folded section's chats are
  * left out, bar the pinned ones (among the pins). ⌘1–9 count these.
  */
-export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string, shut: ReadonlySet<string> = NO_FOLDS): ReadonlyArray<P> => {
+export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string, shut: ReadonlySet<string> = NO_FOLDS, held = false): ReadonlyArray<P> => {
   const own = rows.filter((p) => p.hub === hub);
   const rest = own.filter((p) => !p.pinned && (p.section === undefined || !shut.has(foldKey(hub, p.section))));
   const group = new Map<string | undefined, number>();
   for (const p of rest) if (!group.has(p.section)) group.set(p.section, group.size);
   // A stable sort by group keeps each group in the list's order.
-  const grouped = sortRows(rest, v.sort).toSorted((a, b) => (group.get(a.section) ?? 0) - (group.get(b.section) ?? 0));
+  const grouped = sortRows(rest, v.sort, held).toSorted((a, b) => (group.get(a.section) ?? 0) - (group.get(b.section) ?? 0));
   return [...own.filter((p) => p.pinned), ...grouped];
 };

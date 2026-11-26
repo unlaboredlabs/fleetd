@@ -2210,7 +2210,7 @@ export const screens: readonly Screen[] = [
   // W580: your own sections. Under the pins (billing is one of Clients' too, and shows among the pins only) and the chat
   // in no section, Clients and Later under their labels: 12/16 regular in the quiet colour, in line with the
   // pictures, 12 px under the row before and 2 px over the next, no line and no count. Their chats are in the order
-  // of their latest activity.
+  // of their latest activity, the ones that want you first (W950).
   {
     id: "shell",
     route: "#/",
@@ -2220,7 +2220,7 @@ export const screens: readonly Screen[] = [
       const nav = page.getByRole("navigation", { name: "Sidebar" });
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
       const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
-      await expect(lines).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
+      await expect(lines).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^inventory/u, /^mobile/u, /^checkout/u, "Later", /^search/u, /^docs/u]);
       const label = nav.getByRole("button", { name: "Clients", exact: true });
       const name = label.locator('[class*="sectionName"]');
       const quiet = await lines.nth(1).locator('[class*="line"]').first().evaluate((el) => getComputedStyle(el).color);
@@ -2302,20 +2302,22 @@ export const screens: readonly Screen[] = [
       await nav.getByRole("button", { name: "Later", expanded: true }).click();
       const folded = nav.getByRole("button", { name: "Later", expanded: false });
       await expect(folded).toHaveAccessibleDescription("2 chats, one waits on you");
-      await expect(nav.locator('[class*="rows"] > [data-reorder-row]')).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later2"]);
       expect(await page.evaluate(() => window.localStorage.getItem("fleetd.foldedSections"))).toContain("/s2");
-      // The pointer is off the label, as it is at rest: no chevron shows.
+      // The pointer is off the label, as it is at rest: no chevron shows. Off the list, the rows take their places, the
+      // ones that want you first (while it was over the list, they held still).
       await page.mouse.move(600, 400);
+      await expect(nav.locator('[class*="rows"] > [data-reorder-row]')).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^inventory/u, /^mobile/u, /^checkout/u, "Later2"]);
       await expect(folded.locator('[class*="sectionHint"]')).toHaveCSS("opacity", "0");
       const box = async (at: Locator) => {
         const b = await at.boundingBox();
         if (b === null) throw new Error("not on screen");
         return b;
       };
-      const [dot, rowDot, count, name] = await Promise.all([folded.locator('[class*="dot"]'), nav.locator('[class*="rows"] [class*="mark"] [class*="dot"]').first(), folded.locator('[class*="sectionCount"]'), folded.locator('[class*="sectionName"]')].map(box));
-      if (dot === undefined || rowDot === undefined || count === undefined || name === undefined) throw new Error("not on screen");
-      // The dot's centre in line with a row's; the count 4 px after the name.
-      expect(dot.x + dot.width / 2).toBeCloseTo(rowDot.x + rowDot.width / 2, 0);
+      const [dot, rowMark, count, name] = await Promise.all([folded.locator('[class*="dot"]'), nav.locator('[class*="rows"] [class*="mark"]').first(), folded.locator('[class*="sectionCount"]'), folded.locator('[class*="sectionName"]')].map(box));
+      if (dot === undefined || rowMark === undefined || count === undefined || name === undefined) throw new Error("not on screen");
+      // The dot ends where a row's mark does, in the rows' one column (a row's own dot sat there, at its end); the count
+      // 4 px after the name.
+      expect(dot.x + dot.width).toBeCloseTo(rowMark.x + rowMark.width, 0);
       expect(count.x - (name.x + name.width)).toBeCloseTo(4, 0);
     },
   },
@@ -2334,12 +2336,12 @@ export const screens: readonly Screen[] = [
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/blog/u]);
       await page.locator('[data-opens="hubs"]').click();
       await page.getByRole("menuitem", { name: /Acme/u }).click();
-      await expect(groups.locator("> [data-reorder-row]")).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
+      await expect(groups.locator("> [data-reorder-row]")).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^inventory/u, /^mobile/u, /^checkout/u, "Later", /^search/u, /^docs/u]);
       await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
       await page.mouse.move(600, 400);
     },
   },
-  // W714: the sidebar's ⋯, open: Sort by (Recent, Name, Needs you first), Compact rows and Archived bots; and the list
+  // W714: the sidebar's ⋯, open: Sort by (Recent, which puts the ones that want you first, or Name), Compact rows and Archived bots; and the list
   // drawn compact, one line a bot, on one hub with a few bots and on three hubs with sections and nineteen bots.
   {
     id: "shell",
@@ -2348,7 +2350,7 @@ export const screens: readonly Screen[] = [
     variant: "view-menu",
     open: async (page) => {
       await page.locator('[data-opens="list-menu"]').click();
-      await expect(page.getByRole("menuitemradio")).toHaveText(["Recent", "Name", "Needs you first"]);
+      await expect(page.getByRole("menuitemradio")).toHaveText(["Recent", "Name"]);
       await expect(page.getByRole("menuitemradio", { name: "Recent" })).toBeChecked();
       await expect(page.getByRole("menuitemcheckbox", { name: "Compact rows" })).not.toBeChecked();
     },

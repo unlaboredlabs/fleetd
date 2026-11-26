@@ -24,6 +24,7 @@ export const CARRIED = [
   "chat_pins",
   "chat_projects",
   "chat_sections",
+  "chat_status_lines",
   "checklists",
   "ci_waits",
   "claude_accounts",

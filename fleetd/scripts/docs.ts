@@ -340,7 +340,7 @@ const TOOL_GROUPS: [string, [string, string][]][] = [
     [
       ["brief", "Open an order: its goal, why, and when it's done."],
       ["close", "Close an order once it's done."],
-      ["checklist", "Keep the to-do list shown beside the chat."],
+      ["checklist", "Keep the to-do list shown beside the chat, and say where things stand for the chat list."],
       ["decide", "Record a decision, so it's never asked twice."],
       ["decisions_search", "Search the bot's decisions."],
       ["nudge", "Flag its last message for you to look at."],

@@ -2278,6 +2278,12 @@ export type ChatOpenNudge = {
   reason: string;
 };
 
+/** A bot's status line, as its lead last wrote it (`checklist`'s `status`): where things stand, in one short line. */
+export type ChatStatusLine = {
+  at: Timestamp;
+  line: string;
+};
+
 /**
  * One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as
  * markdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).
@@ -6908,6 +6914,11 @@ export type ProjectChatState = {
    */
   openItems?: ChatOpenItem[];
   projectRef: ProjectRef;
+  /**
+   * Where things stand, in the lead's own short line (`checklist`'s `status`): what the sidebar and the phone's chat list show
+   * under the bot's name. Absent: none written, a person wrote since, or an older hub.
+   */
+  status?: ChatStatusLine;
 };
 
 /** The key a project was created with: its id, and the person's or device's name the key carries. */

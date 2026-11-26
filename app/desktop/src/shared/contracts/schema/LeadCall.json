@@ -899,6 +899,13 @@
         },
         "replace": {
           "type": "boolean"
+        },
+        "status": {
+          "description": "The bot's status line (chat/status_line.ts): where things stand in one short line, what it needs from the\nperson first, which the sidebar and the phone's chat list show under its name. Alone, it leaves the list as it is.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         }
       },
       "type": "object"

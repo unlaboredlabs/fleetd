@@ -9,13 +9,16 @@
 // drag a chat up among them to pin it there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
-// so a row never moves under a click. A row ends in a dot while its chat wants you (a reply, an approval, a secret, a
-// block: the warning's colour, why in its tooltip) or has a new message (the accent's, its line in full voice), else
-// says a red main or the agents at work; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of
+// so a row never moves under a click. A row's second line says what its chat wants of you, in the warning's colour
+// ("Approve: Run the stock migration", a secret, a reply, a block), else "Working…" while its lead works, else the line
+// its lead last wrote on where things stand, else its newest message (shared/rowLine.ts, W950); the chats that want you
+// come first. Its bot says the same at any size: it hops while it needs you, scans while it works, and jumps once when
+// a turn lands (shared/bot.ts). A row ends in a dot for a new message (the accent's, its line in full voice), else says
+// a red main; and when its line was written. Holding ⌘ (Ctrl) shows jump numbers in place of
 // the times on the first nine rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins
 // it, renames it, copies its path, archives it (Undo in the toast) or deletes it (from its settings, which list its
 // worktrees and ask for its name first). An archived project is in none (the ⋯'s Archived bots, Settings › Projects,
-// brings it back). The ⋯ orders the list (newest first, by name, or the ones that want you first) and makes its rows
+// brings it back). The ⋯ orders the list (the ones that want you first, then newest first; or by name) and makes its rows
 // compact (sidebarLayout.ts), kept on this computer.
 //
 // The chats in none of your sections come first (under a quiet Bots label once you have sections), then your sections
@@ -30,15 +33,16 @@
 import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search, Server } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import type { HubView } from "../../src/data/hubs";
-import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
+import type { ProjectTarget } from "../projects/actions";
+import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, preloadable, preloadWhenIdle, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
+import { lineWords } from "../../../shared/rowLine";
 import { useHubState } from "./hubFeed";
 import { switchHub, useHubSwipe } from "./hubSwipe";
 import { useHubRows } from "./hubRows";
@@ -49,17 +53,25 @@ import type { Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
 import { changePins, inOrder, pinnedAt, PINS_MAX, unpinned } from "./pins";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
-import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
+import { MoveToSection, SectionLabel, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
-import { holdRows } from "./sidebarState";
+import { holdRows, useHeldRows } from "./sidebarState";
 import { foldKey, openHub, setListView, shownRows, SORTS, sortRows, toggleFold, useFolded, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
 import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
 import { useCloud } from "../onboarding/cloud";
-import { askedOn, NewWorkspaceDialog } from "./NewWorkspace";
+import { askedOn } from "./workspaceAsk";
 import { PlaceIcons, useHubsMark, You } from "./You";
 import s from "./sidebar.module.css";
+
+/** The dialogs a menu opens (New workspace, Rename, a section's name), loaded on use, never in the first chat's load:
+ * on the web once the app is idle, on the desktop at once. */
+const NewWorkspaceDialog = preloadable(() => import("./NewWorkspace").then((m) => m.NewWorkspaceDialog));
+const RenameProjectDialog = preloadable(() => import("../projects/actions").then((m) => m.RenameProjectDialog));
+const SectionNameDialog = preloadable(() => import("./SectionName").then((m) => m.SectionNameDialog));
+if (onWeb()) preloadWhenIdle(NewWorkspaceDialog, RenameProjectDialog, SectionNameDialog);
+else for (const d of [NewWorkspaceDialog, RenameProjectDialog, SectionNameDialog]) d.preload().catch(() => undefined);
 
 /** A chat's picture in its row: big enough to read its face, the row a 46 px rounded box around it. */
 const AVATAR = 32;
@@ -185,6 +197,8 @@ function HubSwitcher({ hub: id }: { hub: string }) {
   const rows = useHubRows();
   const cloud = useCloud().state.available || onWeb();
   const [making, setMaking] = useState(false);
+  // The dialog mounts once first asked for, and stays, so it closes as it opened.
+  const [asked, setAsked] = useState(false);
   // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
   // without opening.
   const off = useHubsMark();
@@ -219,7 +233,7 @@ function HubSwitcher({ hub: id }: { hub: string }) {
           ))}
           <MenuSeparator />
           {cloud ? (
-            <MenuItem icon={<Plus aria-hidden />} data-opens="workspace.new" onSelect={() => (from === null ? connect() : setMaking(true))}>
+            <MenuItem icon={<Plus aria-hidden />} data-opens="workspace.new" onSelect={() => (from === null ? connect() : (setAsked(true), setMaking(true)))}>
               New workspace…
             </MenuItem>
           ) : null}
@@ -230,7 +244,11 @@ function HubSwitcher({ hub: id }: { hub: string }) {
           )}
         </MenuContent>
       </Menu>
-      {from === null ? null : <NewWorkspaceDialog from={from} open={making} onClose={() => setMaking(false)} />}
+      {from === null || !asked ? null : (
+        <Suspense fallback={null}>
+          <NewWorkspaceDialog from={from} open={making} onClose={() => setMaking(false)} />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -267,35 +285,30 @@ export const whenShort = (iso: string, now = new Date()): string => {
   return whenFormat(at.getFullYear() === now.getFullYear() ? "date" : "dateYear", at);
 };
 
-/** The row's one mark: a dot while it wants you or has a new message, else a red main, else how many agents work. */
+/** The row's one mark: a dot for a new message, else a red main. What waits on you and what works, its line and its bot
+ * say (W950): the bot hops while it needs you and moves while it works, at any size. */
 const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: string } | null => {
-  const want = p.want;
-  // A dot, the whole message (the human's call, W530): the warning's for one that waits on you, the accent's for a new
-  // message; its words in the tooltip and the row's description.
-  if (want !== undefined) return { node: <span className={s.dot} data-want={want.word ?? "you"} aria-hidden />, tip: want.label };
   if (p.unread) return { node: <span className={s.dot} aria-hidden />, tip: UNREAD };
   // It stops nothing, so the word without the weight that asks for you.
   if (p.warning !== undefined) return { node: <span className={s.red}>CI red</span>, tip: p.warning };
-  if (p.running > 0) {
-    return {
-      node: (
-        <span className={s.work}>
-          <StateGlyph state="working" size="sm" />
-          {String(p.running)}
-        </span>
-      ),
-      tip: `${String(p.running)} ${p.running === 1 ? "agent" : "agents"} working`,
-    };
-  }
-  if (p.working) return { node: <StateGlyph state="thinking" size="sm" />, tip: "The lead is working" };
   return null;
 };
 
 /** What the row knows of its bot beyond the project's row: why it wants you, and a reply you haven't seen. */
 const botOwn = (p: SidebarProject): Partial<BotIn> => ({ needs: p.want !== undefined && p.want.word !== "blocked", blocked: p.want?.word === "blocked", done: p.unread });
 
-/** The row's line: its newest, else while its lead works that it does, else why it wants you, else that it is new. */
-const lineOf = (p: SidebarProject): string => p.line || (p.working ? "Working…" : (p.want?.label ?? "No messages yet"));
+/** The row's line, as words: what waits on you, "Working…", its lead's status line, or its newest (shared/rowLine.ts). */
+const lineOf = (p: SidebarProject): string => lineWords(p.say);
+
+/** The row's line, drawn: what to do a step stronger, in the line's tone. */
+function Line({ p }: { readonly p: SidebarProject }) {
+  return (
+    <span className={s.line} data-tone={p.say.tone} data-empty={p.line === "" && p.say.tone === undefined && p.status === undefined ? true : undefined}>
+      {p.say.lead === undefined ? null : <span className={s.lineLead}>{p.say.lead} </span>}
+      <HubText>{p.say.text}</HubText>
+    </span>
+  );
+}
 
 interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly p: SidebarProject;
@@ -367,9 +380,7 @@ function Row({ p, current, jump, asOf, into, avatar = AVATAR, dense = false, ...
           )}
         </span>
         <span className={s.bottom}>
-          <span className={s.line} data-empty={p.line === "" || undefined}>
-            <HubText>{lineOf(p)}</HubText>
-          </span>
+          <Line p={p} />
           {m === null ? null : (
             <Tooltip content={tip === undefined ? undefined : <HubText>{tip}</HubText>}>
               <span className={s.mark}>{m.node}</span>
@@ -450,7 +461,8 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   const view = given.view ?? windowView;
   const hub = given.hub ?? viewedHub(view, hubs, screen.at);
   const folded = useFolded();
-  const shown = given.shown ?? (projects === undefined ? undefined : shownRows(projects, view, hub, folded));
+  const held = useHeldRows() !== null;
+  const shown = given.shown ?? (projects === undefined ? undefined : shownRows(projects, view, hub, folded, held));
   const loaded = useHubRows();
   const jumpOf = (p: Placed): number | null => {
     const at = shown?.indexOf(p) ?? -1;
@@ -458,7 +470,13 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   };
   // Nothing outlives the sidebar holding its rows.
   useEffect(() => () => holdRows(null), []);
-  const keys = projects?.map((p) => p.key);
+  // Held as drawn: each hub's rows on show in the list's order (the ones that want you first), then the rest.
+  const keys = useMemo(() => {
+    if (projects === undefined) return undefined;
+    const drawn = hubs.flatMap((h) => shownRows(projects, view, h.id, folded, held));
+    const at = new Set(drawn);
+    return [...drawn, ...projects.filter((p) => !at.has(p))].map((p) => p.key);
+  }, [projects, hubs, view, folded, held]);
   const shownHub = hubs.find((h) => h.id === hub) ?? hubs[0];
   const openOn = (id: string): ProjectKey | null => (screen.id === "project" && screen.at === id ? screen.project : null);
   const hold = { onPointerEnter: () => holdRows(keys ?? null), onPointerLeave: () => holdRows(null) };
@@ -657,8 +675,18 @@ const Loading = ({ busy }: { busy: boolean }) => (
  * the dialogs it opens. `rows` are the hub's rows, which pin changes are made among.
  */
 function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (screen: Screen) => void) {
-  const [renaming, setRenaming] = useState<ProjectTarget | null>(null);
-  const [naming, setNaming] = useState<Naming | null>(null);
+  const [renaming, setRenamingNow] = useState<ProjectTarget | null>(null);
+  const [naming, setNamingNow] = useState<Naming | null>(null);
+  // The dialogs mount once first asked for, and stay, so each closes as it opened.
+  const [asked, setAsked] = useState(false);
+  const setRenaming = (t: ProjectTarget | null) => {
+    if (t !== null) setAsked(true);
+    setRenamingNow(t);
+  };
+  const setNaming = (n: Naming | null) => {
+    if (n !== null) setAsked(true);
+    setNamingNow(n);
+  };
   const layer = useDataLayer();
   const sections = useSections() ?? NO_SECTIONS;
   // A change is made to the hub's own list (sections.ts), which the ones on show may not be yet.
@@ -694,12 +722,12 @@ function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (scree
         <ContextMenuCopy text={workspaceRoot}>Copy path</ContextMenuCopy>
         <ContextMenuSeparator />
         {/* Archive keeps everything and shows an Undo; Delete is only in the bot's settings, at the bottom. */}
-        <ContextMenuItem onSelect={() => void archiveProject(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
+        <ContextMenuItem onSelect={() => void import("../projects/actions").then((m) => m.archiveProject(layer, { machineId, projectId, title }))}>Archive</ContextMenuItem>
       </>
     );
   };
-  const dialogs = (
-    <>
+  const dialogs = !asked ? null : (
+    <Suspense fallback={null}>
       <RenameProjectDialog project={renaming} onClose={() => setRenaming(null)} />
       <SectionNameDialog
         naming={naming}
@@ -707,7 +735,7 @@ function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (scree
         onName={(n, name) => change((now) => (n.t === "new" ? addSection(now, newSectionId(), name, n.chat) : renameSection(now, n.section.id, name)))}
         onClose={() => setNaming(null)}
       />
-    </>
+    </Suspense>
   );
   return { layer, sections, change, pinned, pinOn, openRow, menu, setNaming, dialogs };
 }
@@ -737,11 +765,13 @@ function ProjectGroup(props: {
   // Under the pins: the chats in none of your sections under Bots, then each section's label and its chats.
   const { sort, compact } = props.view;
   const folded = useFolded();
+  const held = useHeldRows() !== null;
   const lines = useMemo(() => {
     const below = sectionLines(
       sortRows(
         (rows ?? []).filter((p) => !p.pinned),
         sort,
+        held,
       ),
       sections,
       (id) => folded.has(foldKey(hub.id, id)),
@@ -749,7 +779,7 @@ function ProjectGroup(props: {
     // With sections on show, the chats in none get a label of their own too; with none, no label at all.
     const labelled = below[0]?.t === "chat" && below.some((l) => l.t === "section");
     return labelled ? [{ t: "section" as const, section: BOTS, folded: false, count: 0, dot: undefined }, ...below] : below;
-  }, [rows, sections, sort, folded, hub.id]);
+  }, [rows, sections, sort, folded, hub.id, held]);
   // Your sections on show, in order: what a label's Move up and Move down pass (Bots is none of them).
   const labelled = lines.flatMap((l) => (l.t === "section" && l.section !== BOTS ? [l.section.id] : []));
   const rowsByKey = useMemo(() => new Map((rows ?? []).map((p) => [p.key, p])), [rows]);

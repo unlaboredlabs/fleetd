@@ -38,10 +38,12 @@ const PROJECT: SidebarProject = {
   needsYou: false,
   state: "idle",
   working: false,
+  leadWorking: false,
   running: 0,
   want: undefined,
   unread: false,
   line: "",
+  say: { text: "No messages yet" },
   at: "2026-10-26T09:00:00.000Z",
   pinned: false,
 };

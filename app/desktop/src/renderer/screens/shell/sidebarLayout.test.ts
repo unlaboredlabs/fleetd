@@ -14,14 +14,13 @@ const keys = (rows: ReadonlyArray<{ key: string }>) => rows.map((r) => r.key);
 const view = (more: Partial<SidebarView> = {}): SidebarView => ({ hub: null, sort: "recent", compact: false, ...more });
 
 describe("the rows on show, which ⌘1–9 count", () => {
-  it("are the hub on show's: its pins, then the rest as they came", () => {
-    expect(keys(shownRows(ROWS, view(), "a"))).toEqual(["pin", "top", "Api", "garden"]);
+  it("are the hub on show's: its pins, then the ones that want you, then the rest as they came", () => {
+    expect(keys(shownRows(ROWS, view(), "a"))).toEqual(["pin", "Api", "top", "garden"]);
     expect(keys(shownRows(ROWS, view(), "b"))).toEqual(["other"]);
   });
 
-  it("follow the list's order: by name, whatever the case, or the ones that want you first", () => {
+  it("follow the list's order: by name, whatever the case", () => {
     expect(keys(shownRows(ROWS, view({ sort: "name" }), "a"))).toEqual(["pin", "Api", "garden", "top"]);
-    expect(keys(shownRows(ROWS, view({ sort: "needs" }), "a"))).toEqual(["pin", "Api", "top", "garden"]);
   });
 
   it("are sorted within each section, the groups in the frame's order, as the sidebar draws them", () => {
@@ -33,7 +32,7 @@ describe("the rows on show, which ⌘1–9 count", () => {
       { ...row("bee", "a", { want: true }), section: "home" },
     ];
     expect(keys(shownRows(sectioned, view({ sort: "name" }), "a"))).toEqual(["amy", "zed", "api", "web", "bee"]);
-    expect(keys(shownRows(sectioned, view({ sort: "needs" }), "a"))).toEqual(["zed", "amy", "web", "api", "bee"]);
+    expect(keys(shownRows(sectioned, view(), "a"))).toEqual(["zed", "amy", "web", "api", "bee"]);
   });
 
   it("leave out a folded section's chats on its own hub, bar the pinned ones", () => {
@@ -43,8 +42,14 @@ describe("the rows on show, which ⌘1–9 count", () => {
     expect(keys(shownRows(sectioned, view(), "a", new Set([foldKey("b", "work")])))).toEqual(["pin", "top", "api", "garden"]);
   });
 
-  it("keep the order they came in when sorted by recent", () => {
+  it("leave the ones that want you where they are while the list is held, so none moves under the pointer", () => {
+    expect(keys(shownRows(ROWS, view(), "a", undefined, true))).toEqual(["pin", "top", "Api", "garden"]);
     const rest = ROWS.filter((r) => !r.pinned);
+    expect(sortRows(rest, "recent", true)).toBe(rest);
+  });
+
+  it("keep the order they came in when sorted by recent and none wants you", () => {
+    const rest = ROWS.filter((r) => !r.pinned && r.want === undefined);
     expect(sortRows(rest, "recent")).toBe(rest);
   });
 });

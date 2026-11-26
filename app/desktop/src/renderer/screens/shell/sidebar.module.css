@@ -216,6 +216,13 @@
 .row[data-unread] .when {
   color: var(--text);
 }
+/* It waits on you: the line says what, in the warning's colour, its verb a step stronger. */
+.row .line[data-tone="want"] {
+  color: var(--warning);
+}
+.lineLead {
+  font-weight: var(--weight-medium);
+}
 
 
 /* Every row's mark sits in one column at the row's far end, on the line's centre, 18 px tall: a dot alone, or a small
@@ -245,8 +252,7 @@
   line-height: var(--leading-xs);
 }
 
-.red,
-.work {
+.red {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -254,16 +260,8 @@
   padding: 0 6px;
   border-radius: var(--radius-pill, 999px);
   font-weight: var(--weight-medium);
-}
-.red {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
-}
-/* How many agents work: the glyph and the count the same step in from each end, a little apart. */
-.work {
-  gap: 4px;
-  background: var(--hover);
-  color: var(--quiet);
 }
 
 .dot {

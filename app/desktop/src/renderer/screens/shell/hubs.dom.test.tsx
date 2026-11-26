@@ -327,7 +327,8 @@ describe.each([
     await settle();
     expect(currentRoute()).toMatchObject({ id: "project", project: { projectId: "ledger" }, at: "a1b2" });
     expect(streaming()).toBe("a1b2:ledger");
-    expect(bots("storefront", "Ada", "billing", "ledger")).toEqual(["ledger", "billing"]);
+    // billing waits on you: it comes first.
+    expect(bots("storefront", "Ada", "billing", "ledger")).toEqual(["billing", "ledger"]);
     // Picking the hub already on screen changes nothing.
     pickHub("Acme");
     await settle();
@@ -655,14 +656,15 @@ it("⌘1–9 open the rows on show: the hub on show's, the screen's until anothe
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
 });
 
-it("orders the list from its ⋯ by name or the ones that want you first, draws it compact, and keeps that on this computer", async () => {
+it("orders the list the ones that want you first, or from its ⋯ by name, draws it compact, and keeps that on this computer", async () => {
   await mount([{ id: "hub", label: "devbox" }]);
   act(() => {
     hub("hub").send(live());
     hub("hub").send(withTwo("devbox", "storefront", "Ada"));
   });
   await settle();
-  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  // storefront waits on you: first, though Ada spoke last.
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
   const pick = (name: string) => {
     openMenu(host.querySelector<HTMLElement>("[data-opens='list-menu']"));
     act(() => [...document.querySelectorAll<HTMLElement>("[role='menu'] [role='menuitemradio'], [role='menu'] [role='menuitemcheckbox']")].find((r) => r.textContent === name)?.click());
@@ -681,6 +683,40 @@ it("orders the list from its ⋯ by name or the ones that want you first, draws 
   await mount([{ id: "hub", label: "devbox" }]);
   await settle();
   expect(host.querySelector("nav[aria-label='Sidebar']")?.hasAttribute("data-compact")).toBe(true);
+});
+
+it("never moves a row under the pointer when a bot starts or stops waiting on you: it takes its place once the pointer leaves", async () => {
+  await mount([{ id: "hub", label: "devbox" }]);
+  const waiting = (needsYou: boolean, seq: number): HubFrame => ({
+    t: "event",
+    event: { seq, at: AT, type: "chat.waiting", summary: "", machineId: "devbox", projectId: "storefront", data: { projectRef: { machineId: "devbox", projectId: "storefront" }, needsYou, leadWorking: false, lastSeq: 1 } },
+  });
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(withTwo("devbox", "storefront", "Ada"));
+  });
+  await settle();
+  // storefront waits on you: first, though Ada spoke last.
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
+  const list = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*=list]");
+  const pointer = (type: "pointerover" | "pointerout") => act(() => void list?.dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget: document.body })));
+  pointer("pointerover");
+  // It stops waiting under the pointer: nothing moves.
+  act(() => hub("hub").send(waiting(false, 100)));
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
+  // The pointer leaves: it takes its place among the rest, newest first.
+  pointer("pointerout");
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  // It waits again under the pointer: still nothing moves until it leaves.
+  pointer("pointerover");
+  act(() => hub("hub").send(waiting(true, 101)));
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  pointer("pointerout");
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
 });
 
 /**

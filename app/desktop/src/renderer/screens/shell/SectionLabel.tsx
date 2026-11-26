@@ -1,12 +1,12 @@
 // What the sidebar draws of your sections (sections.ts): a section's quiet label over its chats, which a click folds to
 // the label alone (W798): then its name, how many chats it holds in the quiet colour, and a dot while one of them waits
-// on you or has a new message, no chevron (one hints under the pointer); a row's Move to section, with a tick on its
-// own; and the small dialog that names a new section or renames one.
+// on you or has a new message, no chevron (one hints under the pointer); and a row's Move to section, with a tick on its
+// own. The small dialog that names a new section or renames one is SectionName.tsx, loaded on use.
 import { ChevronDown, Plus } from "lucide-react";
-import { useState, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import type { ChatSection, ProjectRef } from "../../../shared/contracts";
-import { Button, ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator, ContextMenuSub, Dialog, Field, Input, toast, Truncate } from "../../ui";
-import { foldedWords, roomForSection, sectionNameProblem, sectionOf, SECTIONS_MAX, type SectionLine } from "./sections";
+import { ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator, ContextMenuSub, toast, Truncate } from "../../ui";
+import { foldedWords, roomForSection, sectionOf, SECTIONS_MAX, type SectionLine } from "./sections";
 import { projectId } from "./model";
 import s from "./sidebar.module.css";
 
@@ -78,54 +78,5 @@ export function MoveToSection(props: { sections: readonly ChatSection[]; chat: P
         New section…
       </ContextMenuItem>
     </ContextMenuSub>
-  );
-}
-
-/** Asks for a section's name: `onName` gets it, trimmed, once it is one the hub would take. */
-export function SectionNameDialog(props: { naming: Naming | null; sections: readonly ChatSection[]; onName: (naming: Naming, name: string) => void; onClose: () => void }) {
-  const { naming } = props;
-  // The box starts at the current name, or empty; a key per use resets it.
-  return naming === null ? <Dialog open={false} title="" /> : <NameBody key={naming.t === "new" ? `new:${projectId(naming.chat)}` : naming.section.id} {...props} naming={naming} />;
-}
-
-function NameBody({ naming, sections, onName, onClose }: { naming: Naming; sections: readonly ChatSection[]; onName: (naming: Naming, name: string) => void; onClose: () => void }) {
-  const was = naming.t === "rename" ? naming.section.name : "";
-  const [name, setName] = useState(was);
-  // An empty box says nothing yet.
-  const problem = name.trim() === "" ? undefined : sectionNameProblem(sections, name, naming.t === "rename" ? naming.section.id : undefined);
-  const ready = problem === undefined && name.trim() !== "" && name.trim() !== was;
-  const save = () => {
-    if (!ready) return;
-    onName(naming, name.trim());
-    onClose();
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title={naming.t === "new" ? "New section" : `Rename ${was}`}
-      description={naming.t === "new" ? `${naming.title} moves into it. Sections are yours: nobody else sees them.` : "Its chats stay in it."}
-      footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!ready} onClick={save}>
-            {naming.t === "new" ? "Create" : "Rename"}
-          </Button>
-        </>
-      }
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          save();
-        }}
-      >
-        <Field label="Name" error={problem}>
-          <Input value={name} autoFocus autoComplete="off" onChange={(e) => setName(e.target.value)} />
-        </Field>
-      </form>
-    </Dialog>
   );
 }
