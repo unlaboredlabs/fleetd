@@ -12,6 +12,7 @@ import { sweep } from "../sweep/index.ts";
 import { registerLeadCalls as registerFills } from "./calls.ts";
 import { deliveries, orderSet, projectSet } from "./deliver.ts";
 import { registerLeadCalls as registerImports } from "./import.ts";
+import { start as startSignIn } from "./sign_in.ts";
 import { vault } from "./index.ts";
 import { adopt, copyTeamVars, migrateCards, migratePlain } from "./migrate.ts";
 
@@ -90,6 +91,7 @@ export function dropClosed(hub: Hub): void {
 
 export function start(hub: Hub): void {
   registerFills(hub);
+  startSignIn(hub);
   registerImports(hub);
   const hooks = approvals(hub).deps.hooks;
   hooks.vaultSealTo = () => (vault(hub).keys.locked ? undefined : hubSealTo(hub));

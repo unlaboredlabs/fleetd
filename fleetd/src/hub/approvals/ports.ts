@@ -14,6 +14,7 @@ import type {
   RequestState,
   ToolPreview,
 } from "../../shared/contracts.ts";
+import { ToolError } from "../../shared/errors.ts";
 import type { NewRequest, RequestFilter } from "./request.ts";
 
 /** A node command's failure: "offline", "lost", "no_reply", "invalid", "not_found", "old" or "failed". */
@@ -151,7 +152,21 @@ export type ApprovalHooks = {
    * Undefined for one sealed to the sink machine's key, which goes the old way.
    */
   vaultSecret(request: HumanRequest, sealed: string, by: { name: string; person?: PersonRef; machines: string[] }): Promise<{ fingerprint: string; bytes: number } | undefined>;
+  /**
+   * A sign-in form's box, sealed to the hub's key: opened and checked, the same fields sealed again to `nodeBox` for
+   * its node (`forNode`), and `save`, run once the node filled them, which keeps the login in the team vault when the
+   * person ticked "Save to Vault". Never logs or returns a value.
+   */
+  signIn(request: HumanRequest, sealed: string, nodeBox: string, by: SignInBy): SignInRelay;
+  /** A settled sign-in form's agent is told: a task straight away; false: it is the lead's, woken as any request's. */
+  signInSettled(request: HumanRequest): Promise<boolean>;
 };
+
+/** Who submitted a sign-in form, and whether they ticked "Save to Vault". */
+export type SignInBy = { name: string; person?: PersonRef; machines: string[]; save: boolean };
+
+/** A sign-in form's fields for its node, and the vault save run once they filled. */
+export type SignInRelay = { forNode: string; save(): { saved?: { itemId: string; label: string }; notSaved?: string } };
 
 export const NOT_PORTED_ORDERS = "The Bun workspace can't set an order's variable yet (src/hub/projects: order_env).";
 
@@ -178,6 +193,10 @@ export const defaultHooks = (): ApprovalHooks => ({
   alwaysAsks: () => false,
   vaultSealTo: () => undefined,
   vaultSecret: async () => undefined,
+  signIn: () => {
+    throw new ToolError("failed", "This workspace can't take a sign-in form yet.", "Update fleetd on the workspace's machine.");
+  },
+  signInSettled: async () => false,
 });
 
 /** The rest of the hub approvals reads or wakes, over the hub's own store. */

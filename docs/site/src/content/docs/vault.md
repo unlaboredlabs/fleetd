@@ -40,7 +40,7 @@ Only an item's creator or an admin can show or change it. Everyone else's agents
 | Variable | In their environment, from their start |
 
 Agents can list what they may use, but have no way to show, change or delete an item. You aren't asked before a fill
-or a payment. Only a bank check, a captcha or a passkey is handed to you. See
+or a payment. Only a bank check, a captcha, a passkey or a device approval is handed to you. See
 [Payments & sign-ins](/docs/payments-and-sign-ins).
 
 An agent can save a secret it holds, such as a key it made, as a new variable of its bot with `vault_store`. It
@@ -51,6 +51,14 @@ agent can't use a name that changes what later sessions run, such as `LD_PRELOAD
 
 A variable set for one order wins over the bot's variable of the same name, until the order closes. See
 [Order variables](/docs/approvals-and-secrets#order-variables).
+
+## Save a login from a sign-in form {#sign-in-form}
+
+When an agent reaches a sign-in the vault has no login for, the chat shows a secure sign-in form instead (see
+[Sign in with a secure form](/docs/payments-and-sign-ins#sign-in-form)). **Securely save to Vault** is ticked by
+default: once fleetd fills the page, it saves the login to the workspace vault for that site, as yours. The next
+sign-in there fills by itself, with no form. A one-time code is never saved; add the login's one-time code seed to fill
+codes too.
 
 ## Activity {#activity}
 

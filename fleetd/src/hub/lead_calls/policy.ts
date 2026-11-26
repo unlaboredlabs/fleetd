@@ -40,6 +40,7 @@ export const NODE_OPS: readonly string[] = [
   "secure_input_open",
   "secure_input_claim",
   "secure_input_filled",
+  "sign_in_open",
   "vault_fill",
   "vault_filled",
   "vault_items",

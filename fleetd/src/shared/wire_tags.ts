@@ -152,6 +152,7 @@ export const LEAD_CALLS = [
   "secure_input_open",
   "secure_input_claim",
   "secure_input_filled",
+  "sign_in_open",
   "session_route",
   "session_step",
   "mac",
@@ -242,4 +243,5 @@ export const AGENT_MCP_TOOLS = [
   { name: "purchase_fill", op: "purchase_fill" },
   { name: "request_secure_input", op: "request_secure_input" },
   { name: "secure_input_fill", op: "secure_input_fill" },
+  { name: "request_sign_in", op: "request_sign_in" },
 ] as const;

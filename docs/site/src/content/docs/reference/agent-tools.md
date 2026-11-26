@@ -93,13 +93,14 @@ Each tool below says when only one of them gets it.
 - <span id="session_start"></span>`session_start`: Open a screen: a browser, a phone or a desktop.
 - <span id="desktop"></span>`desktop`: Click, type and scroll on a desktop screen.
 - <span id="session_end"></span>`session_end`: Close its screen.
-- <span id="request_takeover"></span>`request_takeover`: Ask you to take over its screen, for a captcha or the like.
+- <span id="request_takeover"></span>`request_takeover`: Ask you to take over its screen, for a captcha, a passkey or a device approval.
 
 ### Vault and payments
 
 - <span id="vault_items"></span>`vault_items`: List the vault items it may use, never their values.
 - <span id="vault_store"></span>`vault_store`: Save a secret it holds as a new variable of its bot, never showing the value.
 - <span id="fill_credential"></span>`fill_credential`: Fill a login field from the vault, without seeing it.
+- <span id="request_sign_in"></span>`request_sign_in`: Sign in to a site: from the vault, else through a secure form you fill in, saved to the vault.
 - <span id="fill_address"></span>`fill_address`: Fill an address form from the vault.
 - <span id="vault_import_search"></span>`vault_import_search`: Search your 1Password for items to import into the vault. Lead only.
 - <span id="vault_import_propose"></span>`vault_import_propose`: Propose 1Password items for you to import. Lead only.

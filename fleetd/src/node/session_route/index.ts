@@ -394,7 +394,7 @@ export function start(node: Node, given?: Router): Router {
   const r = router(node, given);
   const agentOnly = () => new ToolError("forbidden", "A browser session belongs to an agent's session, and this call comes from none.");
   // The browser calls beyond a start and an end route the same way: here when the session is here, else to its runner.
-  for (const op of ["session_start", "session_end", "fill_credential", "fill_address", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill"]) {
+  for (const op of ["session_start", "session_end", "fill_credential", "fill_address", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill", "request_sign_in"]) {
     // The call's own working directory (its frame's `cwd`, the agent's worktree): a desktop launches its apps there.
     node.area("local").on(op, async (thread, frame) => {
       try {

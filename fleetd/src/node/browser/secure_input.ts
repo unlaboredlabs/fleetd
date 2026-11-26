@@ -14,25 +14,29 @@ import { FOCUS, HIDE, pageUrl, scrubbed, seal } from "./credentials.ts";
 import type { BrowserBroker as Broker } from "./broker.ts";
 import { hostOf } from "./logins.ts";
 import type { Session } from "./session.ts";
+import { deliverSignIn } from "./sign_in.ts";
 
 /** `secret_deliver` as the node reads it (../wire.ts). */
-type SecretDeliver = Omit<LinkDeliver, "sink"> & { sink: string };
+export type SecretDeliver = Omit<LinkDeliver, "sink"> & { sink: string };
 
-/** A typed secure input its session waits for: where it fills. */
-export type Waiting = { requestId: string; domain: string; target: string; label: string };
+/** A typed secure input its session waits for: where it fills; a sign-in form's, each field's selector (sign_in.ts). */
+export type Waiting = { requestId: string; domain: string; target: string; label: string; signIn?: SignInTargets };
+
+/** A sign-in form's fields on the page: each one's selector, in fill order. */
+export type SignInTargets = Partial<Record<"username" | "password" | "otp", string>>;
 
 /** Where a typed secure input waits: by its browser session and its request, as a session may wait for several. */
 export const waitingKey = (session: string, request: string) => `${session}/${request}`;
 
 /** The session's page, or why the value can't go there. */
-async function onSite(session: Session, domain: string): Promise<string | undefined> {
+export async function onSite(session: Session, domain: string): Promise<string | undefined> {
   const host = hostOf((await pageUrl(session)) ?? "") ?? "";
   return onDomain(host, domain) ? undefined : `the page is on ${host || "no website"}, not ${domain}`;
 }
 
 /** The field `target` matches in the page or one of its frames on `domain`: its document's CDP session, its browser
  * target and the field's object. */
-async function locate(session: Session, target: string, domain: string): Promise<{ via: string; inTarget: string; object: string } | undefined> {
+export async function locate(session: Session, target: string, domain: string): Promise<{ via: string; inTarget: string; object: string } | undefined> {
   const page = session.page();
   if (!page) return undefined;
   const allowed = (url: string) => {
@@ -60,9 +64,14 @@ async function locate(session: Session, target: string, domain: string): Promise
 const FIELD =
   "function() { const tag = this.tagName.toLowerCase(); const type = (this.type || '').toLowerCase(); const field = tag === 'textarea' || (tag === 'input' && !['hidden','checkbox','radio','submit','button','file','image','reset','color','range'].includes(type)); return { field, url: this.ownerDocument.location.href }; }";
 
+/** The form's address, and its submit (requestSubmit, so its own handlers run); false: the field is in no form. */
+const FORM_ACTION = "function() { return this.form ? (this.form.getAttribute('action') === null ? this.ownerDocument.location.href : this.form.action) : ''; }";
+const SUBMIT = "function() { const f = this.form; if (!f) return false; if (f.requestSubmit) f.requestSubmit(); else f.submit(); return true; }";
+
 /** Types `value` into the field `target` matches on `domain` (the page or one of its frames), over the node's own
- * connection, hidden as it is typed. The session must be sealed first. */
-async function typeInto(session: Session, target: string, domain: string, value: string): Promise<void> {
+ * connection, hidden as it is typed, then submits its form when `submit` (only to `domain`; Enter when it has none).
+ * The session must be sealed first. */
+export async function typeInto(session: Session, target: string, domain: string, value: string, submit = false): Promise<void> {
   const found = await locate(session, target, domain);
   if (!found) throw notTyped(`no field on the page matches ${target}`);
   const { via, inTarget, object } = found;
@@ -89,6 +98,7 @@ async function typeInto(session: Session, target: string, domain: string, value:
     throw notTyped((e as Error).message);
   }
   // The one copy of the value the node makes for the page.
+  let keys = via;
   try {
     await session.cdp.call(via, "Input.insertText", { text: value });
   } catch (e) {
@@ -96,9 +106,24 @@ async function typeInto(session: Session, target: string, domain: string, value:
     if (page === undefined || page === via) throw new CardError((e as Error).message, true);
     try {
       await session.cdp.call(page, "Input.insertText", { text: value });
+      keys = page;
     } catch (again) {
       throw new CardError((again as Error).message, true);
     }
+  }
+  if (!submit) return;
+  try {
+    const action = String(((await on(FORM_ACTION)).result as { value?: unknown } | undefined)?.value ?? "");
+    const to = hostOf(action);
+    if (action && (to === undefined || !onDomain(to, domain))) throw new CardError(`its form sends to ${to ?? "another address"}, not to ${domain}`, true);
+    const sent = ((await on(SUBMIT)).result as { value?: unknown } | undefined)?.value === true;
+    if (!sent) {
+      for (const type of ["keyDown", "keyUp"]) {
+        await session.cdp.call(keys, "Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
+      }
+    }
+  } catch (e) {
+    throw e instanceof CardError ? e : new CardError((e as Error).message, true);
   }
 }
 
@@ -150,6 +175,7 @@ export async function deliver(
   const key = waitingKey(sink.path, requestId);
   const waiting = broker.waiting.get(key);
   if (!waiting) return fail(`nothing waits for ${requestId} in that browser session: it was filled already`);
+  if (waiting.signIn) return deliverSignIn(broker, frame, boxKey, session, key, waiting);
   broker.waiting.delete(key);
   const giveBack = () => broker.waiting.set(key, waiting);
   const plain = boxKey.open(Buffer.from(frame.sealed, "base64"));

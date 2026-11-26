@@ -34,6 +34,7 @@ import type { ChromeHandle, Launched } from "./launch_args.ts";
 import { type Credential, type VaultFor } from "./logins.ts";
 import { boxChrome, reattachChrome, type ScreenBox, timing } from "../place/box_chrome.ts";
 import { type Meta, type Recording, type RecordingStore, Steps } from "./recording.ts";
+import { requestSignIn } from "./sign_in.ts";
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting, waitingKey } from "./secure_input.ts";
 import { Session, type SessionState } from "./session.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
@@ -593,6 +594,8 @@ export class BrowserBroker {
         return { op: "request_secure_input", ...(await requestSecureInput(this, thread, call)) };
       case "secure_input_fill":
         return { op: "secure_input_fill", ...(await fillApproved(this, thread, call)) };
+      case "request_sign_in":
+        return { op: "request_sign_in", ...(await requestSignIn(this, thread, call)) };
       case "desktop":
         throw new ToolError("invalid", "The desktop tool drives desktop sessions, not browsers.", "drive the browser with agent-browser");
       case "device":

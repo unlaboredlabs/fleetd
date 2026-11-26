@@ -8313,6 +8313,11 @@ export type SecretSinkKind = "env" | "file" | "order" | "fill";
 
 export type SecretSubmitInput = {
   requestId: ChatRequestId;
+  /**
+   * A sign-in form's "Save to Vault": once it filled, the workspace keeps the login in the team vault for that
+   * site. Absent: false.
+   */
+  save?: boolean;
   /** Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine). */
   sealed: SealedSecret;
 };
@@ -8332,6 +8337,8 @@ export type SecureInput = {
   ref?: OpReference;
   /** The browser session that asked, the one it fills in. */
   sessionId: BrowserSessionId;
+  /** A sign-in form, instead of one field: the person gives the login (or the code) and may save it to the vault. */
+  signIn?: SignInForm;
   site: SecureInputSite;
   target: string;
   why: string;
@@ -8343,6 +8350,24 @@ export type SecureInputSite = {
   domain: ShopDomain;
   /** Its name, as it calls itself. */
   name: string;
+};
+
+/** A sign-in form's field: the login's username or email, its password, or a one-time code the site sent. */
+export type SignInField = "username" | "password" | "otp";
+
+/**
+ * A sign-in form (request_sign_in): the fields the page asks for, in the order they fill, and the vault login it
+ * was saved as, once it was.
+ */
+export type SignInForm = {
+  fields: SignInField[];
+  saved?: SignInSaved;
+};
+
+/** The team vault login a sign-in form was saved as. */
+export type SignInSaved = {
+  itemId: VaultItemId;
+  label: string;
 };
 
 /** A kind of session a machine can host. */

@@ -2442,6 +2442,68 @@
     ],
     "type": "object"
    }
+  },
+  {
+   "name": "request_sign_in",
+   "op": "request_sign_in",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "When a sign-in page needs a login you don't have: site, the CSS selector of each field the page shows now (username, password, otp), why in one line. A vault login for the site fills at once and submits, with no ask. Else the person gets a secure sign-in form in the chat (saved to the vault by default), fleetd fills the fields and submits, and you are woken; you never see the values. If the page then asks for a one-time code, call it again with otp. Never ask for a login or code in chat; request_takeover only for captchas, passkeys, device approvals or judgement calls.",
+   "inputSchema": {
+    "properties": {
+     "otp": {
+      "description": "The one-time code field's CSS selector.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "password": {
+      "description": "The password field's CSS selector.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "site": {
+      "properties": {
+       "domain": {
+        "description": "The page's host: it fills only there.",
+        "maxLength": 253,
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
+        "type": "string"
+       },
+       "name": {
+        "maxLength": 120,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "domain",
+       "name"
+      ],
+      "type": "object"
+     },
+     "username": {
+      "description": "The username or email field's CSS selector.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "why": {
+      "maxLength": 300,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "site",
+     "why"
+    ],
+    "type": "object"
+   }
   }
  ],
  "probes": {
@@ -3415,6 +3477,34 @@
    "/requestId": {
     "expected": "a string",
     "pattern": "expected a string matching ^Q[1-9][0-9]*$, got {got}"
+   }
+  },
+  "request_sign_in": {
+   "/otp": {
+    "expected": "a string"
+   },
+   "/password": {
+    "expected": "a string"
+   },
+   "/site": {
+    "expected": "struct SecureInputSite",
+    "fields": [
+     "domain",
+     "name"
+    ]
+   },
+   "/site/domain": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$, got {got}"
+   },
+   "/site/name": {
+    "expected": "a string"
+   },
+   "/username": {
+    "expected": "a string"
+   },
+   "/why": {
+    "expected": "a string"
    }
   },
   "report": {
