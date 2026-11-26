@@ -37,36 +37,59 @@ const readTitle = (session: Session, r: Ref): Promise<void> => {
   return done;
 };
 
-/** An agent's or an order's title, live; undefined while it is read or when it can't be known. */
-const useTitle = (r: Ref): string | undefined => {
+/** Each id's title, live, in order; undefined while it is read or when it can't be known. */
+const useTitles = (refs: readonly Ref[]): Array<string | undefined> => {
   const hub = useContext(HubContext);
   const orders = hub?.state.orders;
   const session = hub?.session;
-  const open = useMemo(() => {
-    if (orders === undefined) return undefined;
-    if (r.kind === "order") return orders.find((o) => o.workstreamId === r.id)?.title;
-    if (r.kind !== "agent") return undefined;
-    for (const o of orders) for (const l of o.lanes) if (l.taskId === r.id) return l.title;
-    return undefined;
-  }, [orders, r.id, r.kind]);
+  const open = useMemo(
+    () =>
+      refs.map((r) => {
+        if (orders === undefined) return undefined;
+        if (r.kind === "order") return orders.find((o) => o.workstreamId === r.id)?.title;
+        if (r.kind !== "agent") return undefined;
+        for (const o of orders) for (const l of o.lanes) if (l.taskId === r.id) return l.title;
+        return undefined;
+      }),
+    [orders, refs],
+  );
   const [, setRead] = useState(0);
-  const wanted = open === undefined && session !== undefined && (r.kind === "agent" || r.kind === "order");
+  const wanted = useMemo(
+    () => (session === undefined ? [] : refs.filter((r, i) => open[i] === undefined && (r.kind === "agent" || r.kind === "order") && known(session, r.id) === undefined)),
+    [session, refs, open],
+  );
   useEffect(() => {
-    if (!wanted || known(session, r.id) !== undefined) return;
+    if (session === undefined || wanted.length === 0) return;
     let live = true;
-    void readTitle(session, r).then(() => {
+    void Promise.all(wanted.map((r) => readTitle(session, r))).then(() => {
       if (live) setRead((n) => n + 1);
     });
     return () => {
       live = false;
     };
-  }, [wanted, session, r]);
-  return open ?? (session === undefined ? undefined : (known(session, r.id) ?? undefined));
+  }, [session, wanted]);
+  return refs.map((r, i) => open[i] ?? (session === undefined ? undefined : (known(session, r.id) ?? undefined)));
+};
+
+const isRef = (r: string | Ref): r is Ref => typeof r !== "string";
+
+/**
+ * Words with fleetd's ids in them as a string with their names, for what a Text can't hold: an accessibility label,
+ * which VoiceOver reads out (a chats list's row).
+ */
+export const useSpoken = (text: string): string => {
+  const runs = useMemo(() => splitRefs(text), [text]);
+  const refs = useMemo(() => runs.filter(isRef), [runs]);
+  const titles = useTitles(refs);
+  if (refs.length === 0) return text;
+  let i = 0;
+  return runs.map((r) => (typeof r === "string" ? r : (titles[i++] ?? refWord(r)))).join("");
 };
 
 /** One id by its name (inside a Text); `plain`, in the words' own weight (a chats list's preview). */
 export function Name({ of, plain = false }: { of: Ref; plain?: boolean }) {
-  const title = useTitle(of);
+  const refs = useMemo(() => [of], [of]);
+  const [title] = useTitles(refs);
   return <Text style={title === undefined || plain ? undefined : styles.name}>{title ?? refWord(of)}</Text>;
 }
 
