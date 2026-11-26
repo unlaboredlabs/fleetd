@@ -1,12 +1,13 @@
 // Sequences that blanked the window: the lead chat on chat-streaming while the hub restarts, while a lead turn adds
-// a burst of plan items and streams a new reply, and while the link drops mid-reply. QA's resilience entries
+// a burst of plan items and streams a new reply, and while the link drops mid-reply; and the bot on screen removed
+// while its chat is open, which says so (W890). QA's resilience entries
 // (qa/registry.ts) fail when any of them leaves the window blank or an error card up.
 import { Fixture, HUB, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { firstProject, type Ref } from "../kit/chat.ts";
 import { arr, obj } from "../kit/stress.ts";
-import { asText, isObject, type JsonObject } from "../kit/json.ts";
+import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 
 /** chat-streaming's deltas run until here; each scenario starts after them unless it means to cut them off. */
 const STREAMED_BY = 2400;
@@ -125,6 +126,14 @@ export default defineGroup({
       }),
       scenario("reconnect-streaming", "The link drops while the lead's reply streams: its deltas go on past the text the reread history holds.", (f, _ref, seq) => {
         restart(f, seq, 700, 500);
+      }),
+      scenario("bot-removed", "The bot on screen is removed while its chat is open: the next snapshot no longer lists it (W890).", (f, ref, seq) => {
+        const gone = (p: JsonValue | undefined) => !(isObject(p) && p["machineId"] === ref.machineId && p["projectId"] === ref.projectId);
+        // The newest bot, so it is the one the app opens on (its home) and has open when it goes.
+        const projects = arr(f.snapshot?.["projects"]).map((p) => (isObject(p) && !gone(p) ? { ...p, lastActivityAt: at(f.now, 0) } : p));
+        if (f.snapshot !== undefined) f.snapshot = { ...f.snapshot, projects };
+        const chats = arr(f.snapshot?.["chats"]).filter((c) => !isObject(c) || gone(c["projectRef"]));
+        f.later(STREAMED_BY + 300, "snapshot", { ...f.snapshot, cursor: seq + 1, projects: arr(f.snapshot?.["projects"]).filter(gone), chats });
       }),
     ];
   },

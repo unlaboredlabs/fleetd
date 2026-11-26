@@ -76,7 +76,7 @@ export function ChecklistPane({ project, at = null }: { project: ProjectKey; at?
   if (missing) {
     return (
       <div className={s.screen} data-screen="checklist.missing">
-        <PanelEmpty title="This bot isn’t on the hub" />
+        <PanelEmpty title="This bot was removed" />
       </div>
     );
   }

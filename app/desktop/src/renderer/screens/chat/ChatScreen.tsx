@@ -446,7 +446,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       }
     >
       <FrameTitle
-        glass
+        // A removed bot has no name or picture to show: no empty pill in the top row.
+        glass={!data.missing}
         title={title || undefined}
         lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={20} own={bot} />}
         press={
@@ -486,8 +487,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       ) : null}
       <div ref={stage} className={s.stage}>
         {data.missing ? (
+          // Listed while open and gone since (the shell sends a bot its hub never listed home instead).
           <div className={s.loading} role="status">
-            <Text tone="quiet">This bot isn’t on the hub. It may have been removed.</Text>
+            <Text tone="quiet">This bot was removed.</Text>
+            <Button variant="secondary" onClick={() => navigate({ id: "home" }, { replace: true })}>
+              Back to bots
+            </Button>
           </div>
         ) : rows === undefined && data.loadError !== undefined ? (
           <div className={s.loading} role="alert">
