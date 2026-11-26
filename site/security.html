@@ -1,0 +1,212 @@
+<!doctype html>
+<!-- fleetd.sh/security: how fleetd cloud is run and kept safe. A draft the person reviews before any page links it: noindex, out of sitemap.xml, and the other pages
+     neither list it nor link it. Same layout as the legal pages (legal.css); [confirm] marks what is still to check. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Security · fleetd</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="How fleetd cloud is run and kept safe: hosting, encryption, backups, the vault, staff access, agents, incidents and reporting a vulnerability.">
+<link rel="canonical" href="https://fleetd.sh/security">
+<meta property="og:title" content="Security · fleetd">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/security">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main class="w legal">
+  <nav class="pages" aria-label="Policies and support">
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy">Privacy Policy</a>
+    <a href="/refunds">Refund Policy</a>
+    <a href="/imprint">Imprint</a>
+    <a href="/support">Support</a>
+    <a href="/security" aria-current="page" class="gap">Security</a>
+    <a href="/subprocessors">Subprocessors</a>
+    <a href="/dpa">Data Processing Agreement</a>
+  </nav>
+  <article class="doc" aria-labelledby="h">
+    <h1 id="h">Security</h1>
+    <p class="when">Draft for review, November 26, 2026</p>
+    <p class="draft"><b>Draft for review.</b> Not linked from the site yet. Items marked <mark class="confirm">[confirm]</mark> are features still being built; the page goes live once they ship.</p>
+    <p>How fleetd cloud (app.fleetd.dev) is run and what protects your workspace: where it runs, how your data is encrypted, what fleetd’s staff can see, what agents can reach, and what we do when something goes wrong. If you run fleetd yourself, read <a href="/docs/security">Security in the docs</a> instead: your workspace then runs on your own machines and none of this applies.</p>
+
+    <ul class="facts">
+      <li><span>Hosting</span><span>Servers in Nuremberg, Germany. Database in Frankfurt, Germany. Files in Cloudflare R2’s EU jurisdiction.</span></li>
+      <li><span>Way in</span><span>No SSH, no open inbound port. Only Cloudflare Tunnel reaches the servers.</span></li>
+      <li><span>Encryption</span><span>TLS 1.2 or newer in transit. Vault items and stored tokens sealed with AES-256-GCM under your workspace’s own keys.</span></li>
+      <li><span>Backups</span><span>Every 6 hours, sealed, kept 30 days, with a restore drill that checks every row.</span></li>
+      <li><span>Your content</span><span>Never used to train AI models. Staff downloads of a workspace are logged in that workspace’s audit log <mark class="confirm">[confirm: ships with the cloud audit log]</mark>.</span></li>
+      <li><span>Breaches</span><span>We tell affected customers within 72 hours of becoming aware of a breach.</span></li>
+      <li><span>Certifications</span><span>None yet: no SOC 2, ISO 27001 or external penetration test.</span></li>
+      <li><span>Report a problem</span><span><a href="mailto:support@fleetd.dev?subject=Security">support@fleetd.dev</a>, subject “Security”.</span></li>
+    </ul>
+
+    <h2 id="hosting">Where fleetd cloud runs</h2>
+    <p>fleetd cloud is one service, the same for every workspace, on three servers at Hetzner in Nuremberg, Germany. The database is Postgres at PlanetScale, on AWS in Frankfurt, Germany, with no copy in another region. Files, server logs and backups are in Cloudflare R2, in its EU jurisdiction. Every provider, what it gets and where, is on <a href="/subprocessors">Subprocessors</a>.</p>
+    <p>There is one region, the EU, for every workspace. You can’t pick another.</p>
+
+    <h2 id="servers">The servers</h2>
+    <ul>
+      <li><b>No SSH, no inbound port.</b> The servers have no SSH server and a locked root password. Their firewall has no inbound rule, and nothing listens on a public address. Each checks this at every boot and stays out of service if it finds otherwise.</li>
+      <li><b>One way in.</b> Cloudflare Tunnel: the server dials out to Cloudflare, which ends TLS for app.fleetd.dev and passes requests back down the tunnel. The servers talk to each other only on a private network, over mutual TLS.</li>
+      <li><b>Replaced, not repaired.</b> Nobody logs into a server. A broken one is rebuilt from the release, and its logs come from storage.</li>
+      <li><b>Kept patched.</b> Security updates install every day, and a server reboots by itself after them, one at a time.</li>
+      <li><b>Checked software.</b> Every program a server runs is checked against its SHA-256 at every boot, before it runs.</li>
+      <li><b>Little to gain.</b> The service runs as an unprivileged throwaway user, on a read-only system, with no way to the hosting provider’s metadata service, and the firewall lets out only the ports it needs.</li>
+      <li><b>Safe deploys.</b> Each change goes to one server first, which serves real traffic and runs a real sign-in and a real agent turn before the others are touched. Any failure rolls it back by itself.</li>
+    </ul>
+
+    <h2 id="encryption">Encryption</h2>
+    <ul>
+      <li><b>In transit:</b> HTTPS only. app.fleetd.dev refuses TLS 1.1 and older and sends HSTS for a year. Secrets you type in the apps are sealed before they leave your device, so the service never receives them in plain text.</li>
+      <li><b>At rest:</b> vault items, and the GitHub, Claude and other tokens a workspace connects, are sealed with AES-256-GCM under keys of your workspace’s own. The database and file storage are also encrypted on disk by their providers. Backups are sealed with age under a key only the backup job holds.</li>
+      <li><b>Deletion.</b> Deleting a workspace deletes its keys at once, so its vault items and tokens can’t be opened again, even from a backup. Its chats and files stay in backups until those expire, 30 days later.</li>
+    </ul>
+
+    <h2 id="isolation">Keeping workspaces apart</h2>
+    <p>Every row in the database belongs to one workspace, and the database itself enforces it (row-level security): each request runs inside its own workspace, where no other workspace’s rows or keys can be read. Every restore drill checks this again.</p>
+
+    <h2 id="vault">The vault</h2>
+    <p>The vault holds the logins, cards, addresses and variables your agents use. Each item is sealed under a key of its own, which is sealed by your workspace’s vault key, which is sealed by the service’s master key. The apps seal a value to your workspace before they send it. Agents never read a vault item: a login is filled only on its own site, and a card only at a checkout the agent recorded first. Values are masked in logs and transcripts, and every use is logged.</p>
+    <p><b>fleetd cloud holds the master key.</b> That is what lets agents use the vault while nobody is signed in. It also means fleetd could technically open a workspace’s vault items. There is no key that only you hold. If you need that, run fleetd yourself: a self-hosted workspace’s root key stays on your machine.</p>
+
+    <h2 id="backups">Backups and restores</h2>
+    <ul>
+      <li>A backup runs every 6 hours. The database is copied in full once a day, and files are mirrored at every run. The database provider keeps its own backups too, every 12 hours.</li>
+      <li>Copies are sealed and kept 30 days, in a separate bucket that only the backup job can write. A key that leaks from the service can’t delete them.</li>
+      <li>A restore drill puts the newest copy into an empty database and fails unless every table holds every row and workspaces are still kept apart. It ran on the real backups on November 26, 2026, and passed.</li>
+      <li>At worst, a full loss of the database host would lose up to a day of changes.</li>
+      <li>The copies are in the same Cloudflare account as the originals. Losing that account would leave only the database provider’s own backups.</li>
+      <li>The backup and the drill run on Blacksmith’s CI runners, started by GitHub Actions, so a copy of the database passes through a runner while the job runs.</li>
+    </ul>
+
+    <h2 id="staff">What fleetd’s staff can see</h2>
+    <ul>
+      <li><b>Day to day: counts, not content.</b> Our operations console shows numbers per workspace: people, machines, storage used, last activity and failing jobs. It sits behind Cloudflare Access, for named staff only.</li>
+      <li><b>A workspace’s content, when there is a reason.</b> Staff can download an export of a workspace: its chats, tasks, files and recordings, but no vault items or tokens. We do it only when you ask, for a security incident, or when the law requires it. Each download is recorded in that workspace’s audit log, which its admins see in Settings › Workspace <mark class="confirm">[confirm: ships with the cloud audit log]</mark>.</li>
+      <li><b>Vault items:</b> see <a href="#vault">The vault</a>. No staff tool shows them.</li>
+    </ul>
+
+    <h2 id="agents">What agents can reach</h2>
+    <ul>
+      <li><b>Repositories:</b> through fleetd’s GitHub App. A bot’s token covers only that bot’s repositories, never their settings or administration, and lasts at most an hour.</li>
+      <li><b>Secrets:</b> a bot’s variables reach every agent of that bot. Vault logins and cards are filled, never shown (<a href="#vault">The vault</a>).</li>
+      <li><b>Approvals:</b> each bot has an approval mode. New bots start in YOLO, where agents act without asking. Pick Ask me or Checker decides for a bot whose work needs a second look. Only admins change a bot’s approval mode <mark class="confirm">[confirm: ships with admin-only bot settings]</mark>.</li>
+      <li><b>Removing someone</b> revokes all their devices and closes their connections at once.</li>
+    </ul>
+
+    <h2 id="computers">Where agents run</h2>
+    <ul>
+      <li><b>On fleetd’s computers</b>, each bot gets a computer of its own, which no other bot or workspace shares. Before a computer goes to sleep, the logins fleetd put on it are removed, and a computer asleep too long is deleted. fleetd’s computers are run by a supplier in the EU (France and Germany).</li>
+      <li><b>On your own machines</b>, agents run as your own user, directly on the machine, with no sandbox. They can reach what that user can. Use a machine or user set aside for agents if that matters to you.</li>
+    </ul>
+
+    <h2 id="models">AI models and your content</h2>
+    <ul>
+      <li><b>We don’t use your content to train AI models</b>, and we don’t sell it (<a href="/terms#content">Terms</a>, <a href="/privacy">Privacy Policy</a>).</li>
+      <li>fleetd itself sends your content to no model. Agents call the model provider from their computer, with your workspace’s own key or a member’s own subscription.</li>
+      <li><b>With an Anthropic API key</b>, Anthropic’s commercial terms apply: by default it doesn’t train on what you send.</li>
+      <li><b>With a person’s Claude subscription</b> (Pro or Max), Anthropic’s consumer terms apply, and whether Anthropic may train on that work depends on that person’s own privacy setting at claude.ai. For company work, use a workspace API key, or have each person check that setting.</li>
+    </ul>
+
+    <h2 id="sign-in">Signing in</h2>
+    <ul>
+      <li>Sign-in is through WorkOS, with an emailed one-time code, Google, GitHub or Apple. Every sign-in asks again; a new device tells your other devices.</li>
+      <li>Two-factor sign-in comes from Google, GitHub or Apple when you use them. fleetd has no authenticator app or passkey of its own.</li>
+      <li>Admins can require one sign-in method for the workspace (for example, Google only), and let people with the company’s verified email domain join by themselves <mark class="confirm">[confirm: ships with required sign-in and domain joining]</mark>.</li>
+      <li>fleetd has no SSO (SAML or OIDC) yet.</li>
+    </ul>
+
+    <h2 id="incidents">Incidents</h2>
+    <ul>
+      <li><b>Detection:</b> a real agent turn runs every hour and a person’s full sign-in every 3 hours, as checks, and a failed check, deploy or backup alerts a person at once.</li>
+      <li><b>Response:</b> we contain the problem first, find the cause, fix it, and post what happened on <a href="https://status.fleetd.dev">status.fleetd.dev</a>.</li>
+      <li><b>Breach notice:</b> if a breach affects your workspace’s personal data, we tell the workspace’s owners and admins by email within <b>72 hours</b> of becoming aware of it: what happened, what data, what we did and what you can do. We tell authorities as the law requires.</li>
+    </ul>
+
+    <h2 id="report">Report a vulnerability</h2>
+    <p>Write to <a href="mailto:support@fleetd.dev?subject=Security"><b>support@fleetd.dev</b></a> with “Security” in the subject. Tell us what you found and how to reproduce it. We answer within 3 working days, keep you told as we fix it, and credit you if you like. Please don’t access other people’s data, disrupt the service or make the problem public before it’s fixed. We won’t take legal action over research done in good faith within these rules.</p>
+    <p>The same contact is in fleetd.sh/.well-known/security.txt <mark class="confirm">[confirm: goes live with its own change]</mark>.</p>
+
+    <h2 id="status">Status</h2>
+    <p><a href="https://status.fleetd.dev">status.fleetd.dev</a> shows whether the cloud app and the website are up, and any incident. We publish no uptime promise (SLA) yet.</p>
+
+    <h2 id="compliance">Certifications and paperwork</h2>
+    <ul>
+      <li>We don’t have SOC 2, ISO 27001 or an external penetration test yet. We’ll say here when that changes.</li>
+      <li>Our <a href="/dpa">Data Processing Agreement</a> covers your workspace’s personal data under GDPR, with the EU Standard Contractual Clauses for transfers.</li>
+      <li>For a security questionnaire, write to <a href="mailto:support@fleetd.dev">support@fleetd.dev</a>.</li>
+    </ul>
+  </article>
+</main>
+
+<footer class="w foot">
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/imprint">Imprint</a>
+      <a href="/support">Support</a>
+      <a href="https://status.fleetd.dev">Status</a>
+    </nav>
+  </div>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

@@ -21,6 +21,9 @@ const PAGES = [
   "site/refunds.html",
   "site/imprint.html",
   "site/support.html",
+  "site/security.html",
+  "site/subprocessors.html",
+  "site/dpa.html",
   ...fs
     .readdirSync("site/docs", { recursive: true })
     .filter((n) => n.endsWith(".html") && !/^(_astro|pagefind)\//u.test(n))

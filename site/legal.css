@@ -1,5 +1,6 @@
 /* fleetd.sh's legal pages (terms.html, privacy.html, refunds.html, imprint.html) and support.html: pricing.html's type, colour, header
-   and footer, then plain prose set like the docs, small headings and a tight rhythm, beside a list of the five pages. */
+   and footer, then plain prose set like the docs, small headings and a tight rhythm, beside a list of the five pages. The drafts
+   (security.html, subprocessors.html, dpa.html) share it, listing themselves after the five. */
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600;font-display:swap}
@@ -50,6 +51,7 @@ p,h1,h2,table,blockquote{margin:0}
 .pages a{padding:5px 0;text-decoration:none}
 .pages a:hover,.pages a[aria-current]{color:var(--ink)}
 .pages a[aria-current]{font-weight:500}
+.pages .gap{margin-top:12px}
 
 .doc{max-width:46em;font-size:15.5px;line-height:1.6}
 .doc h1{font-weight:600;font-size:clamp(26px,2.2vw,30px);line-height:1.15;letter-spacing:-.025em}
@@ -74,6 +76,15 @@ p,h1,h2,table,blockquote{margin:0}
 .doc .facts{list-style:none;padding:0;border-top:1px solid var(--rule)}
 .doc .facts li{display:grid;grid-template-columns:11em minmax(0,1fr);gap:16px;margin:0;padding:9px 0;border-bottom:1px solid var(--rule)}
 .doc .facts li>span:first-child{color:var(--grey)}
+/* A draft's note, and what in it is still to check. */
+.doc .draft{padding:10px 14px;border:1px solid var(--rule);border-radius:6px;background:var(--tone);font-size:14.5px}
+.doc mark.confirm{background:none;color:#e0a33a;font-weight:500}
+[data-theme="light"] .doc mark.confirm{color:#9a5b00}
+.doc table.stack{table-layout:fixed}
+.doc table.stack tbody th{white-space:normal}
+.doc table.stack thead th:nth-child(1){width:18%}
+.doc table.stack thead th:nth-child(2){width:28%}
+.doc table.stack thead th:nth-child(4){width:21%}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;margin-top:clamp(24px,3vw,40px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
 .foot nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
@@ -91,6 +102,7 @@ p,h1,h2,table,blockquote{margin:0}
 @media (max-width:800px){
   .legal{grid-template-columns:minmax(0,1fr)}
   .pages{position:static;flex-direction:row;flex-wrap:wrap;gap:0 18px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+  .pages .gap{margin-top:0}
 }
 @media (max-width:640px){
   .nav{gap:14px}
@@ -100,6 +112,13 @@ p,h1,h2,table,blockquote{margin:0}
   .doc .num{padding-left:12px}
   .doc thead .num{line-height:1.3}
   .doc th,.doc td{padding-right:10px}
+  /* A wide table (class stack) becomes one block per row, each cell under its column's name. */
+  .doc table.stack thead{display:none}
+  .doc table.stack tr{display:block;padding:10px 0;border-bottom:1px solid var(--rule)}
+  .doc table.stack th,.doc table.stack td{display:block;padding:0;border:0}
+  .doc table.stack tbody th{margin-bottom:4px}
+  .doc table.stack td+td{margin-top:4px}
+  .doc table.stack td::before{content:attr(data-label);display:block;font-size:12.5px;color:var(--grey)}
 }
 /* The narrowest phones: Docs stays in the footer. */
 @media (max-width:400px){
