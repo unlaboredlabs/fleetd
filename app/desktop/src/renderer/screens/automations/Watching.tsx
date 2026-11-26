@@ -8,6 +8,7 @@ import { Button, Dialog, Field, Input, Segmented, Select, Text, Toggle } from ".
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { AddButton, GroupNote, RowMenu, SettingsRow, SettingsSection } from "../settings/parts";
+import { BOT_ADMIN_ONLY, useBotLocked } from "../settings/botAdmin";
 import settings from "../settings/settings.module.css";
 import { localZone } from "./model";
 import { Runs } from "./Runs";
@@ -25,11 +26,14 @@ export function Watching(props: { projectRef: ProjectRef; watchers: Automation[]
   const allowed = profiles.data?.allowed ?? [];
   const defaultProfile = profiles.data?.profiles.find((p) => p.default)?.name;
   const kinds = offered(props.watchable, props.watchers);
+  // A member sees the watchers and looks now; only an admin makes, changes or stops one.
+  const locked = useBotLocked();
   return (
     <SettingsSection
       title="Watching"
       hint="Watchers look at your software on a schedule and say one line in the chat only when something is off."
-      aside={editing === "new" ? undefined : <AddButton label="New watcher" disabled={kinds.length === 0} onClick={() => setEditing("new")} />}
+      intro={locked ? BOT_ADMIN_ONLY : undefined}
+      aside={editing === "new" || locked ? undefined : <AddButton label="New watcher" disabled={kinds.length === 0} onClick={() => setEditing("new")} />}
       data={{ "data-group": "watching" }}
     >
       {editing === "new" ? (
@@ -50,7 +54,7 @@ export function Watching(props: { projectRef: ProjectRef; watchers: Automation[]
                   onClose={() => setEditing(null)}
                 />
               ) : (
-                <Row watcher={w} defaultProfile={defaultProfile} onEdit={() => setEditing(w.automationId)} />
+                <Row watcher={w} defaultProfile={defaultProfile} locked={locked} onEdit={() => setEditing(w.automationId)} />
               )}
             </li>
           ))}
@@ -61,7 +65,7 @@ export function Watching(props: { projectRef: ProjectRef; watchers: Automation[]
 }
 
 /** One watcher: its name, its line, its switch and menu; its runs under it when opened. */
-function Row(props: { watcher: Automation; defaultProfile: string | undefined; onEdit: () => void }) {
+function Row(props: { watcher: Automation; defaultProfile: string | undefined; locked: boolean; onEdit: () => void }) {
   const a = props.watcher;
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -105,7 +109,7 @@ function Row(props: { watcher: Automation; defaultProfile: string | undefined; o
           <Toggle
             aria-label={`Watch ${a.name}`}
             checked={!a.paused}
-            disabled={busy}
+            disabled={busy || props.locked}
             onCheckedChange={(on) =>
               act(async () => {
                 await hubCall("automation_pause", { automationId: a.automationId, paused: !on });
@@ -125,9 +129,9 @@ function Row(props: { watcher: Automation; defaultProfile: string | undefined; o
                     return out.run.state === "running" ? "Looking. It speaks in the chat only if something is off." : `Not now: ${out.run.why ?? "skipped"}.`;
                   }),
               },
-              { label: "Edit", onSelect: props.onEdit },
+              ...(props.locked ? [] : [{ label: "Edit", onSelect: props.onEdit }]),
               { label: history ? "Hide runs" : "Runs", onSelect: () => setHistory(!history) },
-              { label: "Delete", onSelect: () => setDeleting(true), danger: true },
+              ...(props.locked ? [] : [{ label: "Delete", onSelect: () => setDeleting(true), danger: true }]),
             ]}
           />
         </div>

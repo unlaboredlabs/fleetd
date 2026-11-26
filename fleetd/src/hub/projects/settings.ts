@@ -32,6 +32,7 @@ import type {
 import { BOT_COLORS, BOT_COLORS_WERE, BOT_SHAPES, type BotShape } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
+import { requireBotAdmin } from "../api/bot_admin.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownMachine, unknownProject } from "../api/refusals.ts";
@@ -505,6 +506,9 @@ export function register(tools: Registry): void {
     const project = store(hub).projectGet(r);
     if (!project) throw unknownProject(r);
     const repo = repoNamed(hub, r, input.repo);
+    const merging = input.merges !== undefined || input.mergeRules !== undefined || input.mergeMode !== undefined || input.upToDateOff !== undefined;
+    // Checked before anything changes, so a refused call changes nothing.
+    if (merging) requireBotAdmin(hub, caller, r, "merges");
     if (input.title !== undefined && input.title !== project.title) await rename(hub, project, input.title);
     // An older app's onlyMe is dropped as the call is decoded: every project is everyone's on the hub (D491).
     if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);

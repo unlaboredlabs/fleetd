@@ -1,10 +1,11 @@
 // automation_list, automation_create, automation_update, automation_pause, automation_rotate, automation_delete,
 // automation_run and automation_runs: Settings > Automations, and any MCP client with the grant.
-// Reads need read on the project's machine, writes operate there.
+// Reads need read on the project's machine, Run now operate there; the other writes are its workspace's admins' (bot_admin.ts).
 // automation_list also gives the nightly memory refresh's row (src/hub/memory/refresh.ts).
 import type { Automation, Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
+import { requireBotAdmin } from "../api/bot_admin.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { job } from "../memory/refresh.ts";
@@ -32,6 +33,13 @@ function granted(hub: Hub, caller: Caller, id: string, role: Role): Automation {
   return a;
 }
 
+/** `granted` with operate, for a change only the workspace's admins make. */
+function changeable(hub: Hub, caller: Caller, id: string): Automation {
+  const a = granted(hub, caller, id, "operate");
+  requireBotAdmin(hub, caller, a.projectRef, "automations");
+  return a;
+}
+
 const url = (hub: Hub, a: Automation, secret: string | undefined) => (secret === undefined ? undefined : webhookUrl(hub.url(), a.automationId, secret));
 
 const URL_ONCE = "The webhook URL holds its secret and is shown only now: copy it. automation_rotate makes a new one.";
@@ -54,6 +62,7 @@ export function register(tools: Registry): void {
 
   tools.add("automation_create", (hub, caller, input) => {
     requireRole(caller, "operate", input.projectRef.machineId);
+    requireBotAdmin(hub, caller, input.projectRef, "automations");
     const [automation, secret] = automations(hub).create({
       projectRef: input.projectRef,
       name: input.name,
@@ -79,7 +88,7 @@ export function register(tools: Registry): void {
   });
 
   tools.add("automation_update", (hub, caller, input) => {
-    const a = granted(hub, caller, input.automationId, "operate");
+    const a = changeable(hub, caller, input.automationId);
     const schedule: Edit["schedule"] = input.removeSchedule === true ? null : input.schedule;
     // Edited in the app, the person stands behind what they saw; another key's change to what it runs or when unsets it.
     const confirmed = isHuman(caller) ? true : input.prompt !== undefined || schedule !== undefined ? false : undefined;
@@ -100,20 +109,20 @@ export function register(tools: Registry): void {
   });
 
   tools.add("automation_pause", (hub, caller, input) => {
-    const a = granted(hub, caller, input.automationId, "operate");
+    const a = changeable(hub, caller, input.automationId);
     const automation = automations(hub).pause(a.automationId, input.paused, by(caller));
     const next = input.paused ? "Paused: its schedule and webhook start nothing; Run now still runs it." : "Resumed: its schedule goes on from now.";
     return { automation, next };
   });
 
   tools.add("automation_rotate", (hub, caller, input) => {
-    const a = granted(hub, caller, input.automationId, "operate");
+    const a = changeable(hub, caller, input.automationId);
     const [automation, secret] = automations(hub).rotate(a.automationId, by(caller));
     return { webhookUrl: webhookUrl(hub.url(), automation.automationId, secret), automation, next: `${URL_ONCE} The old URL no longer works.` };
   });
 
   tools.add("automation_delete", (hub, caller, input) => {
-    const a = granted(hub, caller, input.automationId, "operate");
+    const a = changeable(hub, caller, input.automationId);
     automations(hub).delete(a.automationId, by(caller));
     return { ok: true, next: "Deleted with its run history; orders its runs opened stay." };
   });

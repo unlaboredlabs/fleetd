@@ -49,6 +49,7 @@ export function ListRow({
   onPress,
   chevron = onPress !== undefined,
   destructive = false,
+  off = false,
   selectable = false,
   accessory,
 }: {
@@ -69,11 +70,14 @@ export function ListRow({
   onPress?: () => void;
   chevron?: boolean;
   destructive?: boolean;
+  /** Shown but not for this person to press (a member's view of an admin's action): its title dimmed. */
+  off?: boolean;
   /** The value can be copied (an address, a version). */
   selectable?: boolean;
   accessory?: ReactNode;
 }) {
   const t = useTheme();
+  const titleColor = off ? t.tertiary : destructive ? t.danger : t.label;
   // At the accessibility text sizes the value goes under the title, as iOS Settings does, rather than be cut short.
   const stacked = useWindowDimensions().fontScale >= 1.35 && value !== undefined && detail === undefined;
   const body = (pressed: boolean) => (
@@ -83,18 +87,18 @@ export function ListRow({
       )}
       {stacked ? (
         <View style={styles.grow}>
-          <Text style={[type.body, { color: destructive ? t.danger : t.label }]}>{title}</Text>
+          <Text style={[type.body, { color: titleColor }]}>{title}</Text>
           <Text style={[type.body, { color: valueColor ?? t.secondary }]} selectable={selectable}>
             {value}
           </Text>
         </View>
       ) : detail === undefined ? (
-        <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
+        <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: titleColor }]} numberOfLines={1}>
           {title}
         </Text>
       ) : (
         <View style={styles.grow}>
-          <Text style={[type.body, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
+          <Text style={[type.body, { color: titleColor }]} numberOfLines={1}>
             {title}
           </Text>
           <Text style={[type.footnote, { color: detailColor ?? t.secondary }]}>{detail}</Text>

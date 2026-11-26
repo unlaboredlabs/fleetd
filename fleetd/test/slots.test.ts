@@ -728,7 +728,7 @@ describe("cap_set", () => {
     s.setCap({ maxAgents: { projectRef: r, maxAgents: 1 } });
     s.acquire({ holder: "T1", projectRef: r, priority: "work" });
     s.acquire({ holder: "T2", projectRef: r, priority: "work" });
-    const out = await capSet(hub, key("operate"), { project: { projectRef: r, maxAgents: 3 } });
+    const out = await capSet(hub, key("admin"), { project: { projectRef: r, maxAgents: 3 } });
     expect(out.next).toBe("Max agents 1 → 3: 1 queued agent starts now, 1 slot free.");
     expect(out.slots.perProject[0]).toEqual({ projectRef: r, maxAgents: 3, own: true, running: 2, queued: 0 });
     const cap = events(hub).page(0).events.filter((e) => e.type === "agents.cap");
@@ -749,7 +749,7 @@ describe("cap_set", () => {
     expect(await refused(key("operate"), "cap_set", { cap: 4 })).toBe("forbidden");
     const out = await ok(key("admin"), "cap_set", { cap: 4 });
     expect(out.next).toStartWith("Fleet cap set to 4 (the machines fit ");
-    expect(await refused(key("operate"), "cap_set", { project: { projectRef: r, maxAgents: 5 } })).toBe("invalid");
+    expect(await refused(key("admin"), "cap_set", { project: { projectRef: r, maxAgents: 5 } })).toBe("invalid");
     expect(await refused(key("admin"), "cap_set", { machine: { machineId: "nope", maxAgents: 2 } })).toBe("not_found");
     expect(await refused(key("admin"), "cap_set", {})).toBe("invalid");
   });

@@ -19,7 +19,7 @@ const HINT = [
   ["Rules", RULES_WORDS],
 ] as const;
 
-export function WhoMergesSetting({ projectRef, merges, rules }: { projectRef: Ref; merges: Merger; rules: RiskRules | undefined }) {
+export function WhoMergesSetting({ projectRef, merges, rules, locked = false }: { projectRef: Ref; merges: Merger; rules: RiskRules | undefined; locked?: boolean }) {
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -51,16 +51,16 @@ export function WhoMergesSetting({ projectRef, merges, rules }: { projectRef: Re
       lineTone="danger"
       control={
         <>
-          {people && rules !== undefined ? (
+          {people && rules !== undefined && !locked ? (
             <Button variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
               Rules
             </Button>
           ) : null}
-          <Segmented label="Who merges" options={WHO_MERGES} value={shown} disabled={!live} onChange={pick} />
+          <Segmented label="Who merges" options={WHO_MERGES} value={shown} disabled={!live || locked} onChange={pick} />
         </>
       }
     >
-      {people && open && rules !== undefined ? <RulesEditor key={rulesText(rules.itself) + rulesText(rules.person)} projectRef={projectRef} rules={rules} /> : null}
+      {people && open && rules !== undefined && !locked ? <RulesEditor key={rulesText(rules.itself) + rulesText(rules.person)} projectRef={projectRef} rules={rules} /> : null}
     </SettingsRow>
   );
 }

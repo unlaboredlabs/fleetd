@@ -19,7 +19,7 @@ import s from "./settings.module.css";
 
 type Ref = { machineId: string; projectId: string };
 
-export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
+export function ApprovalsSetting({ projectRef, locked = false }: { projectRef: Ref; locked?: boolean }) {
   const live = useLive();
   const read = useToolQuery(PROJECT_TOOLS.approvals, { ...projectRef, limit: FIRST_PAGE }, { enabled: live });
   const data = read.data;
@@ -45,7 +45,7 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
             Loading…
           </Text>
         ) : (
-          <ModeEditor key={data.approvals.mode} projectRef={projectRef} saved={data.approvals} />
+          <ModeEditor key={data.approvals.mode} projectRef={projectRef} saved={data.approvals} locked={locked} />
         )}
       </SettingsRow>
       {data === undefined ? null : <ApprovedLog projectRef={projectRef} first={data} />}
@@ -53,7 +53,7 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
   );
 }
 
-function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: ProjectApprovals }) {
+function ModeEditor({ projectRef, saved, locked }: { projectRef: Ref; saved: ProjectApprovals; locked: boolean }) {
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -75,7 +75,7 @@ function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: ProjectAppr
   };
   return (
     <div className={s.stack}>
-      <RadioGroup className={s.modes} value={saved.mode} disabled={!live || busy} onValueChange={(v) => save(v as ApprovalMode)} aria-label="Approval mode">
+      <RadioGroup className={s.modes} value={saved.mode} disabled={!live || busy || locked} onValueChange={(v) => save(v as ApprovalMode)} aria-label="Approval mode">
         {MODES.map((m) => (
           <Radio key={m.mode} value={m.mode} label={m.label} />
         ))}

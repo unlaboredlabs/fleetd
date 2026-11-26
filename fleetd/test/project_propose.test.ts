@@ -25,6 +25,8 @@ const WHAT_CLONED = "A new bot on devbox, cloned from acme/billing once you appr
 /** Notes on devbox with its lead (th-lead) and a task of it (T4, th-task), the wakes its lead gets, and its prompts. */
 async function rig(answer: Answer = () => undefined) {
   const k = kit();
+  // Ada is an admin: she sets the bot's approval mode (W926).
+  k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'admin', 0)");
   clones(k.hub);
   const n = await node(k, ["repos", "folder_make"], answer);
   gh(k, { "repos/acme/billing": { default_branch: "main", allow_squash_merge: true } });

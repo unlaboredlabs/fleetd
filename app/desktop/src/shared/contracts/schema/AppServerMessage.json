@@ -1088,6 +1088,11 @@
           "type": "string"
         },
         {
+          "const": "project.erased",
+          "description": "A person deleted a bot (`project_remove`): `data.projectId`, `data.title`, `data.by` the person and\n`data.people`, the bot's other people, whom it notifies.",
+          "type": "string"
+        },
+        {
           "const": "thread.waiting",
           "description": "Needs approval or user input.",
           "type": "string"

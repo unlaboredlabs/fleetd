@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attentionEvent, FALLBACK_POLICY, kindOf, Notifier, policyFrom, policyStale, quietAt, Requests, type AttentionEvent, type Policy } from "./notifier";
+import { attentionEvent, forOthers, FALLBACK_POLICY, kindOf, Notifier, policyFrom, policyStale, quietAt, Requests, type AttentionEvent, type Policy } from "./notifier";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-10-17T10:00:00.000Z");
@@ -144,6 +144,15 @@ describe("policy", () => {
     expect(attentionEvent({ seq: 2, type: "thread.failed", summary: "x" })).toBeNull();
     expect(attentionEvent({ seq: 6, type: "chat.waiting", summary: "The lead is working", data: { projectRef: storefront, needsYou: false } })).toBeNull();
     expect(attentionEvent({ seq: 3, type: "usage.breaker", summary: "x", attention: "loud" })?.project).toBeNull();
+  });
+
+  it("a deleted bot's line is only for its other people", () => {
+    const erased = { seq: 7, type: "project.erased", summary: "Ada deleted the bot Shop", attention: "loud", data: { people: ["p-bea"] } };
+    expect(forOthers(erased, "p-bea")).toBe(false);
+    expect(forOthers(erased, "p-ada")).toBe(true);
+    // A workspace from before people names no one: it shows.
+    expect(forOthers(erased, undefined)).toBe(false);
+    expect(forOthers({ seq: 8, type: "machine.offline", summary: "x", attention: "loud" }, "p-ada")).toBe(false);
   });
 });
 

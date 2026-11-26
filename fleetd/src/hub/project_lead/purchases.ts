@@ -10,6 +10,7 @@
 import type { PaymentCard, ProjectRef, Purchase, PurchaseLogEntry } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_NO_ASK_FILL } from "../../shared/node_link.ts";
+import { requireBotAdmin } from "../api/bot_admin.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
@@ -184,6 +185,7 @@ export function register(tools: Registry): void {
       throw new ToolError("forbidden", "Only a person picks the card a bot pays with.", "Pick it in the app: the bot's Settings › Payments.");
     }
     const r = projectRefOf(hub, input);
+    requireBotAdmin(hub, caller, r, "card");
     if (input.card !== undefined) checkCardPick(hub, input.card);
     kept.setCard(hub.db.conn, r, input.card);
     const paysWith = input.card !== undefined ? card(hub, r) : undefined;

@@ -1,4 +1,5 @@
-import type { ProjectRef } from "../../shared/contracts.ts";
+import type { PersonRef, ProjectRef } from "../../shared/contracts.ts";
+import { isAdminPerson } from "../api/bot_admin.ts";
 import type { Hub } from "../api/hub.ts";
 import { approvals } from "../approvals/index.ts";
 import { checkerSeams } from "../project_lead/checker_turn.ts";
@@ -22,9 +23,11 @@ export function start(hub: Hub): void {
         return undefined;
       }
     },
-    automationConfirm: async (project: ProjectRef, shown: unknown, by: string) => {
+    automationConfirm: async (project: ProjectRef, shown: unknown, by: string, person?: PersonRef) => {
       const id = shown !== null && typeof shown === "object" ? (shown as { automationId?: unknown }).automationId : undefined;
       if (typeof id !== "string") return false;
+      // A member's approval lets this one run but leaves it unconfirmed: its later runs still ask (W926).
+      if (person !== undefined && !isAdminPerson(hub, person.personId)) return false;
       try {
         automations(hub).own(project, id);
       } catch {

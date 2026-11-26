@@ -20,6 +20,7 @@ import { gh, node, ROOT, settle } from "./project-kit.ts";
 import { AT, key, kit, workstream } from "./work-kit.ts";
 
 const operate = key("operate");
+const admin = key("admin");
 const person = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
 const added = (k: ReturnType<typeof kit>) => events(k.hub).page(0, ["project.added"]).events;
 /** The approval mode `project_approvals` reports for a project on devbox, read by Ada. */
@@ -219,6 +220,7 @@ test("a clone streams its progress, then lands as a bot with its addId", async (
 
 test("a bot that was there before keeps its mode: the one stored, or the checker with none stored", async () => {
   const k = kit();
+  k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'admin', 0)");
   const n = await node(k, ["repos", "folder_make"]);
   gh(k, {});
   // Two projects from before new ones started in YOLO: one never set (no row), one set to ask.
@@ -372,7 +374,7 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   const app = { machineId: "devbox", projectId: "app" };
   const caps = (list: string[]) => (link(k.hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set(list));
   store(k.hub).machineUpsert({ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "offline", lastSeenAt: AT });
-  expect(await k.refused(operate, "project_remove", app)).toBe("machine_offline");
+  expect(await k.refused(admin, "project_remove", app)).toBe("machine_offline");
   const git = { kind: "repo_facts" as const, exists: true, isGit: true, workflowFiles: [] };
   const n = await node(k, ["repos"], (call) => (call.op === "repo_inspect" ? { ok: git } : undefined));
   gh(k, {});
@@ -380,11 +382,11 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
     n.event({ type: "project_upserted", projectId: id, title: id, workspaceRoot: root, updatedAt: AT });
   }
   await settle();
-  const old = await k.call(operate, "project_remove", app);
+  const old = await k.call(admin, "project_remove", app);
   expect(old).toMatchObject({ error: { error: { code: "invalid", message: "Update fleetd on devbox first: its node is too old to erase a bot, so nothing was deleted" } } });
   caps(["repos", "project_erase"]);
   // Its worktrees go only from a node that takes project settings.
-  expect(await k.refused(operate, "project_remove", { ...app, removeWorktrees: true })).toBe("invalid");
+  expect(await k.refused(admin, "project_remove", { ...app, removeWorktrees: true })).toBe("invalid");
   expect(await k.refused(key("read"), "project_remove", app)).toBe("forbidden");
   caps(["repos", "project_erase", "project_settings"]);
   // app holds api alone; api2 is shop's too, so it stays.
@@ -400,7 +402,7 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   const api = checkout("api");
   const api2 = checkout("api2");
   n.calls.length = 0;
-  const out = await k.ok(operate, "project_remove", { ...app, removeWorktrees: true });
+  const out = await k.ok(admin, "project_remove", { ...app, removeWorktrees: true });
   expect(out).toEqual({
     ok: true,
     next: "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings. Its folder, files and branches stay on the machine.",
@@ -412,10 +414,12 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   // Erased in the hub, its mark included; the node's project_removed takes it and api out of the list.
   expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM project_erases").get()).toEqual({ n: 0 });
   await settle();
+  // Its people are told by its name, read before its node let it go.
+  expect(events(k.hub).page(0, ["project.erased"]).events.map((e) => e.summary)).toEqual(["agent deleted the bot app"]);
   expect(store(k.hub).projectsList("devbox").map((p) => p.projectId).sort()).toEqual([api2 as string, "shop"].sort());
   // Its folder goes only when asked, never a checkout's; shop holds api2 alone now, so it goes too.
   n.calls.length = 0;
-  const folder = await k.ok(operate, "project_remove", { machineId: "devbox", projectId: "shop", removeFolder: true });
+  const folder = await k.ok(admin, "project_remove", { machineId: "devbox", projectId: "shop", removeFolder: true });
   expect(folder.next).toEndWith(", and its folder with everything in it.");
   expect(n.calls.filter((c) => c.op === "project_remove")).toEqual([
     { op: "project_remove", projectId: "shop", erase: true, removeFolder: true },
@@ -426,11 +430,11 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
 test("a bot of a machine the workspace no longer has is forgotten in the workspace, and says so", async () => {
   const k = kit();
   const r = { machineId: "gone", projectId: "app" };
-  expect(await k.refused(operate, "project_remove", r)).toBe("not_found");
+  expect(await k.refused(admin, "project_remove", r)).toBe("not_found");
   store(k.hub).projectsUpsertMany("gone", [
     { machineId: "gone", projectId: "app", title: "App", workspaceRoot: "/w/app", lastActivityAt: AT, threads: { running: 0, idle: 0, failed: 0, waiting: 0 } } as never,
   ]);
-  const out = await k.ok(operate, "project_remove", r);
+  const out = await k.ok(admin, "project_remove", r);
   expect(out.next).toBe("gone is no longer in the workspace, so no machine held its files: fleetd forgot the bot, its chat and its settings.");
   expect(store(k.hub).projectGet(r)).toBeUndefined();
   expect(events(k.hub).page(0, ["project.removed"]).events.map((e) => [e.summary, e.data])).toEqual([

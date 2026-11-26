@@ -17,6 +17,8 @@ const docs = { machineId: "devbox", projectId: "docs" };
 /** Web and Shop, each with acme/shop in a folder of its own; Docs on another repo. */
 async function twoBots(answer?: Answer) {
   const k = kit();
+  // Ada is an admin: a bot's merge mode is the workspace's admins' (W926).
+  k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'admin', 0)");
   const n = await node(k, ["repos"], answer);
   for (const [id, title, root] of [["web", "Web", "/home/me/src/shop"], ["shop", "Shop", "/home/me/src/shop-2"], ["docs", "Docs", "/home/me/docs"]] as const) {
     n.event({ type: "project_upserted", projectId: id, title, workspaceRoot: root, updatedAt: AT });

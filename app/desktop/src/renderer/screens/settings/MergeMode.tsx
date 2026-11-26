@@ -30,7 +30,7 @@ function keptRule(id: string): UpToDateRule | undefined {
 }
 
 /** `upToDate` undefined: project_settings_get hasn't answered yet. */
-export function MergeModeSetting(props: { projectRef: Ref; mode: MergeMode; upToDate: readonly UpToDateRule[] | undefined; shared?: MergeShared | undefined }) {
+export function MergeModeSetting(props: { projectRef: Ref; mode: MergeMode; upToDate: readonly UpToDateRule[] | undefined; shared?: MergeShared | undefined; locked?: boolean }) {
   const { projectRef, upToDate, shared } = props;
   // Shared: the repo's train's mode, the one its PRs go by.
   const mode = shared?.mode ?? props.mode;
@@ -85,13 +85,13 @@ export function MergeModeSetting(props: { projectRef: Ref; mode: MergeMode; upTo
       line={problem ?? ([shared === undefined ? undefined : sharedText(shared), rule === undefined ? undefined : upToDateText(rule, admin)].filter(Boolean).join(" ") || undefined)}
       lineTone={problem !== null ? "danger" : rule !== undefined ? "warning" : "quiet"}
       lineAction={
-        problem === null && rule !== undefined && rule.canTurnOff && admin ? (
+        problem === null && rule !== undefined && rule.canTurnOff && admin && props.locked !== true ? (
           <Button variant="ghost" disabled={!live || turningOff || reading} onClick={() => turnOff(rule.repo)}>
             {turningOff ? "Turning off…" : "Turn off"}
           </Button>
         ) : undefined
       }
-      control={<Segmented label="How it merges" options={MERGE_MODES} value={shown} disabled={!live} onChange={pick} />}
+      control={<Segmented label="How it merges" options={MERGE_MODES} value={shown} disabled={!live || props.locked === true} onChange={pick} />}
     />
   );
 }

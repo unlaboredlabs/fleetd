@@ -12,8 +12,9 @@ import { useDataLayer, useHub, useSeveralHubs, useToolQuery } from "../../src/da
 import { selectLeadWorking, selectNeedsYou } from "../../src/data/selectors";
 import { useHubRows } from "./hubRows";
 import { useHubEvents } from "./hubFeed";
+import { useHubRole } from "../admin/role";
 import { currentRoute, navigate } from "./navigation";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, Requests, type DueContext, type Policy } from "./notifier";
+import { attentionEvent, FALLBACK_POLICY, forOthers, Notifier, policyFrom, policyStale, Requests, type DueContext, type Policy } from "./notifier";
 import { notificationPrefs } from "./notificationPrefs";
 import { projectId } from "./model";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
@@ -139,7 +140,14 @@ export const useNotifications = (live: boolean): void => {
     void window.fleetd.app.notify({ tag, ...due, title: named ? `${label} · ${due.title}`.slice(0, 120) : due.title, target });
   });
   const [requests] = useState(() => new Requests());
+  // Who this app's person is, for an event that names whom it is for.
+  const person = useHubRole().me?.personId;
+  const me = useRef<string | undefined>(person);
+  useEffect(() => {
+    me.current = person;
+  }, [person]);
   const [onEvent] = useState(() => (event: HubEvent) => {
+    if (forOthers(event, me.current)) return;
     const finished = requests.see(event, (p) => selectLeadWorking(projectId(p))(store.getState()) === true);
     const attention = finished ?? attentionEvent(event);
     if (attention === null) return;

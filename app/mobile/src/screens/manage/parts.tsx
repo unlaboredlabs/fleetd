@@ -5,8 +5,8 @@ import type { NativeStackNavigationOptions } from "@react-navigation/native-stac
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
-import type { HubError } from "../../desktop";
-import { useSession } from "../../hubContext";
+import { botLocked, type HubError } from "../../desktop";
+import { useHub, useSession } from "../../hubContext";
 import { shape, space, type, useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
 
@@ -66,6 +66,12 @@ export function Problem({ text }: { text: string | undefined }) {
     </Text>
   );
 }
+
+/**
+ * True once the workspace says this phone's person is a member: a bot's safety settings (who merges, approvals,
+ * payments, watchers, deleting it) are its admins', so a member sees them off, with BOT_ADMIN_ONLY under them.
+ */
+export const useBotLocked = (): boolean => botLocked(useHub().state.meRole);
 
 /** A section's own footnote under something that isn't a ListSection. */
 export function Note({ children }: { children: ReactNode }) {

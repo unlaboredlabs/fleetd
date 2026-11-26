@@ -1,6 +1,7 @@
 // lead_start, project_set (the profiles a bot's agents may run on, its lead's own, who merges and how) and workstream_list.
 import { allows } from "../auth/index.ts";
 import { mergeModeNext, setHowItMerges, setWhoMerges, whoMergesNext } from "../projects/settings.ts";
+import { requireBotAdmin } from "../api/bot_admin.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";
 import { profiles } from "../projects/profiles.ts";
@@ -25,6 +26,7 @@ export function register(tools: Registry): void {
     const r = { machineId: input.machineId, projectId: input.projectId };
     const project = store(hub).projectGet(r);
     if (!project) throw unknownProject(r);
+    if (input.merges !== undefined || input.mergeMode !== undefined) requireBotAdmin(hub, caller, r, "merges");
     const area = leads(hub);
     const said: string[] = [];
     if (input.merges !== undefined) {

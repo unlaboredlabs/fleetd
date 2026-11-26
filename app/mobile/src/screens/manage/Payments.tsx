@@ -8,7 +8,7 @@ import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navig
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import { listTime } from "../../chatView";
-import { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, PROJECT_TOOLS, purchaseLine, purchaseState, type HubError, type OnePasswordCardsOutput, type ProjectRef, type PurchasesOutput } from "../../desktop";
+import { BOT_ADMIN_ONLY, cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, PROJECT_TOOLS, purchaseLine, purchaseState, type HubError, type OnePasswordCardsOutput, type ProjectRef, type PurchasesOutput } from "../../desktop";
 import { useHub, type ChatInfoProps, type VaultParams } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
@@ -16,7 +16,7 @@ import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { useNow } from "../time";
 import type { Hub, Result } from "./api";
-import { CheckRow, errorWords, Problem, useRead } from "./parts";
+import { CheckRow, errorWords, Note, Problem, useBotLocked, useRead } from "./parts";
 import { usableCards, vaultHub } from "../vault/api";
 import { rowLine, vaultShown } from "../vault/model";
 import type { VaultItemSummary } from "../vault/types";
@@ -59,6 +59,7 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<HubError | null>(null);
   const live = state.hub.phase === "live";
+  const locked = useBotLocked();
   const view = read.value?.ok === true ? read.value.value : undefined;
   const card = view?.card?.ref;
   const vault = vaultShown(state.hub);
@@ -124,11 +125,12 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
           <ListRow
             title="Card"
             value={card === undefined ? "None" : (view?.card as { label?: string } | undefined)?.label ?? cardLabel({ ref: card })}
-            {...(live && (vault ? vaultCards === null || (vaultCards !== "reading" && !vaultCards.ok) : cards === null || cardsFailed) ? { onPress: change } : {})}
+            {...(live && !locked && (vault ? vaultCards === null || (vaultCards !== "reading" && !vaultCards.ok) : cards === null || cardsFailed) ? { onPress: change } : {})}
           />
         )}
       </ListSection>
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : undefined} />
+      {locked ? <Note>{BOT_ADMIN_ONLY}</Note> : null}
 
       {vaultCards === "reading" ? (
         <ListSection header="Cards">
