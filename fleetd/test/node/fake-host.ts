@@ -8,7 +8,9 @@
 // variables' values as live text in 7-character Deltas, 10 ms apart, then answers. Shutdown exits. Its environment goes to
 // <dir>/env.json, its arguments to <dir>/argv.json. One with `monitor-late:` arms a Monitor that ends while the turn's last
 // answer is written, as a check already done does: the turn ends with its notice untold, and 500 ms later claude runs
-// a turn of its own for it (run `woke-<run>`), unless it was shut down first. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
+// a turn of its own for it (run `woke-<run>`), unless it was shut down first. With ANTHROPIC_BASE_URL set (claude.env),
+// each turn first asks that endpoint, as claude asks the API: a 529 fails the turn Overloaded, as claude does once its
+// own retries give up; Sends meanwhile queue behind it. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
 // of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
 import { appendFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,6 +44,21 @@ let woke: Timer | undefined;
 const answer = (run: string, text: string) => {
   emit({ AssistantText: { message_id: `msg-${run}`, text: `ok: ${text}` } });
   emit({ RunEnded: { run_id: run, outcome: { Completed: { text: `ok: ${text}` } }, usage: null } });
+};
+// A turn that asks the endpoint first (ANTHROPIC_BASE_URL), then the next queued Send.
+const viaApi = async (run: string, text: string) => {
+  waiting = { run, text };
+  const answered = await fetch(`${process.env.ANTHROPIC_BASE_URL}/v1/messages`, { method: "POST", body: "{}" }).catch(() => undefined);
+  if (waiting?.run !== run) return;
+  waiting = undefined;
+  if (answered?.status === 529)
+    emit({ RunEnded: { run_id: run, outcome: { Failed: { class: "overloaded", message: "API Error: Repeated 529 Overloaded errors", apiStatus: 529, retries: 0 } }, usage: null } });
+  else answer(run, text);
+  const next = queued.shift();
+  if (next) {
+    emit({ RunStarted: { run_id: next.run } });
+    void viaApi(next.run, next.text);
+  }
 };
 const exit = () => {
   clearTimeout(woke);
@@ -84,6 +101,10 @@ Bun.listen({
         } else if (cmd?.Send) {
           const { run_id, text } = cmd.Send;
           emit({ RunStarted: { run_id } });
+          if (process.env.ANTHROPIC_BASE_URL) {
+            void viaApi(run_id, text);
+            continue;
+          }
           // `flaky:` fails its first try as claude does when the network drops; `refuse-model:` fails while claude
           // runs on any model but the profile's own.
           if (text.includes("flaky:")) {

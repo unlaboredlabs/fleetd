@@ -244,3 +244,12 @@ test("a run of retries counts from the first, and ends with the work that follow
   t.apply(retry(1), T0 + 40_000);
   expect(t.now(T0 + 41_000)?.since).toBe(isoMs(T0 + 40_000));
 });
+
+// B1 of the Nov 26 sweep: the node's own retry says when it goes, so the chat can too.
+test("a node retry's activity carries when it goes", () => {
+  const failure = { class: "overloaded" as const, message: "API Error: Repeated 529 Overloaded errors", retries: 0 };
+  const kind: ItemKind = { type: "node_retry", attempt: 2, of: 30, delayMs: 30_000, retryAt: isoMs(T0 + 30_000), reason: failure };
+  expect(activityOf(kind, undefined)).toEqual({ kind: "retrying", attempt: 2, of: 30, reason: "overloaded", retryAt: isoMs(T0 + 30_000) });
+  // An older node's says nothing of it.
+  expect(activityOf({ type: "node_retry", attempt: 1, of: 3, delayMs: 60_000, reason: failure }, undefined)).toEqual({ kind: "retrying", attempt: 1, of: 3, reason: "overloaded" });
+});

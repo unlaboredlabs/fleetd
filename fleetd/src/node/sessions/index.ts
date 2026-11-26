@@ -195,7 +195,7 @@ export type SessionConfig = {
   /** The command that runs fleetd: each session's host, and fleetd's MCP server and hold hook inside sessions. */
   fleetd: string[];
   boxKey?: NodeBoxKey;
-  /** The node's own retries of a run that failed Overloaded or Network, after claude's: 1, 4 and 15 min, ±10%. */
+  /** The node's own retries of a run that failed Overloaded or Network, after claude's: retryDelayMs's. */
   retryScheduleMs?: number[];
   /** Idle processes cost RAM: one without an active run this long is closed; the next send resumes it. */
   idleReapMs?: number;
@@ -208,17 +208,23 @@ export type SessionConfig = {
 
 /** What a node retry sends, with `--resume`, so claude picks the turn back up. */
 export const RETRY_MESSAGE = "Continue where you left off.";
-export const MAX_RUN_RETRIES = 3;
+/** About an hour of retries (retryDelayMs): a Claude outage longer than that ends the run, which says why. */
+export const MAX_RUN_RETRIES = 30;
 /** How long a lead's hosted start waits before its one more try, when its box came up but it couldn't start there
  * (place/hosted.ts BoxNotReady). A task's recovery tries again itself (the hub's `sandbox` class). Tests set it. */
 export const HOSTED_RETRY = { ms: 30_000 };
 
-/** The delay before retry `attempt` (1-based): 1, 4 and 15 minutes, each ±10% by `unit` in [0, 1), whole seconds. */
+/** The delay before retry `attempt` (1-based): 15 s, 30 s, 1 min, then every 2 min, each ±10% by `unit` in [0, 1),
+ * whole seconds. Short, so a lead is back soon after Claude is (the Nov 26 sweep waited 17 minutes on 1, 4 and 15); a
+ * new message to the session doesn't wait for it at all (`#retryNow`). */
 export function retryDelayMs(attempt: number, unit = Math.random()): number | undefined {
   if (attempt < 1 || attempt > MAX_RUN_RETRIES) return undefined;
-  const base = Math.min(60_000 * 4 ** (attempt - 1), 15 * 60_000);
+  const base = Math.min(15_000 * 2 ** (attempt - 1), 120_000);
   return Math.round((base * (0.9 + 0.2 * Math.min(1, Math.max(0, unit)))) / 1000) * 1000;
 }
+
+/** Every retry's delay, each drawn with its jitter. */
+const retrySchedule = () => Array.from({ length: MAX_RUN_RETRIES }, (_, i) => retryDelayMs(i + 1)!);
 
 const retryable = (cls: FailureClass) => cls === "overloaded" || cls === "network";
 
@@ -239,7 +245,7 @@ export function configFor(home: string, fleetdDirPath: string, fleetd: string[],
     baseEnv: sessionEnv(),
     claudeBin: claude.claudeBinary(),
     fleetd,
-    retryScheduleMs: [1, 2, 3].map((a) => retryDelayMs(a)!),
+    retryScheduleMs: retrySchedule(),
     idleReapMs: 600_000,
     ...(boxKey ? { boxKey } : {}),
   };
@@ -450,6 +456,8 @@ export class SessionService {
   #setupCancel = new Map<string, { runId: string; abort: AbortController }>();
   /** Node retries done per run; a run in here outlives an exit nobody asked for. */
   #retries = new Map<string, number>();
+  /** Node retries waiting out their delay, by run: a new message to the session sends its retry at once (`#retryNow`). */
+  #retryWaits = new Map<string, { sessionId: string; timer: ReturnType<typeof setTimeout>; fire: () => void }>();
   /** This node's claude refused `--append-system-prompt-file`: until the node restarts, every start passes a session's
    * standing rules at the head of the message it starts with instead. */
   #noPromptFile = false;
@@ -593,9 +601,9 @@ export class SessionService {
     return { generation: ++this.#generation, pid: link.pid, link, lastActive: Date.now(), closing: false, exited, markExited, secrets, aliases: new Map(), tools: new Set(), watching: new Map() };
   }
 
-  /** The node's retry delays: the config's, else 1, 4 and 15 min, each drawn with its jitter. */
+  /** The node's retry delays: the config's, else retryDelayMs's, each drawn with its jitter. */
   get #retrySchedule(): number[] {
-    return this.config.retryScheduleMs ?? [1, 2, 3].map((a) => retryDelayMs(a)!);
+    return this.config.retryScheduleMs ?? retrySchedule();
   }
 
   get #idleReapMs(): number {
@@ -1331,6 +1339,8 @@ export class SessionService {
       return { queued };
     });
     if ("again" in recorded) return recorded.again;
+    // A run waiting out a node retry goes again now, ahead of this message, rather than hold it behind the wait.
+    this.#retryNow(id);
     if (steer) for (const steerId of [...(steer.riders ?? []), steer.id]) this.#steers.track(id, runId, steerId, recorded.queued);
     // The worktree is still being set up: the message goes once that has ended and the brief has gone.
     const settingUp = this.#settingUp.get(id);
@@ -2413,7 +2423,7 @@ export class SessionService {
         startedAt: c.at,
         completedAt: c.at,
         updatedAt: c.at,
-        kind: { type: "node_retry", attempt, of: this.#retrySchedule.length, delayMs, reason: failure },
+        kind: { type: "node_retry", attempt, of: this.#retrySchedule.length, delayMs, retryAt: new Date(Date.parse(c.at) + delayMs).toISOString(), reason: failure },
       }),
     );
     this.#resend(id, runId, delayMs, unread);
@@ -2422,7 +2432,8 @@ export class SessionService {
   /** After `delayMs`, unless the run ended meanwhile, the session gets the run's message again (`unread`) or
    * RETRY_MESSAGE, under a fresh uuid that maps back to the run. */
   #resend(id: string, runId: string, delayMs: number, unread: boolean): void {
-    setTimeout(async () => {
+    const fire = async () => {
+      this.#retryWaits.delete(runId);
       if (!this.store.runs(id).some((r) => r.id === runId && isActive(r.status))) {
         if (unread) this.#steers.failed(runId, "the run ended before claude took it in");
         return;
@@ -2437,7 +2448,19 @@ export class SessionService {
         this.#failRun(id, runId, failureOf(error), (error as Error).message);
         if (unread) this.#steers.failed(runId, (error as Error).message);
       }
-    }, delayMs);
+    };
+    this.#retryWaits.set(runId, { sessionId: id, timer: setTimeout(() => void fire(), delayMs), fire: () => void fire() });
+  }
+
+  /** Each of the session's runs waiting out a node retry goes again now: someone wrote to it (a message, a wake), so
+   * nobody waits out a delay Claude may be back well before. One that fails again waits its next delay. */
+  #retryNow(id: string): void {
+    for (const [runId, wait] of this.#retryWaits) {
+      if (wait.sessionId !== id) continue;
+      clearTimeout(wait.timer);
+      this.#retryWaits.delete(runId);
+      wait.fire();
+    }
   }
 
   /** Drops a send claude still holds queued; a no-op once it has started. Waits up to WITHDRAW_WAIT_MS for claude. */
@@ -2754,6 +2777,7 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
+    for (const wait of this.#retryWaits.values()) clearTimeout(wait.timer);
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
     this.store.close();
@@ -2776,6 +2800,7 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
+    for (const wait of this.#retryWaits.values()) clearTimeout(wait.timer);
     for (const id of [...this.#live.keys()]) {
       const dir = hostDir(this.home, id);
       await placeAt(dir).stop(dir);

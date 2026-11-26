@@ -376,7 +376,8 @@ function retryOf(kind: ItemKind): Activity | undefined {
     const reason = kind.errorStatus === 529 ? "overloaded" : kind.errorStatus !== undefined ? `${kind.errorStatus}` : kind.error;
     return { kind: "retrying", attempt: kind.attempt, of: kind.maxRetries, reason: clip(reason) };
   }
-  if (kind.type === "node_retry") return { kind: "retrying", attempt: kind.attempt, of: kind.of, reason: clip(kind.reason.class) };
+  if (kind.type === "node_retry")
+    return { kind: "retrying", attempt: kind.attempt, of: kind.of, reason: clip(kind.reason.class), ...(kind.retryAt !== undefined ? { retryAt: kind.retryAt } : {}) };
   return undefined;
 }
 

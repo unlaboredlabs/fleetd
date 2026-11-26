@@ -318,6 +318,17 @@ describe("Claude not serving the lead's turn", () => {
     expect(wakeWords(some({ working: true, waiting: true, asked, activity: { kind: "thinking" }, activitySince: T }), T + 60_000)).toBeUndefined();
   });
 
+  // B1 of the Nov 26 sweep (F1763): "Claude is overloaded, retrying…" for 17 minutes, never saying when.
+  test("while the node waits to try again, the line says when, in the person's time; never a time already past", () => {
+    const activity: Activity = { kind: "retrying", attempt: 2, of: 30, reason: "overloaded", retryAt: iso(64_000) };
+    const w = some({ working: true, waiting: true, asked, activity, activitySince: T + 1_000 });
+    expect(w).toEqual({ phase: "working", retry: { reason: "overloaded", since: T + 1_000, at: T + 64_000 } });
+    expect(wakeWords(w, T + 30_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying at 10:01" });
+    expect(wakeWords(w, T + 30_000, "Europe/Berlin")).toEqual({ words: "Claude is overloaded, retrying at 11:01" });
+    // The try is on its way: no time behind the clock.
+    expect(wakeWords(w, T + 64_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying…" });
+  });
+
   test("a hub that doesn't say since when: the dots, as before", () => {
     const w = some({ working: true, waiting: true, asked, activity: retrying("overloaded") });
     expect(w).toEqual({ phase: "working" });

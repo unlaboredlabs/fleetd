@@ -12,7 +12,7 @@
 // Pure, so both apps draw the same states (app/mobile through its src/desktop.ts).
 import type { BotState } from "./bot";
 import type { Activity, StartStep } from "./contracts";
-import { startsAgain } from "./startsAgain";
+import { clockAt, startsAgain } from "./startsAgain";
 
 export type Wake =
   /** Its computer sleeps, and nothing runs: the next message starts it. */
@@ -25,8 +25,9 @@ export type Wake =
   /** Started, its lead thinks, or works before it writes. */
   | { readonly phase: "thinking" }
   /** At work; `retry`: Claude isn't serving its calls, and its claude has retried since then (hub epoch ms), why in
-   * the tracker's words ("overloaded", a status, an error). */
-  | { readonly phase: "working"; readonly retry?: { readonly reason: string; readonly since: number } }
+   * the tracker's words ("overloaded", a status, an error), and when the node tries again (`at`, hub epoch ms) while it
+   * waits to. */
+  | { readonly phase: "working"; readonly retry?: { readonly reason: string; readonly since: number; readonly at?: number } }
   /** Its first words stream: the bot stays in the reply's place until the reply is whole. */
   | { readonly phase: "writing" }
   /** Your message is in and the lead hasn't started on it yet: since when you sent it (hub epoch ms; undefined: just now). */
@@ -118,7 +119,10 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
     // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
     if (!i.cold && !waiting) return undefined;
     if (i.writing || a?.kind === "writing") return { phase: "writing" };
-    if (a?.kind === "retrying") return { phase: "working", ...(i.activitySince === undefined ? {} : { retry: { reason: a.reason, since: i.activitySince } }) };
+    if (a?.kind === "retrying") {
+      const at = ms(a.retryAt);
+      return { phase: "working", ...(i.activitySince === undefined ? {} : { retry: { reason: a.reason, since: i.activitySince, ...(at === undefined ? {} : { at }) } }) };
+    }
     return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
   }
   if (waiting) {
@@ -162,9 +166,12 @@ export const wakePose = (w: Wake, stirred: boolean): BotState => {
   }
 };
 
-/** Claude's retries in one plain line, by why: overloaded, rate-limited, or not answering. */
-export const retryWords = (reason: string): string =>
-  reason === "overloaded" ? "Claude is overloaded, retrying…" : reason === "429" ? "Claude is busy (rate-limited), retrying…" : "Claude isn’t answering, retrying…";
+/** Claude's retries in one plain line, by why: overloaded, rate-limited, or not answering; with when the next try goes
+ * (`at`, in `timeZone`) while one waits for it, never a "retrying…" with no end. */
+export const retryWords = (reason: string, at?: number, timeZone?: string): string => {
+  const why = reason === "overloaded" ? "Claude is overloaded" : reason === "429" ? "Claude is busy (rate-limited)" : "Claude isn’t answering";
+  return at === undefined ? `${why}, retrying…` : `${why}, retrying at ${clockAt(at, timeZone)}`;
+};
 
 /** The word beside the bot (`nowMs` on the hub's clock): the step while its computer starts, "Still waking up" past
  * SLOW_MS (with `count`, the time so far), the reason after a failed try or while something holds the lead, that it
@@ -189,7 +196,9 @@ export const wakeWords = (w: Wake, nowMs: number, timeZone?: string): { readonly
     case "received":
       return w.since !== undefined && nowMs - w.since >= START_SLOW_MS ? { words: "Waiting for the lead to start", count: waited(nowMs - w.since) } : undefined;
     case "working":
-      return w.retry !== undefined && nowMs - w.retry.since >= RETRY_SAID_MS ? { words: retryWords(w.retry.reason) } : undefined;
+      if (w.retry === undefined || nowMs - w.retry.since < RETRY_SAID_MS) return undefined;
+      // A try time already past: the try is on its way, and the words don't name a time behind the clock.
+      return { words: retryWords(w.retry.reason, w.retry.at !== undefined && w.retry.at > nowMs ? w.retry.at : undefined, timeZone) };
     default:
       return undefined;
   }

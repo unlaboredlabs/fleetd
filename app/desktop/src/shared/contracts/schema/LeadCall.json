@@ -1621,6 +1621,10 @@
             "reason": {
               "$ref": "#/$defs/RunFailure"
             },
+            "retryAt": {
+              "$ref": "#/$defs/Timestamp",
+              "description": "When the retry goes, unless a message to the session sends it sooner; absent from older nodes."
+            },
             "type": {
               "const": "node_retry",
               "type": "string"

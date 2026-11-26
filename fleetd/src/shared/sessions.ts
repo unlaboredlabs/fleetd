@@ -592,7 +592,8 @@ export type ItemKind =
   | { type: "permission"; requestId: string; toolName: string; summary: string; decision?: PermissionDecision }
   | { type: "compaction"; trigger: string; preTokens?: number; postTokens?: number }
   | { type: "api_retry"; attempt: number; maxRetries: number; errorStatus?: number; error: string; retryDelayMs?: number }
-  | { type: "node_retry"; attempt: number; of: number; delayMs: number; reason: RunFailure }
+  /** `retryAt`: when the retry goes, unless a message to the session sends it sooner; absent from older nodes. */
+  | { type: "node_retry"; attempt: number; of: number; delayMs: number; retryAt?: Timestamp; reason: RunFailure }
   /**
    * A hosted session's start while its computer comes up, in plain words (node/place/hosted_steps.ts), and what the apps
    * draw it from: its step, when the whole start began, and a failed try's plain reason and when it goes again.
