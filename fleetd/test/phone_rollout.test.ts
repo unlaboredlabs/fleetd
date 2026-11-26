@@ -94,7 +94,7 @@ test("the channel's directory holds each stage's manifest, the back copies a pul
   dirs.push(work);
   // Two packages as updates.ts writes them (with --served).
   for (const id of ["good", "bad"]) {
-    for (const [path, text] of [
+    for (const [path, text] of <[string, string][]>[
       [`f1/ios`, `${id} manifest`],
       [`back/f1/ios`, `${id} back`],
       [`f1-a/android`, `${id} android`],

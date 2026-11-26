@@ -36,7 +36,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRollout, percentAt, STAGES, type Rollout, type RolloutBuild } from "../../fleetd/src/update/rollout.ts";
 import { httpStatus, transient } from "../../fleetd/src/hub/train/github.ts";
-import { packageOf, parsePhoneRollout, phoneMoving, PLATFORMS, prunePhone, served, servedText, updateOf, writeServed, type PhoneRollout, type PhoneUpdate } from "./phone-rollout.ts";
+import { packageOf, parsePhoneRollout, phoneMoving, PLATFORMS as PHONE_PLATFORMS, prunePhone, served, servedText, updateOf, writeServed, type PhoneRollout, type PhoneUpdate } from "./phone-rollout.ts";
 
 const HOUR = 3_600_000;
 const TAG = "edge";
@@ -506,8 +506,10 @@ async function phoneAdd(path: string): Promise<void> {
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("phone-add needs RELEASE_SHA");
   const now = Date.now();
   const u: PhoneUpdate = updateOf(tar(["-xzOf", path, "./updates.txt"]), commit, iso(now));
-  for (const platform of PLATFORMS) if (u.platforms[platform] && !tar(["-tzf", path]).includes(`./back/${u.platforms[platform]!.runtime}/${platform}`)) {
-    throw new Error(`the package has no back copy for ${platform}: a pull couldn't take phones back`);
+  const files = tar(["-tzf", path]);
+  for (const platform of PHONE_PLATFORMS) {
+    const p = u.platforms[platform];
+    if (p && !files.includes(`./back/${p.runtime}/${platform}`)) throw new Error(`the package has no back copy for ${platform}: a pull couldn't take phones back`);
   }
   const listed = readPhone().updates.some((x) => x.id === u.id);
   if (listed) {
