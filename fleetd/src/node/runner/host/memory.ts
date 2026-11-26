@@ -8,7 +8,7 @@
 // The kernel logs which process it killed, but most users can't read that log, so the host names it itself: while
 // the scope holds a quarter of its cap or more it notes each of its processes each second, and the one killed is the one gone
 // since that the kernel would pick first (most memory, plus its OOM score's share of the cap).
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { type FSWatcher, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { totalmem } from "node:os";
 import { nowIso } from "../../util.ts";
 
@@ -56,12 +56,19 @@ export function killed(before: Seen[], alive: (pid: number) => boolean, max: num
   return before.filter((s) => !alive(s.pid)).sort((a, b) => badness(b) - badness(a))[0];
 }
 
-/** Whether `pid` is gone or a zombie: one the kernel killed counts before its parent reaps it. */
+/** SIGKILL's bit in /proc/<pid>/status's pending masks, and the kernel's PF_EXITING in /proc/<pid>/stat's flags. */
+const SIGKILL_BIT = 1n << 8n;
+const PF_EXITING = 0x4;
+
+/** Whether `pid` is gone, a zombie or on its way out (a SIGKILL pending, or exiting): one the kernel killed counts from
+ * the kill, before it has finished exiting and before its parent reaps it, so a kill read as it happens names it. */
 function exited(pid: number): boolean {
   const stat = read(`/proc/${pid}/stat`);
   if (stat === undefined) return true;
-  const state = stat.slice(stat.lastIndexOf(")") + 1).trim()[0];
-  return state === "Z" || state === "X";
+  const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(" ");
+  if (fields[0] === "Z" || fields[0] === "X" || (Number(fields[6]) & PF_EXITING) !== 0) return true;
+  const status = read(`/proc/${pid}/status`) ?? "";
+  return ["ShdPnd", "SigPnd"].some((k) => (BigInt(`0x${new RegExp(`^${k}:\\s+([0-9a-f]+)$`, "m").exec(status)?.[1] ?? "0"}`) & SIGKILL_BIT) !== 0n);
 }
 
 const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -90,13 +97,17 @@ function note(file: string, line: string): void {
 }
 
 /** Watches this process's cgroup for kills by its memory cap and notes each in `file`. Nothing where the cgroup has no
- * cap (no scope, macOS). Returns a stop. */
-export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS): () => void {
+ * cap (no scope, macOS). Returns a stop, which reads the cgroup's kills once more. `outside`: the watcher isn't in the
+ * cgroup (a heavy run's scope, heavy_slots.ts), so it also reads each kill as it happens (inotify on `memory.events`,
+ * which the kernel marks changed at each), not at the next tick: a run whose killed step was its last ends at once, and
+ * its scope with it. Never from inside: at the kill the cgroup is still full, and a host that wakes there to read /proc
+ * and write its note was often killed as well. */
+export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS, outside = false): () => void {
   const max = Number(cgroup ? read(`${cgroup}/memory.max`)?.trim() : NaN);
   if (!cgroup || !Number.isFinite(max) || max <= 0) return () => {};
   let kills = oomKills(read(`${cgroup}/memory.events`));
   let before: Seen[] = [];
-  const timer = setInterval(() => {
+  const check = () => {
     const now = oomKills(read(`${cgroup}/memory.events`));
     if (now > kills) {
       const victim = killed(before, (pid) => !exited(pid), max);
@@ -108,11 +119,26 @@ export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS):
       process.stderr.write(`${nowIso()} WARN the session's memory cap killed ${victim ? `pid ${victim.pid}` : "a process"} {"cap":${max}}\n`);
       kills = now;
     }
+  };
+  const timer = setInterval(() => {
+    check();
     const current = Number(read(`${cgroup}/memory.current`)?.trim() ?? 0);
     before = current * 4 >= max ? pids(cgroup).flatMap((pid) => seen(pid) ?? []) : [];
   }, tick);
   timer.unref();
-  return () => clearInterval(timer);
+  let changed: FSWatcher | undefined;
+  if (outside) {
+    try {
+      changed = watch(`${cgroup}/memory.events`, check);
+      changed.on("error", () => changed?.close());
+      changed.unref?.();
+    } catch {}
+  }
+  return () => {
+    clearInterval(timer);
+    changed?.close();
+    check();
+  };
 }
 
 const pids = (cgroup: string) =>

@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { HELD, install, machineCpus, machineHere, parseCpuList, quotaArgs, slotShare, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
+import { callerUnit, HELD, install, machineCpus, machineHere, memoryLeft, parseCpuList, quotaArgs, slotShare, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
 
 const SRC = join(import.meta.dir, "../../src/main.ts");
 const ROOT = join(import.meta.dir, "../../..");
@@ -222,14 +222,37 @@ describe("each slot's share of the CPUs", () => {
     expect(parseCpuList("")).toBeUndefined();
     expect(parseCpuList("3-1")).toBeUndefined();
   });
-  test("a run's scope: its quota, the session's OOM policy, bound to the session's scope", () => {
-    const cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/fleetd-test-no-such-scope.scope\n";
-    expect(quotaArgs(4, cgroup)).toEqual([
-      "--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", "--property=CPUQuota=400%", "--property=OOMPolicy=continue",
-      "--property=BindsTo=fleetd-test-no-such-scope.scope", "--property=After=fleetd-test-no-such-scope.scope", "--",
+  test("a run's scope: its quota and its short period, what the session's memory cap has left, bound to the caller", () => {
+    expect(quotaArgs({ cpus: 4, shortPeriod: true, memory: { max: 1_000, swapMax: 20 }, unit: "run-p1-i2.scope" })).toEqual([
+      "--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", "--property=CPUQuota=400%", "--property=CPUQuotaPeriodSec=10ms",
+      "--property=OOMPolicy=continue", "--property=MemoryMax=1000", "--property=MemorySwapMax=20", "--property=BindsTo=run-p1-i2.scope",
+      "--property=After=run-p1-i2.scope", "--",
     ]);
-    // Outside a user manager's scope (a service, a container) it binds to nothing.
-    expect(quotaArgs(2, "0::/system.slice/ssh.service\n")).not.toContain("--property=BindsTo=ssh.service");
+    // An older systemd without the short period, a caller with no cap and outside a user manager: the quota alone.
+    expect(quotaArgs({ cpus: 2, shortPeriod: false })).toEqual([
+      "--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", "--property=CPUQuota=200%", "--property=OOMPolicy=continue", "--",
+    ]);
+  });
+  test("the unit the run is bound to: the session's scope, else the node's own service", () => {
+    const app = "/user.slice/user-1000.slice/user@1000.service/app.slice";
+    expect(callerUnit(`${app}/run-p1-i2.scope`)).toBe("run-p1-i2.scope");
+    // Sessions without scopes of their own run in the node's unit: the run then stops with the node, and its slot.
+    expect(callerUnit(`${app}/fleetd-node.service`)).toBe("fleetd-node.service");
+    expect(callerUnit("/user.slice/user-1000.slice/user@1000.service")).toBeUndefined();
+    expect(callerUnit("/system.slice/ssh.service")).toBeUndefined();
+  });
+  test("what the session's memory cap leaves for its run: the cap less what it holds, page cache aside", () => {
+    const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-heavy-cgroup-"));
+    homes.push(dir);
+    const files = (f: Record<string, string>) => {
+      for (const [k, v] of Object.entries(f)) writeFileSync(join(dir, k), `${v}\n`);
+    };
+    // A 44 GB cap holding 10 GB, 4 of them page cache; 4 GB of swap, 1 in use.
+    files({ "memory.max": String(44 * 2 ** 30), "memory.current": String(10 * 2 ** 30), "memory.stat": `anon 6000\nfile ${4 * 2 ** 30}\n`, "memory.swap.max": String(4 * 2 ** 30), "memory.swap.current": String(2 ** 30) });
+    expect(memoryLeft(dir)).toEqual({ max: 38 * 2 ** 30, swapMax: 3 * 2 ** 30 });
+    // No cap: none for the run either.
+    files({ "memory.max": "max" });
+    expect(memoryLeft(dir)).toBeUndefined();
   });
   // A run started from inside one held to a few CPUs (`scripts/check.sh --background` from a run under `taskset`) sizes
   // the machine, its build jobs and so its slots' share, as every other run does: from the machine's CPUs.
@@ -263,6 +286,36 @@ describe("each slot's share of the CPUs", () => {
     expect(Number(quota) / Number(period)).toBe(share);
     // The wrapper narrows no run's CPUs: it has every one its caller has.
     expect(cpus).toBe(/Cpus_allowed_list:\s*(\S+)/.exec(readFileSync("/proc/self/status", "utf8"))![1]);
+    // Its period is the short one.
+    expect(period).toBe("10000");
+  }, SLOW);
+
+  // A run that goes past what its session's cap leaves is killed in its own scope, the session's other processes
+  // untouched, and the agent hears what was killed, as from its session's own cap. Before, the run had a full cap of
+  // its own beside the session's, and a kill there reached the agent as a bare exit 137.
+  test.if(scopes)("a run past what the session's memory cap leaves is killed, and the agent is told what", async () => {
+    const m = machine(1);
+    // The node home's hosts dir, where each session's host has its own (place/index.ts hostDir).
+    mkdirSync(join(m.home, "hosts"));
+    // The session: a scope with a 256 MB cap and no swap, as the node starts each session's (runner/scope.ts).
+    const grow = join(m.home, "grow");
+    // As a check that stops at its first failed step: it runs a while, one step grows past the cap, and the run ends at
+    // once, its scope with it.
+    writeFileSync(grow, `#!/bin/sh\necho "start $1" >>"$HOME_DIR/log"\nsleep 1.5\npython3 -I -c 'import time; b = [bytearray(16 << 20) for _ in range(32) if not time.sleep(0.2)]'\necho "survived $?" >>"$HOME_DIR/log"\n`);
+    chmodSync(grow, 0o755);
+    const env: Record<string, string | undefined> = { ...process.env, HOME_DIR: m.home, FLEETD_RUNNER_SESSION: "t6141test.1.1" };
+    delete env[HELD];
+    delete env.FLEETD_CHECK_SLOT;
+    const session = Bun.spawn(
+      ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--property=MemoryMax=256M", "--property=MemorySwapMax=0", "--property=OOMPolicy=continue", "--", process.execPath, SRC, "heavy-slot", m.home, grow, "a"],
+      { env, stdout: "ignore", stderr: "pipe" },
+    );
+    expect(await session.exited).toBe(0);
+    const err = await new Response(session.stderr).text();
+    expect(m.started(), err).toEqual(["start a", "survived 137"]);
+    const note = join(m.home, "hosts", "t6141test.memory");
+    await until(`the kill is noted (${err})`, () => existsSync(note));
+    expect(JSON.parse(readFileSync(note, "utf8"))).toMatch(/the kernel killed `python3 -I -c import time; .*` \(pid \d+, [\d.]+ GB\): this session went past its memory cap of 0\.\d GB/);
   }, SLOW);
 });
 

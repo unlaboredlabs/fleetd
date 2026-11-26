@@ -311,8 +311,8 @@ export function queuedLine(slots: number, ahead: number): string {
 }
 
 /** Runs `bin` (cargo, or a heavy run: heavy_slots.ts) with inherited stdio and its signals passed on; its exit code,
- * 128+signal when a signal ended it. */
-export async function runInherited(bin: string, args: string[], env: Record<string, string | undefined>): Promise<number> {
+ * 128+signal when a signal ended it. `started` hears its pid. */
+export async function runInherited(bin: string, args: string[], env: Record<string, string | undefined>, started?: (pid: number) => void): Promise<number> {
   let proc;
   try {
     proc = Bun.spawn([bin, ...args], { stdio: ["inherit", "inherit", "inherit"], env });
@@ -320,6 +320,7 @@ export async function runInherited(bin: string, args: string[], env: Record<stri
     process.stderr.write(`fleetd: cannot run ${bin}: ${(error as Error).message}\n`);
     return 126;
   }
+  started?.(proc.pid);
   const forward = (s: NodeJS.Signals) => () => proc.kill(s);
   const handlers = (["SIGINT", "SIGTERM", "SIGHUP"] as const).map((s) => [s, forward(s)] as const);
   for (const [s, h] of handlers) process.on(s, h);
