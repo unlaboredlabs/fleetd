@@ -363,17 +363,37 @@ export const planLine = (state: BillingState, nowMs: number): string | null => {
   return p.renews ? `Renews ${dayWord(end, nowMs)}` : `Ends ${dayWord(end, nowMs)}`;
 };
 
-/** What a plan gives: "$50 a month, $60 of computer time included, 100 agents at once" (the last when the cloud says). */
-export const planTerms = (offer: BillingState["plans"][number], currency: string): string =>
-  `${money(offer.priceCents, currency)} a month, ${money(offer.creditsCents, currency)} of computer time included` +
-  (offer.agentsAtOnce === undefined ? "" : `, ${offer.agentsAtOnce} agents at once`);
+/**
+ * `cents` of computer time as hours of the smallest computer `rates` has, rounded down to two figures as the pricing
+ * page says them ("500 hours", "4,300 hours"); undefined with no rate.
+ */
+export const hoursWord = (cents: number, rates: BillingState["rates"]): string | undefined => {
+  const least = Math.min(...rates.map((r) => r.centsPerHour).filter((c) => c > 0));
+  if (!Number.isFinite(least)) return undefined;
+  const h = cents / least;
+  const step = 10 ** Math.max(0, Math.floor(Math.log10(Math.max(h, 1))) - 1);
+  return `${(Math.floor(h / step) * step).toLocaleString("en-US")} hours`;
+};
+
+/** What a plan gives, as the pricing page says it: "$50 a month, $60 of computer time (1,000 hours on the smallest
+ * computer), 100 agents at once" (the hours with the rates, the agents when the cloud says). */
+export const planTerms = (offer: BillingState["plans"][number], currency: string, rates: BillingState["rates"] = []): string => {
+  const hours = hoursWord(offer.creditsCents, rates);
+  return (
+    `${money(offer.priceCents, currency)} a month, ${money(offer.creditsCents, currency)} of computer time` +
+    (hours === undefined ? " included" : ` (${hours} on the smallest computer)`) +
+    (offer.agentsAtOnce === undefined ? "" : `, ${offer.agentsAtOnce} agents at once`)
+  );
+};
 
 /** A plan's price as a pick list shows it beside its name: "$50 a month · 100 agents at once". */
 export const planChoice = (offer: BillingState["plans"][number], currency: string): string =>
   `${money(offer.priceCents, currency)} a month` + (offer.agentsAtOnce === undefined ? "" : ` · ${offer.agentsAtOnce} agents at once`);
 
-/** A plan offered, as a choice reads: "Team · $50 a month, $60 of computer time included, 100 agents at once". */
-export const offerWord = (offer: BillingState["plans"][number], currency: string): string => `${offer.name} · ${planTerms(offer, currency)}`;
+/** A plan offered, as a choice reads: "Team · $50 a month, $60 of computer time (1,000 hours on the smallest computer),
+ * 100 agents at once". */
+export const offerWord = (offer: BillingState["plans"][number], currency: string, rates: BillingState["rates"] = []): string =>
+  `${offer.name} · ${planTerms(offer, currency, rates)}`;
 
 /** A size's rate: "$0.06 an hour". */
 export const rateWord = (centsPerHour: number, currency: string): string => `${money(centsPerHour, currency)} an hour`;

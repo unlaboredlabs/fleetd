@@ -17,6 +17,7 @@ import {
   planChoice,
   planLine,
   planTerms,
+  hoursWord,
   planWord,
   portalShown,
   readBilling,
@@ -76,6 +77,12 @@ describe("the service's billing answer", () => {
   it("reads each plan's agents at once where the cloud sends it, and words a plan without it as before", () => {
     const [, team] = state("plan").plans;
     expect(team && offerWord(team, "usd")).toBe("Team · $50 a month, $60 of computer time included, 100 agents at once");
+    // With the rates, the hours beside the dollars, as the pricing page says them: one true thing in both places.
+    const { rates } = state("plan");
+    expect(team && planTerms(team, "usd", rates)).toBe(`$50 a month, $60 of computer time (${hoursWord(60_00, rates) ?? ""} on the smallest computer), 100 agents at once`);
+    expect(hoursWord(30_00, [{ cpu: 2, memGb: 4, centsPerHour: 6 }, { cpu: 4, memGb: 8, centsPerHour: 12 }])).toBe("500 hours");
+    expect(hoursWord(260_00, [{ cpu: 2, memGb: 4, centsPerHour: 6 }])).toBe("4,300 hours");
+    expect(hoursWord(30_00, [])).toBeUndefined();
     expect(team && planChoice(team, "usd")).toBe("$50 a month · 100 agents at once");
     const [older] = readBilling({ ...BILLING_SAMPLES.plan, plans: [{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00 }] })?.plans ?? [];
     expect(older && planTerms(older, "usd")).toBe("$50 a month, $60 of computer time included");
