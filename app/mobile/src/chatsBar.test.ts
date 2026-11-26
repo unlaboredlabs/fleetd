@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { filterChoices, filterLabel, linkTone, meAvatar } from "./chatsBar";
+import { filterChoices, filterLabel, linkTone, meAvatar, meSymbol } from "./chatsBar";
 
 const read = (path: string): string => readFileSync(join(import.meta.dirname, path), "utf8");
 const chats = read("screens/Chats.tsx");
@@ -70,8 +70,15 @@ describe("the avatar that opens Settings", () => {
     expect(meAvatar("Sam", "devbox", "retrying").label).toBe("Settings, Reconnecting…");
   });
 
+  it("is one of iOS's buttons in the iPhone Duo's side strip, which iOS stands there under the status", () => {
+    // A view of the app's own stays in a row over the list (F1919): only iOS's buttons move into the strip.
+    expect(chats).toContain("const inStrip = useStrip() !== undefined;");
+    expect(chats).toContain('const left: NativeStackHeaderItem = inStrip ? meItem(me.initial, me.label, t[DOT[me.tone]], openSettings) : { type: "custom", element: avatar };');
+    expect([meSymbol("W"), meSymbol("S"), meSymbol("É"), meSymbol(""), meSymbol("7")]).toEqual(["w.circle.fill", "s.circle.fill", "person.crop.circle.fill", "person.crop.circle.fill", "person.crop.circle.fill"]);
+  });
+
   it("sits at the top left and pushes Settings, which has a way back and no tab bar under it", () => {
-    expect(chats).toContain('unstable_headerLeftItems: () => [{ type: "custom", element: avatar }]');
+    expect(chats).toContain("unstable_headerLeftItems: () => [left],");
     expect(chats).toMatch(/const openSettings = \(\) => \{\s*swiped\.close\(\);\s*root\.settings\(\);\s*\};\s*const avatar = <MeButton [^>]*onPress=\{openSettings\} \/>;/u);
     // The root stack's Settings, from the list beside the chat (its own navigation tree) as from the list alone.
     expect(chats).toContain('settings: beside?.settings ?? (() => own.navigate("Settings"))');

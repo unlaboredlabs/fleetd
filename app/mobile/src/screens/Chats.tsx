@@ -14,10 +14,10 @@
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import type { NativeStackHeaderItem, NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
-import { filterChoices, filterLabel, meAvatar, type FilterChoice, type MeTone } from "../chatsBar";
+import { filterChoices, filterLabel, meAvatar, meSymbol, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
 import { needsComputer } from "../cloud/account";
 import { firstRunShown } from "../firstRun";
@@ -36,7 +36,7 @@ import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
 import { Names, useSpoken } from "../ui/Names";
-import { useBeside } from "../ui/pane";
+import { useBeside, useStrip } from "../ui/pane";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
@@ -260,6 +260,9 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   };
 
   // The bar's sides: the avatar on the left; + on the right, and the filters' menu beside it where there's no bottom bar.
+  // Where the Duo has its control strip at the side (src/split.ts sideStrip), iOS stands the bar's buttons in it, the
+  // left one on top, under the status, and the list starts at the top.
+  const inStrip = useStrip() !== undefined;
   const choicesKey = JSON.stringify(choices);
   useLayoutEffect(() => {
     const openSettings = () => {
@@ -269,16 +272,19 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} picture={state.me === undefined ? undefined : { personId: state.me, avatar: state.meAvatar }} onPress={openSettings} />;
     const filters = filterMenu(choices, filter, pick);
     const add = newChatItem(root.newChat);
+    // iOS moves only its own buttons into the strip: a view of ours stays in a row over the list, so there the avatar
+    // is one of its buttons (meItem).
+    const left: NativeStackHeaderItem = inStrip ? meItem(me.initial, me.label, t[DOT[me.tone]], openSettings) : { type: "custom", element: avatar };
     const options: Partial<NativeStackNavigationOptions> =
       Platform.OS === "ios"
         ? {
-            unstable_headerLeftItems: () => [{ type: "custom", element: avatar }],
+            unstable_headerLeftItems: () => [left],
             unstable_headerRightItems: () => (bottomBar ? [add] : [add, filters]),
           }
         : { headerLeft: () => avatar };
     navigation.setOptions(options);
     // The choices by their value, as they're made again each render; `pick` changes with the filter.
-  }, [navigation, root, swiped, me.initial, me.tone, me.label, state.me, state.meAvatar, filter, choicesKey]);
+  }, [navigation, root, swiped, me.initial, me.tone, me.label, state.me, state.meAvatar, filter, choicesKey, inStrip, t]);
 
   const empty =
     // A planned restart's first seconds hold off can't-reach: the hub is back in a moment.
@@ -413,6 +419,24 @@ const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f
     })),
   },
 });
+
+/**
+ * The avatar as one of iOS's bar buttons, for the iPhone Duo's side strip: the person's initial on a grey disc, as
+ * Contacts shows someone without a photo (chatsBar.ts meSymbol), and the link's tone as the button's badge, a dot at
+ * its corner.
+ */
+const meItem = (initial: string, label: string, dot: string, onPress: () => void): NativeStackHeaderItem => ({
+  type: "button",
+  label: "Settings",
+  icon: { type: "sfSymbol", name: meSymbol(initial) },
+  tintColor: MONOGRAM,
+  accessibilityLabel: label,
+  badge: { value: "", style: { backgroundColor: dot, fontSize: 2 } },
+  onPress,
+});
+
+/** iOS's system grey, Contacts' monogram disc, in light and dark alike. */
+const MONOGRAM = "#8E8E93";
 
 const DOT: Record<MeTone, "success" | "warning" | "tertiary" | "secondary"> = { live: "success", busy: "warning", down: "tertiary", restarting: "secondary" };
 
