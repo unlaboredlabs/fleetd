@@ -41,10 +41,21 @@ export function vaultHub() {
   const { hub } = k;
   const v = vault(hub, { dir: join(home.dir, "vault"), scryptN: 1024 });
   const nodeSecret = crypto.getRandomValues(new Uint8Array(32));
+  // Who waits for the link to go live (NodePort `live`): woken when a test sets `online`.
+  let online = true;
+  const goneLive = new Set<() => void>();
   const node: FakeNode = {
     secret: nodeSecret,
     pub: b64(publicKeyOf(nodeSecret)),
-    online: true,
+    get online() {
+      return online;
+    },
+    set online(on: boolean) {
+      online = on;
+      if (!on) return;
+      for (const wake of goneLive) wake();
+      goneLive.clear();
+    },
     caps: new Set(["vault", "vault_fill", "project_settings", "order_env", "onepassword"]),
     projectFiles: new Map(),
     orderFiles: new Map(),
@@ -98,6 +109,12 @@ export function vaultHub() {
   const hubPub = () => publicKeyOf(boxKey(hub));
   const fakePort: NodePort = {
     linked: () => node.online,
+    live: (_m, signal) =>
+      new Promise<void>((resolve) => {
+        if (node.online || signal?.aborted) return resolve();
+        goneLive.add(resolve);
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      }),
     onLink: () => node.online,
     can: (_m, cap) => node.online && node.caps.has(cap),
     request: async () => ({}),
