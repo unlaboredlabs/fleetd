@@ -24,3 +24,17 @@
   width: 112px;
   font-variant-numeric: tabular-nums;
 }
+
+/* fleetd's terms, privacy policy and refunds under the page: Stripe's own pages link Stripe's. */
+.legal {
+  margin-top: calc(var(--space-4) - var(--space-10));
+  padding-inline: var(--space-4);
+}
+.legal a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal a:hover {
+  color: var(--text);
+}

@@ -310,6 +310,20 @@ it("shows Billing once fleetd's computers are on for the team, switching only be
   ]);
 });
 
+// Stripe's portal links Stripe's own terms, never fleetd's (the money sweep, W890): Billing links fleetd's.
+it("Billing links fleetd's terms of service, privacy policy and refunds", async () => {
+  fake.roles.set("a1b2", "owner");
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.plan));
+  await mount(TEAM_AND_OWN);
+  await go("#/settings/hub/billing?at=a1b2");
+  const links = [...(host.querySelector("[data-billing-terms]")?.querySelectorAll("a") ?? [])].map((a) => [a.textContent, a.getAttribute("href")]);
+  expect(links).toEqual([
+    ["Terms of service", "https://fleetd.sh/terms"],
+    ["Privacy policy", "https://fleetd.sh/privacy"],
+    ["Refunds", "https://fleetd.sh/refunds"],
+  ]);
+});
+
 it("back from paying at Stripe, Billing says the payment arrived rather than that there are no credits, and shows them once Stripe says so", async () => {
   fake.roles.set("a1b2", "owner");
   fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.none));
