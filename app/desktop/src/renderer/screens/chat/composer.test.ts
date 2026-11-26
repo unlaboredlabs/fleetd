@@ -8,7 +8,7 @@ import { FIRST_PIECE_BYTES } from "../../../shared/transfer";
 import type { DataLayer } from "../../src/data/queries";
 import { pastedName } from "./attachments";
 import { checkMessage, placeholder, recallsOn, receiptFor, receiptMark, type Sendable, sendsOn, stopFailed } from "./composerModel";
-import { createDrafts, emptyDraft, persistDrafts, readSaved } from "./drafts";
+import { createDrafts, emptyDraft, followDrafts, persistDrafts, readSaved } from "./drafts";
 
 const key = (k: string, over: Partial<Parameters<typeof sendsOn>[0]> = {}) => ({ key: k, shiftKey: false, altKey: false, isComposing: false, ...over });
 
@@ -233,6 +233,23 @@ describe("a draft after quitting", () => {
     const next = createDrafts(layer, readSaved(storage));
     expect(next.store.getState()["devbox/api"]).toEqual({ text: "half a thought", attached: [] });
     vi.useRealTimers();
+  });
+
+  // The second quality sweep: a draft sent from a second tab stayed in the first, a press of Enter from going twice.
+  it("follows another tab's words: a draft sent or changed there is gone or changed here; the rest stay", () => {
+    const d = createDrafts(layer, { "devbox/api": "ship it", "devbox/web": "mine alone" });
+    const target = new EventTarget();
+    followDrafts(d, target as unknown as Window);
+    const storageEvent = (oldValue: object, newValue: object | null) =>
+      Object.assign(new Event("storage"), { key: "fleetd.drafts.v1", oldValue: JSON.stringify(oldValue), newValue: newValue === null ? null : JSON.stringify(newValue) });
+    // The other tab sent devbox/api (its words gone from storage) and typed in devbox/docs.
+    target.dispatchEvent(storageEvent({ "devbox/api": "ship it", "devbox/web": "mine alone" }, { "devbox/web": "mine alone", "devbox/docs": "new there" }));
+    expect(d.store.getState()["devbox/api"]).toBeUndefined();
+    expect(d.store.getState()["devbox/docs"]).toEqual({ text: "new there", attached: [] });
+    expect(d.store.getState()["devbox/web"]).toEqual({ text: "mine alone", attached: [] });
+    // Everything cleared there: this tab's words for what it changed go too.
+    target.dispatchEvent(storageEvent({ "devbox/web": "mine alone", "devbox/docs": "new there" }, null));
+    expect(d.store.getState()).toEqual({});
   });
 
   it("writes the last keystrokes at once when the app quits or restarts", () => {
