@@ -275,28 +275,91 @@ export const fingerUp = (f: Finger, touch: Touch): Step => {
 /** The touch was taken away (a second finger came for a pinch, the view closed): a press held is let go. */
 export const fingerCancel = (f: Finger): Step => (f.t === "holding" ? { finger: IDLE, send: [mouse("released", f.last)] } : { finger: IDLE, send: [] });
 
-// ---- typing: the phone's keyboard into a hidden field, each change sent to the page ----
+// ---- typing: the phone's keyboard into a hidden field, what changed in it sent to the page ----
 
 const key = (k: string): BrowserInput[] => [
   { kind: "key", action: "down", key: k, code: k },
   { kind: "key", action: "up", key: k, code: k },
 ];
 
-/**
- * What the hidden field took (a key, a paste, a dictated phrase, an autofilled code) for the page, as text; the field
- * is then emptied, so it only ever holds what came since.
- */
-export const typed = (next: string): BrowserInput[] => {
-  // Up to the hub's 10,000 characters a text.
-  const added = next.slice(0, 10_000);
-  return added === "" ? [] : [{ kind: "text", text: added }];
-};
-
 /** The keyboard's delete: the empty field changes nothing, so its key press says it. */
 export const BACKSPACE: readonly BrowserInput[] = key("Backspace");
 
 /** Return on the keyboard: Enter for the page. */
 export const ENTER: readonly BrowserInput[] = key("Enter");
+
+// A mark, a variation selector, a skin tone, an emoji tag or a keycap belongs to the character before it, and the
+// character after a zero-width joiner to the one before the joiner: one delete takes them all.
+const joinsBefore = (cp: number): boolean =>
+  cp === 0x200d ||
+  (cp >= 0x0300 && cp <= 0x036f) ||
+  (cp >= 0x1ab0 && cp <= 0x1aff) ||
+  (cp >= 0x1dc0 && cp <= 0x1dff) ||
+  (cp >= 0x20d0 && cp <= 0x20ff) ||
+  (cp >= 0xfe00 && cp <= 0xfe0f) ||
+  (cp >= 0xfe20 && cp <= 0xfe2f) ||
+  (cp >= 0x1f3fb && cp <= 0x1f3ff) ||
+  (cp >= 0xe0020 && cp <= 0xe007f);
+const flagHalf = (cp: number): boolean => cp >= 0x1f1e6 && cp <= 0x1f1ff;
+
+/** The characters a delete takes one at a time: an emoji with its skin tone, a flag, a letter with its accent each one. */
+export const characters = (text: string): string[] => {
+  const out: string[] = [];
+  let joined = false;
+  let halves = 0;
+  for (const c of text) {
+    const cp = c.codePointAt(0) ?? 0;
+    const pair = flagHalf(cp) && halves % 2 === 1;
+    if (out.length > 0 && (joined || joinsBefore(cp) || pair)) out[out.length - 1] += c;
+    else out.push(c);
+    joined = cp === 0x200d;
+    halves = flagHalf(cp) ? halves + 1 : 0;
+  }
+  return out;
+};
+
+/**
+ * What the page needs for the hidden field going from `held` to `next`: a delete for each character gone since where
+ * they differ, then what is new from there as text (up to the hub's 10,000 characters a text). A key adds one, a delete
+ * takes one, and a paste, a dictated phrase, a suggestion picked or an autocorrection replaces only what it changed.
+ */
+export const typed = (held: string, next: string): BrowserInput[] => {
+  const was = characters(held);
+  const now = characters(next);
+  let same = 0;
+  while (same < was.length && same < now.length && was[same] === now[same]) same++;
+  const out: BrowserInput[] = [];
+  for (let i = same; i < was.length; i++) out.push(...BACKSPACE);
+  const added = now.slice(same).join("").slice(0, 10_000);
+  if (added !== "") out.push({ kind: "text", text: added });
+  return out;
+};
+
+/**
+ * The hidden field the keyboard types into, as the page should hear it. The field keeps what was typed: emptying it
+ * from JavaScript as each change came didn't hold on iOS, so each change came with all before it ("h", "he", "hel")
+ * and the page got "hhehel". Only the difference from what it held goes, and a delete with it empty goes as a key.
+ */
+export class KeyField {
+  #held = "";
+
+  /** The field's text is `next` now. */
+  changed(next: string): BrowserInput[] {
+    const out = typed(this.#held, next);
+    this.#held = next;
+    return out;
+  }
+
+  /** A key pressed, before the field changes: a delete in the empty field changes nothing, so it goes as a key. */
+  pressed(key: string): readonly BrowserInput[] {
+    return key === "Backspace" && this.#held === "" ? BACKSPACE : [];
+  }
+
+  /** A new, empty field (the keyboard was put away). */
+  reset(): void {
+    this.#held = "";
+  }
+}
 
 // ---- frames: the newest drawn at most so often, the last one always ----
 

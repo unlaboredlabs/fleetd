@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { BrowserSession } from "./desktop";
+import type { BrowserInput, BrowserSession } from "./desktop";
 import {
   addressable,
   addressOf,
   BACKSPACE,
   cardTitle,
+  characters,
   clampView,
   controlLine,
   controlOf,
@@ -19,6 +20,7 @@ import {
   FramePacer,
   hostOf,
   IDLE,
+  KeyField,
   MAX_ZOOM,
   PageTouches,
   pixelsPerPoint,
@@ -28,7 +30,6 @@ import {
   SLOP,
   stripOf,
   toFrame,
-  typed,
   waitLine,
   waitOutcome,
   type Finger,
@@ -221,11 +222,66 @@ describe("a finger on a page you took over", () => {
 });
 
 describe("typing on the page", () => {
-  it("sends what the keyboard added as text, and delete and return as keys", () => {
-    expect(typed("a")).toEqual([{ kind: "text", text: "a" }]);
-    expect(typed("4 2 1 8 0 9")).toEqual([{ kind: "text", text: "4 2 1 8 0 9" }]);
-    expect(typed("")).toEqual([]);
-    expect(typed("x".repeat(20_000))[0]).toMatchObject({ text: "x".repeat(10_000) });
+  // The page's text field: text goes in at its end, a delete takes the character before it.
+  const page = (inputs: readonly BrowserInput[], text = ""): string => {
+    for (const i of inputs) {
+      if (i.kind === "text") text += i.text;
+      else if (i.kind === "key" && i.key === "Backspace" && i.action === "down") text = characters(text).slice(0, -1).join("");
+    }
+    return text;
+  };
+  // The keyboard into the hidden field as iOS does it: each key press, then the field's whole text after it.
+  const type = (field: KeyField, steps: readonly (readonly [key: string, text: string])[]): BrowserInput[] =>
+    steps.flatMap(([key, text]) => [...field.pressed(key), ...field.changed(text)]);
+
+  it("sends a word typed one key at a time once, not each key with all before it", () => {
+    const field = new KeyField();
+    const sent = type(field, [["h", "h"], ["e", "he"], ["l", "hel"], ["l", "hell"], ["o", "hello"]]);
+    expect(sent).toEqual(["h", "e", "l", "l", "o"].map((text) => ({ kind: "text", text })));
+    expect(page(sent)).toBe("hello");
+  });
+
+  it("sends a delete as one, in the field and once it's empty", () => {
+    const field = new KeyField();
+    const sent = type(field, [["h", "h"], ["e", "he"], ["l", "hel"], ["Backspace", "he"], ["y", "hey"]]);
+    expect(page(sent)).toBe("hey");
+    expect(sent.filter((i) => i.kind === "key" && i.action === "down")).toHaveLength(1);
+    // The field emptied, a delete still takes one off the page: before the keyboard came up, it had "Hi ".
+    expect(page(type(field, [["Backspace", "he"], ["Backspace", "h"], ["Backspace", ""], ["Backspace", ""]]), "Hi hey")).toBe("Hi");
+    field.reset();
+    expect(page(type(field, [["Backspace", ""]]), "Hi")).toBe("H");
+  });
+
+  it("replaces only what an autocorrection, a suggestion or dictation changed", () => {
+    const field = new KeyField();
+    // Autocorrect turns "teh" into "the" as the space goes in.
+    const corrected = type(field, [["t", "t"], ["e", "te"], ["h", "teh"], [" ", "the "]]);
+    expect(page(corrected)).toBe("the ");
+    expect(corrected.slice(3)).toEqual([...BACKSPACE, ...BACKSPACE, { kind: "text", text: "he " }]);
+    // A suggestion picked finishes the word; dictation rewrites its phrase as it hears more.
+    expect(page(type(field, [["c", "the c"], ["", "the cat "]]), page(corrected))).toBe("the cat ");
+    expect(page(type(field, [["", "the cat sad"], ["", "the cat sat."]]), "the cat ")).toBe("the cat sat.");
+  });
+
+  it("sends a paste, emoji and accents whole, and deletes them a character at a time", () => {
+    const field = new KeyField();
+    const pasted = type(field, [["", "olá, João"]]);
+    expect(pasted).toEqual([{ kind: "text", text: "olá, João" }]);
+    const text = page(pasted);
+    // An emoji with its skin tone, a family, a flag: each one character, deleted with one delete.
+    const emoji = type(field, [["", "olá, João👍🏽"], ["", "olá, João👍🏽👨‍👩‍👧"], ["", "olá, João👍🏽👨‍👩‍👧🇧🇷"]]);
+    expect(page(emoji, text)).toBe("olá, João👍🏽👨‍👩‍👧🇧🇷");
+    const deleted = type(field, [["Backspace", "olá, João👍🏽👨‍👩‍👧"], ["Backspace", "olá, João👍🏽"], ["Backspace", "olá, João"], ["Backspace", "olá, Joã"]]);
+    expect(deleted.filter((i) => i.kind === "key" && i.action === "down")).toHaveLength(4);
+    expect(page(deleted, page(emoji, text))).toBe("olá, Joã");
+    // An emoji swapped for another (its tone changed): one delete, never half of one.
+    expect(type(field, [["", "olá, Joã👍"], ["", "olá, Joã👍🏿"]]).slice(-3)).toEqual([...BACKSPACE, { kind: "text", text: "👍🏿" }]);
+    expect(characters("e\u0301👨‍👩‍👧🇵🇹🇧🇷1️⃣")).toEqual(["e\u0301", "👨‍👩‍👧", "🇵🇹", "🇧🇷", "1️⃣"]);
+  });
+
+  it("caps a text at the hub's 10,000 characters, and sends delete and return as keys", () => {
+    expect(new KeyField().changed("x".repeat(20_000))[0]).toMatchObject({ text: "x".repeat(10_000) });
+    expect(new KeyField().changed("")).toEqual([]);
     expect(BACKSPACE).toEqual([
       { kind: "key", action: "down", key: "Backspace", code: "Backspace" },
       { kind: "key", action: "up", key: "Backspace", code: "Backspace" },
