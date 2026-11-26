@@ -164,6 +164,18 @@ describe("update manifests", () => {
     ).toThrow("isn't one site/vercel.json routes");
   });
 
+  it("are an update of their own for each merge, a revert to an earlier update's JavaScript too", () => {
+    const at = (commit?: string) => {
+      const out = mkdtempSync(join(tmpdir(), "updates-out-"));
+      publish({ dist: exported(), out, url: URL, channel: "edge", privateKeyPem: keyPem, runtimes: { ios: RUNTIME }, createdAt: "2026-10-28T12:00:00.000Z", ...(commit === undefined ? {} : { commit }) });
+      return verified(join(out, RUNTIME, "ios")).id;
+    };
+    // The same bundle from two merges: two updates, so the later one goes out over whatever came between.
+    expect(at("a".repeat(40))).not.toBe(at("b".repeat(40)));
+    expect(at("a".repeat(40))).toBe(at("a".repeat(40)));
+    expect(at()).not.toBe(at("a".repeat(40)));
+  });
+
   it("carry what takes a phone back should they be pulled: the update everyone had, signed again as a newer one", () => {
     // What fleetd.sh serves everyone now: an older update of the same runtime version.
     const served = published(exported("older bytecode"), keyPem, { createdAt: "2026-10-28T11:00:00.000Z" });

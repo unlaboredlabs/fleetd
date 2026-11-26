@@ -10,7 +10,8 @@
 # bundle that isn't Hermes bytecode. Reads UPDATES_PRIVATE_KEY_PEM, UPDATES_CERT_PEM and FLEETD_UPDATES_URL. The
 # tarball's updates.txt names each manifest and the certificate, so a release that holds the same can skip it. With
 # <served dir>, the channel's directory as fleetd.sh serves it now, each update's back copy goes in back/ (updates.ts
-# --served): what a pull serves (.github/release/phone-rollout.ts).
+# --served): what a pull serves (.github/release/phone-rollout.ts). With RELEASE_SHA, each update's id takes in the
+# commit (updates.ts --commit), so every merge is an update of its own, a revert too.
 set -euo pipefail
 
 case "${1:-}" in
@@ -27,7 +28,7 @@ sign)
     --out "$out" --url "${FLEETD_UPDATES_URL:-https://fleetd.sh/updates}" --channel "$channel" \
     --key "$key" --config "$export/expo-config.json" \
     --runtime "$(grep '^ios=' "$export/runtimes")" --runtime "$(grep '^android=' "$export/runtimes")" \
-    ${served[0]:+--served "${served[0]}"}
+    ${served[0]:+--served "${served[0]}"} ${RELEASE_SHA:+--commit "$RELEASE_SHA"}
   # The same updates signed with another certificate's key are new ones too.
   echo "cert $(printf '%s\n' "${UPDATES_CERT_PEM:?}" | sha256sum | cut -d' ' -f1)" >> "$out/updates.txt"
   tar -czf "$tarball" -C "$out" .

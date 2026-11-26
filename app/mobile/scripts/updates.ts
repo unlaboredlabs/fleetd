@@ -3,7 +3,7 @@
 //
 //   node scripts/updates.ts --dist dist --out <dir> --url https://fleetd.sh/updates --channel edge \
 //     --key private-key.pem --config expo-config.json --runtime ios=<runtime version> --runtime android=<...> \
-//     [--served <dir>]
+//     [--served <dir>] [--commit <sha>]
 //
 // <dir> becomes the channel's directory under the update URL (site/mobile-updates.sh unpacks it into site/updates/):
 // - <runtime version>/<platform>: the signed manifest, a whole multipart/mixed response body. Static hosting can't
@@ -19,8 +19,11 @@
 //   rollBackToEmbedded directive: either way newer than the update, as a phone takes nothing older than what it runs.
 //
 // A manifest's id comes from its contents, so a release whose JavaScript didn't change publishes the same id and no
-// phone downloads it again. Its createdAt is when it is signed, after every build its runtime version has (their runs
-// take turns): expo-updates runs only an update newer than the bundle a build embeds, which it stamps as it builds.
+// phone downloads it again. With --commit (the edge's staged updates, one per merge) it takes in the commit too: a
+// merge that brings the JavaScript back to an earlier update's, a revert most of all, is a new update that goes out,
+// and phones still fetch only files they lack (each is named by its hash). Its createdAt is when it is signed, after
+// every build its runtime version has (their runs take turns): expo-updates runs only an update newer than the bundle a
+// build embeds, which it stamps as it builds.
 //
 // A launch bundle that isn't Hermes bytecode is refused: the builds run Hermes, and expo-updates would load it, fail,
 // and fall back to the bundle before it on every launch.
@@ -99,13 +102,14 @@ function manifest(opts: {
   channel: string;
   createdAt: string;
   expoClient?: unknown;
+  commit?: string;
 }): { manifest: Manifest; files: [string, string][] } {
   const meta = (JSON.parse(readFileSync(join(opts.dist, "metadata.json"), "utf8")) as ExportMetadata).fileMetadata[opts.platform];
   if (meta === undefined) throw new Error(`the export has no ${opts.platform} bundle`);
   const base = `${opts.url.replace(/\/+$/u, "")}/${opts.channel}`;
   const launch = asset(opts.dist, meta.bundle, "bundle", true, base);
   const rest = meta.assets.map((a) => asset(opts.dist, a.path, a.ext, false, base));
-  const id = uuidOf([opts.runtimeVersion, opts.platform, launch.asset.hash, ...rest.map((r) => r.asset.hash).sort()].join("\n"));
+  const id = uuidOf([opts.runtimeVersion, opts.platform, launch.asset.hash, ...rest.map((r) => r.asset.hash).sort(), ...(opts.commit === undefined ? [] : [opts.commit])].join("\n"));
   return {
     manifest: {
       id,
@@ -176,6 +180,7 @@ export function publish(opts: {
   createdAt: string;
   expoClient?: unknown;
   served?: string;
+  commit?: string;
 }): { platform: Platform; manifest: Manifest }[] {
   const written: { platform: Platform; manifest: Manifest }[] = [];
   for (const [platform, runtimeVersion] of Object.entries(opts.runtimes) as [Platform, string][]) {
@@ -208,6 +213,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       config: { type: "string" },
       runtime: { type: "string", multiple: true },
       served: { type: "string" },
+      commit: { type: "string" },
     },
   });
   const { out, url, channel, key } = values;
@@ -230,6 +236,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     createdAt: new Date().toISOString(),
     expoClient: values.config === undefined ? undefined : JSON.parse(readFileSync(values.config, "utf8")),
     ...(values.served === undefined ? {} : { served: values.served }),
+    ...(values.commit === undefined ? {} : { commit: values.commit }),
   })) {
     console.log(`${channel} ${platform} ${m.runtimeVersion}: update ${m.id}`);
   }

@@ -424,6 +424,8 @@ jobs:
       - name: Sign
         env:
           UPDATES_PRIVATE_KEY_PEM: ${{ secrets.UPDATES_PRIVATE_KEY_PEM }}
+          # Each merge an update of its own, a revert to an earlier update's JavaScript too.
+          RELEASE_SHA: ${{ inputs.sha || github.sha }}
         run: .github/release/mobile-update.sh sign "$RUNNER_TEMP/export" edge "$RUNNER_TEMP/phone-update.tar.gz" "$RUNNER_TEMP/served"
       # mobile-due.sh finds the updates that went out by this step's name.
       - name: Publish the update
