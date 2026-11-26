@@ -21191,6 +21191,10 @@
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
+        "sealTo": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The key a sign-in form's box is sealed to: the workspace's own (secret_submit). Absent: the sink machine's."
+        },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",
           "description": "A project's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once."
@@ -21256,6 +21260,10 @@
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
+        "save": {
+          "description": "A sign-in form's \"Save to Vault\": once it filled, the workspace keeps the login in the team vault for that\nsite. Absent: false.",
+          "type": "boolean"
+        },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
           "description": "Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine)."
@@ -21307,6 +21315,10 @@
         "sessionId": {
           "$ref": "#/$defs/BrowserSessionId",
           "description": "The browser session that asked, the one it fills in."
+        },
+        "signIn": {
+          "$ref": "#/$defs/SignInForm",
+          "description": "A sign-in form, instead of one field: the person gives the login (or the code) and may save it to the vault."
         },
         "site": {
           "$ref": "#/$defs/SecureInputSite"
@@ -28648,6 +28660,54 @@
         }
       ],
       "x-open": true
+    },
+    "SignInField": {
+      "description": "A sign-in form's field: the login's username or email, its password, or a one-time code the site sent.",
+      "enum": [
+        "username",
+        "password",
+        "otp"
+      ],
+      "type": "string"
+    },
+    "SignInForm": {
+      "description": "A sign-in form (request_sign_in): the fields the page asks for, in the order they fill, and the vault login it\nwas saved as, once it was.",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/SignInField"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "type": "array"
+        },
+        "saved": {
+          "$ref": "#/$defs/SignInSaved"
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "type": "object"
+    },
+    "SignInSaved": {
+      "description": "The team vault login a sign-in form was saved as.",
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "itemId",
+        "label"
+      ],
+      "type": "object"
     }
   },
   "$ref": "#/$defs/McpTools",

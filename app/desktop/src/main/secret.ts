@@ -42,7 +42,7 @@ export const submitSecret = async (
 ): Promise<SecretOutcome> => {
   const sealed = await seal(request.boxPubKey, request.value);
   if (!sealed.ok) return sealed;
-  const out = await call("secret_submit", { requestId: request.requestId, sealed: sealed.sealed });
+  const out = await call("secret_submit", { requestId: request.requestId, sealed: sealed.sealed, ...(request.save === undefined ? {} : { save: request.save }) });
   if (!out.ok) return out;
   const fingerprint = (out.output as { fingerprint?: unknown } | null)?.fingerprint;
   return { ok: true, fingerprint: typeof fingerprint === "string" ? fingerprint : "" };

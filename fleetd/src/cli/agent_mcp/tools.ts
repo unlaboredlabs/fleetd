@@ -50,6 +50,7 @@ export const HUMAN: Record<string, string> = {
   request_secret: "The human enters the value in chat; you see only its fingerprint.",
   gated_run: "A human approves the exact command in chat before the node runs it.",
   request_secure_input: "The person enters the value in a sealed field; a 1Password field fills with no ask.",
+  request_sign_in: "The person signs in through a secure form in chat; a login in the vault fills with no ask.",
   vault_import_propose: "The person taps Import on the card in chat.",
 };
 

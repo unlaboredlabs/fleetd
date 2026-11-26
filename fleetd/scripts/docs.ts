@@ -407,7 +407,7 @@ const TOOL_GROUPS: [string, [string, string][]][] = [
       ["session_start", "Open a screen: a browser, a phone or a desktop."],
       ["desktop", "Click, type and scroll on a desktop screen."],
       ["session_end", "Close its screen."],
-      ["request_takeover", "Ask you to take over its screen, for a captcha or the like."],
+      ["request_takeover", "Ask you to take over its screen, for a captcha, a passkey or a device approval."],
     ],
   ],
   [
@@ -416,6 +416,7 @@ const TOOL_GROUPS: [string, [string, string][]][] = [
       ["vault_items", "List the vault items it may use, never their values."],
       ["vault_store", "Save a secret it holds as a new variable of its bot, never showing the value."],
       ["fill_credential", "Fill a login field from the vault, without seeing it."],
+      ["request_sign_in", "Sign in to a site: from the vault, else through a secure form you fill in, saved to the vault."],
       ["fill_address", "Fill an address form from the vault."],
       ["vault_import_search", "Search your 1Password for items to import into the vault."],
       ["vault_import_propose", "Propose 1Password items for you to import."],

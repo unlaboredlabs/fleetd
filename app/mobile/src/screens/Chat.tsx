@@ -75,6 +75,7 @@ import { StatusBarTap } from "../ui/StatusBarTap";
 import { arrivedReplies, bubbleActions, bubbleLabel, spokenText } from "../spoken";
 import { ApprovalCard, ApprovalOutcomeLine } from "./ApprovalCard";
 import { ArtifactCard } from "./artifacts/ArtifactCard";
+import { SignInCard } from "./SignIn";
 import { ImportCard } from "./vault/ImportCard";
 import type { VaultImportCard } from "./vault/types";
 import { linkTarget } from "./artifacts/model";
@@ -1128,6 +1129,9 @@ function ItemView({
   const when = fullTime(item.at, now);
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} item={inline} />;
+  if (inline?.kind === "secret_request" && inline.secureInput?.signIn !== undefined) {
+    return <SignInCard item={inline} />;
+  }
   if (inline?.kind === "secret_request") {
     // A secure input says what it is and where it goes; either way the value is typed only where it is sealed.
     const input = inline.secureInput;

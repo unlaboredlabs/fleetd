@@ -116,6 +116,7 @@
     "./hub/approvals/purchase_rules": "./fleetd/src/hub/approvals/purchase_rules.ts",
     "./hub/approvals/request": "./fleetd/src/hub/approvals/request.ts",
     "./hub/approvals/rules": "./fleetd/src/hub/approvals/rules.ts",
+    "./hub/approvals/sign_in_rules": "./fleetd/src/hub/approvals/sign_in_rules.ts",
     "./hub/approvals/sink": "./fleetd/src/hub/approvals/sink.ts",
     "./hub/approvals/text": "./fleetd/src/hub/approvals/text.ts",
     "./hub/attention/quiet": "./fleetd/src/hub/attention/quiet.ts",

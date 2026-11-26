@@ -37,7 +37,7 @@ export const MAX_BROWSER_FRAME_BYTES = 8 << 20;
  * NODE_OPS). */
 export const NODE_OPS = [
   "browser_session", "browser_recording_part", "browser_takeover", "purchase_open", "purchase_claim", "purchase_filled",
-  "secure_input_open", "secure_input_claim", "secure_input_filled", "vault_fill", "vault_filled", "session_route", "session_step", "mac_where",
+  "secure_input_open", "secure_input_claim", "secure_input_filled", "sign_in_open", "vault_fill", "vault_filled", "session_route", "session_step", "mac_where",
   "mac_send", "mcp_oauth_renew",
 ];
 

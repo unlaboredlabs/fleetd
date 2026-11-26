@@ -23,6 +23,7 @@ import {
   type ApprovalNodes,
   type GatedOutcome,
   NodeCommandError,
+  type SignInRelay,
 } from "./ports.ts";
 import { base64Bytes, envNameReserved, isFingerprint, parseSecretSink, SEAL_OVERHEAD, secretEnvName } from "./sink.ts";
 import { type NewRequest, type RequestFilter, RequestStoreError, Requests, settled } from "./store.ts";
@@ -321,8 +322,12 @@ export class Approvals {
     }
   }
 
-  /** `secret_submit`: relays the sealed value to the sink's node and stores the request with the node's fingerprint. */
-  async submitSecret(caller: ApprovalCaller, requestId: string, sealed: string): Promise<Record<string, unknown>> {
+  /**
+   * `secret_submit`: relays the sealed value to the sink's node and stores the request with the node's fingerprint. A
+   * sign-in form's box is the hub's to open: its fields go on sealed to the node, and `save` keeps the login once they
+   * filled.
+   */
+  async submitSecret(caller: ApprovalCaller, requestId: string, sealed: string, save = false): Promise<Record<string, unknown>> {
     if (!caller.human) throw refuse("forbidden", "Only a person enters secrets.", HUMAN_ONLY_SECRET_FIX);
     const r = this.get(requestId);
     const secret = r?.secret;
@@ -362,7 +367,16 @@ export class Approvals {
       throw refuse("invalid", `${m}'s node takes no secrets: it publishes no box key.`, `Update fleetd on ${m} and restart its node.`);
     }
     const key = secret.key;
-    const input: Record<string, unknown> = { sink: secret.sink, sealed, secretKey: key };
+    const signIn =
+      sink.fill !== undefined && r.secureInput?.signIn
+        ? this.deps.hooks.signIn(r, sealed, box, {
+            name: caller.name,
+            ...(caller.person ? { person: caller.person } : {}),
+            machines: [...new Set([sink.machineId, r.projectRef.machineId])],
+            save,
+          })
+        : undefined;
+    const input: Record<string, unknown> = { sink: secret.sink, sealed: signIn?.forNode ?? sealed, secretKey: key };
     if (secret.envName !== undefined) input.envName = secret.envName;
     if (sink.order !== undefined) input.projectId = r.projectRef.projectId;
     // A secure input's value fills its own field, of the several its browser session may wait for.
@@ -393,11 +407,18 @@ export class Approvals {
       );
       if (why !== undefined) throw refuse("failed", why, "Enter it again; the request is still open.");
     }
+    if (signIn) return this.stored(caller, r, fingerprint, undefined, signIn.save());
     return this.stored(caller, r, fingerprint, `Saved on ${m}; the lead hears it in its next wake.`);
   }
 
-  /** Marks a secret request stored with the node's fingerprint and wakes its lead. */
-  private async stored(caller: ApprovalCaller, r: HumanRequest, fingerprint: string, savedNext?: string): Promise<Record<string, unknown>> {
+  /** Marks a secret request stored with the node's fingerprint and wakes its lead (a sign-in form's task, its task). */
+  private async stored(
+    caller: ApprovalCaller,
+    r: HumanRequest,
+    fingerprint: string,
+    savedNext?: string,
+    signIn?: ReturnType<SignInRelay["save"]>,
+  ): Promise<Record<string, unknown>> {
     const id = r.requestId;
     const by = `human:${caller.name}`;
     const at = this.now();
@@ -410,14 +431,19 @@ export class Approvals {
         if (isFingerprint(fingerprint)) r.secret.fingerprint = fingerprint;
         else delete r.secret.fingerprint;
       }
-      r.evidence = `fingerprint ${fingerprint}`;
+      r.evidence = signIn?.notSaved !== undefined ? `not saved to the vault: ${clip(signIn.notSaved, 200)}` : `fingerprint ${fingerprint}`;
       if (r.secureInput) r.secureInput.filledAt = at;
+      if (r.secureInput?.signIn && signIn?.saved) r.secureInput.signIn.saved = signIn.saved;
       r.answeredAt = at;
       r.answeredBy = by;
       if (caller.person) r.answeredByPerson = caller.person;
       else delete r.answeredByPerson;
     });
-    await this.deps.hub.wakeRequest(saved);
+    if (!(saved.secureInput?.signIn && (await this.deps.hooks.signInSettled(saved)))) await this.deps.hub.wakeRequest(saved);
+    if (saved.secureInput?.signIn) {
+      const kept = signIn?.saved ? `; saved to the vault as ${signIn.saved.label}` : signIn?.notSaved ? `; not saved to the vault: ${signIn.notSaved}` : "";
+      return { requestId: id, fingerprint, next: `Filled on ${saved.secureInput.site.domain}${kept}. The agent never sees it.` };
+    }
     if (saved.secureInput) {
       return {
         requestId: id,

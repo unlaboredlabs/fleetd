@@ -579,6 +579,19 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/SignInCall",
+          "properties": {
+            "op": {
+              "const": "request_sign_in",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2276,6 +2289,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/SignInOpenCall",
+          "description": "Made by the node for a lead's or a task's request_sign_in (browser/sign_in.ts).",
+          "properties": {
+            "op": {
+              "const": "sign_in_open",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
           "$ref": "#/$defs/SessionRouteCall",
           "description": "Made by the node for its agent's session tools (machine_roles.rs): placed by the hub, relayed when elsewhere.",
           "properties": {
@@ -3952,6 +3979,60 @@
       "required": [
         "threadId",
         "item"
+      ],
+      "type": "object"
+    },
+    "SignInCall": {
+      "description": "`request_sign_in`: a login page the vault has no login for. A vault login for the site fills with no ask;\nelse the person gets a secure sign-in form in the chat, fleetd fills the page's fields from it without you seeing\nthem, and with \"Save to Vault\" (on by default) keeps the login for the next time. Give the selector of each field\nthe page shows.",
+      "properties": {
+        "otp": {
+          "description": "The one-time code field: a CSS selector on the page or one of its frames.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "password": {
+          "description": "The password field: a CSS selector on the page or one of its frames.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/SecureInputSite"
+        },
+        "username": {
+          "description": "The username or email field: a CSS selector on the page or one of its frames.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "description": "Why you sign in, in one line.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "site",
+        "why"
+      ],
+      "type": "object"
+    },
+    "SignInOpenCall": {
+      "description": "The node's lead call for an agent's `request_sign_in`, a lead's or a task's: a vault login for the site answers\n`vault`, and nothing opens; else the sign-in form opens as a request.",
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/SignInCall"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "input"
       ],
       "type": "object"
     },

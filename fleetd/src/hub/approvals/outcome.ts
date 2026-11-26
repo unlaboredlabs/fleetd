@@ -1,6 +1,7 @@
 // How a request shows: as its chat item (approvals/mod.rs `chat_item`), and, settled, as the line in its lead's wake
 // (usage/wire_approvals.rs `request_outcome`, leads/events.rs `Event::Request`).
 import type { Attention, ChatItem, HumanRequest } from "../../shared/contracts.ts";
+import { signInFilledLine } from "./sign_in_rules.ts";
 import { parseSecretSink } from "./sink.ts";
 import { clip, shownArgv } from "./text.ts";
 
@@ -30,6 +31,7 @@ export function chatItem(r: HumanRequest): ChatItem {
       text: line(r.text, 300) ?? "a secret",
       sink: r.secret.sink,
       envName: r.secret.envName,
+      sealTo: r.secret.sealTo,
       secureInput: r.secureInput,
       state: r.state === "stored" ? "stored" : r.state === "withdrawn" ? "withdrawn" : "open",
       fingerprint: r.secret.fingerprint,
@@ -74,12 +76,18 @@ export function requestOutcome(r: HumanRequest): { what: string; outcome: string
   else what = "request";
   // A secure input's secret is its own: it fills a field, never a sink to read.
   if (r.secureInput) what = `your secure input ${r.secureInput.label} on ${r.secureInput.site.domain}`;
+  if (r.secureInput?.signIn) what = `your sign-in form ${r.secureInput.label} (${r.secureInput.site.domain})`;
   const evidence = r.evidence ?? "";
   const order = r.secret ? parseSecretSink(r.secret.sink)?.order : undefined;
   const byWho = r.answeredBy ? ` by ${r.answeredBy}` : "";
   const said = evidence ? `: ${evidence}` : "";
   let outcome: string;
-  if (r.state === "stored" && r.secureInput) {
+  if (r.state === "stored" && r.secureInput?.signIn) {
+    const notSaved = evidence.startsWith("not saved to the vault: ") ? evidence.slice("not saved to the vault: ".length) : undefined;
+    outcome = signInFilledLine(r.secureInput.signIn.fields, r.secureInput.site, r.secureInput.signIn.saved, notSaved);
+  } else if (r.state === "withdrawn" && r.secureInput?.signIn) {
+    outcome = "withdrawn: nothing was filled";
+  } else if (r.state === "stored" && r.secureInput) {
     outcome = "the person entered it and fleetd filled it into that field; you never see it. Carry on with the page";
   } else if (r.state === "approved" && r.secureInput) {
     outcome = `approved: call secure_input_fill with requestId ${r.requestId} within ${FILL_WINDOW_MINUTES} minutes, on that page`;

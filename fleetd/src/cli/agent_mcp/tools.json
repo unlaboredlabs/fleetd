@@ -2020,7 +2020,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Ask a person to take your browser over for what only they can do: a captcha, a login confirmation, a judgement call. reason: what they should do, in one line; they watch the page live. Carry on or end your turn: while they drive, agent-browser answers that a person has control; you are told when they hand it back, and the page is as they left it.",
+   "description": "Ask a person to take your browser over for what a form can't do: a captcha, a passkey, a device approval, a judgement call; a login: request_sign_in. reason: what they should do, in one line; they watch the page live. Carry on or end your turn; while they drive, agent-browser answers that a person has control; you are told when they hand it back, and the page is as they left it.",
    "inputSchema": {
     "properties": {
      "reason": {
@@ -2042,7 +2042,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Fill a login field of your browser session from fleetd's vault without seeing the value: item (its label or id, from vault_items), field username, password or otp (a one-time code), target the field's CSS selector. It fills only on the item's own site, then submits the form; submit: false for a field before the last (a username before its password). From the first fill on, the session refuses reading values back. ref (op://<vault>/<item>/<field>) instead of item and field works for one release. Never ask anyone for a password: a login not in the vault, the person adds in Settings › Vault.",
+   "description": "Fill a login field of your browser session from fleetd's vault without seeing the value: item (its label or id, from vault_items), field username, password or otp (a one-time code), target the field's CSS selector. It fills only on the item's own site, then submits the form; submit: false for a field before the last (a username before its password). From the first fill on, the session refuses reading values back. ref (op://<vault>/<item>/<field>) instead of item and field works for one release. Never ask anyone for a password: a login not in the vault goes through request_sign_in.",
    "inputSchema": {
     "properties": {
      "field": {
@@ -2367,7 +2367,7 @@
    "lead": true,
    "worker": false,
    "browser": true,
-   "description": "When a page needs something only the person may give and you must never see (an ID number, a texted code): site, target (the field's CSS selector, in the page or a frame), label in their words (\"Passport number\"), why in one line. They type it in a sealed field and fleetd fills it; you are woken once it is in. With ref nobody is asked: call secure_input_fill. Never ask for such a value in chat.",
+   "description": "For something only the person may give that isn't a login (an ID or passport number): site, target (the field's CSS selector, in the page or a frame), label in their words (\"Passport number\"), why. They type it in a sealed field and fleetd fills it; you are woken once it is in. With ref nobody is asked: call secure_input_fill. Never ask for it in chat.",
    "inputSchema": {
     "properties": {
      "label": {
@@ -2439,6 +2439,63 @@
     },
     "required": [
      "requestId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "request_sign_in",
+   "op": "request_sign_in",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "Sign in on a login page: site, each field's CSS selector (username, password, otp), why. A vault login fills at once; else the person fills a secure form in chat, saved to the vault; you're woken once it's filled, never seeing it. A code asked next: call again with otp.",
+   "inputSchema": {
+    "properties": {
+     "otp": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "password": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "site": {
+      "properties": {
+       "domain": {
+        "maxLength": 253,
+        "type": "string"
+       },
+       "name": {
+        "maxLength": 120,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "domain",
+       "name"
+      ],
+      "type": "object"
+     },
+     "username": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "why": {
+      "maxLength": 300,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "site",
+     "why"
     ],
     "type": "object"
    }
@@ -3415,6 +3472,33 @@
    "/requestId": {
     "expected": "a string",
     "pattern": "expected a string matching ^Q[1-9][0-9]*$, got {got}"
+   }
+  },
+  "request_sign_in": {
+   "/otp": {
+    "expected": "a string"
+   },
+   "/password": {
+    "expected": "a string"
+   },
+   "/site": {
+    "expected": "struct SecureInputSite",
+    "fields": [
+     "domain",
+     "name"
+    ]
+   },
+   "/site/domain": {
+    "expected": "a string"
+   },
+   "/site/name": {
+    "expected": "a string"
+   },
+   "/username": {
+    "expected": "a string"
+   },
+   "/why": {
+    "expected": "a string"
    }
   },
   "report": {

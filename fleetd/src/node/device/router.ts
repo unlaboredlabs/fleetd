@@ -63,7 +63,7 @@ const A: Record<SessionKind, string> = {
   mac: "a Mac screen",
 };
 
-const BROWSER_ONLY = new Set(["fill_credential", "fill_address", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill"]);
+const BROWSER_ONLY = new Set(["fill_credential", "fill_address", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill", "request_sign_in"]);
 
 export class Router {
   /** The Android emulators (node/device's), where this machine runs them. */

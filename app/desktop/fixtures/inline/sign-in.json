@@ -1,0 +1,58 @@
+{
+  "note": "A bot's sign-in forms: a login the vault has no item for, filled and saved to the vault; then the code the site texted, still to enter; and another site's sign-in waiting. devbox; no personal data.",
+  "opening": ["Upload the new build to the store.", "On it. The store's sign-in isn't in the vault yet, so I've asked you for it."],
+  "items": [
+    {
+      "kind": "secret_request",
+      "requestId": "Q41",
+      "name": "browser.sign_in",
+      "text": "Sign in to Devbox Store (store.devbox.example): upload the new build",
+      "sink": "fill:devbox:B00000000000000000000000000000041",
+      "sealTo": "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=",
+      "state": "stored",
+      "fingerprint": "5c1e09ab",
+      "secureInput": {
+        "site": { "domain": "store.devbox.example", "name": "Devbox Store" },
+        "target": "#email",
+        "label": "Sign in to Devbox Store",
+        "why": "Upload the new build",
+        "sessionId": "B00000000000000000000000000000041",
+        "signIn": { "fields": ["username", "password"], "saved": { "itemId": "V00000000000000000000000000000041", "label": "Devbox Store" } }
+      }
+    },
+    {
+      "kind": "secret_request",
+      "requestId": "Q42",
+      "name": "browser.sign_in",
+      "text": "Enter the code Devbox Store sent you (store.devbox.example): upload the new build",
+      "sink": "fill:devbox:B00000000000000000000000000000041",
+      "sealTo": "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=",
+      "state": "open",
+      "secureInput": {
+        "site": { "domain": "store.devbox.example", "name": "Devbox Store" },
+        "target": "#code",
+        "label": "Code for Devbox Store",
+        "why": "Upload the new build",
+        "sessionId": "B00000000000000000000000000000041",
+        "signIn": { "fields": ["otp"] }
+      }
+    },
+    {
+      "kind": "secret_request",
+      "requestId": "Q43",
+      "name": "browser.sign_in",
+      "text": "Sign in to Devbox Analytics (analytics.devbox.example): read last week's crash report",
+      "sink": "fill:devbox:B00000000000000000000000000000043",
+      "sealTo": "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=",
+      "state": "open",
+      "secureInput": {
+        "site": { "domain": "analytics.devbox.example", "name": "Devbox Analytics" },
+        "target": "input[name=email]",
+        "label": "Sign in to Devbox Analytics",
+        "why": "Read last week's crash report",
+        "sessionId": "B00000000000000000000000000000043",
+        "signIn": { "fields": ["username", "password"] }
+      }
+    }
+  ]
+}

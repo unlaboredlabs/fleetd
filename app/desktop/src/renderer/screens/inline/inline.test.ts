@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
 import type { ChatItem, CommandApprovalItem, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
-import { approvalOffline, approvalOutcome, approvalTitle, failureLine, needsConfirm, OFFLINE_LINE, secretEnvLines, secretOutcome, secretTarget, secretTitle, shellLine, withRequest } from "./request";
+import { approvalOffline, approvalOutcome, approvalTitle, failureLine, needsConfirm, OFFLINE_LINE, secretEnvLines, secretOutcome, secretTarget, secretTitle, shellLine, signInAsks, withRequest } from "./request";
+import signIns from "../../../../fixtures/inline/sign-in.json";
 
 const items = data.items as unknown as ChatItem[];
 const secret = (id: string): SecretRequestItem => {
@@ -172,5 +173,28 @@ describe("the item as the request says it is now", () => {
   it("leaves the item alone without a matching request", () => {
     expect(withRequest(posted("Q4"), undefined)).toEqual(posted("Q4"));
     expect(withRequest(posted("Q4"), request({ requestId: "Q9", kind: "approval", state: "ran" }))).toEqual(posted("Q4"));
+  });
+});
+
+describe("sign-in forms", () => {
+  const [saved, code, waiting] = signIns.items as unknown as [SecretRequestItem, SecretRequestItem, SecretRequestItem & ChatItem];
+  it("folds to what was filled, and whether it went in the vault", () => {
+    expect(secretOutcome(saved)).toEqual({ tone: "success", text: "Filled in, saved to Vault" });
+    expect(secretOutcome({ ...code, state: "stored" })).toEqual({ tone: "success", text: "Code filled in" });
+    expect(secretOutcome({ ...waiting, state: "stored" })).toEqual({ tone: "success", text: "Filled in" });
+    expect(secretOutcome(waiting)).toBeUndefined();
+    expect(secretTitle(saved)).toBe("Sign in to Devbox Store");
+  });
+  it("asks for a whole login, or the code alone", () => {
+    expect(signInAsks(["password"])).toEqual(["username", "password"]);
+    expect(signInAsks(["username", "password", "otp"])).toEqual(["username", "password", "otp"]);
+    expect(signInAsks(["otp"])).toEqual(["otp"]);
+  });
+  it("takes the request's vault login once saved, and why it wasn't", () => {
+    const request = { requestId: waiting.requestId, state: "stored", evidence: "not saved to the vault: the vault is locked", secureInput: { ...waiting.secureInput, signIn: { fields: ["username", "password"] } } } as unknown as HumanRequest;
+    const shown = withRequest(waiting, request) as SecretRequestItem;
+    expect(shown.state).toBe("stored");
+    expect(shown.note).toBe("not saved to the vault: the vault is locked");
+    expect(failureLine("fill", { code: "invalid" }, "devbox").text).toBe("Not filled in: the page may have moved on. Try again, or tell the agent in the chat.");
   });
 });

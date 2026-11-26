@@ -294,6 +294,8 @@ export const fixtures = [
   "computer-runs-on-gone",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
   "inline-secure",
+  // A bot's sign-in forms: filled and saved, a code to enter, a sign-in waiting (fixtures/inline/sign-in.json).
+  "inline-sign-in",
   // Approvals whose fields hide or reorder text (fixtures/inline/hidden.json).
   "inline-hidden",
   // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
@@ -2902,7 +2904,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a project's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden", "inline-propose"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden", "inline-propose", "inline-sign-in"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {
@@ -2915,6 +2917,38 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Offline: approve once the workspace is back.").first()).toBeAttached();
       await expect(page.getByText("Offline: save it once the workspace is back.").first()).toBeAttached();
       await expect(page.getByText(/doesn't know the machine/u)).toHaveCount(0);
+    },
+  },
+  // A sign-in card's form, opened: the fields, the password shown, Save to Vault ticked, Submit.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-sign-in"],
+    variant: "sign-in-form",
+    open: async (page) => {
+      const card = page.getByRole("region", { name: "Sign in to Devbox Analytics" });
+      await card.getByRole("button", { name: "Open", exact: true }).click();
+      const form = page.getByRole("dialog", { name: "Sign in to Devbox Analytics" });
+      await form.getByLabel("Email or username").fill("ada@devbox.example");
+      await form.getByLabel("Password", { exact: true }).fill("correct horse battery");
+      await form.getByRole("button", { name: "Show password" }).click();
+      await expect(form.getByRole("checkbox", { name: "Securely save to Vault" })).toBeChecked();
+      await expect(form.getByRole("button", { name: "Submit" })).toBeEnabled();
+    },
+  },
+  // The code its site sent, asked in a form of its own: no vault box.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-sign-in"],
+    variant: "sign-in-code",
+    open: async (page) => {
+      const card = page.getByRole("region", { name: "Code for Devbox Store" });
+      await card.getByRole("button", { name: "Open", exact: true }).click();
+      const form = page.getByRole("dialog", { name: "Code for Devbox Store" });
+      await expect(form.getByLabel("Code")).toBeFocused();
+      await expect(form.getByRole("checkbox")).toHaveCount(0);
+      await expect(form.getByRole("button", { name: "Submit" })).toBeDisabled();
     },
   },
   // Approve on a command that can't be undone asks once more, in the card.

@@ -14,7 +14,7 @@ export function register(tools: Registry): void {
     if (typeof input.requestId !== "string" || typeof input.sealed !== "string") {
       throw new ToolError("invalid", "secret_submit takes requestId and sealed.");
     }
-    return (await approvals(hub).submitSecret(who(caller), input.requestId, input.sealed)) as never;
+    return (await approvals(hub).submitSecret(who(caller), input.requestId, input.sealed, input.save === true)) as never;
   });
   tools.add("approval_answer", async (hub, caller, input) => {
     if (typeof input.requestId !== "string" || (input.decision !== "approve" && input.decision !== "deny")) {

@@ -48,9 +48,12 @@ const openFor = (key: Key, requests: readonly HumanRequest[] | undefined, kind: 
   requests?.filter((r) => r.state === "open" && r.kind === kind && keyOf(r.projectRef) === key && mine(r, me)).length ?? 0;
 
 const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] | undefined, me: string | undefined): string | undefined => {
-  const secrets = openFor(key, requests, "secret", me);
+  // A sign-in form is filled in here; any other secret only on the desktop.
+  const signIns = requests?.filter((r) => r.state === "open" && r.secureInput?.signIn !== undefined && keyOf(r.projectRef) === key && mine(r, me)).length ?? 0;
+  const secrets = openFor(key, requests, "secret", me) - signIns;
   const approvals = openFor(key, requests, "approval", me);
   if (approvals > 0) return `${plural(approvals, "approval", "approvals")} waiting`;
+  if (signIns > 0) return `${plural(signIns, "sign-in", "sign-ins")} to fill in`;
   if (secrets > 0) return `${plural(secrets, "secret", "secrets")} to enter on the desktop`;
   return needsYou ? "Waiting for your reply" : undefined;
 };

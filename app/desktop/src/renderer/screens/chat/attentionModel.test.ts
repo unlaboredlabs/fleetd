@@ -81,6 +81,12 @@ describe("what the lead waits on", () => {
       message: { item: { kind: "secret_request", state: "open", secureInput: { label: "Passport number" } } } as unknown as ChatMessage,
     });
     expect(waitingOn([typed], LOADED, NOW, "UTC")?.what).toBe("1 secure input to enter");
+    // A sign-in form says it is one.
+    const signIn = item("s3", "lead", "", at(19, 9, 8), {
+      kind: "secret",
+      message: { item: { kind: "secret_request", state: "open", secureInput: { label: "Sign in to Shop", signIn: { fields: ["username", "password"] } } } } as unknown as ChatMessage,
+    });
+    expect(waitingOn([signIn, typed], LOADED, NOW, "UTC")?.what).toBe("1 sign-in to fill in, 1 secure input to enter");
   });
 
   it("counts an open approval or secret on a page not loaded, from the hub's list, and goes there too", () => {

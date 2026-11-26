@@ -115,6 +115,8 @@ export const SecretRequest = z.strictObject({
   // SECRET_MAX_BYTES UTF-8 bytes at most; main checks the byte length, this only bounds the string (a UTF-16 unit is
   // at least one byte, so no value that fits is cut here).
   value: z.string().min(1).max(SECRET_MAX_BYTES),
+  /** A sign-in form's "Save to Vault" (its value is the form's fields as JSON, sealed to the workspace's key). */
+  save: z.boolean().optional(),
 });
 export type SecretRequest = z.infer<typeof SecretRequest>;
 
