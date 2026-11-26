@@ -16,6 +16,7 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { CAP_MCP_SERVERS, nodeReady } from "../mcp_servers/tools.ts";
 import { returnState } from "../../shared/oauth_return.ts";
+import { isReturnPage } from "./sign_ins.ts";
 import * as oauth from "./oauth.ts";
 import { type Client, clientOf, due, PENDING_MS, projectOfRow, type Record_, recordText, RETRY_MS, type Row, tidy } from "./record.ts";
 
@@ -235,7 +236,8 @@ export type Started = { signIn: string } | { needsClient: string };
 /**
  * Opens a sign-in for a saved HTTP or SSE server of a project: where it signs in, which client (the one it signed in
  * with before, the person's own, or one fleetd registers now for `redirect`), and the sign-in page to open; `via`, the
- * workspace's address fleetd's return page forwards to when `redirect` is that page. Errors are for the person.
+ * workspace's address fleetd's return page forwards to when the client's redirect is that page. Errors are for the
+ * person.
  */
 export async function start(hub: Hub, server: McpServer, redirect: string, own?: { id: string; secret?: string }, via?: string): Promise<Started> {
   const at = urlOf(server);
@@ -280,8 +282,13 @@ export async function start(hub: Hub, server: McpServer, redirect: string, own?:
     return { needsClient: found.issuer };
   }
   const [verifier, challenge] = oauth.pkce();
-  // Through fleetd's return page, the state carries the workspace's address there (shared/oauth_return.ts).
-  const st = via !== undefined ? returnState(oauth.state(), via) : oauth.state();
+  // Through fleetd's return page, the state carries the workspace's address there (shared/oauth_return.ts): whenever
+  // the client's redirect is the page, as one registered or given earlier keeps it after the workspace stops using it.
+  let st = oauth.state();
+  if (isReturnPage(client.redirectUri)) {
+    if (via === undefined) throw new Error("it signs in through fleetd's return page, which needs the workspace's tailnet or network address: sign in from an app that reaches it there");
+    st = returnState(st, via);
+  }
   const url = oauth.authorizeUrl(client.authorizationEndpoint, client.clientId, client.redirectUri, challenge, st, client.scope, client.resource);
   return one(hub, async () => {
     const row: Row = getRow(hub, server.scope, server.name) ?? { scope: server.scope, name: server.name, record: {} };

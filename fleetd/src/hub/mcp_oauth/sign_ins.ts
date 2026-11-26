@@ -38,22 +38,61 @@ export async function setSignIns(hub: Hub, input: { returnPage: boolean }): Prom
 
 const loopback = (host: string) => host === "localhost" || host === "::1" || (isIP(host) === 4 && host.startsWith("127."));
 
-/** Where a sign-in sends the browser back, and the workspace origin a return-page state carries when it goes through it. */
+/**
+ * Where a sign-in sends the browser back, and `via`: the workspace's address as the app reaches it, which a return-page
+ * state carries, whenever the client's redirect is the page (one registered earlier keeps it, whatever this call picks).
+ */
 export type Return = { redirect: string; via?: string };
+
+/** Whether `url` is a return page: fleetd's, or the one this workspace runs with. */
+export const isReturnPage = (url: string): boolean => url === RETURN_PAGE || url === returnPageUrl();
+
+/** Asks whether the return page answers: true when it does as the page does (a 400 for a sign-in with no state). */
+export type ReturnProbe = (url: string) => Promise<boolean>;
+
+const realProbe: ReturnProbe = async (url) => {
+  try {
+    const answer = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(5_000) });
+    await answer.body?.cancel().catch(() => {});
+    return answer.status === 400;
+  } catch {
+    return false;
+  }
+};
+
+/** How long an answer is kept: a page that answers is asked again after 10 minutes, one that doesn't after one. */
+const UP_MS = 10 * 60_000;
+const DOWN_MS = 60_000;
+const probed = new WeakMap<Hub, { url: string; up: boolean; at: number }>();
+
+/**
+ * Whether the return page answers now. Until it does (the cloud's route not out yet, or no way out to it), sign-ins
+ * go to the workspace's own address as before, so nothing that signed in before stops.
+ */
+async function returnPageUp(hub: Hub): Promise<boolean> {
+  const url = returnPageUrl();
+  const now = hub.clock.now();
+  const last = probed.get(hub);
+  if (last !== undefined && last.url === url && now - last.at < (last.up ? UP_MS : DOWN_MS)) return last.up;
+  const up = await hub.area<ReturnProbe>("sign_in_return_probe", () => realProbe)(url);
+  probed.set(hub, { url, up, at: now });
+  return up;
+}
 
 /**
  * The callback for a sign-in started from an app at `base`: the workspace's https address where there is one; else,
- * from a plain-http address another device reaches (a tailnet's, a LAN's) and with the switch on, fleetd's return page,
- * which forwards to `base`; else `base` itself (this machine's loopback, which services take).
+ * from a plain-http address another device reaches (a tailnet's, a LAN's), with the switch on and the page answering,
+ * fleetd's return page, which forwards to `base`; else `base` itself (this machine's loopback, which services take).
  */
 export async function returnFor(hub: Hub, base: URL): Promise<Return> {
-  const own = (origin: string) => ({ redirect: `${origin}/oauth/callback` });
+  const host = base.hostname.replace(/^\[|\]$/g, "");
+  const origin = base.protocol === "http:" && !loopback(host) ? returnable(base.origin) : undefined;
+  const via = origin !== undefined ? { via: origin } : {};
+  const own = (at: string) => ({ redirect: `${at}/oauth/callback`, ...via });
   if (base.protocol === "https:") return own(base.toString().replace(/\/+$/, ""));
   const front = await httpsFront(hub);
   if (front !== undefined) return own(front);
-  const host = base.hostname.replace(/^\[|\]$/g, "");
-  const origin = returnable(base.origin);
-  if (!loopback(host) && origin !== undefined && returnPageOn(hub)) return { redirect: returnPageUrl(), via: origin };
+  if (origin !== undefined && returnPageOn(hub) && (await returnPageUp(hub))) return { redirect: returnPageUrl(), ...via };
   return own(base.toString().replace(/\/+$/, ""));
 }
 
@@ -77,9 +116,12 @@ const run = (hub: Hub): TailscaleRun => hub.area<TailscaleRun>("tailscale_run", 
 /** The https ports Tailscale Serve may front the workspace on, in order: one another site already uses is skipped. */
 const PORTS = [443, 8443];
 
-/** The fix, in words for an admin, when the workspace can't give itself an https address. */
-const BY_HAND = (port: number) =>
-  `On the workspace's computer, run \`tailscale serve --bg ${port}\`, or start the workspace with an https --url.`;
+/**
+ * The fix, in words for an admin, when the workspace can't give itself an https address: Tailscale Serve on the https
+ * port it would have taken (never 443 while another site has it), else an https --url.
+ */
+const BY_HAND = (https: number, target: string) =>
+  `On the workspace's computer, run \`tailscale serve --bg --https=${https} ${target}\`, or start the workspace with an https --url.`;
 
 /**
  * "Give the workspace an https address": Tailscale Serve fronts the workspace's port over https on the first free one
@@ -92,11 +134,14 @@ export async function addHttps(hub: Hub): Promise<SignIns> {
   const target = `http://${isIP(bare) !== 0 && isUnspecified(bare) ? "127.0.0.1" : isIP(bare) === 6 ? `[${bare}]` : bare}:${port}`;
   const status = await serveStatus(hub)();
   if (status === undefined) {
-    throw new ToolError("failed", "Tailscale isn't running on the workspace's computer, so it can't give itself an https address.", BY_HAND(port));
+    // What Tailscale serves already is unknown: 8443, which a site of its own rarely holds.
+    throw new ToolError("failed", "Tailscale isn't running on the workspace's computer, so it can't give itself an https address.", BY_HAND(8443, target));
   }
   const taken = takenPorts(status);
   const free = PORTS.find((p) => !taken.has(p));
-  if (free === undefined) throw new ToolError("failed", "Tailscale already serves other sites on the workspace's computer's https ports.", BY_HAND(port));
+  if (free === undefined) {
+    throw new ToolError("failed", "Tailscale already serves other sites on the workspace's computer's https ports.", "Start the workspace with an https --url, or free one of Tailscale Serve's ports 443 and 8443 for it.");
+  }
   const done = await run(hub)(["serve", "--bg", `--https=${free}`, target]);
   if (done.code !== 0) {
     // Tailscale's own words name what to fix: HTTPS off for the tailnet (with the page that turns it on), or no rights.
@@ -105,7 +150,7 @@ export async function addHttps(hub: Hub): Promise<SignIns> {
     if (/access denied|permission|operator/i.test(done.out)) {
       throw new ToolError("failed", "Tailscale won't let the workspace serve https.", "On the workspace's computer, run `sudo tailscale set --operator=$USER`, then try again.");
     }
-    throw new ToolError("failed", "Tailscale couldn't give the workspace an https address.", BY_HAND(port));
+    throw new ToolError("failed", "Tailscale couldn't give the workspace an https address.", BY_HAND(free, target));
   }
   const after = await signIns(hub);
   if (after.https === undefined) throw new ToolError("failed", "Tailscale took the request, but the workspace can't find its https address yet.", "Try again in a minute.");

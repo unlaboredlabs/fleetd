@@ -83,7 +83,7 @@ export function register(tools: Registry): void {
           NEEDS_HTTPS,
         );
       }
-      throw new ToolError("failed", `Couldn't sign in to ${input.name}: ${(e as Error).message}.`, "Try again. If it keeps failing, check the server's address.");
+      throw new ToolError("failed", `Couldn't sign in to ${input.name}: ${(e as Error).message}.`, "Check the URL. If the service gives keys instead, add the server with one.");
     }
     if ("signIn" in started) {
       return {

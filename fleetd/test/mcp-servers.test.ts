@@ -22,7 +22,7 @@ import type { McpServer } from "../src/shared/contracts.ts";
 import { people } from "../src/hub/people/store.ts";
 import { RETURN_PAGE, returnResponse } from "../src/shared/oauth_return.ts";
 import { ToolError } from "../src/shared/errors.ts";
-import type { TailscaleRun } from "../src/hub/mcp_oauth/sign_ins.ts";
+import type { ReturnProbe, TailscaleRun } from "../src/hub/mcp_oauth/sign_ins.ts";
 import { tinyMcp } from "./tiny_mcp.ts";
 import { tempHome } from "./helpers.ts";
 
@@ -133,12 +133,16 @@ class FakeLink implements Link {
   linkId = () => (this.offline ? undefined : "L1");
 }
 
-/** A hub on 127.0.0.1:4795; `serve` stands in for `tailscale serve status --json` (none by default). */
-function lab(serve: ServeStatus = async () => undefined) {
+/**
+ * A hub on 127.0.0.1:4795; `serve` stands in for `tailscale serve status --json` (none by default), `pageUp` for
+ * whether fleetd's return page answers (it does by default).
+ */
+function lab(serve: ServeStatus = async () => undefined, pageUp = true) {
   let now = Date.parse("2026-11-08T10:00:00Z");
   const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 4795 } }, HubDb.memory(), { now: () => now });
   const link = new FakeLink();
   hub.area("node_port", () => fakeNodePort(link));
+  hub.area<ReturnProbe>("sign_in_return_probe", () => async () => pageUp);
   hub.area("tailscale_serve", () => serve);
   const at = "2026-11-08T10:00:00.000Z";
   store(hub).machineUpsert({
@@ -548,6 +552,46 @@ test("from a plain-http tailnet address, a sign-in goes through fleetd's return 
   }
 });
 
+test("until fleetd's return page answers, a sign-in from a tailnet address comes back to the workspace's own address, as before", async () => {
+  const svc2 = httpsOnlyService();
+  try {
+    const { call } = lab(async () => undefined, false);
+    const at = (url: string) => ({ scope, name: "canvas", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url }, integration: { readTools: [] } });
+    // A service that takes a plain-http callback signs in as it did before this page existed.
+    await call("mcp_server_set", { ...at(`${svc.base}/mcp`), name: "plain" });
+    const plain = await call("mcp_oauth_start", { scope, name: "plain", hubUrl: "http://100.100.1.2:4795" });
+    expect(plain.redirectUri).toBe("http://100.100.1.2:4795/oauth/callback");
+    // One that takes only https says the one line, as it would with the page off.
+    await call("mcp_server_set", at(`${svc2.base}/mcp`));
+    await expect(call("mcp_oauth_start", { scope, name: "canvas", hubUrl: "http://100.100.1.2:4795" })).rejects.toMatchObject({ reason: "needs_https" });
+  } finally {
+    svc2.server.stop(true);
+  }
+});
+
+test("a person's own client made for the return page keeps signing in through it once the workspace has https", async () => {
+  // The person's own client (as for a service that lets no app register itself), made allowing the return page.
+  const svc3 = service();
+  let served: string | undefined;
+  const { hub, call } = lab(async () => served);
+  try {
+    await call("mcp_server_set", { scope, name: "own", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc3.base}/mcp` } });
+    const first = await call("mcp_oauth_start", { scope, name: "own", hubUrl: "http://100.100.1.2:4795", client: { clientId: "person-client" } });
+    expect(first.redirectUri).toBe(RETURN_PAGE);
+    // The workspace gets an https address: the client still names the return page, so the state still carries the way back.
+    served = serving(4791, "http://127.0.0.1:4795");
+    const again = new URL((await call("mcp_oauth_start", { scope, name: "own", hubUrl: "http://100.100.1.2:4795" })).authorizeUrl as string);
+    expect(again.searchParams.get("redirect_uri")).toBe(RETURN_PAGE);
+    const back = returnResponse(`${RETURN_PAGE}?code=c-1&state=${encodeURIComponent(again.searchParams.get("state")!)}`);
+    expect(back.status).toBe(302);
+    const page = (await oauthCallback(new Request(back.headers.get("location")!), { hub } as never))!;
+    expect(page.status).toBe(200);
+    expect(mcpServers(hub).get(team, "own")!.oauth?.status).toBe("connected");
+  } finally {
+    svc3.server.stop(true);
+  }
+});
+
 test("Give the workspace an https address runs Tailscale Serve on a free https port, and says the fix when it can't", async () => {
   let served = "{}";
   const ran: string[][] = [];
@@ -571,10 +615,11 @@ test("Give the workspace an https address runs Tailscale Serve on a free https p
   const other = lab(async () => JSON.stringify({ TCP: { "443": { HTTPS: true } }, Web: { "devbox.example.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:8425" } } } } }));
   const runs: string[][] = [];
   other.hub.area<TailscaleRun>("tailscale_run", () => async (args) => (runs.push(args), { code: 1, out: "boom" }));
-  await expect(other.call("https_address_add", {})).rejects.toMatchObject({ message: "Tailscale couldn't give the workspace an https address." });
+  // Its fix by hand names 8443 too, never the other site's 443.
+  await expect(other.call("https_address_add", {})).rejects.toMatchObject({ message: "Tailscale couldn't give the workspace an https address.", fix: expect.stringContaining("--https=8443 http://127.0.0.1:4795") });
   expect(runs[0]).toEqual(["serve", "--bg", "--https=8443", "http://127.0.0.1:4795"]);
   // No Tailscale at all.
-  await expect(lab().call("https_address_add", {})).rejects.toMatchObject({ fix: expect.stringContaining("tailscale serve --bg 4795") });
+  await expect(lab().call("https_address_add", {})).rejects.toMatchObject({ fix: expect.stringContaining("tailscale serve --bg --https=8443 http://127.0.0.1:4795") });
 });
 
 /** A project's "docs" server, signed in through the fake service: its token is on the machine. */
