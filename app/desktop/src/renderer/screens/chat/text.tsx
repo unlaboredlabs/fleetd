@@ -36,7 +36,7 @@ export function InlineText(props: { text: string; project?: ProjectKey | undefin
     <Text {...style}>
       {runs.map((r, i) => {
         const kind = r.code ? refOf(r.text) : undefined;
-        return kind !== undefined ? (
+        return kind === "agent" || kind === "order" ? (
           <RefMark key={i} of={{ id: r.text.trim(), kind, opens: false }} />
         ) : r.code ? (
           <InlineCode key={i}>{r.text}</InlineCode>

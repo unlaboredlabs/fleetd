@@ -50,8 +50,9 @@ const refLinks = () => (tree: Node) => {
   const walk = (node: Node): void => {
     if (node.children === undefined || node.type === "link" || node.type === "linkReference") return;
     node.children = node.children.flatMap((child): Node[] => {
+      // A code span of one agent or order id; one of `F12` is a key as often as a file, so stays code.
       const kind = child.type === "inlineCode" && child.value !== undefined ? refOf(child.value) : undefined;
-      if (kind !== undefined) return [refLink({ id: (child.value ?? "").trim(), kind, opens: false })];
+      if (kind === "agent" || kind === "order") return [refLink({ id: (child.value ?? "").trim(), kind, opens: false })];
       if (child.type !== "text" || child.value === undefined) {
         walk(child);
         return [child];

@@ -59,7 +59,8 @@ export function OrderView({ project, workstreamId }: { project: ProjectKey; work
                 <Truncate size="sm" expand="none">
                   {l.title}
                 </Truncate>
-                <Text size="xs" tone="quiet">
+                {/* Needs you is said in full weight, as everywhere: the rest of the states stay quiet. */}
+                <Text size="xs" tone={l.status === "waiting" ? "default" : "quiet"} strong={l.status === "waiting"}>
                   {STATE_WORD[l.status]}
                 </Text>
               </a>

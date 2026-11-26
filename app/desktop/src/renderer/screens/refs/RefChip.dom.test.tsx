@@ -64,6 +64,11 @@ const mount = async (body: ReactNode) => {
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "orders_board") return Promise.resolve({ ok: true, output: { at: AT, orders: [launch], trains: [] } });
+      if (tool === "decisions_list") return Promise.resolve({ ok: true, output: { decisions: [{ decisionId: "D5" }], orders: [] } });
+      if (tool === "attachment_get") {
+        const id = (input as { attachmentId: string }).attachmentId;
+        return Promise.resolve(id === "F2" ? { ok: true, output: { attachmentId: "F2", bytes: 10, dataB64: "", mime: "application/pdf", name: "brief.pdf" } } : { ok: false, error: { code: "not_found", message: `No file ${id}.` } });
+      }
       if (tool === "task_get") {
         const id = (input as { taskId: string }).taskId;
         return Promise.resolve(id === finished.taskId ? { ok: true, output: { task: finished } } : { ok: false, error: { code: "not_found", message: `No task ${id}.` } });
@@ -104,10 +109,22 @@ it("names an agent and an order in plain words, each opening it", async () => {
 });
 
 it("says a plain word for one that is gone, and never its id", async () => {
-  await mount(<RefText text="T404 and W1 are gone. D742 stays" />);
-  expect(host.textContent).toBe("An agent and an order are gone. A decision stays");
-  // Gone, they open nothing; the decision opens the bot's decisions only on a project's screen.
+  await mount(<RefText text="T404 and W1 are gone." />);
+  expect(host.textContent).toBe("An agent and an order are gone.");
+  // Gone, they open nothing.
   expect(host.querySelector("a")).toBeNull();
+});
+
+it("makes a decision's or a file's id a chip only once the bot has it, and leaves anything else as written", async () => {
+  window.location.hash = "#/project/devbox/storefront";
+  await mount(<RefText text="D5 says so, F2 has it. Press F12, or use D1." />);
+  await settle();
+  expect(host.textContent).toBe("A decision says so, brief.pdf has it. Press F12, or use D1.");
+  expect(chips()).toEqual([
+    ["D5", "A decision", "#/project/devbox/storefront/decisions"],
+    ["F2", "brief.pdf", null],
+  ]);
+  window.location.hash = "";
 });
 
 it("shows ids in a message's markdown as chips, a code span of one id too, and leaves code blocks alone", async () => {
