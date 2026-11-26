@@ -428,6 +428,18 @@ export class CloudAccount {
     return { kept: kept.sort() };
   }
 
+  /**
+   * The account was deleted (ACCOUNTS_ACCOUNT_DELETE_PATH): the cloud revoked every key of it and ended its sessions
+   * already, so its hubs only leave the app, asking none of them.
+   */
+  deleted(): void {
+    this.cancel();
+    this.#held = null;
+    for (const hub of this.#ports.cloudHubs()) this.#ports.forget(hub.id);
+    this.#account = null;
+    this.#ports.save(null);
+  }
+
   async #endSession(config: CloudConfig, sessionId: string): Promise<void> {
     await this.#post(config, ACCOUNTS_SIGN_OUT_PATH, { sessionId }).catch(() => undefined);
   }

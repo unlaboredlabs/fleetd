@@ -1,4 +1,4 @@
-import { ChevronRight, CircleAlert, Ellipsis, Plus, TriangleAlert } from "lucide-react";
+import { ChevronRight, CircleAlert, Ellipsis, ExternalLink, Plus, TriangleAlert } from "lucide-react";
 import { createContext, useContext, useId, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button, cx, Dialog, Dot, Menu, MenuContent, MenuItem, MenuTrigger, Text, Toggle, Tooltip, type ButtonProps, type TextTone } from "../../ui";
@@ -347,6 +347,8 @@ export function SettingsListRow(props: {
   children?: ReactNode | undefined;
   controls?: ReactNode | undefined;
   open?: { href: string } | { onClick: () => void } | undefined;
+  /** What `open` opens is a page in the browser: an arrow out trails the row in the chevron's place. */
+  external?: boolean | undefined;
   expanded?: boolean | undefined;
   /** Marks for tests and the QA screens (`data-…`). */
   data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
@@ -403,7 +405,11 @@ export function SettingsListRow(props: {
               </span>
             )}
             {props.controls}
-            {props.open === undefined ? null : <ChevronRight className={g.chevron} data-open={props.expanded === true ? "" : undefined} aria-hidden />}
+            {props.open === undefined ? null : props.external === true ? (
+              <ExternalLink className={g.chevron} aria-hidden />
+            ) : (
+              <ChevronRight className={g.chevron} data-open={props.expanded === true ? "" : undefined} aria-hidden />
+            )}
           </div>
         )}
       </div>

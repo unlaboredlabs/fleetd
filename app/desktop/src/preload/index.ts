@@ -4,7 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
-import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, NewWorkspaceOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacLeaveOutcome, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -169,6 +169,8 @@ const api: FleetdApi = {
     revokeInvite: (hub, inviteId) => ipcRenderer.invoke(IPC.cloudRevokeInvite, hub, inviteId) as Promise<RevokeInviteOutcome>,
     deleteTeam: (hub, name) => ipcRenderer.invoke(IPC.cloudDeleteTeam, hub, name) as Promise<DeleteTeamOutcome>,
     newWorkspace: (from, name) => ipcRenderer.invoke(IPC.cloudNewWorkspace, from, name) as Promise<NewWorkspaceOutcome>,
+    accountPreview: () => ipcRenderer.invoke(IPC.cloudAccountPreview) as Promise<AccountPreviewOutcome>,
+    deleteAccount: (email) => ipcRenderer.invoke(IPC.cloudDeleteAccount, email) as Promise<DeleteAccountOutcome>,
     installGithub: (hub) => ipcRenderer.invoke(IPC.cloudInstallGithub, hub) as Promise<InstallGithubOutcome>,
     billing: (hub) => ipcRenderer.invoke(IPC.cloudBilling, hub) as Promise<BillingOutcome>,
     billingOpen: (hub, what) => ipcRenderer.invoke(IPC.cloudBillingOpen, hub, what) as Promise<BillingOpenOutcome>,

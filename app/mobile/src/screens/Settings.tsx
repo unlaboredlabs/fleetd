@@ -5,7 +5,8 @@
 // (Cloud.tsx), for an admin Restart Hub and its update, Machines (the machines, the team's providers and what runs where) and
 // Providers (what agents run on: Anthropic, Google; Providers.tsx), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
-// hub that has one, Memory (the person's own, with Import Memory), this phone (its notifications, name and app), and Disconnect, which asks first.
+// hub that has one, Memory (the person's own, with Import Memory), this phone (its notifications, name and app), fleetd.sh's
+// Privacy Policy, Terms of Service and Support in Safari (App Store 5.1.1(i)), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -20,6 +21,7 @@ import { atRest, MY_NAME_MAX, NameField, shownName, type NameEdit } from "../myN
 import { pushDeps } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
+import { Icon } from "../ui/Icon";
 import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { shortVersion } from "../updates";
@@ -34,6 +36,10 @@ import { machinesShown } from "../machines";
 import { billingShown, readTeamBilling, type BillingState } from "../billing";
 import { claudeShown } from "../claude";
 import { deleteTeam, deleteTeamShown } from "../team";
+import { LEGAL_PAGES } from "../accountDelete";
+
+/** Settings' words for fleetd.sh's pages, in iOS's title case. */
+const LEGAL_TITLES = { privacy: "Privacy Policy", terms: "Terms of Service", support: "Support" } as const;
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
 const updateWords = (): string => {
@@ -220,6 +226,17 @@ export function Settings() {
         <ListRow title="Name" value={Device.deviceName ?? undefined} />
         <ListRow title="App version" value={version} selectable />
         <ListRow title="App update" value={updateWords()} />
+      </ListSection>
+      <ListSection>
+        {LEGAL_PAGES.map((page) => (
+          <ListRow
+            key={page.id}
+            title={LEGAL_TITLES[page.id]}
+            onPress={() => void Linking.openURL(page.url)}
+            accessory={<Icon name="external" size={14} color={t.tertiary} />}
+            chevron={false}
+          />
+        ))}
       </ListSection>
       <ListSection footer={`Signs this phone out of ${paired.hubName}. Pairing again takes a new code.`}>
         <ListRow title="Disconnect" destructive onPress={disconnect} chevron={false} />

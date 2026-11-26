@@ -6,13 +6,17 @@
 // Back from the sign-in page, iOS's own alerts name the account ("Signed in as <email>", Sign Out or Continue), then
 // ask about each invitation, Join or Not Now, before anything pairs (decision hosted.invites-need-accept). Under the two
 // ways, a quiet Sign in with a review code opens App Review's way in (D737): the demo address and its fixed code, sent
-// in place of the page, then the same questions and pairing.
+// in place of the page, then the same questions and pairing. Signed in, Delete Account (App Store 5.1.1(v)) says what
+// goes (as the cloud reads it first: the workspaces that go and any plan that stops, those left) and asks for the
+// account's email typed back in one iOS prompt, or says what holds it back, then has the cloud delete it; the phone forgets its
+// workspaces and, with none of its own left, shows the first screen. Under the ways, Terms · Privacy opens fleetd.sh's.
 import { getRandomBytes } from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
-import { Alert, AppState, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, AppState, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { blockedLine, deleteAccountLines, emailMatches, LEGAL_PAGES } from "../accountDelete";
 import { signInAsking, type AfterSignInAsk, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
 import { builtCloudConfig, type CloudConfig } from "../cloud/config";
 import { invitationLine, invitationTitle, type PairFailure } from "../desktop";
@@ -149,6 +153,29 @@ export function Ways({ onOwn, onReview, onSignedIn }: { onOwn: () => void; onRev
       <Text style={[type.footnote, styles.review, { color: t.tertiary }]} accessibilityRole="link" onPress={busy ? undefined : onReview} suppressHighlighting={false}>
         Sign in with a review code
       </Text>
+      <Legal />
+    </View>
+  );
+}
+
+/** fleetd.sh's terms and privacy policy, a quiet line of two links in Safari. */
+function Legal() {
+  const t = useTheme();
+  const open = (id: "terms" | "privacy", label: string) => {
+    const page = LEGAL_PAGES.find((p) => p.id === id);
+    return (
+      <Text style={[type.footnote, { color: t.secondary }]} accessibilityRole="link" accessibilityLabel={page?.title} onPress={() => page !== undefined && void Linking.openURL(page.url)} suppressHighlighting={false}>
+        {label}
+      </Text>
+    );
+  };
+  return (
+    <View style={styles.legal}>
+      {open("terms", "Terms")}
+      <Text style={[type.footnote, { color: t.tertiary }]} accessibilityElementsHidden importantForAccessibility="no">
+        ·
+      </Text>
+      {open("privacy", "Privacy")}
     </View>
   );
 }
@@ -255,7 +282,7 @@ export function ConnectComputer() {
  */
 export function CloudSettings() {
   const t = useTheme();
-  const { paired, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace } = useHub();
+  const { paired, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace, previewCloudAccount, deleteCloudAccount } = useHub();
   const { busy, note, start } = useSignIn(signedIn);
   const [leaving, setLeaving] = useState(false);
   const [making, setMaking] = useState(false);
@@ -264,6 +291,56 @@ export function CloudSettings() {
     void signOutCloud().finally(() => setLeaving(false));
   };
   const teams = hubs.filter((h) => h.cloud === true);
+  // One prompt: what goes, read from the cloud first, then the email typed back, which the cloud checks too.
+  const [deleting, setDeleting] = useState<"reading" | "deleting" | null>(null);
+  const onDelete = (email: string) => {
+    if (Platform.OS !== "ios") return Alert.alert("Delete Account", "Delete your account in the desktop app or the web app, under Settings.");
+    haptics.tap();
+    setDeleting("reading");
+    void previewCloudAccount().then((read) => {
+      setDeleting(null);
+      if (!read.ok) {
+        haptics.warning();
+        return Alert.alert("Couldn't read your account", `${read.failure.message} ${read.failure.fix ?? ""}`.trim());
+      }
+      const blocked = blockedLine(read.value);
+      if (blocked !== null) {
+        haptics.warning();
+        return Alert.alert("Your Account Can't Be Deleted Yet", blocked);
+      }
+      haptics.warning();
+      ask(email, deleteAccountLines(read.value));
+    });
+  };
+  const ask = (email: string, lines: readonly string[]) => {
+    const remove = (typed?: string) => {
+      if (typed === undefined || typed.trim() === "") return;
+      if (!emailMatches(typed, email)) return Alert.alert("That isn't your account's email", `Type ${email} to delete the account.`);
+      setDeleting("deleting");
+      void deleteCloudAccount(typed)
+        .then((failure) => {
+          if (failure !== null) {
+            haptics.warning();
+            Alert.alert("Your account wasn't deleted", `${failure.message} ${failure.fix ?? ""}`.trim());
+            return;
+          }
+          haptics.success();
+          Alert.alert("Your fleetd account is deleted");
+        })
+        .finally(() => setDeleting(null));
+    };
+    Alert.prompt(
+      "Delete Your fleetd Account?",
+      `${lines.join("\n\n")}\n\nThis can't be undone. Type ${email} to confirm.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: remove },
+      ],
+      "plain-text",
+      "",
+      "email-address",
+    );
+  };
   const late = account === null ? [] : missed;
   const canMake = cloud !== null && account !== null && teams.length > 0;
   const make = (name: string) => {
@@ -310,6 +387,8 @@ export function CloudSettings() {
         >
           <ListRow title="Email" value={account.email} selectable />
           <ListRow title={leaving ? "Signing Out…" : "Sign Out"} destructive {...(leaving ? {} : { onPress: signOut })} chevron={false} />
+          {/* Asked on one of the account's workspaces: with none on this phone, there is nowhere to ask. */}
+          {teams.length === 0 ? null : <ListRow title={deleting === "deleting" ? "Deleting…" : deleting === "reading" ? "Loading…" : "Delete Account"} destructive {...(deleting !== null || leaving ? {} : { onPress: () => onDelete(account.email) })} chevron={false} />}
         </ListSection>
       )}
     </>
@@ -329,6 +408,7 @@ const styles = StyleSheet.create({
   ways: { gap: space.lg, alignItems: "stretch", alignSelf: "center", width: "100%", maxWidth: COLUMN },
   way: { gap: space.sm },
   review: { textAlign: "center", alignSelf: "center", paddingVertical: space.xs },
+  legal: { flexDirection: "row", justifyContent: "center", gap: space.sm, paddingVertical: space.xs },
   form: { alignSelf: "center", width: "100%", maxWidth: COLUMN },
   fieldRow: { minHeight: TOUCH, justifyContent: "center", paddingHorizontal: space.lg },
   input: { paddingVertical: 11 },

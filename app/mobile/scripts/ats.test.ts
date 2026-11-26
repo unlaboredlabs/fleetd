@@ -15,9 +15,15 @@ describe("app.config.ts", () => {
     const manifest = config({ projectRoot: process.cwd() } as ConfigContext).ios?.privacyManifests;
     expect(manifest?.NSPrivacyTracking).toBe(false);
     expect(manifest?.NSPrivacyCollectedDataTypes?.map((d) => d.NSPrivacyCollectedDataType)).toEqual([
+      "NSPrivacyCollectedDataTypeName",
       "NSPrivacyCollectedDataTypeEmailAddress",
+      "NSPrivacyCollectedDataTypePhoneNumber",
+      "NSPrivacyCollectedDataTypePhysicalAddress",
+      "NSPrivacyCollectedDataTypePaymentInfo",
+      "NSPrivacyCollectedDataTypeEmailsOrTextMessages",
       "NSPrivacyCollectedDataTypePhotosorVideos",
       "NSPrivacyCollectedDataTypeOtherUserContent",
+      "NSPrivacyCollectedDataTypeUserID",
       "NSPrivacyCollectedDataTypeDeviceID",
     ]);
     for (const d of manifest?.NSPrivacyCollectedDataTypes ?? []) {

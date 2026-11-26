@@ -1,11 +1,13 @@
 // A fleetd cloud team's invites by email (contracts: Accounts.json, ACCOUNTS_INVITES_PATH): three plain HTTP calls to
 // the team's own address with this device's key, as an owner or admin; and the owner's delete of the team
-// (ACCOUNTS_TEAM_DELETE_PATH), and a new workspace of the person's own (ACCOUNTS_WORKSPACES_PATH). The team answers who may and what it refuses
+// (ACCOUNTS_TEAM_DELETE_PATH), a new workspace of the person's own (ACCOUNTS_WORKSPACES_PATH), and the person's delete of
+// their own account (ACCOUNTS_ACCOUNT_DELETE_PATH). The team answers who may and what it refuses
 // (not an email, someone already on the team or invited, the team at its limit of people); its words are shown as
 // written. Main makes them for a hub that came with the account only, so a self-hosted hub is never asked.
 import { z } from "zod";
-import type { DeleteTeamOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome } from "../../shared/cloud";
-import { ACCOUNTS_INVITES_PATH, ACCOUNTS_TEAM_DELETE_PATH, ACCOUNTS_WORKSPACES_PATH } from "../../shared/contracts";
+import type { DeleteTeamOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, AccountPreviewOutcome, DeleteAccountOutcome } from "../../shared/cloud";
+import { ACCOUNTS_INVITES_PATH, ACCOUNTS_TEAM_DELETE_PATH, ACCOUNTS_WORKSPACES_PATH, ACCOUNTS_ACCOUNT_DELETE_PATH, ACCOUNTS_ACCOUNT_PATH } from "../../shared/contracts";
+import { readPreview } from "../../shared/legal";
 import type { PairFailure } from "../../shared/pairing";
 import type { Fetch } from "../pairing/hubHttp";
 
@@ -102,4 +104,25 @@ export const deleteTeam = async (fetch: Fetch, team: KeyedTeam, name: string): P
 export const makeWorkspace = async (fetch: Fetch, team: KeyedTeam, name: string): Promise<Answer> => {
   const named = name.trim();
   return call(fetch, team, "POST", ACCOUNTS_WORKSPACES_PATH, named === "" ? {} : { name: named });
+};
+
+/** What deleting the person's account would take, read on `team` (any of theirs) before asking. */
+export const accountPreview = async (fetch: Fetch, team: KeyedTeam): Promise<AccountPreviewOutcome> => {
+  const answer = await call(fetch, team, "GET", ACCOUNTS_ACCOUNT_PATH);
+  if (!answer.ok) return { ok: false, failure: answer.failure };
+  const preview = readPreview(answer.body);
+  return preview === null ? odd(team) : { ok: true, preview };
+};
+
+const Deleted = z.object({ workspaces: z.array(z.string().max(200)).max(1000) });
+
+/**
+ * The person's delete of their own account, for good, asked on `team` (any of theirs: the key only says who asks):
+ * `email` theirs typed back, which the cloud checks. Answered, every key of theirs is revoked already.
+ */
+export const deleteAccount = async (fetch: Fetch, team: KeyedTeam, email: string): Promise<DeleteAccountOutcome> => {
+  const answer = await call(fetch, team, "POST", ACCOUNTS_ACCOUNT_DELETE_PATH, { email: email.trim() });
+  if (!answer.ok) return { ok: false, failure: answer.failure };
+  const deleted = Deleted.safeParse(answer.body);
+  return { ok: true, workspaces: deleted.success ? deleted.data.workspaces : [] };
 };

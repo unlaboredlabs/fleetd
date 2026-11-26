@@ -203,6 +203,8 @@ export const fixtures = [
   "cloud-account-signed-out",
   // ...and New workspace in the switcher, refused at the most one person may make.
   "cloud-workspace-cap",
+  "cloud-account-delete",
+  "cloud-account-delete-blocked",
   // ...and People on a team: its owner and an admin invite by email, a member sees no People page, and a team at its
   // limit refuses an invite.
   "cloud-people-owner",
@@ -3433,6 +3435,18 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-account", "cloud-account-signed-out"], variant: "fleetd-account" },
+  // Delete account: what goes as the cloud reads it (a workspace left, one deleted with its plan stopping), the email
+  // to type back; and held back, the only owner of a workspace with others in it, with no field to type in.
+  {
+    id: "settings.hubs",
+    route: "#/settings/hubs",
+    fixtures: ["cloud-account-delete", "cloud-account-delete-blocked"],
+    variant: "delete-account",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Delete account…" }).click();
+      await page.getByRole("dialog").getByText("Your sign-in and its history are erased.", { exact: false }).or(page.getByRole("dialog").getByText("You're the only owner", { exact: false })).first().waitFor({ timeout: 10_000 });
+    },
+  },
   // Sign in from Settings: who signed in, then the invitation, each in a dialog before anything connects.
   {
     id: "settings.hubs",
@@ -5110,6 +5124,14 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator("[data-fleet-cap]").scrollIntoViewIfNeeded();
     },
+  },
+  // General's last group, About: fleetd.sh's privacy policy, terms and support, each opening in the browser.
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "about",
+    open: (page) => page.locator("[data-legal=support]").scrollIntoViewIfNeeded(),
   },
   // Settings search: an option found by its name, and by nothing.
   {

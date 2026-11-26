@@ -1,15 +1,16 @@
 // Settings › You › General: your name (Name.tsx), Appearance (and on the Mac the see-through sidebar) and time in the
 // app, then Notifications (Notifications.tsx) and Version: the one status of updates (updates/model.ts), with this
 // app's own update when it has one. Updating the hub and its machines is its owners' and admins'; a member reads where
-// things stand.
+// things stand. Last, About: fleetd's privacy policy, terms and support, each opened in the browser (shared/legal.ts).
 import { useEffect, useState } from "react";
+import { LEGAL_PAGES } from "../../../shared/legal";
 import { canSeeThrough, Segmented, THEME_MODES, useSeeThrough, useTheme } from "../../ui";
 import { useServes } from "../admin/role";
 import { useUpdateStatus } from "../updates/hooks";
 import { UpdateStatus } from "../updates/UpdateStatus";
 import { YourName } from "./Name";
 import { Notifications } from "./Notifications";
-import { PageHead, SettingsRow, SettingsSection, SwitchRow } from "./parts";
+import { PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import s from "./settings.module.css";
 import { onWeb } from "../../src/web";
 
@@ -33,6 +34,7 @@ export function General() {
         </SettingsSection>
         <Notifications />
         <Versions />
+        <About />
       </div>
     </div>
   );
@@ -49,6 +51,26 @@ function Versions() {
   return (
     <SettingsSection title="Version" reveal="general.updates">
       <UpdateStatus status={status} />
+    </SettingsSection>
+  );
+}
+
+/** fleetd.sh's privacy policy, terms and support, in the system browser (the web app's new tab). */
+function About() {
+  return (
+    <SettingsSection title="About" reveal="general.about">
+      <SettingsList label="About fleetd">
+        {LEGAL_PAGES.map((page) => (
+          <SettingsListRow
+            key={page.id}
+            name={page.title}
+            label={page.title}
+            data={{ "data-legal": page.id }}
+            open={{ onClick: () => void window.fleetd.openExternal(page.url) }}
+            external
+          />
+        ))}
+      </SettingsList>
     </SettingsSection>
   );
 }

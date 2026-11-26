@@ -50,9 +50,22 @@ const googleServices = process.env.FLEETD_GOOGLE_SERVICES_FILE || undefined;
 
 /** Apple's names for the data the app collects (ios.privacyManifests). */
 const COLLECTED = [
+  // The account's name, and a vault address's name, email, phone and postal address agents fill in.
+  "NSPrivacyCollectedDataTypeName",
   "NSPrivacyCollectedDataTypeEmailAddress",
+  "NSPrivacyCollectedDataTypePhoneNumber",
+  "NSPrivacyCollectedDataTypePhysicalAddress",
+  // Cards in the vault for agents' checkouts: sealed, but fleetd's servers open them to fill them in.
+  "NSPrivacyCollectedDataTypePaymentInfo",
+  // Chats with bots and messages between people in a workspace.
+  "NSPrivacyCollectedDataTypeEmailsOrTextMessages",
+  // Photos sent in a chat, and profile and project pictures.
   "NSPrivacyCollectedDataTypePhotosorVideos",
+  // Files, shared text and links, memory, skills, vault logins and notes.
   "NSPrivacyCollectedDataTypeOtherUserContent",
+  // The fleetd account and person ids.
+  "NSPrivacyCollectedDataTypeUserID",
+  // The push token notifications go to, and the phone's name under Devices.
   "NSPrivacyCollectedDataTypeDeviceID",
 ] as const;
 
@@ -97,8 +110,8 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
       ITSAppUsesNonExemptEncryption: false,
     },
     // What the app sends that fleetd cloud keeps, for the App Store's privacy report; App Store Connect's App Privacy
-    // answers say the same. Each is linked to the person's account, only for the app to work, and never for tracking:
-    // the account's email at Sign In, the photos and messages sent in a chat, and the push token notifications go to.
+    // answers say the same (artifact app-store-listing). Each is linked to the person's account, only for the app to
+    // work, and never for tracking.
     // Expo merges it into the PrivacyInfo.xcprivacy that already lists the API reasons React Native's pods declare.
     privacyManifests: {
       NSPrivacyTracking: false,
