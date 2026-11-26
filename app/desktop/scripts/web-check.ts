@@ -2,6 +2,7 @@
 // out for the browser leaves its stub, `__vite-browser-external`) and loads nothing from another origin, which the
 // cloud's CSP ('self') would refuse anyway. And its first load, the files index.html names (vite.web.config.ts), comes
 // in one wave and stays within its budget, with nothing in it the first chat doesn't draw. Fails with what it found.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
@@ -18,8 +19,10 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
  * The first load's budget, gzip (level 9) of every file index.html names: 641 KB / 47 files when set (W701), down from
  * 827 KB / 50 files in 3-4 waves; 613 KB / 34 once the side panel loaded after the chat, 441 KB / 28 once the fonts'
  * everyday cut, the markdown parser and the chat's cards of other screens came after it too, 373 KB / 29 once the
- * hub's frames and the session were read without zod and Medium and SemiBold came after the chat (W793). A change that needs more moves what the first chat doesn't draw out of it (a chunk
- * loaded on use, or once the chat has shown: ui/lib/idle.ts), rather than raising these.
+ * hub's frames and the session were read without zod and Medium and SemiBold came after the chat (W793), 383 KB / 22
+ * once the app's shared modules came as one chunk and the icons chunk held only the first chat's (scripts/
+ * firstLoadChunks.ts). A change that needs more moves what the first chat doesn't draw out of it (a chunk loaded on
+ * use, or once the chat has shown: ui/lib/idle.ts), rather than raising these.
  */
 const FIRST_LOAD_KB = 390;
 const FIRST_LOAD_FILES = 32;
@@ -56,6 +59,25 @@ if (!fs.existsSync(path.join(dir, "index.html"))) {
   process.exit(1);
 }
 walk(dir);
+// Each chunk parses as a module, as the browser parses it before anything runs: a chunk that exports a name it never
+// declares (a bundler's slip over a chunk group: scripts/firstLoadChunks.ts) leaves the page blank, budget or not.
+const parse = spawnSync(
+  process.execPath,
+  [
+    "--experimental-vm-modules",
+    "--no-warnings",
+    "--input-type=module",
+    "-e",
+    `import fs from "node:fs"; import vm from "node:vm";
+     for (const file of process.argv.slice(1)) {
+       try { new vm.SourceTextModule(fs.readFileSync(file, "utf8")); } catch (e) { console.log(file + ": " + e.message); }
+     }`,
+    ...fs.readdirSync(path.join(dir, "assets")).filter((f) => f.endsWith(".js")).map((f) => path.join(dir, "assets", f)),
+  ],
+  { encoding: "utf8" },
+);
+if (parse.status !== 0) found.push(`the chunks couldn't be parsed: ${parse.stderr.trim()}`);
+for (const line of parse.stdout.split("\n")) if (line !== "") found.push(path.relative(dir, line));
 if (found.length > 0) {
   console.error(`The web bundle holds what a browser can't run:\n${found.join("\n")}`);
   process.exit(1);
