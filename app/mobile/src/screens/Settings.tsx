@@ -6,7 +6,8 @@
 // Providers (what agents run on: Anthropic, Google; Providers.tsx), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
 // hub that has one, Memory (the person's own, with Import Memory), this phone (its notifications, name and app), fleetd.sh's
-// Privacy Policy, Terms of Service and Support in Safari (App Store 5.1.1(i)), and Disconnect, which asks first.
+// Privacy Policy, Terms of Service and Support in Safari (App Store 5.1.1(i)), and Disconnect, which asks first, where it
+// does something the account's Sign Out doesn't (team.ts disconnectShown).
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -18,7 +19,7 @@ import { linkTone, linkWords as statusOf } from "../chatsBar";
 import type { HubRole } from "../desktop";
 import { useHub, type RootParams, type SettingsParams } from "../hubContext";
 import { atRest, MY_NAME_MAX, NameField, shownName, type NameEdit } from "../myName";
-import { pushDeps } from "../notifications";
+import { askNotifications } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { Icon } from "../ui/Icon";
@@ -28,15 +29,16 @@ import { shortVersion } from "../updates";
 import { removeMyPicture, setMyName } from "./manage/api";
 import { errorWords } from "./manage/parts";
 import { fromLibrary } from "./manage/pick";
-import { CloudSettings } from "./Cloud";
+import { cloud, CloudSettings } from "./Cloud";
 import { RestartHub } from "./RestartHub";
 import { UpdateFleetd } from "./UpdateFleetd";
 import { vaultShown } from "./vault/model";
 import { machinesShown } from "../machines";
 import { billingShown, readTeamBilling, type BillingState } from "../billing";
 import { claudeShown } from "../claude";
-import { deleteTeam, deleteTeamShown } from "../team";
+import { deleteTeam, deleteTeamShown, disconnectShown } from "../team";
 import { LEGAL_PAGES } from "../accountDelete";
+import { DEVICE } from "../device";
 
 /** Settings' words for fleetd.sh's pages, in iOS's title case. */
 const LEGAL_TITLES = { privacy: "Privacy Policy", terms: "Terms of Service", support: "Support" } as const;
@@ -53,7 +55,7 @@ const roleWord = (role: HubRole): string => (role === "owner" ? "Owner" : role =
 
 export function Settings() {
   const t = useTheme();
-  const { paired, state, session, disconnect, forget } = useHub();
+  const { paired, state, session, account, disconnect, forget } = useHub();
   const navigation = useNavigation<NavigationProp<SettingsParams & RootParams>>();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
   // Read again each time it shows, and each time the app comes back to the front on it: the person may have changed it
@@ -75,9 +77,11 @@ export function Settings() {
   // Never asked: asks here (its new token registers the phone with the hub); else iOS Settings is where it changes.
   const onNotifications = () => {
     if (notifications !== "Not asked yet") return void Linking.openSettings();
-    void pushDeps
-      .token()
-      .catch(() => null)
+    void askNotifications()
+      .then((allowed) => {
+        if (allowed) session.registerPush();
+      })
+      .catch(() => undefined)
       .then(read);
   };
   // Whether the team has Billing yet: read on each visit, as the page itself is; a failed read keeps the last answer.
@@ -222,8 +226,8 @@ export function Settings() {
       <ListSection>
         <ListRow title="Memory" onPress={() => navigation.navigate("Memory")} />
       </ListSection>
-      <ListSection header="This phone">
-        <ListRow title="Notifications" detail="Sealed so only this phone reads them" value={notifications} onPress={onNotifications} />
+      <ListSection header={`This ${DEVICE}`}>
+        <ListRow title="Notifications" detail={`Sealed so only this ${DEVICE} reads them`} value={notifications} onPress={onNotifications} />
         <ListRow title="Name" value={Device.deviceName ?? undefined} />
         <ListRow title="App version" value={version} selectable />
         <ListRow title="App update" value={updateWords()} />
@@ -239,9 +243,11 @@ export function Settings() {
           />
         ))}
       </ListSection>
-      <ListSection footer={`Signs this phone out of ${paired.hubName}. Pairing again takes a new code.`}>
-        <ListRow title="Disconnect" destructive onPress={disconnect} chevron={false} />
-      </ListSection>
+      {disconnectShown(paired, cloud !== null && account !== null) ? (
+        <ListSection footer={`Signs this ${DEVICE} out of ${paired.hubName} only. Pairing again takes a new code.`}>
+          <ListRow title={`Disconnect from ${paired.hubName}`} destructive onPress={disconnect} chevron={false} />
+        </ListSection>
+      ) : null}
     </ScrollView>
   );
 }

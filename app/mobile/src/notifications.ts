@@ -47,8 +47,9 @@ export const pushDeps: PushDeps = {
     // Never asks in the screens run's simulator build (mac.yml's ios screens, app/mobile/scripts/screens.sh): its
     // driver can't answer a system prompt on the iPhone Duo simulator. Unset, and so gone, in every other build.
     if (process.env.EXPO_PUBLIC_FLEETD_SCREENS === "1") return null;
-    // Asks once; a phone that said no gets nothing, so isn't registered.
-    if (!(await Notifications.requestPermissionsAsync()).granted) return null;
+    // Never asks: iOS's prompt comes only from the app's own question first (NotifyAsk) or Settings' Notifications row
+    // (askNotifications). Until it's allowed, the phone isn't registered.
+    if (!(await Notifications.getPermissionsAsync()).granted) return null;
     const token = await Notifications.getDevicePushTokenAsync();
     return typeof token.data === "string" ? token.data : null;
   },
@@ -63,6 +64,12 @@ export const pushDeps: PushDeps = {
   onScreen: (key) => {
     onScreen = key;
   },
+};
+
+/** iOS's (or Android's) own prompt, asked once the person chose to turn notifications on: whether they're allowed. */
+export const askNotifications = async (): Promise<boolean> => {
+  if (process.env.EXPO_PUBLIC_FLEETD_SCREENS === "1") return false;
+  return (await Notifications.requestPermissionsAsync()).granted;
 };
 
 const channels = async (): Promise<void> => {

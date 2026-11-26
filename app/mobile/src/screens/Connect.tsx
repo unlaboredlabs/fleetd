@@ -17,6 +17,7 @@ import type { PairParams } from "../hubContext";
 import { deviceName } from "../hub/deviceName";
 import { pair, type Paired } from "../hub/pair";
 import { CLOUD_CODE, pairLinkStep, pastedPair, type Pasted } from "../hub/pairLink";
+import { DEVICE } from "../device";
 import { COLUMN, mono, space, TOUCH, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
@@ -85,7 +86,7 @@ export function Scan({ navigation }: NativeStackScreenProps<PairParams, "Scan">)
     if (done.current || (seen.current?.data === data && now - seen.current.at < 2500)) return;
     seen.current = { data, at: now };
     // The person opened the scanner to pair: a good code pairs at once (a link from outside asks first, App.tsx).
-    const step = pairLinkStep(data, "scanner", null);
+    const step = pairLinkStep(data, "scanner", null, null, DEVICE);
     if (step.t !== "pair") {
       haptics.warning();
       setProblem(step.t === "refuse" ? step.failure.message : "That isn't a fleetd pairing code.");
@@ -181,7 +182,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
     const failed = result.ok
       ? await onPaired(result.paired).then(
           () => null,
-          (): PairFailure => ({ code: "", message: "This phone couldn't keep the workspace's key in its keychain.", fix: "Show a new code on the workspace and try again." }),
+          (): PairFailure => ({ code: "", message: `This ${DEVICE} couldn't keep the workspace's key in its keychain.`, fix: "Show a new code on the workspace and try again." }),
         )
       : result.failure;
     if (failed === null) {

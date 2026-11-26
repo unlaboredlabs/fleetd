@@ -1,6 +1,6 @@
 // Settings › Devices: the person's own devices on this hub, newest first (devices.ts), where the "New sign-in"
 // notification opens. Tapping another device asks, then signs it out (device_revoke): its key stops working at once.
-// This phone is marked and has no action here: Disconnect in Settings signs it out.
+// This device is marked and has no action here: Disconnect in Settings (or the account's Sign Out) signs it out.
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { listTime } from "../chatView";
 import { myDevices, signOutWords } from "../devices";
@@ -10,6 +10,7 @@ import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { confirmDestructive, errorWords, Problem, useRead } from "./manage/parts";
 import { useNow } from "./time";
+import { DEVICE } from "../device";
 
 export function Devices() {
   const t = useTheme();
@@ -43,7 +44,7 @@ export function Devices() {
         <ListSection footer="One you don't know? Tap it to sign it out.">
           {rows.map((d) =>
             d.here ? (
-              <ListRow key={d.keyId} title={d.name} detail={d.detail} value="This phone" chevron={false} />
+              <ListRow key={d.keyId} title={d.name} detail={d.detail} value={`This ${DEVICE}`} chevron={false} />
             ) : (
               <ListRow key={d.keyId} title={d.name} detail={d.detail} chevron={false} onPress={() => signOut(d.keyId, d.name)} />
             ),

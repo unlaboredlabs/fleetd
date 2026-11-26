@@ -76,9 +76,10 @@ export type LinkStep =
 
 /**
  * `cloudDomain`: the domain fleetd cloud's teams live under, from the build's accounts address (null without one): a
- * link to a host under it is a team anyone can make, and the question says so.
+ * link to a host under it is a team anyone can make, and the question says so. `device`: what the question calls this
+ * device (an iPad is an iPad: device.ts).
  */
-export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null, cloudDomain: string | null = null): LinkStep => {
+export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null, cloudDomain: string | null = null, device = "phone"): LinkStep => {
   const link = parsePairLink(text);
   if (link === null) return { t: "ignore" };
   if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another workspace, disconnect under Settings first, then scan its code again." };
@@ -90,7 +91,7 @@ export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWi
     code: link.code,
     title: `Connect to ${link.hub.replace(/^https?:\/\//u, "")}?`,
     message: inDomain(link.hub, cloudDomain)
-      ? `${CLOUD_TEAM_LINK} This phone then gets its notifications.`
-      : `This phone pairs with the workspace at ${link.hub}, which then sees it and sends it notifications. Connect only to a workspace you or your team run.`,
+      ? `${CLOUD_TEAM_LINK} This ${device} then gets its notifications.`
+      : `This ${device} pairs with the workspace at ${link.hub}, which then sees it and sends it notifications. Connect only to a workspace you or your team run.`,
   };
 };

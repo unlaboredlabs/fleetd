@@ -59,6 +59,7 @@ import { PinnedGrid } from "./Pinned";
 import { SectionLabel, useSectionMenus } from "./Sections";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
+import { DEVICE } from "../device";
 
 const AVATAR = 52;
 /** How long the line that says why a change to the sections was taken back stays. */
@@ -285,7 +286,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       <EmptyState
         icon="offline"
         title="Can't Reach the Workspace"
-        body={`${paired.hubName} isn't answering. Check that this phone is on the workspace's network, or its VPN, and that the workspace is running.`}
+        body={`${paired.hubName} isn't answering. Check that this ${DEVICE} is on the workspace's network, or its VPN, and that the workspace is running.`}
         action={{
           label: "Try Again",
           onPress: () => {
