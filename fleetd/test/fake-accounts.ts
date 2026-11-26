@@ -166,6 +166,8 @@ export class FakeAccounts {
   readonly #makes = new Map<string, string>();
   /** Each team deleted by its owner (POST ACCOUNTS_TEAM_DELETE_PATH), by name. */
   readonly deleted: string[] = [];
+  /** Each team's title, as its people named it (GET and POST /accounts/v1/team); none: its name, the address's. */
+  readonly titles = new Map<string, string>();
   /** The teams on a plan, by name: deleting an account that takes one stops it. */
   readonly plans = new Set<string>();
   /** People removed from their team since: their next sign-in makes them none. */
@@ -301,7 +303,7 @@ export class FakeAccounts {
   #entry(team: Team, email: string): AccountsSignInOutput["teams"][number] {
     const code = pairingCode();
     team.codes.set(code, email);
-    return { id: team.id, name: team.name, url: team.url, pairingCode: code, made: team.maker === email };
+    return { id: team.id, name: this.titles.get(team.name) ?? team.name, url: team.url, pairingCode: code, made: team.maker === email };
   }
 
   /** A team's open invites by email, newest first. */
@@ -454,7 +456,25 @@ export class FakeAccounts {
     if (req.method === "POST" && path === ACCOUNTS_WORKSPACES_PATH) return this.#newWorkspace(name, req, res);
     if (req.method === "POST" && path === ACCOUNTS_ACCOUNT_DELETE_PATH) return this.#deleteAccount(name, req, res);
     if (req.method === "GET" && path === ACCOUNTS_ACCOUNT_PATH) return this.#accountPreview(name, req, res);
+    if (path === "/accounts/v1/team") return this.#title(name, req, res);
     fail(res, 404, { code: "not_found", message: "Nothing here." });
+  }
+
+  /** GET and POST /accounts/v1/team: the team as its people see it, and its title changed by an owner or admin. */
+  async #title(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const team = this.#teams.get(name)!;
+    const bearer = /^Bearer (.+)$/u.exec(req.headers.authorization ?? "")?.[1];
+    const caller = this.keys.find((k) => k.team === name && k.key === bearer);
+    if (caller === undefined) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    const role = team.roles.get(caller.email);
+    const canRename = role === "owner" || role === "admin";
+    if (req.method === "POST") {
+      if (!canRename) return fail(res, 403, { code: "forbidden", message: "Only an owner or admin renames the workspace.", fix: "Ask an owner or admin of this workspace." });
+      const title = str(await readBody(req), "name")?.trim() ?? "";
+      if (title === "" || title.length > 64) return fail(res, 400, { code: "invalid", message: "Name the workspace in 1 to 64 characters." });
+      this.titles.set(name, title);
+    }
+    send(res, 200, { name: this.titles.get(name) ?? name, address: team.url, canRename });
   }
 
   /** POST ACCOUNTS_TEAM_DELETE_PATH, in fleetd-cloud's words (src/accounts/accounts.ts `deleteTeam`). */

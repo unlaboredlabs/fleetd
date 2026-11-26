@@ -12,7 +12,7 @@ import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
 import { cloudConfig } from "./config";
 import { realCloud } from "./index";
-import { deleteTeam, listInvites, makeWorkspace, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
+import { deleteTeam, listInvites, makeWorkspace, renameTeam, revokeInvite, sendInvite, teamName, type KeyedTeam } from "./invites";
 
 // The stand-in's clock, so nothing here reads today's date.
 const NOW = Date.parse("2026-10-19T10:30:00.000Z");
@@ -117,6 +117,16 @@ describe("a cloud team's invites by email", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // The Mac named a workspace by its address's slug, read once at sign-in (W890): its name is read from the cloud, and a
+  // rename here goes there, an owner's or admin's, so it's the same everywhere.
+  it("reads the workspace's name, and renames it for an owner or admin only", async () => {
+    expect(await teamName(fetch, as("bob@acme.example"))).toBe("acme");
+    expect(await renameTeam(fetch, as("bob@acme.example"), "Acme Labs")).toEqual({ ok: false, message: "Only an owner or admin renames the workspace. Ask an owner or admin of this workspace." });
+    expect(await renameTeam(fetch, as("alice@acme.example"), "Acme Labs")).toEqual({ ok: true });
+    expect(await teamName(fetch, as("bob@acme.example"))).toBe("Acme Labs");
+    expect(await teamName(fetch, { ...as("bob@acme.example"), key: "fld_gone" })).toBeNull();
   });
 
   it("deletes the team for its owner alone, the name typed again, never while an agent runs; then the app forgets it", async () => {

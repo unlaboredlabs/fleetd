@@ -71,7 +71,11 @@ export const registerIpc = (
   const call = (id: string) => (tool: string, input: unknown, timeoutMs?: number) =>
     hubs.get(id)?.call({ tool, input: input as CallRequest["input"], ...(timeoutMs === undefined ? {} : { timeoutMs }) }) ?? Promise.resolve(gone);
   handle(IPC.hubsList, () => hubs.list());
-  handle(IPC.hubsUpdate, (_event, id, change) => hubs.update(id, change));
+  // A cloud workspace's new name goes to the cloud first, which names it for everyone; refused, nothing changes here.
+  handle(IPC.hubsUpdate, async (_event, id, change) => {
+    const renamed = await cloud.rename(id, change.label);
+    return renamed.ok ? hubs.update(id, change) : renamed;
+  });
   hubs.onChange((list) => {
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.hubsChanged, list);
   });
