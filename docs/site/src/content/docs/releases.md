@@ -25,7 +25,7 @@ rolled out.
 
 Each workspace is in a fixed stage, worked out from a random id it creates for itself and keeps. Workspaces never report which
 build they run, and nothing is sent from your workspace. The desktop app follows the same stages with its own id. The phone
-gets a new over-the-air bundle once its build has reached every workspace.
+app gets each merged change within minutes instead (see [Over-the-air updates](/docs/mobile#updates)).
 
 A machine still on a fleetd from before these versions can only take the newest build. While your workspace runs an older
 one, Settings › Workspace › Machines › Updates says that machine is waiting. It updates once the workspace runs the newest build,

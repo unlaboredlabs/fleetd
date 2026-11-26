@@ -1,5 +1,5 @@
 # Moves builds through the rollout (D701, .github/release/rollout.ts): every 10 minutes it checks the first ring's gate
-# and points the desktop app's and the phone's feeds at the builds each stage has reached. GitHub's schedule alone lags by
+# and points the desktop app's feeds at the builds each stage has reached. GitHub's schedule alone lags by
 # hours on this repo, so the ticker also starts after each edge run and each flag, and ticks every 10 minutes for as
 # long as a build is still moving (waiting on the gate, or not yet at everyone), then ends; one ticker at a time.
 # fleetd's own hub starts it with `pass` once it passed its self-check on a build. Halting or pulling a build is one
@@ -52,7 +52,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ACTION: ${{ inputs.action }}
           BUILD: ${{ inputs.build }}
-          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: bun .github/release/rollout.ts "$ACTION" "$BUILD"
 
   ticker:
@@ -74,7 +73,6 @@ jobs:
       - name: Tick while a build is moving
         env:
           GH_TOKEN: ${{ github.token }}
-          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: |
           end=$(( $(date +%s) + 340 * 60 ))
           while :; do

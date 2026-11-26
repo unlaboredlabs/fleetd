@@ -28,6 +28,7 @@ import { sendAgain } from "./src/appErrors";
 import { appErrors, catchUncaught } from "./src/appErrorsDevice";
 import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
+import { watchUpdates } from "./src/appUpdateWatch";
 import { webSocketTransport } from "./src/hub/socket";
 import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
 import { cloudDomain, WORKSPACE_DELETED, type PairFailure } from "./src/desktop";
@@ -131,6 +132,8 @@ export default function App() {
   const [hubs, setHubs] = useState<readonly KeptHub[]>([]);
   const [account, setAccount] = useState<SavedAccount | null>(null);
   const [note, setNote] = useState<string | undefined>(undefined);
+  // A new over-the-air update runs as the app comes back from behind (src/appUpdate.ts).
+  useEffect(watchUpdates, []);
   // Storage that can't be read pairs again, rather than leave a blank screen.
   useEffect(() => {
     void (async () => {

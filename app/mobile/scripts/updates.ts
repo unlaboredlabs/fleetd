@@ -14,7 +14,11 @@
 //   holds, so an unchanged release doesn't redeploy fleetd.sh.
 //
 // A manifest's id comes from its contents, so a release whose JavaScript didn't change publishes the same id and no
-// phone downloads it again.
+// phone downloads it again. Its createdAt is when it is signed, after every build its runtime version has (their runs
+// take turns): expo-updates runs only an update newer than the bundle a build embeds, which it stamps as it builds.
+//
+// A launch bundle that isn't Hermes bytecode is refused: the builds run Hermes, and expo-updates would load it, fail,
+// and fall back to the bundle before it on every launch.
 import { createHash, sign } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,6 +29,8 @@ export const BOUNDARY = "fleetd-update";
 /** The code signing metadata app.config.ts gives expo-updates. */
 export const KEY_ID = "main";
 export const ALG = "rsa-v1_5-sha256";
+/** The first bytes of a Hermes bytecode file (hermesc's magic number, little-endian). */
+export const HERMES_MAGIC = Buffer.from([0xc6, 0x1f, 0xbc, 0x03, 0xc1, 0x03, 0x19, 0x1f]);
 
 export type Platform = "ios" | "android";
 type Asset = { hash: string; key: string; contentType: string; fileExtension: string; url: string };
@@ -57,6 +63,7 @@ const base64url = (b: Buffer) => b.toString("base64").replaceAll("+", "-").repla
 /** One file of the export as the manifest names it, and where it goes under the channel's directory. */
 function asset(dist: string, path: string, ext: string, launch: boolean, base: string): { asset: Asset; file: string } {
   const bytes = readFileSync(join(dist, path));
+  if (launch && !bytes.subarray(0, HERMES_MAGIC.length).equals(HERMES_MAGIC)) throw new Error(`${path} isn't Hermes bytecode`);
   const key = createHash("md5").update(bytes).digest("hex");
   const fileExtension = launch ? ".bundle" : `.${ext}`;
   const file = `assets/${key}${fileExtension}`;

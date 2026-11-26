@@ -22,8 +22,9 @@
 // The desktop app reads its feed on edge by its bucket (app/desktop/src/main/update-stage.ts): stage10-*.yml below 10,
 // stage50-*.yml below 50, latest-*.yml otherwise, and apps from before stages read latest. Each is the feed of the
 // newest build that reached that share (a build that didn't change the app has none: the nearest older build's), its
-// files named by their full address in that build's release. The phone takes its over-the-air bundle when a build
-// reaches everyone: edge's mobile-updates.tar.gz is then that build's, and fleetd.sh deploys it.
+// files named by their full address in that build's release. The phone's over-the-air updates aren't staged here: they
+// go out after each merge (mobile-release.yml, D800), and a bundle that crashes as it starts goes back to the one
+// before it on the phone itself.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -473,21 +474,6 @@ async function tick(): Promise<void> {
   };
   const edge = new Set(assets(TAG));
   writeFeeds(r, now, work, filesOf, edge);
-
-  // The phone's bundle: the newest build that reached everyone and has one.
-  const everyone = r.builds.find(
-    (b) => b.haltedAt === undefined && b.pulledAt === undefined && percentAt(b, now) === 100 && filesOf(b.build).includes("mobile-updates.tar.gz"),
-  );
-  if (everyone) {
-    const want = readFileSync(download(releaseOf(everyone.build), "mobile-updates.tar.gz", join(work, everyone.build)));
-    const has = edge.has("mobile-updates.tar.gz") ? readFileSync(download(TAG, "mobile-updates.tar.gz", join(work, "edge"))) : undefined;
-    if (has === undefined || Bun.hash(has) !== Bun.hash(want)) {
-      gh(["release", "upload", TAG, join(work, everyone.build, "mobile-updates.tar.gz"), "--clobber"]);
-      console.log(`mobile-updates.tar.gz: ${everyone.build}`);
-      const hook = process.env.SITE_DEPLOY_HOOK;
-      if (hook) await fetch(hook, { method: "POST" }).catch((e: unknown) => console.log(`the site's deploy hook failed: ${String(e)}`));
-    }
-  }
 
   // The builds this tick stopped listing lose their files; their releases stay, for their notes.
   for (const build of dropped) {

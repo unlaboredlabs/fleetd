@@ -13,7 +13,7 @@ import {
 } from "@expo/code-signing-certificates";
 import { parseDictionary } from "structured-headers";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { ALG, BOUNDARY, KEY_ID, type Manifest, publish } from "./updates";
+import { ALG, BOUNDARY, HERMES_MAGIC, KEY_ID, type Manifest, publish } from "./updates";
 
 const RUNTIME = "c000c8604aa0d2894156f26ad966e2a8e5ec81ae";
 const URL = "https://fleetd.sh/updates";
@@ -40,8 +40,8 @@ function exported(iosBundle = "ios bytecode"): string {
   mkdirSync(join(dist, "_expo/static/js/ios"), { recursive: true });
   mkdirSync(join(dist, "_expo/static/js/android"), { recursive: true });
   mkdirSync(join(dist, "assets"));
-  writeFileSync(join(dist, "_expo/static/js/ios/index-1.hbc"), iosBundle);
-  writeFileSync(join(dist, "_expo/static/js/android/index-2.hbc"), "android bytecode");
+  writeFileSync(join(dist, "_expo/static/js/ios/index-1.hbc"), Buffer.concat([HERMES_MAGIC, Buffer.from(iosBundle)]));
+  writeFileSync(join(dist, "_expo/static/js/android/index-2.hbc"), Buffer.concat([HERMES_MAGIC, Buffer.from("android bytecode")]));
   writeFileSync(join(dist, "assets/0f1e"), "png bytes");
   writeFileSync(
     join(dist, "metadata.json"),
@@ -136,7 +136,7 @@ describe("update manifests", () => {
       expect(a.hash).toBe(sha256(bytes));
       expect(a.key).toBe(createHash("md5").update(bytes).digest("hex"));
     }
-    expect(readFileSync(join(out, m.launchAsset.url.slice(`${URL}/edge/`.length)), "utf8")).toBe("ios bytecode");
+    expect(readFileSync(join(out, m.launchAsset.url.slice(`${URL}/edge/`.length))).subarray(HERMES_MAGIC.length).toString()).toBe("ios bytecode");
   });
 
   it("keep their id while the bundle is the same, so phones don't download it again", () => {
@@ -161,6 +161,12 @@ describe("update manifests", () => {
     expect(() =>
       publish({ dist: exported(), out: mkdtempSync(join(tmpdir(), "updates-out-")), url: URL, channel: "edge", privateKeyPem: keyPem, runtimes: { ios: "../x" }, createdAt: "" }),
     ).toThrow("isn't one site/vercel.json routes");
+  });
+
+  it("refuse a launch bundle that isn't Hermes bytecode, which the builds couldn't run", () => {
+    const dist = exported();
+    writeFileSync(join(dist, "_expo/static/js/ios/index-1.hbc"), "globalThis.app = 1;");
+    expect(() => published(dist)).toThrow("_expo/static/js/ios/index-1.hbc isn't Hermes bytecode");
   });
 });
 
