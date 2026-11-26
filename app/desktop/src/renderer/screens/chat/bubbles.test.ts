@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatBlock, ChatMessage } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
-import { askAnswer, bubblesOf, quoted, quoteOf, replyOf, replyText, unshownOnly, type Bubble } from "./bubbles";
+import { askAnswer, bubblesOf, quoted, quoteOf, replyOf, replyText, unshownOnly } from "./bubbles";
 
 const AT = "2026-10-19T09:00:00.000Z";
 const item = (id: string, author: ChatItem["author"], text: string, over: Partial<ChatItem> = {}): ChatItem => ({

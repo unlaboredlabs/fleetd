@@ -42,7 +42,9 @@ else settingsCommands();
 // Chat reactions stayed on this device and nothing read them, so they're gone: so is what an older build kept of them.
 try {
   window.localStorage.removeItem("fleetd.tapbacks");
-} catch {}
+} catch {
+  // Storage off: there is nothing kept to clear.
+}
 // Checklist removals the last run quit before sending, each to its own hub.
 sendKept((hub) => hubs.getState().hubs.find((h) => h.id === hub)?.layer);
 
