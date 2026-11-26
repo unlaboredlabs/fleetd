@@ -954,8 +954,7 @@ export const screens: readonly Screen[] = [
       await box.press("Enter");
       await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
       await page.locator('[data-composer] input[type="file"]').setInputFiles({ name: "checkout-error.png", mimeType: "image/png", buffer: PNG });
-      // A picture shows as its thumbnail once drawn, and drops its dimming once uploaded.
-      await expect(page.locator('[data-attached="checkout-error.png"]:not([data-uploading])')).toBeVisible();
+      await expect(page.getByText(/checkout-error\.png · \d+ B/)).toBeVisible();
       // The receipts at rest: off the bubbles, whose hover strip would show beside them.
       await page.mouse.move(0, 0);
     },

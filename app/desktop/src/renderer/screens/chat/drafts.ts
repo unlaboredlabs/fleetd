@@ -12,7 +12,7 @@ import { holdOnReload } from "../../src/held";
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts";
 import { sendFile, type Wait } from "../../../shared/transfer";
 import { TAKES } from "../../../shared/files";
-import { fmtBytes, looksText, MAX_ATTACHMENTS, mimeFor, TEXT_HEAD, thumbnail, toBase64 } from "./attachments";
+import { fmtBytes, looksText, MAX_ATTACHMENTS, mimeFor, TEXT_HEAD, toBase64 } from "./attachments";
 
 /** Uploaded: the hub's reference to the file, which a message carries. */
 export type Upload = { readonly ok: true; readonly ref: AttachmentRef } | { readonly ok: false; readonly message: string };
@@ -25,8 +25,6 @@ export interface Attached {
   readonly upload?: Upload;
   /** The file itself, kept while its upload failed, for Try again. */
   readonly file?: File;
-  /** A picture's small square, as a data: URL, and the picture itself for its large preview, once drawn. */
-  readonly thumb?: { readonly src: string; readonly picture: File };
 }
 
 export interface Draft {
@@ -120,12 +118,6 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
           const { error: _, ...rest } = d;
           return { ...rest, attached: [...d.attached, { local, name: file.name, bytes: file.size }] };
         });
-        // A picture shows as itself in the box before it goes, drawn here from the file, never read back.
-        if (file.type.startsWith("image/")) {
-          void thumbnail(file).then((src) => {
-            if (src !== undefined) set(key, (d) => ({ ...d, attached: d.attached.map((a) => (a.local === local ? { ...a, thumb: { src, picture: file } } : a)) }));
-          });
-        }
         void file.slice(0, TEXT_HEAD).arrayBuffer().then(async (head) => {
           const mime = mimeFor(file.name, looksText(head));
           if (!mime) return settle(key, local, undefined, `${file.name} can't be sent: chats take ${TAKES}.`);

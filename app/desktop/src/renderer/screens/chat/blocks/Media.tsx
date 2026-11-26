@@ -8,7 +8,7 @@ import { useToolQuery } from "../../../src/data/react";
 import { useSeen } from "../../live";
 import { cx, Text } from "../../../ui";
 import { useBubbleActions } from "../actions";
-import { useOpenImage } from "../viewing";
+import { useOpenImage } from "../ImageViewer";
 import { Picture } from "../picture";
 import b from "./blocks.module.css";
 

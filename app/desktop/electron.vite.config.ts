@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import type { Plugin } from "vite";
-import { pdfjsDecoders } from "./scripts/pdfjsDecoders.ts";
 import { preloadChunks } from "./scripts/preloadChunks.ts";
 
 const CSP_DEV =
@@ -30,7 +29,7 @@ export default defineConfig({
     // first data render asks for it (the rows would mount blank and fill in only after React's suspense reveal). And the
     // two faces the first paint sets its text in (font-display: block holds it for them), which the page would otherwise
     // find only as it lays out; a face split by script loads its Latin half up front, never its "-more" one.
-    plugins: [react(), devCsp(), pdfjsDecoders(), preloadChunks({ entries: ["src/renderer/ui/markdown/MarkdownBody.tsx"], fonts: /Geist-(Regular|SemiBold)-basic-/u })],
+    plugins: [react(), devCsp(), preloadChunks({ entries: ["src/renderer/ui/markdown/MarkdownBody.tsx"], fonts: /Geist-(Regular|SemiBold)-basic-/u })],
     // The FLEETD_RECORD encoder is a page of its own (src/main/instrument/record.ts); nothing else loads it.
     // Minified: a third of the code for the renderer to parse at launch.
     build: { minify: true, rollupOptions: { input: { index: resolve(import.meta.dirname, "src/renderer/index.html"), recorder: resolve(import.meta.dirname, "src/renderer/demo/recorder.html") } } },
