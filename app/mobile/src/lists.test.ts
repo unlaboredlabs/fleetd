@@ -97,6 +97,17 @@ describe("lists", () => {
   });
 });
 
+describe("a sign-in form", () => {
+  it("is said as a sign-in to fill in here, not a secret for the desktop", () => {
+    const projects = { "m1/shop": project("shop", "Shop") };
+    const signIn = { ...asked("Q7"), kind: "secret", projectRef: { machineId: "m1", projectId: "shop" }, secureInput: { signIn: { fields: ["username", "password"] } } } as unknown as HumanRequest;
+    const typed = { ...asked("Q8"), kind: "secret", projectRef: { machineId: "m1", projectId: "shop" } } as HumanRequest;
+    const want = (requests: HumanRequest[]) => lists({ projects, chatStates: {}, requests })?.needsYou.map((r) => r.want);
+    expect(want([signIn])).toEqual(["1 sign-in to fill in"]);
+    expect(want([typed])).toEqual(["1 secret to enter on the desktop"]);
+  });
+});
+
 describe("a long chat's preview", () => {
   const ref = { machineId: "m1", projectId: "a" };
   const m = (seq: number, author: string, text: string) => ({ messageId: `a-${String(seq)}`, projectRef: ref, seq, author, text, state: "final", createdAt: AT });

@@ -2,20 +2,23 @@
 // username, the password with a show toggle (or the code the site sent), "Securely save to Vault" on by default, and
 // Submit. What is typed is sealed on the phone to the workspace's own key and goes with secret_submit; the workspace
 // fills it into the agent's page and, saved, keeps the login in the team vault for that site. It never enters the chat.
-import { useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from "react-native";
+import { type ComponentRef, useRef, useState } from "react";
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from "react-native";
 import type { SecretRequestItem, SignInField } from "../desktop";
 import { useHub } from "../hubContext";
 import { shape, space, type, useTheme } from "../theme";
 import { Button } from "../ui/Button";
-import { Card } from "../ui/Card";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
+import { PRESSED_OPACITY } from "../ui/motion";
 import { ListSection } from "../ui/List";
 import { SheetRoom } from "../ui/StripRoom";
 import { errorWords } from "./manage/parts";
 import { codeOnly, signInAsks, signInOutcome } from "./signInModel";
 import { sealToHub } from "./vault/api";
+
+/** How long the emptied fields stay before the sheet closes, so iOS sees them empty. */
+const CLEAR_MS = 150;
 
 const WORDS: Record<SignInField, string> = { username: "Email or username", password: "Password", otp: "Code" };
 
@@ -28,6 +31,9 @@ export function SignInCard({ item }: { item: SecretRequestItem }) {
   const listed = state.requests?.find((r) => r.requestId === item.requestId);
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState<string | undefined>(undefined);
+  // Filled, the card folds only once its sheet has gone: unmounted with a typed password in it, the sheet would make
+  // iOS offer to save that password to the person's own keychain.
+  const filled = useRef<string | undefined>(undefined);
   if (input === undefined || signIn === undefined) return null;
   const code = codeOnly(signIn.fields);
   const settled = done ?? (item.state === "stored" ? signInOutcome(signIn.fields, signIn.saved !== undefined) : listed === undefined && state.requests !== undefined ? "Answered" : undefined);
@@ -49,37 +55,45 @@ export function SignInCard({ item }: { item: SecretRequestItem }) {
     const r = await session.call("secret_submit", { requestId: item.requestId, sealed, save: save && !code });
     if (!r.ok) return r.error.code === "invalid" ? "Not filled in: the page may have moved on. Try again, or tell the agent in the chat." : errorWords(r.error);
     const next = (r.output as { next?: unknown }).next;
-    setDone(signInOutcome(signIn.fields, typeof next === "string" && next.includes("saved to the vault as")));
+    filled.current = signInOutcome(signIn.fields, typeof next === "string" && next.includes("saved to the vault as"));
+    // Android's Modal has no onDismiss: it folds as the sheet closes.
+    if (Platform.OS !== "ios") setDone(filled.current);
     return undefined;
   };
+  const openForm = () => {
+    haptics.tap();
+    setOpen(true);
+  };
+  // As a screen's card beside it (ScreenCards.tsx): a tile, the title and a line, a pill; the whole card opens the form.
   return (
-    <Card style={styles.card}>
-      <View style={styles.row}>
-        <View style={[styles.mark, { backgroundColor: t.fillQuiet }]}>
-          <Icon name="credential" size={17} color={t.secondary} />
+    <View style={styles.cards}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${input.label}. ${input.site.domain}`}
+        accessibilityHint={code ? "Opens a secure form for the code" : "Opens a secure form"}
+        accessibilityState={{ disabled: sealTo === undefined }}
+        disabled={sealTo === undefined}
+        onPress={openForm}
+        style={({ pressed }) => [styles.card, { backgroundColor: t.surface }, pressed && styles.pressed]}
+      >
+        <View style={[styles.tile, { backgroundColor: t.accentDeep }]}>
+          <Icon name="credential" size={20} color="#FFFFFF" weight="semibold" />
         </View>
         <View style={styles.grow}>
-          <Text style={[type.headline, { color: t.label }]} numberOfLines={2}>
+          <Text style={[type.subhead, styles.strong, { color: t.label }]} numberOfLines={1}>
             {input.label}
           </Text>
-          <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={1}>
+          <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={2}>
             {input.site.domain} · {code ? "Asks for the code it sent you" : "Opens a secure form"}
           </Text>
+          {sealTo === undefined ? <Text style={[type.footnote, { color: t.warning }]}>Update fleetd on the workspace's machine to fill this in here.</Text> : null}
         </View>
-        <Button
-          label="Open"
-          kind="tinted"
-          size="small"
-          disabled={sealTo === undefined}
-          onPress={() => {
-            haptics.tap();
-            setOpen(true);
-          }}
-        />
-      </View>
-      {sealTo === undefined ? <Text style={[type.footnote, { color: t.warning }]}>Update fleetd on the workspace's machine to fill this in here.</Text> : null}
-      <SignInSheet visible={open} title={input.label} domain={input.site.domain} why={input.why} asks={signInAsks(signIn.fields)} code={code} onClose={() => setOpen(false)} onSubmit={submit} />
-    </Card>
+        <View style={[styles.button, { backgroundColor: t.fillQuiet }]}>
+          <Text style={[type.subhead, styles.strong, { color: t.accent }]}>Open</Text>
+        </View>
+      </Pressable>
+      <SignInSheet visible={open} title={input.label} domain={input.site.domain} why={input.why} asks={signInAsks(signIn.fields)} code={code} onClose={() => setOpen(false)} onDismissed={() => filled.current !== undefined && setDone(filled.current)} onSubmit={submit} />
+    </View>
   );
 }
 
@@ -92,6 +106,8 @@ function SignInSheet(props: {
   asks: SignInField[];
   code: boolean;
   onClose: () => void;
+  /** iOS: the sheet has gone. */
+  onDismissed: () => void;
   onSubmit: (values: Partial<Record<SignInField, string>>, save: boolean) => Promise<string | undefined>;
 }) {
   const t = useTheme();
@@ -101,15 +117,17 @@ function SignInSheet(props: {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const ready = props.asks.every((f) => (values[f] ?? "").trim() !== "");
-  const reset = () => {
+  const inputs = useRef(new Map<SignInField, ComponentRef<typeof TextInput>>());
+  // iOS offers to save a password into the person's own keychain when a sheet goes with one typed in it: the fields
+  // are emptied on the native side first, and the sheet closes a moment after, whether it was sent or cancelled.
+  const close = () => {
+    for (const input of inputs.current.values()) input.clear();
+    Keyboard.dismiss();
     setValues({});
     setShown(false);
     setSave(true);
     setProblem(undefined);
-  };
-  const close = () => {
-    reset();
-    props.onClose();
+    setTimeout(props.onClose, CLEAR_MS);
   };
   const send = async () => {
     if (!ready || busy) return;
@@ -126,9 +144,14 @@ function SignInSheet(props: {
     close();
   };
   const field = (f: SignInField, i: number) => {
-    // iOS offers a strong password or the person's own saved one for a username beside a secure field; a one-time
-    // code's content type stops that, so nothing but what they type goes in (as the vault's own form does).
-    const common: TextInputProps = {
+    // iOS offers a strong password, or the person's own saved one, for a username beside a secure field, and to save
+    // what was typed: a one-time code's content type on both stops it, so nothing but what they type goes in and
+    // nothing is kept outside fleetd's vault.
+    const common: TextInputProps & { ref: (r: ComponentRef<typeof TextInput> | null) => void } = {
+      ref: (r) => {
+        if (r === null) inputs.current.delete(f);
+        else inputs.current.set(f, r);
+      },
       value: values[f] ?? "",
       onChangeText: (v) => setValues((was) => ({ ...was, [f]: v })),
       placeholder: WORDS[f],
@@ -156,13 +179,13 @@ function SignInSheet(props: {
             </Pressable>
           </>
         ) : (
-          <TextInput {...common} keyboardType="email-address" textContentType="none" autoComplete="off" />
+          <TextInput {...common} keyboardType="email-address" textContentType="oneTimeCode" autoComplete="off" />
         )}
       </View>
     );
   };
   return (
-    <Modal visible={props.visible} animationType="slide" presentationStyle="formSheet" onRequestClose={close}>
+    <Modal visible={props.visible} animationType="slide" presentationStyle="formSheet" onRequestClose={close} onDismiss={props.onDismissed}>
       <SheetRoom style={{ flex: 1, backgroundColor: t.grouped }}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" onAccessibilityEscape={close}>
           <View style={styles.head}>
@@ -196,10 +219,13 @@ function SignInSheet(props: {
 }
 
 const styles = StyleSheet.create({
-  card: { gap: space.sm },
-  row: { flexDirection: "row", alignItems: "center", gap: space.md },
-  mark: { width: 36, height: 36, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center" },
-  grow: { flex: 1, gap: 1 },
+  cards: { paddingHorizontal: space.md, paddingTop: space.sm },
+  card: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: shape.card, borderCurve: "continuous", padding: space.md },
+  tile: { width: 40, height: 40, borderRadius: 12, borderCurve: "continuous", alignItems: "center", justifyContent: "center" },
+  grow: { flex: 1, gap: 2 },
+  strong: { fontWeight: "600", flexShrink: 1 },
+  button: { minHeight: 34, borderRadius: 17, paddingHorizontal: 14, justifyContent: "center" },
+  pressed: { opacity: PRESSED_OPACITY },
   outcome: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginVertical: space.sm, paddingHorizontal: space.xl },
   outcomeText: { flexShrink: 1 },
   body: { paddingTop: space.xl, paddingBottom: space.xxl },

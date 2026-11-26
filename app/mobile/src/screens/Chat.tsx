@@ -1130,11 +1130,7 @@ function ItemView({
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} item={inline} />;
   if (inline?.kind === "secret_request" && inline.secureInput?.signIn !== undefined) {
-    return (
-      <View style={[styles.card, styles.groupGap]}>
-        <SignInCard item={inline} />
-      </View>
-    );
+    return <SignInCard item={inline} />;
   }
   if (inline?.kind === "secret_request") {
     // A secure input says what it is and where it goes; either way the value is typed only where it is sealed.
