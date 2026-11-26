@@ -12,7 +12,12 @@ import type { Session } from "../session";
 const read = new WeakMap<Session, Map<string, string | null>>();
 const reading = new WeakMap<Session, Map<string, Promise<void>>>();
 
+/** When a read that failed (offline, a timeout) may be tried again: until then the chip says its plain word. */
+const missed = new WeakMap<Session, Map<string, number>>();
+const MISS_MS = 30_000;
+
 const known = (session: Session, id: string): string | null | undefined => read.get(session)?.get(id);
+const resting = (session: Session, id: string): boolean => (missed.get(session)?.get(id) ?? 0) > Date.now();
 
 const readTitle = (session: Session, r: Ref): Promise<void> => {
   const busy = reading.get(session) ?? new Map<string, Promise<void>>();
@@ -24,15 +29,22 @@ const readTitle = (session: Session, r: Ref): Promise<void> => {
     read.set(session, titles);
     titles.set(r.id, title);
   };
-  // Only a workspace that says it has no such thing is an answer: a dropped link is read again by the next one shown.
+  // Only a workspace that says it has no such thing is an answer: a dropped link or a timeout is read again, once
+  // MISS_MS has passed, rather than on each redraw while the workspace errors.
   const gone = (error: { code: string }) => {
     if (error.code === "not_found") keep(null);
+    else miss();
+  };
+  const miss = () => {
+    const misses = missed.get(session) ?? new Map<string, number>();
+    missed.set(session, misses);
+    misses.set(r.id, Date.now() + MISS_MS);
   };
   const call =
     r.kind === "agent"
       ? session.call("task_get", { taskId: r.id }).then((x) => (x.ok ? keep(x.output.task.title) : gone(x.error)))
       : session.call("order_get", { workstreamId: r.id }).then((x) => (x.ok ? keep(x.output.order.title) : gone(x.error)));
-  const done = call.catch(() => undefined).finally(() => busy.delete(r.id));
+  const done = call.catch(miss).finally(() => busy.delete(r.id));
   busy.set(r.id, done);
   return done;
 };
@@ -54,14 +66,18 @@ const useTitles = (refs: readonly Ref[]): Array<string | undefined> => {
     [orders, refs],
   );
   const [, setRead] = useState(0);
-  const wanted = useMemo(
-    () => (session === undefined ? [] : refs.filter((r, i) => open[i] === undefined && (r.kind === "agent" || r.kind === "order") && known(session, r.id) === undefined)),
-    [session, refs, open],
-  );
+  // What still needs a read, as its ids: the effect runs again only when that changes, never on a redraw alone.
+  const wanted = (session === undefined ? [] : refs.filter((r, i) => open[i] === undefined && (r.kind === "agent" || r.kind === "order") && known(session, r.id) === undefined && !resting(session, r.id)))
+    .map((r) => `${r.kind}:${r.id}`)
+    .join(" ");
   useEffect(() => {
-    if (session === undefined || wanted.length === 0) return;
+    if (session === undefined || wanted === "") return;
     let live = true;
-    void Promise.all(wanted.map((r) => readTitle(session, r))).then(() => {
+    const reads = wanted.split(" ").map((w) => {
+      const [kind, id = ""] = w.split(":");
+      return readTitle(session, { id, kind: kind === "order" ? "order" : "agent", opens: false });
+    });
+    void Promise.all(reads).then(() => {
       if (live) setRead((n) => n + 1);
     });
     return () => {
@@ -88,7 +104,9 @@ export const useSpoken = (text: string): string => {
 
 /** One id by its name (inside a Text); `plain`, in the words' own weight (a chats list's preview). */
 export function Name({ of, plain = false }: { of: Ref; plain?: boolean }) {
-  const refs = useMemo(() => [of], [of]);
+  // By its id and kind: a bubble draws a new `of` each time, which mustn't count as a new id.
+  const { id, kind, opens } = of;
+  const refs = useMemo(() => [{ id, kind, opens }], [id, kind, opens]);
   const [title] = useTitles(refs);
   return <Text style={title === undefined || plain ? undefined : styles.name}>{title ?? refWord(of)}</Text>;
 }
