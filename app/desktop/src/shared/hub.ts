@@ -133,6 +133,7 @@ export const BOT_ADMIN_ONLY = "Only admins can change this.";
 
 /**
  * Whether a person in `role` is held off a bot's safety settings (approvals, who merges, max agents, its card, its
- * automations, deleting it): a member. No role known (a workspace from before people) holds no one off.
+ * automations, deleting it): a member, and anyone while the workspace hasn't said yet (undefined), so a member never
+ * sees them flash on. A workspace from before people, which answers with no person (null), holds no one off.
  */
-export const botLocked = (role: string | undefined): boolean => role !== undefined && role !== "owner" && role !== "admin";
+export const botLocked = (role: string | null | undefined): boolean => role !== null && role !== "owner" && role !== "admin";

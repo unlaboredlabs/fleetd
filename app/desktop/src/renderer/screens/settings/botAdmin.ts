@@ -5,5 +5,9 @@ import { useHubRole } from "../admin/role";
 
 export { BOT_ADMIN_ONLY } from "../../../shared/hub";
 
-/** True once the workspace says this app's person is a member. */
-export const useBotLocked = (): boolean => botLocked(useHubRole().me?.role);
+/** True for a member, and until the workspace has said who this app's person is. */
+export function useBotLocked(): boolean {
+  const role = useHubRole();
+  const answered = !role.pending && !role.offline;
+  return botLocked(role.me?.role ?? (answered ? null : undefined));
+}

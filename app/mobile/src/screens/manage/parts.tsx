@@ -68,10 +68,14 @@ export function Problem({ text }: { text: string | undefined }) {
 }
 
 /**
- * True once the workspace says this phone's person is a member: a bot's safety settings (who merges, approvals,
+ * True for a member, and until the workspace has said who this phone's person is: a bot's safety settings (who merges, approvals,
  * payments, watchers, deleting it) are its admins', so a member sees them off, with BOT_ADMIN_ONLY under them.
  */
-export const useBotLocked = (): boolean => botLocked(useHub().state.meRole);
+export function useBotLocked(): boolean {
+  const { state } = useHub();
+  // `admin` is set once the workspace has answered who this phone's person is; before that, locked.
+  return botLocked(state.meRole ?? (state.admin === undefined ? undefined : null));
+}
 
 /** A section's own footnote under something that isn't a ListSection. */
 export function Note({ children }: { children: ReactNode }) {
