@@ -54,8 +54,8 @@ test("Android and desktop screens that can't run read as optional, never as step
   expect(list.failures()).toEqual([]);
   expect(list.needsYou()).toEqual([]);
   expect(list.items.map((i) => [i.title, i.state, i.detail.split(",")[0]!.split(":")[0], i.fix])).toEqual([
-    ["vps1", "skipped", "Android screens are optional", "sudo usermod -aG kvm alex"],
-    ["vps1", "skipped", "Desktop screens are optional", "sudo apt-get install -y xvfb"],
+    ["vps1", "skipped", "Android screens are optional", "On vps1: sudo usermod -aG kvm alex"],
+    ["vps1", "skipped", "Desktop screens are optional", "On vps1: sudo apt-get install -y xvfb"],
   ]);
   // An older node's words say neither: the line adds both.
   const older = new Checklist();
@@ -67,6 +67,37 @@ test("Android and desktop screens that can't run read as optional, never as step
   const other = new Checklist();
   tally(other, show(other, [{ id: "hub/vault_key", status: "warn", message: "no recovery code" }], []), "other checks");
   expect(other.items.at(-1)).toMatchObject({ title: "doctor", state: "warn", detail: "0 of 1 other checks pass" });
+});
+
+test("a fix says its title with its command: who runs it, and what has to come first", () => {
+  const list = new Checklist();
+  const checks = [
+    {
+      id: "hub/service_manager",
+      scope: "hub",
+      status: "warn",
+      message: "Linger is off for sam: the workspace stops when sam logs out, and starts again only at their next login.",
+      fix: { kind: "manual", label: "As an admin on the workspace's machine, once", command: 'sudo sh -c "loginctl enable-linger sam"', on: "hub" },
+    },
+    {
+      id: "hub/https",
+      scope: "hub",
+      status: "warn",
+      message: "The workspace has no address set up (fleetd init --url).",
+      fix: {
+        kind: "manual",
+        label: "Serve the workspace over HTTPS (Tailscale Serve shown), then stop the workspace and run fleetd init --url https://<that address>",
+        command: "tailscale serve --bg 4790",
+      },
+    },
+    { id: "hub/vault_key", scope: "hub", status: "warn", message: "No recovery code.", fix: { kind: "manual", label: "unlock it in Settings › Vault" } },
+  ];
+  show(list, checks, []);
+  expect(list.items.map((i) => i.fix)).toEqual([
+    'As an admin on the workspace\'s machine, once: sudo sh -c "loginctl enable-linger sam"',
+    "Serve the workspace over HTTPS (Tailscale Serve shown), then stop the workspace and run fleetd init --url https://<that address>: tailscale serve --bg 4790",
+    "unlock it in Settings › Vault",
+  ]);
 });
 
 test("a clone that failed with no GitHub login says to log in, never to use gh where gh isn't there", () => {

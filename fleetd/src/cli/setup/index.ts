@@ -44,7 +44,7 @@ function serviceFailure(said: string): string {
 export function hubServiceSpec(home: string, listen: string, exe: string, path: string, userHome: string): ServiceSpec {
   return {
     role: "hub",
-    description: "fleetd hub",
+    description: "fleetd workspace",
     program: [exe, "hub", "start", "--home", home, "--listen", listen],
     env: [
       ["HOME", userHome],

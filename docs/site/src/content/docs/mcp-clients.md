@@ -120,7 +120,7 @@ FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_get '{}'
 - `approval_answer`, `secret_submit`: answer a request (human key only).
 - `project_stop`: stop all of a bot's agents (human key only).
 
-Most tools take a `projectRef`, such as `{"machineId": "devbox", "projectId": "<id>"}`. `fleetd project list` prints
-both parts.
+Most tools take a `projectRef`, such as `{"machineId": "devbox", "projectId": "<id>"}`. `fleetd project list --ids`
+prints both parts.
 
 Every tool, with its inputs: [Agent tools](/docs/reference/agent-tools).

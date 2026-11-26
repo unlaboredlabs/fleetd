@@ -24,7 +24,7 @@ const CHANGES_A_ROW = [
   "usage.breaker", "usage.resumed", "ci.main", "source.stale", "source.fresh",
 ];
 
-export type StatusArgs = { hub?: [string, string]; home?: string; target: string; watch: boolean; json: boolean };
+export type StatusArgs = { hub?: [string, string]; home?: string; target: string; watch: boolean; json: boolean; ids: boolean };
 
 /** `--hub` and `--key-file`, both or neither. */
 export function hubFlags(v: { str(n: string): string | undefined }): [string, string] | undefined {
@@ -37,7 +37,7 @@ export function hubFlags(v: { str(n: string): string | undefined }): [string, st
 }
 
 export function parseStatusArgs(argv: string[]): StatusArgs {
-  const v = parse(argv, { options: { workspace: "str", "key-file": "str", watch: "bool", json: "bool" }, positionals: true });
+  const v = parse(argv, { options: { workspace: "str", "key-file": "str", watch: "bool", json: "bool", ids: "bool" }, positionals: true });
   if (v instanceof ArgError) throw v;
   if (v.positionals.length > 1) throw new ArgError(`give one bot, got '${v.positionals.join(" ")}'`);
   const hub = hubFlags(v);
@@ -46,6 +46,7 @@ export function parseStatusArgs(argv: string[]): StatusArgs {
     target: v.positionals[0] ?? "",
     watch: v.flag("watch"),
     json: v.flag("json"),
+    ids: v.flag("ids"),
   };
 }
 
@@ -96,9 +97,10 @@ function countsLine(row: any): string {
     .join(" · ");
 }
 
-function itemLine(i: any): string {
+/** An item's line: its agent's id (T12) only with `--ids`, as a person reads the title. */
+function itemLine(i: any, ids: boolean): string {
   const refs: string[] = [];
-  if (i.taskId !== undefined) refs.push(String(i.taskId));
+  if (ids && i.taskId !== undefined) refs.push(String(i.taskId));
   if (i.pr !== undefined) refs.push(`#${i.pr.number}`);
   if (i.why !== undefined) refs.push(String(i.why));
   return `  ${GROUP[i.group] ?? i.group}: ${i.title}${refs.length === 0 ? "" : ` (${refs.join(", ")})`}`;
@@ -117,9 +119,9 @@ function word(row: any): string {
   }
 }
 
-function renderRow(row: any, zone: string): string[] {
+function renderRow(row: any, zone: string, ids: boolean, named: string): string[] {
   const now = row.asOf;
-  const out = [`${row.title}: ${word(row)}`];
+  const out = [`${named}: ${word(row)}`];
   const counts = countsLine(row);
   const agents = row.agentsRunning === 1 ? "1 agent" : `${row.agentsRunning} agents`;
   const m = row.lastMerged;
@@ -136,16 +138,24 @@ function renderRow(row: any, zone: string): string[] {
     out.push(`  ${row.merged7d} merged in 7 days${share}`);
   }
   if (row.warning !== undefined && row.warning !== null) out.push(`  warning: ${row.warning}`);
-  out.push(...(row.items ?? []).map(itemLine));
+  out.push(...(row.items ?? []).map((i: any) => itemLine(i, ids)));
   if (row.stale) out.push(`  STALE since ${at(row.stale.since, now, zone)}: ${row.stale.reason}`);
   return out;
 }
 
-export function render(rows: any[], zone: string): string {
+/** The rows; a bot whose title another bot has too is named with its machine (`app on devbox`), and with `ids` each
+ * says its `<machine>/<id>`. */
+export function render(rows: any[], zone: string, ids = false): string {
   const first = rows[0];
   if (first === undefined) return "no bots yet";
   const out = [`Status at ${at(first.asOf, first.asOf, zone)}`];
-  for (const row of rows) out.push("", ...renderRow(row, zone));
+  const shared = (row: any) => rows.filter((r) => r.title === row.title).length > 1;
+  for (const row of rows) {
+    const machine = row.projectRef?.machineId;
+    let named = shared(row) && typeof machine === "string" ? `${row.title} on ${machine}` : String(row.title);
+    if (ids && row.projectRef !== undefined) named += ` (${row.projectRef.machineId}/${row.projectRef.projectId})`;
+    out.push("", ...renderRow(row, zone, ids, named));
+  }
   return out.join("\n");
 }
 
@@ -244,8 +254,8 @@ async function run(args: StatusArgs, target: Target): Promise<number> {
   const tty = args.watch && !args.json && process.stdout.isTTY === true;
   const show = (rows: any[]) => {
     if (args.json) process.stdout.write(`${JSON.stringify(rows.map((row) => ({ row })))}\n`);
-    else if (tty) process.stdout.write(`\x1b[H\x1b[2J${render(rows, zone)}\n`);
-    else process.stdout.write(`${render(rows, zone)}\n\n`);
+    else if (tty) process.stdout.write(`\x1b[H\x1b[2J${render(rows, zone, args.ids)}\n`);
+    else process.stdout.write(`${render(rows, zone, args.ids)}\n\n`);
   };
   const banner = (line: string) => {
     if (args.json) process.stdout.write(`${JSON.stringify({ notLive: line })}\n`);

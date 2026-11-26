@@ -109,7 +109,8 @@ export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>]
              start a new, empty bot: the machine makes its folder (~/fleetd/projects/<name>
              by default, or --dest; one that holds files is refused). A plain folder with no
              repo, unless --git-init; add a repo later with project repo add
-  project list [--archived] [--machine <id>] [--workspace <url>]
+  project list [--archived] [--machine <id>] [--ids] [--workspace <url>]
+             each bot as <machine>/<bot>, its folder; --ids adds each bot's id
   project archive <machine>/<bot> [--workspace <url>]
              its lead stops and doesn't start again; its chat, memory and folder stay
   project unarchive <machine>/<bot> [--workspace <url>]
@@ -253,13 +254,14 @@ export const METRICS_USAGE = `  metrics [--project <p>] [--days 30] [--json] [--
              --workspace or --key-file
 `;
 
-export const STATUS_USAGE = `  status [<bot>] [--watch] [--json] [--workspace <url> --key-file <path>]
+export const STATUS_USAGE = `  status [<bot>] [--watch] [--json] [--ids] [--workspace <url> --key-file <path>]
              one row per bot, as the app's Status screen shows it: what it is doing
              (working, waiting on you, blocked and why, idle), its work in groups (waiting on
              you, in review, working, landing, idle, done), agents running and the last merge;
              one bot by id or title (<machine>/<bot> when two machines have one).
-             --watch prints the rows again after each change; a stale row says so. On the
-             workspace's machine it needs no --workspace or --key-file
+             --watch prints the rows again after each change; a stale row says so. --ids
+             adds each bot's and agent's id. On the workspace's machine it needs no
+             --workspace or --key-file
 `;
 
 export const USAGE_USAGE = `  usage [<machine>] [--json] [--workspace <url> --key-file <path>]

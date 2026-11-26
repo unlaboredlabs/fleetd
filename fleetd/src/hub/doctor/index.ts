@@ -144,7 +144,7 @@ export class Doctor {
       checks.ghAuth(gh),
       checks.httpsReachable(config, problem, port, https),
     ];
-    const manager = checks.serviceManager("hub", "hub", this.manager());
+    const manager = checks.serviceManager("hub", "workspace", this.manager());
     if (manager) out.push(manager);
     const claude = this.sources.claudeSetup();
     if (claude) out.push(checks.claudeKey(claude), checks.claudeOwner(claude));

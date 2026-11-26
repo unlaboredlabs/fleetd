@@ -94,9 +94,9 @@ test("the doctor's service_manager check: ok, the command while it's missing, no
     "If dev's service manager (systemd --user) stops, nothing starts it again until dev logs in: the node stays down, and every agent with it.",
   ]);
   expect([node.fix?.label, node.fix?.command, node.fix?.on]).toEqual(["As an admin on devbox, once", DEVBOX, "machine"]);
-  const hub = c.serviceManager("hub", "hub", { ...m, linger: false })!;
+  const hub = c.serviceManager("hub", "workspace", { ...m, linger: false })!;
   expect([hub.id, hub.status, hub.fix?.command, hub.fix?.on]).toEqual(["hub/service_manager", "warn", LINGER_OFF, "hub"]);
-  expect(hub.message).toBe("Linger is off for dev: the hub stops when dev logs out, and starts again only at their next login.");
+  expect(hub.message).toBe("Linger is off for dev: the workspace stops when dev logs out, and starts again only at their next login.");
   const ok = c.serviceManager("devbox", "node", { ...m, restarts: true })!;
   expect([ok.status, ok.fix]).toEqual(["ok", undefined]);
   expect(c.serviceManager("devbox", "node", undefined)).toBeUndefined();

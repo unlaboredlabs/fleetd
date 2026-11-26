@@ -38,7 +38,7 @@ function part(title: string, note: string | undefined, links: SetupLink[], value
 
 const way = (label: string | undefined, checks: string[]): SetupWay => ({ checks, ...(label === undefined ? {} : { label }) });
 
-/** The host's first label, which names this hub at each provider: `fleetd on devbox`. */
+/** The host's first label, which names this workspace at each provider: `fleetd on devbox`. */
 export function hostOf(hub: string): string {
   const scheme = hub.indexOf("://");
   const rest = scheme < 0 ? hub : hub.slice(scheme + 3);
@@ -46,9 +46,9 @@ export function hostOf(hub: string): string {
   const colon = authority.lastIndexOf(":");
   let host = colon >= 0 && /^[0-9]*$/.test(authority.slice(colon + 1)) ? authority.slice(0, colon) : authority;
   host = host.replace(/^\[+|\]+$/g, "");
-  // An address names no machine: say "hub".
-  if (host === "" || isIP(host) !== 0) return "hub";
-  return host.split(".")[0] ?? "hub";
+  // An address names no machine: say "workspace".
+  if (host === "" || isIP(host) !== 0) return "workspace";
+  return host.split(".")[0] ?? "workspace";
 }
 
 /** cli/setup/units.rs `q`: a value quoted for the shell when it needs it. */

@@ -24,8 +24,8 @@ test("every step's guide is the Rust workspace's own, word for word", () => {
 
 test("values are computed for this workspace, and an address only this machine reaches says so", () => {
   expect(hostOf("http://devbox.tail1234.ts.net:4790")).toBe("devbox");
-  expect(hostOf("http://100.64.0.1:4790")).toBe("hub");
-  expect(hostOf("http://[::1]:4790/")).toBe("hub");
+  expect(hostOf("http://100.64.0.1:4790")).toBe("workspace");
+  expect(hostOf("http://[::1]:4790/")).toBe("workspace");
   const local = guides("http://127.0.0.1:4790");
   const address = local.find((s) => s.id === "address");
   expect(address?.parts[0]?.values?.[0]?.note).toStartWith("Only this machine can reach the workspace");

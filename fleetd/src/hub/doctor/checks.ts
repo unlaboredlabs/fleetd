@@ -638,7 +638,7 @@ export function commitIdentity(machineId: string, read: ProbeRead, config: HubSe
 /** `service_manager`: whether systemd starts the user's service manager, and the hub or node in it, again by itself
  * (cli/setup/units.ts). `scope` "hub" for the hub's own, else the machine's id; `what` the service it runs. Undefined
  * where there is nothing to tell: off Linux, outside a systemd user unit, a node too old to say. */
-export function serviceManager(scope: string, what: "hub" | "node", manager: NodeManager | undefined): DoctorCheck | undefined {
+export function serviceManager(scope: string, what: "workspace" | "node", manager: NodeManager | undefined): DoctorCheck | undefined {
   if (manager === undefined) return undefined;
   const { user, uid } = manager;
   const entry = (status: DoctorStatus, message: string, fix?: DoctorFix) =>

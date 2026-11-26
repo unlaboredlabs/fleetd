@@ -277,8 +277,10 @@ fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--
 
 ### fleetd project list {#project-list}
 
+Each bot as \<machine\>/\<bot\>, its folder; `--ids` adds each bot's id.
+
 ```text
-fleetd project list [--archived] [--machine <id>] [--workspace <url>]
+fleetd project list [--archived] [--machine <id>] [--ids] [--workspace <url>]
 ```
 
 ### fleetd project archive {#project-archive}
@@ -581,7 +583,7 @@ fleetd metrics [--project <p>] [--days 30] [--json] [--workspace <url> --key-fil
 One row per bot, as the app's Status screen shows it.
 
 ```text
-fleetd status [<bot>] [--watch] [--json] [--workspace <url> --key-file <path>]
+fleetd status [<bot>] [--watch] [--json] [--ids] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd usage {#usage}
