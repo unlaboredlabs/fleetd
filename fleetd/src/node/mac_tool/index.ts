@@ -47,11 +47,13 @@ export function startedIn(node: Node, session: string): string | undefined {
 }
 
 // Agents' folders live in `~/work` as node/mod.rs's: a switch between the builds keeps their pushes, mirrors and cache.
-// A Mac that runs agents keeps them under its node's home instead: `~/work` there is the person's own.
+// A Mac that runs agents keeps them under its node's home instead: `~/work` there is the person's own. So is Xcode's
+// own DerivedData, which only the agents' Mac sweeps (`xcodeData`): on a person's Mac its builds are theirs.
 export const host = (node: Node, given?: Host) =>
   node.area("mac_tool.host", (n) => {
     if (given) return given;
-    const h = new Host(isAgentsMac(n) ? join(homeDir(), "work") : join(n.home, "mac", "work"), loadOrCreateBoxKey(n.home));
+    if (!isAgentsMac(n)) return new Host(join(n.home, "mac", "work"), loadOrCreateBoxKey(n.home));
+    const h = new Host(join(homeDir(), "work"), loadOrCreateBoxKey(n.home));
     h.xcodeData = join(homeDir(), "Library", "Developer", "Xcode", "DerivedData");
     return h;
   });

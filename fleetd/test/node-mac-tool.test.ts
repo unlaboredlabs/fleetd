@@ -6,7 +6,7 @@ import { answer, here, shown, UNAVAILABLE, which } from "../src/cli/mac_tool.ts"
 import { hubCall } from "../src/node/browser/node.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
 import { FOLDER_DAYS, Host, shellLine, sweep } from "../src/node/mac_tool/host.ts";
-import { isOwnMac, self, start as startMac, startedIn, worktreeOf } from "../src/node/mac_tool/index.ts";
+import { host as macHost, isOwnMac, self, start as startMac, startedIn, worktreeOf } from "../src/node/mac_tool/index.ts";
 import { binDir, forwarder, forwarderDir, installForwarder, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
 import { openAnswer, sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
@@ -137,6 +137,14 @@ test("which Mac: a Mac that runs agents lends them its own, and each command say
   expect(isOwnMac(plain.node, "linux")).toBe(false);
   expect(isOwnMac({ ...plain.node, config: { ...plain.node.config, agentsMac: true } } as never, "darwin")).toBe(false);
   expect(isOwnMac({ ...plain.node, config: { ...plain.node.config, runner: true } } as never, "darwin")).toBe(false);
+  // A person's own Mac: its agents' folders under the node's home, and Xcode's own DerivedData (the person's builds)
+  // never swept; only the agents' Mac sweeps that.
+  const own = macHost(plain.node);
+  expect(own.root).toBe(join(plain.node.home, "mac", "work"));
+  expect(own.xcodeData).toBeUndefined();
+  const tool = testNode("mac1", { agentsMac: true });
+  cleanups.push(tool.done);
+  expect(macHost(tool.node).xcodeData).toEndWith(join("Library", "Developer", "Xcode", "DerivedData"));
   expect(which({ step: "run", job: 1, mac: { name: "Ada's MacBook", here: true } })).toBe(
     "mac: on this Mac (Ada's MacBook), the one you run on: jobs run in your worktree, no push needed\n",
   );
