@@ -38,6 +38,7 @@ import { switchHubBy } from "./hubSwipe";
 import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
+import { display } from "../../../shared/shortcuts";
 import s from "./shell.module.css";
 import { onWeb } from "../../src/web";
 
@@ -391,6 +392,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const top = <TopBar />;
   // The chat's pill opens and closes the panel.
   const handle = useMemo(() => ({ shown: panel.shown, toggle: panel.toggle }), [panel.shown, panel.toggle]);
+  // The sidebar's own button, beside the traffic lights: the way back to a closed sidebar without the shortcut.
+  const toggle = useMemo(() => ({ onPress: sidebar.toggle, shortcut: display("sidebar.toggle", window.fleetd.platform) }), [sidebar.toggle]);
 
   return (
     <div ref={root} className={s.root} data-screen="shell" style={{ "--sidebar-w": `${String(sidebarPx)}px` } as CSSProperties}>
@@ -401,6 +404,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         under={under}
         sidebarTop={<SidebarTop go={go} hub={viewHub} />}
         sidebarOpen={!sidebar.hidden}
+        sidebarToggle={chrome ? toggle : undefined}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
           !chrome ? undefined : showSidebar ? (

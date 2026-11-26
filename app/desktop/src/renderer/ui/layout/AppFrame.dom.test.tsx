@@ -143,3 +143,32 @@ it("comes and goes at once without a slide to wait for (reduced motion)", () => 
   expect(side()).toBeNull();
   expect(aside()).toBeNull();
 });
+
+it("gives the sidebar a button that says what it does and its shortcut, and makes room for it in the top row", () => {
+  let pressed = 0;
+  const draw = (shown: boolean) =>
+    act(() =>
+      root.render(
+        <AppFrame topBar={<header />} sidebar={shown ? <nav>Bots</nav> : undefined} sidebarOpen={shown} sidebarToggle={{ onPress: () => pressed++, shortcut: "⌘B" }}>
+          <p>chat</p>
+        </AppFrame>,
+      ),
+    );
+  draw(false);
+  const button = host.querySelector<HTMLButtonElement>(`.${s.sideToggle}`);
+  expect(button?.getAttribute("aria-label")).toBe("Show sidebar");
+  expect(button?.getAttribute("aria-expanded")).toBe("false");
+  expect(has("noSidebar") && frame().classList.contains(s.withToggle ?? "withToggle")).toBe(true);
+  act(() => button?.click());
+  expect(pressed).toBe(1);
+  draw(true);
+  const open = host.querySelector<HTMLButtonElement>(`.${s.sideToggle}`);
+  expect(open?.getAttribute("aria-label")).toBe("Hide sidebar");
+  expect(open?.getAttribute("aria-controls")).toBe("sidebar");
+});
+
+it("has no sidebar button without a toggle (no sidebar to bring back)", () => {
+  render(false, false);
+  expect(host.querySelector(`.${s.sideToggle}`)).toBeNull();
+  expect(frame().classList.contains(s.withToggle ?? "withToggle")).toBe(false);
+});
