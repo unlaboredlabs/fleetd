@@ -393,10 +393,11 @@ it("a new workspace with no plan: step 1 offers its own machine, free, beside fl
   expect(host.textContent).toContain("--code 7QK4-M2XD");
   expect(host.textContent).toContain("Waiting for it to connect");
   expect(host.textContent).not.toContain("no plan and no credits");
-  // Tailscale under them, for a machine on a tailnet: one click.
-  expect(host.textContent).toContain("Machine or services on a tailnet?");
-  // fleetd's computers, one click over: Pick a plan opens Billing.
+  // A machine of its own dials out to the workspace: no Tailscale to connect for it.
+  expect(host.textContent).not.toContain("Connect Tailscale");
+  // fleetd's computers, one click over: Pick a plan opens Billing, Tailscale's Connect under it for private services.
   await pick("fleetd's computers");
+  expect(host.textContent).toContain("Private services on a tailnet?Let agents on fleetd's computers reach them.");
   expect(host.textContent).not.toContain("--code 7QK4-M2XD");
   expect(host.textContent).not.toContain("no plan and no credits");
   await click("Pick a plan");
@@ -753,16 +754,20 @@ it("never on the desktop: the page goes home", async () => {
   stop();
 });
 
-it("Tailscale is a line of where agents run: Connect opens Tailscale's sign-in there, and the steps go on without it", async () => {
+it("Tailscale is a line of fleetd's computers: Connect opens Tailscale's sign-in there, and the steps go on without it", async () => {
+  billing = BILLING_SAMPLES.none;
   const stop = await render({ tailnet: { status: "off" } });
   await until("start.computer");
   expect([...host.querySelectorAll("[data-step]")].map((s) => s.getAttribute("data-step"))).toEqual(["computer", "claude", "github", "project"]);
+  await pick("fleetd's computers");
   await click("Connect Tailscale");
   expect(calls.filter((c) => c.tool === "tailnet_connect")).toHaveLength(1);
   expect(shell.openExternal).toHaveBeenCalledWith("https://login.tailscale.com/a/standin");
   expect(host.textContent).toContain("Waiting for you to sign in to Tailscale");
-  // The join line stays beside it: the computer joins while Tailscale signs in.
+  // Back on its own machine: the join line, and nothing of Tailscale.
+  await pick("Your own machine");
   expect(host.textContent).toContain("--code 7QK4-M2XD");
+  expect(host.textContent).not.toContain("Tailscale");
   stop();
   act(() => root.unmount());
   host.remove();
@@ -774,6 +779,8 @@ it("Tailscale is a line of where agents run: Connect opens Tailscale's sign-in t
 
 // S6: a closed sign-in tab left the wait on show through reloads, with no way out.
 it("Tailscale's sign-in wait has Cancel, which stops connecting and brings Connect back", async () => {
+  // Signing in for fleetd's computers: the step opens on them, the wait in view.
+  billing = BILLING_SAMPLES.none;
   const stop = await render({ tailnet: { status: "login", loginUrl: "https://login.tailscale.com/a/standin" } });
   await until("start.computer");
   expect(host.textContent).toContain("Waiting for you to sign in to Tailscale");
@@ -782,6 +789,14 @@ it("Tailscale's sign-in wait has Cancel, which stops connecting and brings Conne
   expect(calls.filter((c) => c.tool === "tailnet_disconnect")).toHaveLength(1);
   expect(host.textContent).not.toContain("Waiting for you to sign in to Tailscale");
   expect(button("Connect Tailscale")).toBeDefined();
+  stop();
+});
+
+it("a workspace whose agents run only on its own machines offers no Tailscale in step 1", async () => {
+  const stop = await render({ tailnet: { status: "off" } });
+  expect(screen()).toBe("start.computer");
+  expect(host.textContent).toContain("--code 7QK4-M2XD");
+  expect(host.textContent).not.toContain("Tailscale");
   stop();
 });
 

@@ -8,8 +8,9 @@
 //   - where agents run (D558), either one, offered side by side: a computer of the team's own, online, free (the join
 //     line, Add machine's); or fleetd's computers on a plan or credits (or, before those, a hosted sandbox provider on
 //     the team's own key, whose agents the hub's runner starts in its boxes);
-//   - Tailscale (optional, D573), in that same step: one device the hub runs, through which agents reach the team's
-//     tailnet (a Claude endpoint on it, MCP servers); one click and a sign-in at Tailscale, nothing pasted;
+//   - Tailscale (optional, D573), in that same step under fleetd's computers: one device the workspace runs, through
+//     which their agents reach the team's tailnet (a Claude endpoint on it, MCP servers); one click and a sign-in at
+//     Tailscale, nothing pasted. A computer of the team's own dials out to the workspace and needs none of it;
 //   - Claude: the hub's API key with its endpoint (Anthropic's own prefilled; one on the tailnet wants Tailscale), or
 //     the way in each place has of its own: a computer's login (machine_claude_login: its sign-in page, then the code it
 //     shows; until then the hub has the machine degraded, "claude is not logged in"), the hosted sandboxes' the

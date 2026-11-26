@@ -1,6 +1,6 @@
 // Get started (model.ts): one page, the bot and a title where sign-in left them, then the few steps still between the
-// person and a first chat with a bot's lead: where agents run (a computer of yours, free, or fleetd's computers, side by
-// side, with Tailscale's optional Connect under them), Claude, GitHub, a bot. The step open now is the page's one soft
+// person and a first chat with a bot's lead: where agents run (a computer of yours, free, or fleetd's computers with
+// Tailscale's optional Connect, side by side), Claude, GitHub, a bot. The step open now is the page's one soft
 // group; a step done is its title and what it ended on, one still to come its title alone. Nothing to read at rest but
 // the open step's own words, and a command only where nothing else can do it (a computer joining). Skip for now goes to the app; the You menu keeps a
 // quiet Finish setting up until no step is left.
@@ -143,21 +143,27 @@ function body(id: StepId, view: StartView, actions: StartActions): ReactNode {
 }
 
 function Computer({ step, tailscale, actions }: { step: ComputerStep; tailscale: TailscaleStep | undefined; actions: StartActions }) {
+  if (step.at === "line" && step.computers !== undefined) return <Choice step={step} computers={step.computers} tailscale={tailscale} actions={actions} />;
+  // A computer of the team's own dials out to the workspace and is on its tailnet or not by itself: Tailscale here is
+  // for fleetd's computers alone, so it shows only while they come up.
+  const hosted = step.at === "hosted_wait" || step.at === "hosted_failed";
   return (
     <>
-      {step.at === "line" && step.computers !== undefined ? <Choice step={step} computers={step.computers} actions={actions} /> : <Place step={step} actions={actions} />}
-      {/* Before or while a computer joins: its tailnet, for it and for the services agents reach there. */}
-      {tailscale === undefined ? null : <Tailscale step={tailscale} actions={actions} />}
+      <Place step={step} actions={actions} />
+      {hosted && tailscale !== undefined ? <Tailscale step={tailscale} actions={actions} /> : null}
     </>
   );
 }
 
 /**
  * The two places agents run, side by side: a computer of yours, free, by its join line; or fleetd's computers on a plan
- * or credits. Either one does the step. A team whose computers stopped (credits used up, the cap) opens on why.
+ * or credits, with Tailscale's Connect for private services on a tailnet. Either one does the step. A team whose
+ * computers stopped (credits used up, the cap) opens on why.
  */
-function Choice({ step, computers, actions }: { step: Extract<ComputerStep, { at: "line" }>; computers: ComputersChoice; actions: StartActions }) {
-  const [way, setWay] = useState<"own" | "fleetd">(computers.message === undefined ? "own" : "fleetd");
+function Choice({ step, computers, tailscale, actions }: { step: Extract<ComputerStep, { at: "line" }>; computers: ComputersChoice; tailscale: TailscaleStep | undefined; actions: StartActions }) {
+  // Opens on fleetd's computers when they stopped, or while Tailscale's sign-in for them waits on the person.
+  const signing = tailscale?.at === "signin" || tailscale?.at === "approve";
+  const [way, setWay] = useState<"own" | "fleetd">(computers.message === undefined && !signing ? "own" : "fleetd");
   const option = (value: "own" | "fleetd", title: string, line: string) => (
     <button type="button" role="radio" aria-checked={way === value} className={cx(s.way, way === value && s.wayOn)} data-way={value} onClick={() => setWay(value)}>
       <Text strong>{title}</Text>
@@ -196,6 +202,7 @@ function Choice({ step, computers, actions }: { step: Extract<ComputerStep, { at
               An owner or admin of the workspace picks a plan.
             </Text>
           )}
+          {tailscale === undefined ? null : <Tailscale step={tailscale} actions={actions} />}
         </>
       )}
     </>
@@ -301,8 +308,8 @@ function Joined({ children }: { children: string }) {
 }
 
 /**
- * Tailscale, optional, under where agents run: Connect (the hub's one device, Tailscale's sign-in) for a computer or
- * services on a tailnet. Nothing to paste, and nothing to skip: the step goes on without it.
+ * Tailscale, optional, under fleetd's computers: Connect (the workspace's one device, Tailscale's sign-in) lets their
+ * agents reach private services on the team's tailnet. Nothing to paste, and nothing to skip: the step goes on without it.
  */
 function Tailscale({ step, actions }: { step: TailscaleStep; actions: StartActions }) {
   if (step.at === "done") {
@@ -336,7 +343,12 @@ function Tailscale({ step, actions }: { step: TailscaleStep; actions: StartActio
   return (
     <div className={s.tailscale}>
       <div className={s.tailnet}>
-        <Text tone="quiet">Machine or services on a tailnet?</Text>
+        <div className={s.tailnetWords}>
+          <Text tone="quiet">Private services on a tailnet?</Text>
+          <Text size="sm" tone="quiet">
+            Let agents on fleetd&apos;s computers reach them.
+          </Text>
+        </div>
         <Button size="md" disabled={step.busy === true} onClick={actions.onTailscale}>
           {step.busy === true ? "Connecting…" : "Connect Tailscale"}
         </Button>

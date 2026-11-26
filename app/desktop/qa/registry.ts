@@ -3423,12 +3423,10 @@ export const screens: readonly Screen[] = [
   },
   // Get started (screens/start), fleetd cloud's first run in the web app, on its sample views (the page itself reads the
   // team's state, which the dom tests cover): a new team's steps (where agents run, its own machine free beside
-  // fleetd's computers with Tailscale under them, Claude with its key and endpoint or a computer's login, GitHub, a
+  // fleetd's computers with Tailscale under those, Claude with its key and endpoint or a computer's login, GitHub, a
   // bot), and a teammate's (the team's bots, their own GitHub). Shot at the narrow size too: a browser can be any width.
   ...Object.entries({
     computer: "computer",
-    "computer-tailscale-signin": "computer",
-    "computer-tailscale-done": "computer",
     "computer-own": "computer",
     unusable: "computer",
     offline: "computer",
@@ -3461,6 +3459,20 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Pick a plan" }).waitFor();
     },
   },
+  // Tailscale under fleetd's computers, signing in or connected.
+  ...["computer-tailscale-signin", "computer-tailscale-done"].map(
+    (sample): Screen => ({
+      id: "start.computer",
+      route: `#/start?sample=${sample}`,
+      fixtures: ["cloud-connect"],
+      variant: sample,
+      sizes: [...defaultSizes, "narrow"],
+      open: async (page) => {
+        await page.getByRole("radio", { name: /^fleetd's computers/u }).click();
+        await page.getByText(/Tailscale/u).first().waitFor();
+      },
+    }),
+  ),
   // Claude's endpoint on the tailnet while Tailscale is off: the line beside it, with Connect Tailscale.
   {
     id: "start.claude",

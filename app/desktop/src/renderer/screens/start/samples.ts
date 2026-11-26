@@ -26,9 +26,9 @@ const set = { ...owner, computer: ready, tailscale: { at: "todo" }, claude: { at
 const choose = { at: "line", line: LINE, computers: { canBuy: true } } as const;
 
 export const SAMPLES = {
-  // A new team: 1. where agents run, a computer of its own or fleetd's computers, Tailscale's Connect under them.
+  // A new team: 1. where agents run, a computer of its own or fleetd's computers, Tailscale's Connect under those.
   computer: { ...owner, computer: choose, tailscale: { at: "todo" }, claude: { at: "wait" }, github: { at: "todo" }, project: pick },
-  // ...signing in to Tailscale, or connected, while the computer joins.
+  // ...signing in to Tailscale for fleetd's computers, or connected.
   "computer-tailscale-signin": { ...owner, computer: choose, tailscale: { at: "signin", url: "https://login.tailscale.com/a/1a2b3c" }, claude: { at: "wait" }, github: { at: "todo" }, project: pick },
   "computer-tailscale-done": { ...owner, computer: choose, tailscale: { at: "done", tailnet: "Sam's tailnet" }, claude: { at: "wait" }, github: { at: "todo" }, project: pick },
   // ...before fleetd's computers are on for the workspace: its own computer alone.
