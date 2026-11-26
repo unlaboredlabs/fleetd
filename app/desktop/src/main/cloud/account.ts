@@ -15,10 +15,11 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { z } from "zod";
 import { madeTeam, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../shared/accounts";
-import type { FinishOutcome, SignInOutcome, SignOutOutcome, TeamOutcome } from "../../shared/cloud";
-import { ACCOUNTS_ACCEPT_PATH, ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ACCOUNTS_TEAM_PATH, type AccountsTeam } from "../../shared/contracts";
+import type { AccountPreviewOutcome, DeleteAccountOutcome, FinishOutcome, SignInOutcome, SignOutOutcome, TeamOutcome } from "../../shared/cloud";
+import { ACCOUNTS_ACCEPT_PATH, ACCOUNTS_APP_ACCOUNT_DELETE_PATH, ACCOUNTS_APP_ACCOUNT_PATH, ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ACCOUNTS_TEAM_PATH, type AccountsTeam } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome } from "../../shared/hub";
 import { cleanLabel } from "../../shared/hubs";
+import { readPreview } from "../../shared/legal";
 import type { PairFailure } from "../../shared/pairing";
 import { landing, pkce } from "../loopback";
 import { redeem, type Fetch } from "../pairing/hubHttp";
@@ -75,6 +76,8 @@ const failed = (code: string, message: string, fix?: string): { ok: false; failu
   ok: false,
   failure: { code, message, ...(fix === undefined ? {} : { fix }) },
 });
+
+const Deleted = z.object({ workspaces: z.array(z.string().max(200)).max(1000) });
 
 const Refusal = z.object({ code: z.string(), message: z.string().min(1).max(500), fix: z.string().max(500).optional() });
 
@@ -263,7 +266,9 @@ export class CloudAccount {
     if (!response.ok) return refusal(json, response.status);
     const answer = readSignIn(json);
     if (answer === null) return UNREADABLE;
-    if (answer.teams.length === 0 && answer.invitations.length === 0) {
+    // No workspace, no invitation and none to make: nothing to sign in to. With a make value (one removed from theirs, or
+    // new), No workspace yet offers to make one, or to delete the account.
+    if (answer.teams.length === 0 && answer.invitations.length === 0 && answer.make === undefined) {
       void this.#endSession(config, answer.sessionId);
       return failed("", "No workspace of this account could be connected.");
     }
@@ -362,6 +367,42 @@ export class CloudAccount {
       const hub = this.#ports.heldAt(origin);
       return hub === null ? [] : [{ hub, name: hub.label || name }];
     });
+  }
+
+  /**
+   * What deleting the account would take, for one signed in with no workspace: asked with the held sign-in's make value,
+   * as no workspace key can. Null when no such sign-in is held.
+   */
+  async heldPreview(): Promise<AccountPreviewOutcome | null> {
+    const held = this.#held;
+    if (held === null || held.answer.make === undefined) return null;
+    const out = await this.#ask(held.config, ACCOUNTS_APP_ACCOUNT_PATH, { make: held.answer.make });
+    if (!out.ok) return out;
+    const preview = readPreview(out.body);
+    return preview === null ? UNREADABLE : { ok: true, preview };
+  }
+
+  /** Deletes the account of the held sign-in, `email` typed back; the sign-in is let go once it's done. */
+  async heldDelete(email: string): Promise<DeleteAccountOutcome | null> {
+    const held = this.#held;
+    if (held === null || held.answer.make === undefined) return null;
+    const out = await this.#ask(held.config, ACCOUNTS_APP_ACCOUNT_DELETE_PATH, { make: held.answer.make, email: email.trim() });
+    if (!out.ok) return out;
+    if (this.#held === held) this.#held = null;
+    const deleted = Deleted.safeParse(out.body);
+    return { ok: true, workspaces: deleted.success ? deleted.data.workspaces : [] };
+  }
+
+  /** One accounts-service call: its answer's body, or its refusal. */
+  async #ask(config: CloudConfig, path: string, body: unknown): Promise<{ ok: true; body: unknown } | { ok: false; failure: PairFailure }> {
+    let response: Response;
+    try {
+      response = await this.#post(config, path, body);
+    } catch {
+      return OFFLINE;
+    }
+    const json = await readJson(response);
+    return response.ok ? { ok: true, body: json } : refusal(json, response.status);
   }
 
   /** The service joins an invitation the person chose (accept) or makes their own team (team), and answers the team with its pairing code. */

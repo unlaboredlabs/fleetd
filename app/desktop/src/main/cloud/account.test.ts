@@ -305,6 +305,24 @@ describe("signing in to fleetd cloud", () => {
     expect(fake.madeOnAsking).toEqual(["new new@acme.example"]);
   });
 
+  it("removed from their team: No workspace yet, whose Delete account reads what goes and deletes with the sign-in's make", async () => {
+    await fake.team("acme", ["sam@acme.example", "bob@acme.example"]);
+    fake.remove("acme", "bob@acme.example");
+    const { account, hubs } = setup(fake, { email: "bob@acme.example" });
+    // Before: no team and no invitation was a failure, and the session ended; now the sign-in waits on No workspace yet.
+    const arrived = await account.signIn();
+    expect(arrived).toEqual({ ok: true, arrival: { email: "bob@acme.example", invitations: [], canMake: true } });
+    expect(fake.teamsOf("bob@acme.example")).toEqual([]);
+    expect(await account.heldPreview()).toEqual({ ok: true, preview: { email: "bob@acme.example", deletes: [], leaves: [], blocked: [] } });
+    expect(await account.heldDelete("someone@else.example")).toMatchObject({ ok: false, failure: { code: "wrong_email" } });
+    expect(await account.heldDelete(" Bob@acme.example ")).toEqual({ ok: true, workspaces: [] });
+    expect(fake.deletedAccounts).toEqual(["bob@acme.example"]);
+    // The sign-in is let go: nothing to make or connect from it.
+    expect(await account.heldPreview()).toBeNull();
+    expect(await account.finish([], true)).toMatchObject({ ok: false });
+    expect(hubs).toEqual([]);
+  });
+
   it("in several teams, the one picked on the sign-in page is the one the app shows first", async () => {
     await fake.team("sam", ["sam@acme.example"]);
     await fake.team("lab", ["sam@acme.example"]);

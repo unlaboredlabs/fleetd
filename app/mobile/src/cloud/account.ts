@@ -18,6 +18,8 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import {
   ACCOUNTS_ACCEPT_PATH,
+  ACCOUNTS_APP_ACCOUNT_DELETE_PATH,
+  ACCOUNTS_APP_ACCOUNT_PATH,
   ACCOUNTS_APP_REDIRECT,
   ACCOUNTS_DEMO_SIGN_IN_PATH,
   ACCOUNTS_SIGN_IN_PATH,
@@ -39,6 +41,7 @@ import { pair, type Fetch, type Paired } from "../hub/pair";
 import { signOut, withHub, type HubLink } from "../push";
 import { toBase64, utf8Encode } from "../seal";
 import type { CloudConfig } from "./config";
+import { readPreview, type AccountPreview } from "../../../desktop/src/shared/legal";
 
 const CALL_TIMEOUT_MS = 20_000;
 
@@ -171,9 +174,45 @@ export interface AfterSignInAsk {
   readonly signedInAs: (email: string) => Promise<boolean>;
   /** "<invitedBy> invited you to <name>", Join or Not now: true is Join. */
   readonly invitation: (invitation: AccountsInvitation) => Promise<boolean>;
-  /** No team yet (every invitation passed on, none of their own): Make a Team or Not Now; true makes one. */
-  readonly makeTeam?: (email: string) => Promise<boolean>;
+  /**
+   * No team yet (every invitation passed on, none of their own, or removed from theirs): Make a Team, Not Now, or
+   * Delete Account through `account`; true makes one, "deleted" once the account is gone.
+   */
+  readonly makeTeam?: (email: string, account: HeldAccount) => Promise<boolean | "deleted">;
 }
+
+/** Delete Account for one signed in with no workspace: asked with the sign-in's make value, as no workspace key can. */
+export interface HeldAccount {
+  readonly preview: () => Promise<{ ok: true; value: AccountPreview } | { ok: false; failure: PairFailure }>;
+  /** The account deleted, `email` typed back; null once done, else the cloud's refusal. */
+  readonly remove: (email: string) => Promise<PairFailure | null>;
+}
+
+/** The held sign-in's Delete Account (ACCOUNTS_APP_ACCOUNT_PATH, ACCOUNTS_APP_ACCOUNT_DELETE_PATH). */
+const heldAccount = (ports: SignInPorts, make: string): HeldAccount => {
+  const ask = async (path: string, body: unknown): Promise<{ ok: true; json: unknown } | { ok: false; failure: PairFailure }> => {
+    let response: Response;
+    try {
+      response = await post(ports.fetch, `${ports.config.accountsUrl}${path}`, body);
+    } catch {
+      return { ok: false, failure: OFFLINE_FAILURE };
+    }
+    const json = await readJson(response);
+    return response.ok ? { ok: true, json } : refusal(json, response.status);
+  };
+  return {
+    preview: async () => {
+      const got = await ask(ACCOUNTS_APP_ACCOUNT_PATH, { make });
+      if (!got.ok) return got;
+      const preview = readPreview(got.json);
+      return preview === null ? { ok: false, failure: UNREADABLE } : { ok: true, value: preview };
+    },
+    remove: async (email) => {
+      const got = await ask(ACCOUNTS_APP_ACCOUNT_DELETE_PATH, { make, email: email.trim() });
+      return got.ok ? null : got.failure;
+    },
+  };
+};
 
 /** Asks who signed in, then about each invitation in turn; null when it isn't them. */
 export const askAfterSignIn = async (ask: AfterSignInAsk, answer: SignedIn): Promise<number[] | null> => {
@@ -192,8 +231,13 @@ export const signInAsking = async (ports: SignInPorts, ask: AfterSignInAsk, revi
     void endSession(ports.fetch, ports.config, arrived.answer.sessionId);
     return { ok: false, cancelled: true };
   }
-  // In no team of their own and joining none: a team of their own, if they want one.
-  const make = join.length === 0 && arrived.answer.make !== undefined && ask.makeTeam !== undefined && (await ask.makeTeam(arrived.answer.email).catch(() => false));
+  // In no team of their own and joining none: a team of their own, if they want one, or the account deleted.
+  const { make: value } = arrived.answer;
+  const make = join.length === 0 && value !== undefined && ask.makeTeam !== undefined ? await ask.makeTeam(arrived.answer.email, heldAccount(ports, value)).catch(() => false) : false;
+  if (make === "deleted") {
+    void endSession(ports.fetch, ports.config, arrived.answer.sessionId);
+    return { ok: false, cancelled: true };
+  }
   return finish(ports, arrived.answer, join, make);
 };
 
@@ -236,7 +280,9 @@ const exchange = async (ports: SignInPorts, body: AccountsSignInInput | Accounts
   if (!response.ok) return refusal(json, response.status);
   const answer = readSignIn(json);
   if (answer === null) return { ok: false, failure: UNREADABLE };
-  if (answer.teams.length === 0 && answer.invitations.length === 0) {
+  // No workspace, no invitation and none to make: nothing to sign in to. With a make value (one removed from theirs,
+  // or new), No Workspace Yet offers to make one, or to delete the account.
+  if (answer.teams.length === 0 && answer.invitations.length === 0 && answer.make === undefined) {
     void endSession(ports.fetch, ports.config, answer.sessionId);
     return { ok: false, failure: { code: "", message: "No workspace of this account could be connected." } };
   }

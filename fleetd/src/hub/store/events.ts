@@ -79,6 +79,7 @@ export class EventLog {
   private lastPruneMs: number;
   private headSeq: number;
   private readonly listeners = new Set<(event: HubEvent) => void>();
+  private readonly others = new Set<(events: HubEvent[]) => void>();
 
   /** Prunes events past retention, then picks the head up where the database left it. */
   constructor(
@@ -106,6 +107,50 @@ export class EventLog {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Calls `listener` with the events another process appended (`fleetd people remove` on the workspace's machine, say)
+   * once this log has delivered them, so an area can drop what it keeps in memory of the rows they changed.
+   */
+  onOthers(listener: (events: HubEvent[]) => void): () => void {
+    this.others.add(listener);
+    return () => this.others.delete(listener);
+  }
+
+  /**
+   * Delivers what another process appended since the head, as if appended here, then tells `onOthers`. Run every
+   * second (`followOthers`) and before each append, so a later seq of this process's never skips them.
+   */
+  catchUp(): HubEvent[] {
+    return this.catchUpTo(Number.MAX_SAFE_INTEGER);
+  }
+
+  /** `catchUp` short of `before`: this process's own row, when it is the one appending. */
+  private catchUpTo(before: number): HubEvent[] {
+    const rows = this.db.all<Row>("SELECT seq, data FROM events WHERE seq > $after AND seq < $before ORDER BY seq", { after: this.headSeq, before });
+    if (rows.length === 0) return [];
+    const got = rows.map((r) => withSeq(JSON.parse(r.data) as NewEvent, r.seq));
+    this.headSeq = got[got.length - 1]!.seq;
+    for (const stored of got) this.tell(stored);
+    for (const listener of this.others) {
+      try {
+        listener(got);
+      } catch (error) {
+        console.error("event listener failed:", error);
+      }
+    }
+    return got;
+  }
+
+  private tell(stored: HubEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(stored);
+      } catch (error) {
+        console.error("event listener failed:", error);
+      }
+    }
+  }
+
   append(event: NewEvent): HubEvent {
     const now = this.clock.now();
     const trimmed = trim(event);
@@ -118,15 +163,11 @@ export class EventLog {
       )
       .get(now, trimmed.type, trimmed.machineId ?? null, JSON.stringify(trimmed));
     const seq = row?.seq ?? this.headSeq + 1;
+    // Another process's rows between the head and this one go first.
+    if (seq > this.headSeq + 1) this.catchUpTo(seq);
     this.headSeq = seq;
     const stored = withSeq(trimmed, seq);
-    for (const listener of this.listeners) {
-      try {
-        listener(stored);
-      } catch (error) {
-        console.error("event listener failed:", error);
-      }
-    }
+    this.tell(stored);
     return stored;
   }
 
@@ -213,4 +254,27 @@ export class EventLog {
       });
     }
   }
+}
+
+/** How often the hub looks for events another process appended. */
+const FOLLOW_MS = 1_000;
+
+/**
+ * Delivers, every second until the hub stops, what another process appended to the log (the CLI writes the database
+ * directly), so open apps, pushes and every area hear of it as they would of the hub's own. A removed person's open
+ * connections are checked again at once.
+ */
+export function followOthers(hub: Hub): void {
+  const log = events(hub);
+  log.onOthers((got) => {
+    if (got.some((e) => e.type === "people.changed")) hub.auth.revokedSome();
+  });
+  const timer = setInterval(() => {
+    try {
+      log.catchUp();
+    } catch (error) {
+      console.warn("events: another process's not read:", error);
+    }
+  }, FOLLOW_MS);
+  hub.shutdown.signal.addEventListener("abort", () => clearInterval(timer), { once: true });
 }

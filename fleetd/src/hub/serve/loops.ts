@@ -4,6 +4,8 @@ import { start as sAudit } from "../audit/loops.ts";
 import { start as s0 } from "../automations/loops.ts";
 import { start as s1 } from "../browser/loops.ts";
 import { start as s2 } from "../chat/loops.ts";
+import { followOthers } from "../store/events.ts";
+import { start as sClaude } from "../claude_accounts/spread.ts";
 import { start as s4 } from "../github_app/loops.ts";
 import { start as s6 } from "../intake/loops.ts";
 import { start as sIssues } from "../issues/loops.ts";
@@ -38,10 +40,12 @@ import { start as s34 } from "../workspace_usage/loops.ts";
 
 /** Every module's background loops ; each stops on `hub.shutdown`. */
 export function startAll(hub: Hub): void {
+  followOthers(hub); // hub/store: what another process (the CLI) appended to the log
   sAudit(hub); // hub/audit
   s0(hub); // hub/automations
   s1(hub); // hub/browser
   s2(hub); // hub/chat
+  sClaude(hub); // hub/claude_accounts: the team's accounts on machines that joined since
   s4(hub); // hub/github_app
   s6(hub); // hub/intake
   sIssues(hub); // hub/issues

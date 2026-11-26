@@ -8,7 +8,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { invitationLine, invitationTitle } from "../../../shared/accounts";
 import type { Arrival, FinishOutcome, Invitation, TeamOutcome } from "../../../shared/cloud";
 import type { PairFailure } from "../../../shared/pairing";
-import { Bot, Button, copyText, Text } from "../../ui";
+import { Bot, Button, copyText, Text, toast } from "../../ui";
+import { DeleteAccountDialog } from "../settings/DeleteAccountDialog";
 import { openHub } from "../shell/sidebarLayout";
 import { refreshCloud } from "./cloud";
 import s from "./signin.module.css";
@@ -140,7 +141,13 @@ export function useSignIn(onSignedIn?: (out: FinishOutcome & { ok: true }) => vo
   /** No team yet: make one of their own, or leave it for another sign-in (nothing connects). */
   const makeTeam = useCallback(() => finish([], true), [finish]);
   const noTeam = useCallback(() => finish([]), [finish]);
-  return { step, start, cancel, confirm, notMe, answer, makeTeam, noTeam };
+  /** The account was deleted from No workspace yet: nothing to connect, back to the start. */
+  const deleted = useCallback(() => {
+    setStep({ at: "start", note: null });
+    toast({ title: "Your fleetd account is deleted" });
+    void refreshCloud();
+  }, []);
+  return { step, start, cancel, confirm, notMe, answer, makeTeam, noTeam, deleted };
 }
 
 function Note({ note }: { note: SignInNote }) {
@@ -275,8 +282,9 @@ export function Invited({ invitation, onJoin, onLater }: { invitation: Invitatio
   );
 }
 
-/** Every invitation passed on, and no team of their own yet: Make a team, or not now. */
-export function NoTeam({ email, onMake, onLater }: { email: string; onMake: () => void; onLater: () => void }) {
+/** Every invitation passed on, and no team of their own yet (or removed from theirs): Make a team, not now, or delete the account. */
+export function NoTeam({ email, onMake, onLater, onDeleted }: { email: string; onMake: () => void; onLater: () => void; onDeleted: () => void }) {
+  const [deleting, setDeleting] = useState(false);
   return (
     <Stage id="onboarding.no-team">
       <Bot state="idle" size={64} />
@@ -293,7 +301,18 @@ export function NoTeam({ email, onMake, onLater }: { email: string; onMake: () =
         <Button size="md" variant="quiet" onClick={onLater}>
           Not now
         </Button>
+        <Button size="md" variant="quiet" onClick={() => setDeleting(true)}>
+          Delete account…
+        </Button>
       </div>
+      <DeleteAccountDialog
+        email={email}
+        open={deleting}
+        onClose={() => setDeleting(false)}
+        preview={() => window.fleetd.cloud.accountPreview()}
+        remove={(typed) => window.fleetd.cloud.deleteAccount(typed)}
+        onDeleted={onDeleted}
+      />
     </Stage>
   );
 }
@@ -318,7 +337,7 @@ export function AfterBrowser({ signIn }: { signIn: ReturnType<typeof useSignIn> 
     const invitation = step.arrival.invitations[step.index];
     return invitation === undefined ? null : <Invited key={step.index} invitation={invitation} onJoin={() => signIn.answer(true)} onLater={() => signIn.answer(false)} />;
   }
-  if (step.at === "no-team") return <NoTeam email={step.arrival.email} onMake={signIn.makeTeam} onLater={signIn.noTeam} />;
+  if (step.at === "no-team") return <NoTeam email={step.arrival.email} onMake={signIn.makeTeam} onLater={signIn.noTeam} onDeleted={signIn.deleted} />;
   if (step.at === "finishing") return <Finishing />;
   return null;
 }

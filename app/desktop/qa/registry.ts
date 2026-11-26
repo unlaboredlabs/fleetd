@@ -3393,6 +3393,20 @@ export const screens: readonly Screen[] = [
       await page.getByText("No workspace yet").waitFor({ timeout: 10_000 });
     },
   },
+  // ...and its Delete account: what goes, then the email typed back (a removed person signing in again lands here).
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-no-team"],
+    variant: "no-team-delete",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("button", { name: "Not now" }).click();
+      await page.getByRole("button", { name: "Delete account…" }).click();
+      await page.getByRole("dialog", { name: "Delete your fleetd account?" }).getByText("Your sign-in and its history are erased.", { exact: false }).waitFor({ timeout: 10_000 });
+    },
+  },
   {
     id: "onboarding",
     route: "#/onboarding",

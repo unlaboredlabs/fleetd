@@ -22,13 +22,17 @@
 // with their email typed back, deletes their account as fleetd-cloud does: every key of theirs opens nothing then, the
 // teams where they were the only member go (`plans` names those whose plan stops with them), and they leave the others;
 // the only owner of a team with others in it is refused (`sole_owner`), as is a wrong email. GET ACCOUNTS_ACCOUNT_PATH
-// answers what that delete would take, deleting nothing.
+// answers what that delete would take, deleting nothing. A person in `removedFrom` (removed from their team, as
+// fleetd-cloud keeps it) gets no team made at their next sign-in: its answer has no team and a `make` value, which POST
+// ACCOUNTS_APP_ACCOUNT_PATH and ACCOUNTS_APP_ACCOUNT_DELETE_PATH also take, for the preview and the delete.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   ACCOUNTS_ACCEPT_PATH,
   ACCOUNTS_ACCOUNT_DELETE_PATH,
+  ACCOUNTS_APP_ACCOUNT_DELETE_PATH,
+  ACCOUNTS_APP_ACCOUNT_PATH,
   ACCOUNTS_ACCOUNT_PATH,
   ACCOUNTS_DEMO_SIGN_IN_PATH,
   ACCOUNTS_INVITES_PATH,
@@ -164,6 +168,8 @@ export class FakeAccounts {
   readonly deleted: string[] = [];
   /** The teams on a plan, by name: deleting an account that takes one stops it. */
   readonly plans = new Set<string>();
+  /** People removed from their team since: their next sign-in makes them none. */
+  readonly removedFrom = new Set<string>();
   /** Each account deleted (POST ACCOUNTS_ACCOUNT_DELETE_PATH), by email. */
   readonly deletedAccounts: string[] = [];
   /** Each team made on asking (POST ACCOUNTS_TEAM_PATH), as `<team> <email>`. */
@@ -252,6 +258,14 @@ export class FakeAccounts {
     return this.#people.get(email) ?? [];
   }
 
+  /** `email` removed from team `name`, as an owner's People › Remove does: their next sign-in makes them no team. */
+  remove(name: string, email: string): void {
+    this.#teams.get(name)!.roles.delete(email);
+    this.#people.set(email, this.teamsOf(email).filter((t) => t !== name));
+    for (let i = this.keys.length - 1; i >= 0; i--) if (this.keys[i]!.email === email && this.keys[i]!.team === name) this.keys.splice(i, 1);
+    this.removedFrom.add(email);
+  }
+
   /** An invite to team `name` for `email` from `by`, as an owner's POST would make it, with no email sent. */
   invite(name: string, email: string, by: string, role: HubRole = "member"): AccountsInvite {
     const team = this.#teams.get(name);
@@ -314,6 +328,12 @@ export class FakeAccounts {
     }
     if (path === ACCOUNTS_ACCEPT_PATH) return this.#accept(body, res);
     if (path === ACCOUNTS_TEAM_PATH) return this.#make(body, res);
+    if (path === ACCOUNTS_APP_ACCOUNT_PATH || path === ACCOUNTS_APP_ACCOUNT_DELETE_PATH) {
+      const email = this.#makes.get(str(body, "make") ?? "");
+      if (email === undefined) return fail(res, 401, { code: "signed_out", message: "That sign-in has run out.", fix: "Sign in again." });
+      if (path === ACCOUNTS_APP_ACCOUNT_PATH) return this.#previewOf(email, res);
+      return this.#deleteOf(email, str(body, "email"), res);
+    }
     if (path === ACCOUNTS_DEMO_SIGN_IN_PATH) return this.#demo(body, res);
     if (path !== ACCOUNTS_SIGN_IN_PATH) return fail(res, 404, { code: "not_found", message: "Nothing here." });
     const input = {
@@ -339,7 +359,7 @@ export class FakeAccounts {
     }
     grant.used = true;
     const invitations = this.#invitationsOf(grant.email);
-    if (this.teamsOf(grant.email).length === 0 && invitations.length === 0) {
+    if (this.teamsOf(grant.email).length === 0 && invitations.length === 0 && !this.removedFrom.has(grant.email)) {
       await this.team(grant.email.split("@")[0]!.replace(/[^a-z0-9]/gu, "") || "team", [grant.email]);
     }
     // A sign-in for a move: each team the person owns says whether it is empty, and a new one is made when none is.
@@ -492,6 +512,10 @@ export class FakeAccounts {
   #accountPreview(name: string, req: IncomingMessage, res: ServerResponse): void {
     const email = this.#accountOf(name, req);
     if (email === null) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    this.#previewOf(email, res);
+  }
+
+  #previewOf(email: string, res: ServerResponse): void {
     const { alone, left, held } = this.#accountTeams(email);
     send(res, 200, { email, deletes: alone.map((t) => ({ name: t.name, plan: this.plans.has(t.name) ? "Team" : null })), leaves: left.map((t) => t.name), blocked: held.map((t) => t.name) });
   }
@@ -500,7 +524,11 @@ export class FakeAccounts {
   async #deleteAccount(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
     const email = this.#accountOf(name, req);
     if (email === null) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
-    const typed = str(await readBody(req), "email")?.trim().toLowerCase();
+    this.#deleteOf(email, str(await readBody(req), "email"), res);
+  }
+
+  #deleteOf(email: string, given: string | undefined, res: ServerResponse): void {
+    const typed = given?.trim().toLowerCase();
     if (typed === undefined || typed === "") return fail(res, 400, { code: "invalid", message: "Your email is missing.", fix: "Type your account's email to delete it." });
     if (typed !== email.toLowerCase()) return fail(res, 400, { code: "wrong_email", message: "That isn't this account's email.", fix: `Type ${email} to delete it.` });
     const { alone, left, held } = this.#accountTeams(email);
@@ -514,6 +542,7 @@ export class FakeAccounts {
     }
     for (let i = this.keys.length - 1; i >= 0; i--) if (this.keys[i]!.email === email) this.keys.splice(i, 1);
     this.#people.delete(email);
+    for (const [make, whose] of this.#makes) if (whose === email) this.#makes.delete(make);
     this.deletedAccounts.push(email);
     send(res, 200, { deleted: email, workspaces: alone.map((t) => t.name) });
   }
