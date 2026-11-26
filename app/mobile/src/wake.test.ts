@@ -170,7 +170,7 @@ describe("a cloud bot waking on the phone", () => {
   });
 
   // S9: with its machine offline mid-turn, the bot's typing dots kept moving beside "thinking".
-  it("says Machine offline in place of the dots while its machine is offline, and the lead's own state once it is back", () => {
+  it("says its machine is offline and the lead carries on, in place of the dots, and the lead's own state once it is back", () => {
     const k = "devbox/w7";
     const r = { machineId: "devbox", projectId: "w7" };
     const asked = "2026-11-22T10:00:00.000Z";
@@ -182,7 +182,9 @@ describe("a cloud bot waking on the phone", () => {
       leadActivity: { [leadLaneId(r)]: { activity: { kind: "thinking" }, since: asked } },
     } as never as State;
     const at = Date.parse(asked) + 1_000;
-    expect(wakeIn({ ...s, machines: machine("offline") }, k, false, at)).toEqual({ phase: "held", reason: "Machine offline." });
+    expect(wakeIn({ ...s, machines: machine("offline") }, k, false, at)).toEqual({ phase: "held", reason: "Its machine is offline. The lead carries on when it’s back." });
+    // Status's reason, as the workspace said it, the lead's way: never "can't start" for a lead mid-turn.
+    expect(wakeIn({ ...s, machines: machine("offline"), blocked: { [k]: "devbox is offline" } } as never, k, false, at)).toEqual({ phase: "held", reason: "devbox is offline. The lead carries on when it’s back." });
     expect(wakeIn({ ...s, machines: machine("online") }, k, false, at)?.phase).toBe("working");
   });
 });

@@ -171,15 +171,17 @@ describe("a cloud bot waking", () => {
   });
 });
 
-// W852: "all done?" sat beside a dot grid with no sign the bot had started.
 // S9: the machine went offline mid-turn, and the bot's typing dots kept moving for two minutes beside "thinking".
 describe("a bot whose machine is offline", () => {
-  test("says so in one plain line, no dots, while its lead was at work on your message or hasn't started on it", () => {
+  test("mid-turn, says so and that the lead carries on, no dots; with nothing running, that it can't start", () => {
     const working = some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" }, offline: true });
-    expect(working).toEqual({ phase: "held", reason: "Machine offline." });
+    expect(working).toEqual({ phase: "held", reason: "Its machine is offline. The lead carries on when it’s back." });
     expect(wakeDots(working)).toBe(false);
-    // The hub's own reason, when it has one, is the line.
-    expect(some({ working: true, cold: true, waiting: true, asked: T, offline: true, blocked: "Blocked: devbox is offline." })).toEqual({ phase: "held", reason: "Blocked: devbox is offline." });
+    // Status's reason, when it has one, said the lead's way: never "can't start" for a lead that had started.
+    const blocked = { blocked: heldWords({ blocked: "factory-a is offline" }), blockedWhy: "factory-a is offline" };
+    expect(some({ working: true, cold: true, waiting: true, asked: T, offline: true, ...blocked })).toEqual({ phase: "held", reason: "factory-a is offline. The lead carries on when it’s back." });
+    // Nothing running yet: it can't start.
+    expect(some({ waiting: true, asked: T, offline: true, ...blocked })).toEqual({ phase: "held", reason: "The lead can’t start now: factory-a is offline." });
     expect(some({ waiting: true, asked: T, offline: true })).toEqual({ phase: "held", reason: "Machine offline." });
     // Back online: the lead's own state again.
     expect(some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" } })).toEqual({ phase: "thinking" });
@@ -189,6 +191,7 @@ describe("a bot whose machine is offline", () => {
   });
 });
 
+// W852: "all done?" sat beside a dot grid with no sign the bot had started.
 describe("the bot in the reply's place on every turn", () => {
   const human = (ms: number) => ({ author: "human", state: "final", createdAt: iso(ms) });
   const lead = (ms: number, state = "final") => ({ author: "lead", state, createdAt: iso(ms) });

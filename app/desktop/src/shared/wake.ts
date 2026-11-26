@@ -71,6 +71,8 @@ export interface WakeIn {
   readonly stale?: boolean | undefined;
   /** The bot's machine is offline: nothing runs there until it is back, whatever the lead's last state said. */
   readonly offline?: boolean | undefined;
+  /** Status's blocked reason as it reads, before `heldWords` (`blocked` is that): a lead mid-turn says it its own way. */
+  readonly blockedWhy?: string | undefined;
 }
 
 /** The bot's words while its machine is offline and the hub gave no reason of its own. */
@@ -120,8 +122,10 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   const waiting = i.waiting === true && !ended;
   // The hub said your message hasn't reached the lead: whatever it works on, it isn't this.
   if (waiting && i.held !== undefined) return { phase: "held", reason: i.held };
-  // Its machine went offline mid-turn: the lead's last state ("working") is stale, so no dots that keep moving (S9).
-  if (i.offline === true && !i.asleep && (waiting || (i.working && i.cold))) return { phase: "held", reason: i.blocked ?? MACHINE_OFFLINE_LINE };
+  // Its machine went offline: the lead's last state ("working") is stale, so no dots that keep moving (S9). Mid-turn,
+  // the lead carries on once it is back, so it never says it can't start; with nothing running, it can't.
+  if (i.offline === true && !i.asleep && i.working && (waiting || i.cold)) return { phase: "held", reason: carriesOnWords(i.blockedWhy) };
+  if (i.offline === true && !i.asleep && waiting) return { phase: "held", reason: i.blocked ?? MACHINE_OFFLINE_LINE };
   if (i.working) {
     // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
     if (!i.cold && !waiting) return undefined;
@@ -310,6 +314,13 @@ export const endedAt = (leadIdleAt: string | undefined, seen: number | undefined
 
 /** What holds the lead up, in one short line: the hub's word on why it doesn't have your message (its first sentence),
  * or why the bot is blocked (its machine offline, its usage paused). Undefined when there is none. */
+/** A lead whose machine went offline mid-turn, in one line: why (Status's reason), and that it carries on. */
+export const carriesOnWords = (why: string | undefined): string => {
+  const reason = why?.trim().replace(/[.\s]+$/u, "") ?? "";
+  // Its words as they come: they start with the machine's name ("factory-a is offline"), never capitalised.
+  return `${reason === "" ? "Its machine is offline" : reason}. The lead carries on when it’s back.`;
+};
+
 export const heldWords = (why: { readonly leadWaiting?: string | undefined; readonly blocked?: string | undefined }): string | undefined => {
   if (why.leadWaiting !== undefined) {
     const said = why.leadWaiting.trim();
