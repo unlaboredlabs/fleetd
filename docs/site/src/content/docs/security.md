@@ -146,7 +146,21 @@ The [agents' Mac](/docs/agents-mac) lends its screen to agents.
   match the release's `SHA256SUMS`.
 - **Models only through `claude`.** fleetd never calls a model API itself.
 
+## On fleetd cloud {#cloud}
+
+On fleetd cloud, fleetd runs the workspace for you. What that means for who can see what:
+
+- **What fleetd staff see day to day.** fleetd's operator console shows counts only: people, machines, storage used
+  and last activity, never chats, files or secrets.
+- **What fleetd staff can download.** An operator can download a copy of a workspace's content: its chats, tasks,
+  files and recordings, never its secrets (vault items, API keys, tokens). Each download is recorded in fleetd's own
+  audit log. It isn't shown in the workspace.
+- **Who holds the vault's key.** The cloud seals each workspace's vault with a key of that workspace's own, and holds
+  the master key that unlocks those keys. So fleetd could technically open a workspace's vault items. There's no key
+  that only you hold. If that matters to you, [run the workspace yourself](/docs/install), where the root key stays on
+  your machine.
+
 ## Report a vulnerability {#report}
 
-Report it privately through GitHub's
-[security advisories for unlaboredlabs/fleetd](https://github.com/unlaboredlabs/fleetd/security/advisories/new).
+Email support@fleetd.dev with "Security" in the subject, and keep it out of public issues until it's fixed. fleetd's
+security.txt (fleetd.sh/.well-known/security.txt) says the same.

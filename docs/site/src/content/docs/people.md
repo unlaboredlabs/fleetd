@@ -47,6 +47,9 @@ A member sees each one as it is set, with "Only admins can change this." The wor
 
 When an admin deletes a bot, everyone else who wrote in its chat or started its work is told who deleted it.
 
+A workspace on fleetd cloud holds up to 50 people. For more, write to support@fleetd.dev. A workspace you run yourself
+has no limit.
+
 ## Manage people {#manage}
 
 In **Settings › Workspace › People**, each person's row has their role, devices and Claude account. Change a role or remove someone from there.

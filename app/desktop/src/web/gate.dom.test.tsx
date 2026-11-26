@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiProvider } from "../renderer/ui";
 import { Gate, type GateActions, type GateView } from "./Gate";
+import type { AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
 import type { WebFailure } from "./session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -19,6 +20,9 @@ const actions = {
   join: vi.fn(),
   later: vi.fn(),
   makeTeam: vi.fn(() => Promise.resolve<WebFailure | null>(null)),
+  accountPreview: vi.fn(() => Promise.resolve<AccountPreviewOutcome>({ ok: true, preview: { email: "ada@example.com", deletes: [], leaves: [], blocked: [] } })),
+  deleteAccount: vi.fn(() => Promise.resolve<DeleteAccountOutcome>({ ok: true, workspaces: [] })),
+  deleted: vi.fn(),
   signOut: vi.fn(),
 } satisfies GateActions;
 
@@ -119,8 +123,11 @@ it("no team (one who came by an invitation and passed), and a failure, each with
 
 it("removed from a team since the last sign-in: the no-team and invited screens say it, in one line", async () => {
   await show({ at: "no-team", email: "lee@example.com", removed: "You were removed from acme." });
-  expect(host.textContent).toContain("You were removed from acme.");
-  expect(host.textContent).toContain("lee@example.com isn't in a fleetd workspace");
+  // The removal is the headline: it is why there is no workspace.
+  expect(host.querySelector("h1")?.textContent).toBe("You were removed from acme");
+  expect(host.textContent).toContain("Signed in as lee@example.com");
+  expect(host.textContent).toContain("Make a workspace of your own, or ask a teammate to invite this email.");
+  expect(host.textContent).not.toContain("isn't in a fleetd workspace");
   await show({
     at: "invited",
     email: "lee@example.com",
@@ -131,4 +138,26 @@ it("removed from a team since the last sign-in: the no-team and invited screens 
   expect(host.textContent).toContain("Invited by ada@example.com");
   await show({ at: "no-team", email: "lee@example.com" });
   expect(host.textContent).not.toContain("removed");
+});
+
+it("no workspace: Delete account reads what goes, asks for the email typed back, and starts the page over", async () => {
+  await show({ at: "no-team", email: "lee@example.com", removed: "You were removed from acme." });
+  actions.accountPreview.mockResolvedValueOnce({ ok: true, preview: { email: "lee@example.com", deletes: [], leaves: [], blocked: [] } });
+  await press("Delete account…");
+  expect(actions.accountPreview).toHaveBeenCalledOnce();
+  expect(document.body.textContent).toContain("Your sign-in and its history are erased.");
+  const input = document.body.querySelector<HTMLInputElement>("input[type=email]");
+  if (input === null) throw new Error("no email field");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "lee@example.com");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+  });
+  const remove = [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Delete account");
+  await act(async () => {
+    remove?.click();
+    await Promise.resolve();
+  });
+  expect(actions.deleteAccount).toHaveBeenCalledWith("lee@example.com");
+  expect(actions.deleted).toHaveBeenCalledOnce();
 });

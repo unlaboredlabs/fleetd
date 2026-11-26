@@ -417,6 +417,10 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   // Its people are told by its name, read before its node let it go.
   expect(events(k.hub).page(0, ["project.erased"]).events.map((e) => e.summary)).toEqual(["agent deleted the bot app"]);
   expect(store(k.hub).projectsList("devbox").map((p) => p.projectId).sort()).toEqual([api2 as string, "shop"].sort());
+  // The log keeps that it went, which bot and by whom, and nothing else of it.
+  expect(events(k.hub).page(0).events.filter((e) => e.type === "project.removed" && e.projectId === "app").map((e) => e.summary)).toEqual([
+    `${operate.name} removed the bot "app" from devbox`,
+  ]);
   // Its folder goes only when asked, never a checkout's; shop holds api2 alone now, so it goes too.
   n.calls.length = 0;
   const folder = await k.ok(admin, "project_remove", { machineId: "devbox", projectId: "shop", removeFolder: true });

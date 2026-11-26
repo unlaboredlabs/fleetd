@@ -177,7 +177,12 @@ const OFFLINE: Case[] = [
   {
     name: "uninstall-purge",
     argv: ["uninstall", "--purge"],
-    setup: async (f) => void (await f.run(["init", "--no-service", "--listen", "127.0.0.1:1"])),
+    setup: async (f) => {
+      await f.run(["init", "--no-service", "--listen", "127.0.0.1:1"]);
+      // The vault's key, beside the home as the workspace makes it: it goes too.
+      mkdirSync(join(f.home, "vault"), { recursive: true, mode: 0o700 });
+      writeFileSync(join(f.home, "vault", "root.key"), "{}\n", { mode: 0o600 });
+    },
   },
   { name: "uninstall-flag", argv: ["uninstall", "--force"] },
   { name: "push-relay-what", argv: ["push-relay", "frob"] },

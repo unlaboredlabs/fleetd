@@ -178,8 +178,12 @@ function PersonLine({
       .catch((e: unknown) => setError(`${failed}: ${errorText(e)}`))
       .finally(() => setBusy(false));
   };
+  // Owner is asked first: an owner manages every other owner, and an admin can't take it back.
+  const [owning, setOwning] = useState(false);
   const setRole = (role: HubRole) => {
-    if (role !== p.role) run("person_set", { personId: p.personId, role }, "Not changed");
+    if (role === p.role) return;
+    if (role === "owner") setOwning(true);
+    else run("person_set", { personId: p.personId, role }, "Not changed");
   };
   const devices = deviceNames(row.devices.map((d) => d.name));
   const limit = spend?.row;
@@ -242,6 +246,26 @@ function PersonLine({
         </Notice>
       )}
       {error === undefined ? null : <Notice tone="danger">{error}</Notice>}
+      <Dialog
+        open={owning}
+        onOpenChange={(open) => !open && setOwning(false)}
+        title={`Make ${p.name} an owner?`}
+        description="Owners manage everything here, other owners included. Only an owner can change it back."
+        footer={
+          <>
+            <Button onClick={() => setOwning(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setOwning(false);
+                run("person_set", { personId: p.personId, role: "owner" }, "Not changed");
+              }}
+            >
+              Make owner
+            </Button>
+          </>
+        }
+      />
     </SettingsListRow>
   );
 }
@@ -275,7 +299,7 @@ function RemoveDialog({ row, onClose }: { row: PersonRow | null; onClose: () => 
       open={row !== null}
       onOpenChange={(open) => !open && close()}
       title={`Remove ${name}?`}
-      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did and the bots they made stay.`}
+      description={`${n === 0 ? "They have no device yet, and their open invites close." : `Their ${devicesLine(n).toLowerCase()} ${n === 1 ? "is" : "are"} signed out at once.`} What they did and the bots they made stay, and what waits on them goes to the workspace's owner.`}
       footer={
         <>
           {error === undefined ? null : (

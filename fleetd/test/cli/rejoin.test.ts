@@ -74,8 +74,10 @@ test("a Mac removed from the hub stops as that machine, and joined again with a 
   since = Date.now();
   node = start();
   const waiting = node;
-  for (const end = Date.now() + 60_000; !waiting.saying().includes("trying again in") && waiting.proc.exitCode === null && Date.now() < end; ) await Bun.sleep(50);
-  expect(node.saying()).toContain("trying again in");
+  for (const end = Date.now() + 60_000; !waiting.saying().includes("stays stopped") && waiting.proc.exitCode === null && Date.now() < end; ) await Bun.sleep(50);
+  // Said once, with how to join again or take fleetd off, not every few minutes.
+  expect(node.saying()).toContain("so this node stays stopped");
+  expect(node.saying()).toContain("run fleetd uninstall");
   expect(node.proc.exitCode).toBeNull();
   expect(checked()).toBeLessThan(since);
   node.proc.kill("SIGTERM");

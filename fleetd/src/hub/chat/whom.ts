@@ -16,7 +16,7 @@ const owner = (hub: Hub): PersonRef | undefined => {
 /** A lead message said at `atMs`: its turn's order's starter, else the person the turn answered. */
 export const messageFor = (hub: Hub, r: ProjectRef, atMs: number): PersonRef | undefined => aboutFor(hub, r, atMs).for;
 
-/** An order's landing or stop: its starter, else (an automation's, the train's) the owner. */
+/** An order's landing or stop: its starter, else (an automation's, the train's, a removed person's) the owner. */
 export const orderPerson = (hub: Hub, workstreamId: WorkstreamId): PersonRef | undefined => orderFor(hub, workstreamId) ?? owner(hub);
 
 /**

@@ -18,6 +18,7 @@ import {
   planLine,
   planTerms,
   planWord,
+  portalShown,
   readBilling,
   readCap,
   readPage,
@@ -49,6 +50,19 @@ describe("the service's billing answer", () => {
     const { providedOn: _on, held: _held, rates: _rates, ...older } = BILLING_SAMPLES.plan;
     const read = readBilling({ ...older, credits: { leftCents: 500, capCents: null } });
     expect(read).toMatchObject({ providedOn: true, held: null, rates: [], credits: { leftCents: 500, capCents: null, capSpentCents: 0, expiring: null } });
+  });
+
+  it("offers the portal once the workspace paid at Stripe, not for credits fleetd gave it", () => {
+    const given = { ...BILLING_SAMPLES.plan, plan: null, credits: { leftCents: 500, capCents: null, capSpentCents: 0, expiring: null } };
+    const shown = (json: unknown) => {
+      const read = readBilling(json);
+      if (read === null) throw new Error("not read");
+      return portalShown(read);
+    };
+    expect(shown({ ...given, customer: false })).toBe(false);
+    expect(shown({ ...given, customer: true })).toBe(true);
+    // An older cloud that doesn't say: as before, once anything shows as bought.
+    expect(shown(given)).toBe(true);
   });
 
   it("refuses what isn't an answer", () => {

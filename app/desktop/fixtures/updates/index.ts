@@ -84,7 +84,7 @@ export default defineGroup({
       const f = withHub(what, note, OLDER, { release });
       f.appUpdate = state({ kind: "available", version: NEXT, percent: 64, restart: false }, release);
       const started = run(f);
-      if (started === null) f.fail("hub_update", {}, { code: "forbidden", message: "This key lacks the admin role.", fix: "Run `fleetd pair` on the workspace machine, then pair this app again with the new code: it grants admin." });
+      if (started === null) f.fail("hub_update", {}, { code: "forbidden", message: "This key lacks the admin role.", fix: "Only the workspace's owners and admins can do this: ask one to do it, or to make you an admin in Settings › Workspace › People. An admin whose app was paired with less pairs it again with a code from `fleetd pair`." });
       else f.answer("hub_update", {}, { run: started });
       // Pressed, a finished run needs no read; one going on is read again and again, and stays as it is.
       return says(f, { ...(going && started !== null ? { run: started } : {}), ...(ready === undefined ? {} : { ready }) });

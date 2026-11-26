@@ -66,7 +66,9 @@ test("a worker joins with the code", async () => {
   expect(joined.shown.stderr).toContain("start builder-1's node: $HOME/bin/fleetd node run --home $HOME/node");
   // With nobody to ask, claude's login is a step left to the person with its command, and the run ends clean.
   expect(joined.shown.stderr).toContain("–  claude on builder-1 not logged in\n");
-  expect(joined.shown.stderr).toContain("log claude in on builder-1: $HOME/tools/claude auth login");
+  expect(joined.shown.stderr).toContain(
+    "log claude in on builder-1 (or, to run on the workspace's Claude API key, save it again in Settings › Workspace › Setup › Claude now that builder-1 is online): $HOME/tools/claude auth login",
+  );
   expect(joined.shown.code).toBe(0);
 }, 60_000);
 

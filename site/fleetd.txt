@@ -68,9 +68,10 @@ More: https://fleetd.sh/pricing
 PRICING (FLEETD CLOUD)
 fleetd cloud is ready to orchestrate thousands of agents. fleetd is open source
 and free to run yourself. On fleetd cloud you pay only for the computers we
-run. No seats and no tokens. Free when agents run on your own machines: sign
-up at https://app.fleetd.dev and connect your machine. Plans are for agents on
-our computers, and cover the whole workspace.
+run. No seats and no tokens. Up to 50 people per workspace, more on request.
+Free when agents run on your own machines: sign up at https://app.fleetd.dev
+and connect your machine. Plans are for agents on our computers, and cover the
+whole workspace.
 
   Free     $0 a month    your own machines run the agents
   Solo    $20 a month      500 hours of computer time     25 agents at once

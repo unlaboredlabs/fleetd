@@ -100,7 +100,8 @@ no workspace service at ~/.config/systemd/user/fleetd-hub.service
 kept the workspace's data in ~/.fleetd/hub; fleetd init starts it again, --purge deletes it
 ```
 
-`--purge` also deletes the workspace's data in `~/.fleetd/hub` and the node's files.
+`--purge` also deletes the workspace's data in `~/.fleetd/hub`, the vault's key in `~/.fleetd/vault` (and its keychain
+copy) and the node's files.
 
 ## If the workspace's port is taken {#port}
 

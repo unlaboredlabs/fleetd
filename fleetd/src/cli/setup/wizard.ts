@@ -473,7 +473,10 @@ export async function workerClaude(ui: Ui, list: Checklist, added: Added, accoun
     }
     if (offered || !(await ui.offerToRun(list, `claude on ${added.machineId} isn't logged in. Log in now?`))) {
       // Nobody to ask (no terminal, --yes): the login is left to the person, with its command, not a failure.
-      if (!offered && !ui.interactive) list.todo(title, "not logged in", `log claude in on ${added.machineId}`, fix);
+      // A workspace's Claude API key goes only to the machines online when it was saved: one added since needs it saved
+      // again, not a personal login.
+      const key = `or, to run on the workspace's Claude API key, save it again in ${settingsPath()} › Setup › Claude now that ${added.machineId} is online`;
+      if (!offered && !ui.interactive) list.todo(title, "not logged in", `log claude in on ${added.machineId} (${key})`, fix);
       else list.failed(title, "not logged in", fix);
       return;
     }

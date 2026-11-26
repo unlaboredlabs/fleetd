@@ -232,8 +232,8 @@ test("a removed machine neither holds an account nor stands as its last Test, in
   expect(got.hubApi).toEqual({ endpoint: row.endpoint, sealedOn: [sealedOn[1]], updatedAt: row.updatedAt });
   expect((got.me as { subscription: unknown }).subscription).toEqual({ sealedOn: [sealedOn[1]], connectedAt: row.updatedAt });
   const view = { configured: true, machines: ["lab", "mac"], hubApi: accounts(hub).hubApi()!, owner: ["Ann", accounts(hub).subscription("p_aaaaaaaa")] as [string, ClaudeSubscription] };
-  expect(claudeKey(view).message).toBe("The workspace's Claude API key (through http://100.100.1.1:8317) isn't on mac, so nothing runs on it there.");
-  expect(claudeOwner(view).message).toBe("Ann's Claude subscription isn't on mac, so nothing runs on it there.");
+  expect(claudeKey(view).message).toBe("The workspace's Claude API key (through http://100.100.1.1:8317) isn't on mac, so nothing runs on it there: it goes only to the machines online when it's saved.");
+  expect(claudeOwner(view).message).toBe("Ann's Claude subscription isn't on mac, so nothing runs on it there: it goes only to the machines online when it's saved.");
   // A Test on a machine that is still there stays the current result.
   hub.db.conn.query("UPDATE claude_accounts SET data = json_set(data, '$.lastTest.machineId', 'lab') WHERE account = 'hub'").run();
   expect(claudeKey({ ...view, hubApi: accounts(hub).hubApi()! }).message).toBe(

@@ -17,7 +17,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
 import { requireBotAdmin } from "../api/bot_admin.ts";
-import { requireRole, refused } from "../api/grants.ts";
+import { requireRole, refused, whoOf } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
 import { allowsEverywhere, unknownMachine, unknownProject } from "../api/refusals.ts";
 import { events } from "../store/events.ts";
@@ -28,6 +28,8 @@ import { slots } from "./index.ts";
 export { machineLine, pausedLine, pausedReason, raisedLine } from "../../shared/cap_lines.ts";
 
 export type CapChange = {
+  /** Who changed it, named in the log. */
+  by?: Caller;
   cap?: number;
   machine?: { machineId: MachineId; /** undefined: auto again. */ maxAgents: number | undefined };
   project?: {
@@ -63,6 +65,7 @@ function capEvent(
   queued: number,
   paused: TaskId[],
   line: string,
+  by: Caller | undefined,
 ): void {
   const count = (n: number) => Math.max(n, 0);
   // Keys in the Rust struct's order.
@@ -70,11 +73,12 @@ function capEvent(
   if (r) data.projectRef = r;
   Object.assign(data, { from: count(from), to: count(to), running: count(running), queued: count(queued) });
   if (paused.length > 0) data.paused = paused;
+  if (by?.person) data.by = by.person;
   events(hub).append({
     at: isoMs(hub.clock.now()),
     type: "agents.cap",
     ...(r ? { machineId: r.machineId, projectId: r.projectId } : machine !== undefined ? { machineId: machine } : {}),
-    summary: line,
+    summary: by === undefined ? line : `${line} By ${whoOf(by)}.`,
     data: data as AgentsCapData,
   });
 }
@@ -119,7 +123,7 @@ export async function setCaps(hub: Hub, change: CapChange): Promise<CapOutcome> 
     const cap = change.cap;
     const after = board.state();
     const line = fleetLine(capBefore, cap, totalBefore);
-    capEvent(hub, undefined, undefined, capBefore ?? totalBefore, cap, after.used, after.queued, [], line);
+    capEvent(hub, undefined, undefined, capBefore ?? totalBefore, cap, after.used, after.queued, [], line, change.by);
     lines.push(line);
   }
   if (change.machine && machineBefore && machineBefore.setting !== change.machine.maxAgents) {
@@ -127,7 +131,7 @@ export async function setCaps(hub: Hub, change: CapChange): Promise<CapOutcome> 
     const to = board.machineCap(id);
     const after = board.state();
     const line = machineLine(id, machineBefore.cap, to, machineBefore.setting !== undefined, machineMax !== undefined);
-    capEvent(hub, undefined, id, machineBefore.cap, to, after.used, after.queued, [], line);
+    capEvent(hub, undefined, id, machineBefore.cap, to, after.used, after.queued, [], line, change.by);
     lines.push(line);
   }
   if (change.project && before) {
@@ -143,7 +147,7 @@ export async function setCaps(hub: Hub, change: CapChange): Promise<CapOutcome> 
     const started = Math.max(after.running - before.running, 0);
     const line = projectLine({ from, to, started, free, paused: paused.length, running: after.running, back });
     if (to !== from || back || paused.length > 0) {
-      capEvent(hub, r, undefined, from, to, after.running, after.queued, paused, line);
+      capEvent(hub, r, undefined, from, to, after.running, after.queued, paused, line, change.by);
       lines.push(line);
     }
     if (to > from) leadWakes(hub).trigger(r, { kind: "line", line: "cap_raised", text: capRaisedText(to, free) });
@@ -173,6 +177,7 @@ export async function capSet(hub: Hub, caller: Caller, input: CapSetInput): Prom
     requireBotAdmin(hub, caller, input.project.projectRef, "max_agents");
   }
   const outcome = await setCaps(hub, {
+    by: caller,
     ...(input.cap !== undefined ? { cap: input.cap } : {}),
     ...(input.machine ? { machine: { machineId: input.machine.machineId, maxAgents: input.machine.maxAgents } } : {}),
     ...(input.project

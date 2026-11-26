@@ -158,13 +158,27 @@ export function register(tools: Registry): void {
     await vt.load();
     vt.requireOpen();
     const row = vt.visible(v, input.itemId);
-    if (!vt.canReveal(v, row)) throw new ToolError("forbidden", `You can't reveal ${row.label}.`, "Its creator or an admin can.");
+    if (!vt.canReveal(v, row)) {
+      // A refused reveal is in the item's activity too, so its creator and the admins see who tried.
+      vt.used({
+        atMs: hub.clock.now(),
+        itemId: row.itemId,
+        action: "reveal",
+        outcome: "refused",
+        ...(v.person !== undefined ? { personId: v.person } : {}),
+        deviceId: caller.keyId,
+        ...(row.machineId !== undefined ? { machineId: row.machineId } : {}),
+        ...(row.projectId !== undefined ? { projectId: row.projectId } : {}),
+        data: { label: row.label, kind: row.kind, message: "only its creator or an admin can show it" },
+      });
+      throw new ToolError("forbidden", `You can't reveal ${row.label}.`, "Its creator or an admin can.");
+    }
     const fields = [...new Set(input.fields as string[])];
     const bad = fields.find((f) => !FIELDS[row.kind].includes(f));
     if (bad) throw new ToolError("invalid", `A ${row.kind} has no field ${bad}.`);
     const now = hub.clock.now();
     const recent = hub.db.conn
-      .query<{ n: number }, [string, number]>("SELECT count(*) AS n FROM vault_audit WHERE action = 'reveal' AND person_id = ? AND at_ms > ?")
+      .query<{ n: number }, [string, number]>("SELECT count(*) AS n FROM vault_audit WHERE action = 'reveal' AND outcome = 'ok' AND person_id = ? AND at_ms > ?")
       .get(v.person ?? "", now - 3600_000)?.n ?? 0;
     if (recent >= REVEALS_PER_HOUR) {
       throw new ToolError("failed", `You revealed ${REVEALS_PER_HOUR} values this hour.`, "Wait a little, then try again.", "vault_rate_limited");

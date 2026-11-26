@@ -343,13 +343,16 @@ export async function enrolled(home: string, retry: boolean, signal?: AbortSigna
   process.once("SIGINT", end);
   process.once("SIGTERM", end);
   try {
+    let said = false;
     for (let attempt = 0; ; attempt++) {
       let error: string;
+      let removed = false;
       try {
         const config = readConfig(home);
         if (config?.enrolled) return config;
+        removed = config?.removed === true;
         error = config?.removed
-          ? `${config.machineId} was removed from ${config.hub}: it joins again with a new code (fleetd init --join, or Set up this Mac in the app)`
+          ? `${config.machineId} was removed from ${config.hub}, so this node stays stopped. To work for it again, join with a new code (fleetd init --join, or Set up this Mac in the app); to take fleetd off this machine, run fleetd uninstall`
           : `this node has not joined a workspace (no enrolled config in ${home}): run fleetd node join first`;
       } catch {
         error = `node config in ${home} is unreadable`;
@@ -359,7 +362,10 @@ export async function enrolled(home: string, retry: boolean, signal?: AbortSigna
         return 1;
       }
       const wait = enrolledRetry(attempt);
-      process.stderr.write(`fleetd: ${error}; trying again in ${wait / 1000} s\n`);
+      // Removed, it waits for a new join without trying the workspace again: said once, not every few minutes.
+      if (removed && !said) process.stderr.write(`fleetd: ${error}.\n`);
+      else if (!removed) process.stderr.write(`fleetd: ${error}; trying again in ${wait / 1000} s\n`);
+      said = removed;
       const slept = await new Promise<boolean>((resolve) => {
         if (stop.signal.aborted) return resolve(false);
         const t = setTimeout(() => resolve(true), wait);

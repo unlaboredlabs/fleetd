@@ -465,6 +465,7 @@ const ACTION_WORDS: Readonly<Record<string, string>> = {
   inject: "Given to an agent",
   deliver: "Sent to a machine",
   reveal: "Shown",
+  reveal_refused: "Show refused",
   create: "Added",
   update: "Changed",
   delete: "Deleted",
@@ -482,7 +483,7 @@ const sentence = (s: string): string => (s === "" ? s : `${s.charAt(0).toUpperCa
 /** One audit row in words: what happened, then where and by whom. Never a value. */
 export const auditLine = (e: VaultAuditEntry, projectName: (machineId: string, projectId: string) => string | undefined): { title: string; detail: string | undefined } => {
   const data = e.data;
-  const what = ACTION_WORDS[e.action] ?? sentence(e.action.replace(/_/gu, " "));
+  const what = (e.outcome === "refused" ? ACTION_WORDS[`${e.action}_refused`] : undefined) ?? ACTION_WORDS[e.action] ?? sentence(e.action.replace(/_/gu, " "));
   const title = e.outcome === "failed" ? `${what}: failed` : e.outcome === "pending" ? `${what}…` : what;
   const project = e.machineId === undefined || e.projectId === undefined ? undefined : projectName(e.machineId, e.projectId);
   const by = str(data.by)?.replace(/^human:/u, "");

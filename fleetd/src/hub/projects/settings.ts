@@ -33,7 +33,7 @@ import { BOT_COLORS, BOT_COLORS_WERE, BOT_SHAPES, type BotShape } from "../../sh
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
 import { requireBotAdmin } from "../api/bot_admin.ts";
-import { isHuman, requireRole } from "../api/grants.ts";
+import { isHuman, requireRole, whoOf } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownMachine, unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
@@ -348,7 +348,8 @@ export function setWhoMerges(hub: Hub, caller: Caller, project: ProjectSummary, 
   const r = { machineId: project.machineId, projectId: project.projectId };
   if (mergesOf(hub.db.conn, r) === merges) return false;
   setMerges(hub.db.conn, r, merges);
-  announce(hub, r, merges === "people" ? `People merge ${project.title}'s PRs now` : `fleetd merges ${project.title}'s PRs now`, { merges });
+  const said = merges === "people" ? `People merge ${project.title}'s PRs now` : `fleetd merges ${project.title}'s PRs now`;
+  announce(hub, r, `${said}, by ${whoOf(caller)}`, { merges, ...(caller.person ? { by: caller.person } : {}) });
   return true;
 }
 
@@ -365,7 +366,7 @@ export function setRules(hub: Hub, caller: Caller, project: ProjectSummary, rule
   if (problems.length > 0) throw new ToolError("invalid", `These rules can't be saved: ${problems.slice(0, 5).join("; ")}.`, "Write each rule as a path glob or one of the named kinds.");
   const r = { machineId: project.machineId, projectId: project.projectId };
   setRiskRules(hub.db.conn, r, tidy);
-  announce(hub, r, `${project.title}'s merge rules changed`, { mergeRules: tidy });
+  announce(hub, r, `${project.title}'s merge rules changed, by ${whoOf(caller)}`, { mergeRules: tidy, ...(caller.person ? { by: caller.person } : {}) });
 }
 
 /**
@@ -384,7 +385,8 @@ export function setHowItMerges(hub: Hub, caller: Caller, project: ProjectSummary
     if (mergeModeOf(hub.db.conn, b) === mode) continue;
     setMergeMode(hub.db.conn, b, mode);
     const title = store(hub).projectGet(b)?.title ?? b.projectId;
-    announce(hub, b, mode === "verify_after" ? `${title}'s PRs merge, then verify now` : `${title}'s PRs are tested, then merged now`, { mergeMode: mode });
+    const said = mode === "verify_after" ? `${title}'s PRs merge, then verify now` : `${title}'s PRs are tested, then merged now`;
+    announce(hub, b, `${said}, by ${whoOf(caller)}`, { mergeMode: mode, ...(caller.person ? { by: caller.person } : {}) });
     changed = true;
   }
   return changed;

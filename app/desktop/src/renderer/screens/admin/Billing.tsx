@@ -36,6 +36,7 @@ import {
   PAID_READ_EVERY_MS,
   PAID_WAIT_MS,
   paidLine,
+  portalShown,
   showsPaid,
   withoutBillingReturn,
 } from "../../../shared/billing";
@@ -161,7 +162,7 @@ function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: numbe
   const can = buys(state);
   const why = noBuyWhy(state);
   // The portal answers only once the team has paid for something: a plan, or credits it had.
-  const paidBefore = state.plan !== null || state.credits.leftCents !== 0 || state.credits.expiring !== null || state.held === "empty";
+  const paidBefore = portalShown(state);
   const portal = (label: string) => (
     <Button size="sm" disabled={busy !== null} onClick={() => open("portal", label)}>
       {busy === label ? "Opening…" : label}

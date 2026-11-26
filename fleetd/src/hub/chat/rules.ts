@@ -165,15 +165,18 @@ export function waitsOn(messages: ChatMessage[], open: ChatMessage[], onHub: (pe
 }
 
 /** What `waitsOn` waits on before `onHub`: each open item's and unanswered question's person, undefined for anyone. */
-export function waiters(messages: ChatMessage[], open: ChatMessage[]): (PersonId | undefined)[] {
-  const waiting: (PersonId | undefined)[] = open.filter((m) => m.item !== undefined && itemOpen(m.item)).map((m) => m.for?.personId);
+export const waiters = (messages: ChatMessage[], open: ChatMessage[]): (PersonId | undefined)[] => waitingIn(messages, open).map((m) => m.for?.personId);
+
+/** The messages `waiters` reads its people off: the open items, then the lead's questions still unanswered. */
+export function waitingIn(messages: ChatMessage[], open: ChatMessage[]): ChatMessage[] {
+  const waiting = open.filter((m) => m.item !== undefined && itemOpen(m.item));
   messages.forEach((m, i) => {
     if (m.author !== "lead" || m.history !== undefined || m.state !== "final" || m.item !== undefined) return;
     if (!asksQuestion(m.text) && !asksInABlock(m)) return;
     const later = messages.slice(i + 1).filter((h) => h.author === "human" && h.history === undefined);
     const who = m.for?.personId;
     const answered = who === undefined ? later.length > 0 : later.some((h) => h.person?.personId === who || h.replyTo?.messageId === m.messageId);
-    if (!answered) waiting.push(who);
+    if (!answered) waiting.push(m);
   });
   return waiting;
 }

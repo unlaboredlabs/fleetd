@@ -1,13 +1,18 @@
 // The grant checks handlers share, with the same words.
 import type { AgentKeyInfo as Caller, MachineId, Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 import { allows } from "../auth/allows.ts";
 
 /** The fix for a person's device refused an admin write. */
 export const REPAIR_FIX =
-  "Run `fleetd pair` on the workspace's machine, then pair this app again with the new code: it grants admin.";
+  `Only the workspace's owners and admins can do this: ask one to do it, or to make you an admin in ${settingsPath()} › ` +
+  "People. An admin whose app was paired with less pairs it again with a code from `fleetd pair`.";
 
 export const isHuman = (caller: Caller) => caller.kind === "human";
+
+/** Who a change is by, as the log names them: the person, else the key's name. */
+export const whoOf = (caller: Caller): string => caller.person?.name ?? caller.name;
 
 export function forbidden(role: Role, machine?: MachineId): ToolError {
   const message = machine === undefined ? `This key lacks the ${role} role.` : `This key has no ${role} grant on machine ${machine}.`;

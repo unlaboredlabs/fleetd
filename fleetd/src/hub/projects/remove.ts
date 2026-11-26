@@ -5,7 +5,7 @@ import type { ProjectRef, ProjectRemoveInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_PROJECT_ERASE, CAP_PROJECT_SETTINGS } from "../../shared/node_link.ts";
 import { botPeople, requireBotAdmin } from "../api/bot_admin.ts";
-import { requireRole } from "../api/grants.ts";
+import { requireRole, whoOf } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownProject } from "../api/refusals.ts";
 import type { Caller } from "../api/registry.ts";
@@ -54,6 +54,8 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
       `Run fleetd update on ${m}, then delete it again.`,
     );
   }
+  // Its name for the log's line, read before its node forgets it.
+  const title = store(hub).projectGet(r)?.title;
   // Marked first: should the node remove it but its answer never come, the hub still erases it (project_lead/erase.ts `run`).
   asked(hub, r);
   const checkouts: string[] = [];
@@ -68,7 +70,7 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
       throw fromExecutor(e);
     });
   }
-  erase(hub, r);
+  erase(hub, r, `${whoOf(caller)} removed the bot ${title === undefined ? `${input.projectId}` : `"${title}"`} from ${m}`);
   tell();
   const next = removeFolder
     ? `${ERASED}, and its folder with everything in it.`

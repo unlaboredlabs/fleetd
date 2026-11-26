@@ -5,6 +5,7 @@
 import type { HumanRequest, PersonRef, ProjectRef, WorkstreamId } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { readWorkstream } from "../leads/records.ts";
+import { getOn } from "../people/store.ts";
 import { runHuman, runWindow } from "../leads/requested.ts";
 import { nowMs } from "../store/time.ts";
 
@@ -64,9 +65,13 @@ export function requestOrder(hub: Hub, request: HumanRequest): WorkstreamId | un
   return thread === undefined ? undefined : threadOrder(hub, request.projectRef.machineId, thread);
 }
 
-/** Who started the order: its `startedBy`. Undefined for one no person started (an automation's, the train's). */
+/**
+ * Who started the order: its `startedBy`, while they're on the workspace. Undefined for one no person started (an
+ * automation's, the train's) or whose starter was removed: its work goes on as if no person started it.
+ */
 export function orderFor(hub: Hub, workstreamId: WorkstreamId): PersonRef | undefined {
-  return readWorkstream(hub.db.conn, workstreamId)?.startedBy;
+  const starter = readWorkstream(hub.db.conn, workstreamId)?.startedBy;
+  return starter !== undefined && getOn(hub.db.conn, starter.personId)?.removedAt !== undefined ? undefined : starter;
 }
 
 /** The lead's thread of `r`. */

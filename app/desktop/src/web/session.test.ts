@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { NOT_LISTED_YET, readSession, removedLine, removedNotice, signInPath, teamFromAddress, teamHubId, teamHubIds, untilListed, webCall, type Fetch } from "./session";
+import { carriedRemovals, freshMark, NOT_LISTED_YET, readSession, removedLine, removedNotice, withCarried, signInPath, teamFromAddress, teamHubId, teamHubIds, untilListed, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -134,5 +134,22 @@ describe("after Make a team", () => {
     expect(waited).toEqual([500, 1000, 2000, 4000]);
     expect(NOT_LISTED_YET.message).toBe("Your workspace is made, but fleetd cloud isn't showing it yet.");
     expect(await untilListed(reads([session(0), { ok: false, signedOut: true }]), () => Promise.resolve())).toBe("signed_out");
+  });
+});
+
+describe("a removal the kept start's read took", () => {
+  it("is carried over the reload, so the page that starts again still says it", () => {
+    const session = { email: "olu@example.com", teams: [], invitations: [], removed: ["Olu Owner's workspace"] };
+    // The kept start read it (the cloud says it once), then reloaded fresh: the mark carries it.
+    const mark = freshMark({ ok: true, session });
+    const again = { ...session, removed: [] };
+    const carried = carriedRemovals(mark);
+    expect(withCarried(again, carried).removed).toEqual(["Olu Owner's workspace"]);
+    expect(removedNotice().read(withCarried(again, carried))).toBe("You were removed from Olu Owner's workspace.");
+    // Said by both: once. Signed out, an older mark, or none: nothing carried.
+    expect(withCarried(session, carried).removed).toEqual(["Olu Owner's workspace"]);
+    expect(carriedRemovals(freshMark({ ok: false, signedOut: true }))).toEqual([]);
+    expect(carriedRemovals("1")).toEqual([]);
+    expect(carriedRemovals(null)).toEqual([]);
   });
 });

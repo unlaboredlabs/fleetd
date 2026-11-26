@@ -2,6 +2,7 @@
 // hub with two people, the order's starter or the person the lead was answering, not whoever wrote last.
 import { afterAll, expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
+import { accounts } from "../src/hub/claude_accounts/tools.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { showRequest } from "../src/hub/chat/flow.ts";
 import { people } from "../src/hub/people/store.ts";
@@ -159,4 +160,41 @@ test("a card of an order nobody started goes to the owner", async () => {
   });
   await showRequest(hub, request.requestId);
   expect(chat(hub).bySource(r, `item:${request.requestId}`)?.for).toEqual(sam);
+});
+
+test("removing a person hands what waited on them to the owner, and forgets their Claude subscription", async () => {
+  const { hub, call, device, sam, dana, t0, write } = await rig();
+  write(dana, "Search feels slow, can you look?", t0 + 1000);
+  const question = chat(hub).add(r, { author: "lead", text: "Resize them on upload, or lazy-load them?", createdMs: t0 + 2000 }).message;
+  const request = approvals(hub).create({
+    projectRef: r,
+    workstreamId: "W3",
+    kind: "approval",
+    text: "Backfill the image sizes",
+    gated: { argv: ["bin/resize-images", "--all"], cwd: "/srv/shop", class: "irreversible", reason: "Backfill the image sizes", timeoutSec: 600 },
+    at: new Date(t0 + 3000).toISOString(),
+    atMs: t0 + 3000,
+  });
+  await showRequest(hub, request.requestId);
+  accounts(hub).putSubscription(dana.personId, { sealedOn: [{ machineId: "devbox", fingerprint: "ab12cd34" }], connectedAt: "2026-11-08T10:00:00.000Z" });
+  expect(chat(hub).state(r, false)).toMatchObject({ needsYouFor: [dana.personId], openItems: [{ for: dana.personId }] });
+
+  await call(device(undefined, sam.personId), "person_remove", { personId: dana.personId });
+  expect(chat(hub).bySource(r, `item:${request.requestId}`)?.for).toEqual(sam);
+  expect(chat(hub).page(r, undefined, undefined, 50).messages.find((m) => m.messageId === question.messageId)?.for).toEqual(sam);
+  expect(chat(hub).state(r, false)).toMatchObject({ needsYou: true, needsYouFor: [sam.personId], openItems: [{ for: sam.personId }] });
+  expect(chat(hub).page(r, undefined, undefined, 50).messages.at(-1)?.text).toBe(`Dana Park was removed from the workspace, so what waited on them waits on ${sam.name} now.`);
+  expect(accounts(hub).subscription(dana.personId)).toBeUndefined();
+  // A new card of her order goes to the owner too.
+  const later = approvals(hub).create({
+    projectRef: r,
+    workstreamId: "W3",
+    kind: "approval",
+    text: "Purge the CDN",
+    gated: { argv: ["bin/purge"], cwd: "/srv/shop", class: "irreversible", reason: "Purge the CDN", timeoutSec: 600 },
+    at: new Date(t0 + 9000).toISOString(),
+    atMs: t0 + 9000,
+  });
+  await showRequest(hub, later.requestId);
+  expect(chat(hub).bySource(r, `item:${later.requestId}`)?.for).toEqual(sam);
 });

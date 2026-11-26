@@ -1,8 +1,9 @@
 // `fleetd invite` and `fleetd people`: the hub's people, from the hub machine. Like
 // `hub key`, they open the hub home's database directly, so the hub need not be running.
+import { systemClock } from "../shared/clock.ts";
 import { ArgError, parse, type Parsed } from "./args.ts";
 import { resolveHome } from "./common.ts";
-import { deepLink, localHubUrls } from "./pair.ts";
+import { deepLink, localHubUrls, loopbackOnlyFix, phoneUrl } from "./pair.ts";
 import { type CliResult, err, ok } from "./result.ts";
 import {
   announcePeople,
@@ -20,6 +21,7 @@ import {
   removePerson,
   revokeInvite,
   setPersonRole,
+  writable,
 } from "./store.ts";
 import { PEOPLE_USAGE } from "./usages.ts";
 export { PEOPLE_USAGE };
@@ -92,6 +94,8 @@ function invite(v: Parsed, o: { db: Db; home: string }): string {
   let out = `Invited ${person.name} (${person.personId}) as ${person.role}.\nInvite link:  ${link}\nCode:         ${minted.code}  (single use, valid until ${minted.expiresAt})\nWorkspace:    ${urls[0]}\n`;
   if (urls.length > 1) out += `  or:         ${urls.slice(1).join(", ")}\n`;
   out += `\nSend ${person.name} the link, or the code and workspace address to enter in the fleetd app. The device it pairs is theirs.\nTake it back with \`fleetd invite revoke ${inviteId}\`.\n`;
+  // A workspace on this computer's loopback only: the link reaches nobody else's.
+  if (phoneUrl(urls) === undefined) out += `\nOnly this computer reaches ${urls[0]}, so ${person.name} can't join from theirs yet. ${loopbackOnlyFix("their computer", "send them a new invite")}\n`;
   return out;
 }
 
@@ -116,7 +120,7 @@ function revoke(db: Db, id: string): string {
   return `Revoked the invite for ${invite.person.name}.\n`;
 }
 
-export function peopleCommand(argv: string[], home?: string): CliResult {
+export function peopleCommand(argv: string[], home?: string): CliResult | Promise<CliResult> {
   const v = parsed(argv, {});
   if (!(v instanceof Object && "positionals" in v)) return v;
   const p = v.positionals;
@@ -126,7 +130,7 @@ export function peopleCommand(argv: string[], home?: string): CliResult {
     if (role === undefined) return usage("the role must be owner, admin or member");
     return withHub(home, (o) => setRole(o.db, p[1]!, role));
   }
-  if (p.length === 2 && p[0] === "remove") return withHub(home, (o) => remove(o.db, p[1]!));
+  if (p.length === 2 && p[0] === "remove") return remove(home, p[1]!);
   return usage("expected people, people role <personId> <role> or people remove <personId>");
 }
 
@@ -160,13 +164,27 @@ function setRole(db: Db, raw: string, role: HubRole): string {
   return `${after.name} is now ${role}.\n`;
 }
 
-function remove(db: Db, raw: string): string {
-  const id = personId(raw);
-  const person = getPerson(db, id);
-  if (!person || person.removedAt !== undefined) throw new Error(`no person ${id}`);
-  if (person.role === "owner" && owners(db) <= 1) throw new Error(`${person.name} is the workspace's only owner`);
-  const removed = removePerson(db, id);
-  if (!removed) throw new Error(`no person ${id}`);
-  announcePeople(db, "removed", removed[0], `${removed[0].name} was removed from the workspace`);
-  return `Removed ${removed[0].name}; signed out ${removed[1]} device(s).\n`;
+/**
+ * `people remove`: the app's way (hub/people/leave.ts), on a hub made over the home's database. Their devices are signed
+ * out, their accounts forgotten, and what waited on them in the chats waits on the owner.
+ */
+async function remove(home: string | undefined, raw: string): Promise<CliResult> {
+  let o;
+  try {
+    o = open(home);
+  } catch (error) {
+    return fail((error as Error).message);
+  }
+  try {
+    const id = personId(raw);
+    writable(o.db, "Removing a person");
+    const [{ Hub }, { removeFromWorkspace }] = await Promise.all([import("../hub/api/hub.ts"), import("../hub/people/leave.ts")]);
+    const hub = new Hub({ home: o.home, listen: { host: "127.0.0.1", port: 4790 } }, o.db, systemClock);
+    const { person, revoked } = await removeFromWorkspace(hub, id);
+    return ok(`Removed ${person.name}; signed out ${revoked} device(s). What waited on them waits on the workspace's owner now.\n`);
+  } catch (error) {
+    return fail((error as Error).message.replace(/\.$/u, ""));
+  } finally {
+    o.db.conn.close();
+  }
 }

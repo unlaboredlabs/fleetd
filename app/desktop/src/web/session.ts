@@ -200,6 +200,26 @@ export const teamFromAddress = (address: { readonly search: string; readonly has
   return { search, hash: toHash({ ...parseHash(address.hash), at: hub }) };
 };
 
+/**
+ * What a reload after a kept start carries over (main.tsx's FRESH mark): the teams the person was removed from, which
+ * the cloud says once and the kept start's read already took, so the page that starts again can still say them.
+ */
+export const freshMark = (read: SessionRead): string => JSON.stringify(read.ok ? read.session.removed : []);
+
+/** The removals a FRESH mark carried; none for an older mark ("1") or anything else. */
+export const carriedRemovals = (mark: string | null): string[] => {
+  try {
+    const v: unknown = JSON.parse(mark ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 50) : [];
+  } catch {
+    return [];
+  }
+};
+
+/** The session with the removals a reload carried over, each once. */
+export const withCarried = (session: WebSession, carried: readonly string[]): WebSession =>
+  carried.length === 0 ? session : { ...session, removed: [...new Set([...session.removed, ...carried])] };
+
 /** The one line a person removed from teams reads at their next sign-in. */
 export const removedLine = (teams: readonly string[]): string => `You were removed from ${teams.join(", ")}.`;
 
