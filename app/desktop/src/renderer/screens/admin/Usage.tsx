@@ -185,13 +185,13 @@ function Tile({ label, value, delta, under, hint }: { label: string; value: stri
 function Tiles({ usage, days, cloud }: { usage: WorkspaceUsageOutput; days: Period; cloud: boolean }) {
   const t = usage.total;
   const p = usage.previous;
-  const vs = (now: number | undefined, was: number | undefined, better: Better, as?: "share" | "wait") => change(now, was, better, as);
+  const vs = (now: number | undefined, was: number | undefined, better: Better, as?: "count" | "share" | "wait") => change(now, was, better, as);
   const versus = `against ${before(days)}`;
   const currency = usage.currency ?? "USD";
   return (
     <div className={u.tiles}>
-      <Tile label="Orders started" value={count(t.orders)} delta={vs(t.orders, p.orders, "up")} under={`${count(t.messages)} messages to leads`} hint={`Orders the workspace's people, automations and the merge train started, ${versus}.`} />
-      <Tile label="PRs merged" value={count(t.merged)} delta={vs(t.merged, p.merged, "up")} under={`${count(t.agents)} agents run`} hint={`Pull requests merged through fleetd, ${versus}.`} />
+      <Tile label="Orders started" value={count(t.orders)} delta={vs(t.orders, p.orders, "up", "count")} under={`${count(t.messages)} messages to leads`} hint={`Orders the workspace's people, automations and the merge train started, ${versus}.`} />
+      <Tile label="PRs merged" value={count(t.merged)} delta={vs(t.merged, p.merged, "up", "count")} under={`${count(t.agents)} agents run`} hint={`Pull requests merged through fleetd, ${versus}.`} />
       <Tile
         label="Ask to merge"
         value={t.askToMergeMs === undefined ? "—" : wait(t.askToMergeMs)}
@@ -209,8 +209,8 @@ function Tiles({ usage, days, cloud }: { usage: WorkspaceUsageOutput; days: Peri
         />
       ) : null}
       <Tile label="Agent hours" value={hours(t.agentMs)} delta={vs(t.agentMs, p.agentMs, "none")} under="working, not waiting" hint={`Agents thinking, running tools and starting up; not their waits. ${versus[0]?.toUpperCase()}${versus.slice(1)}.`} />
-      <Tile label="Approvals answered" value={count(t.approvals)} delta={vs(t.approvals, p.approvals, "none")} under={usage.now.waiting > 0 ? `${count(usage.now.waiting)} waiting now` : "none waiting"} hint={`Approvals and secret requests people answered, ${versus}.`} />
-      <Tile label="Failed or stopped" value={count(t.failed)} delta={vs(t.failed, p.failed, "down")} under="agents and orders" hint={`Agents that failed, and orders stopped before they were done, ${versus}.`} />
+      <Tile label="Approvals answered" value={count(t.approvals)} delta={vs(t.approvals, p.approvals, "none", "count")} under={usage.now.waiting > 0 ? `${count(usage.now.waiting)} waiting now` : "none waiting"} hint={`Approvals and secret requests people answered, ${versus}.`} />
+      <Tile label="Failed or stopped" value={count(t.failed)} delta={vs(t.failed, p.failed, "down", "count")} under="agents and orders" hint={`Agents that failed, and orders stopped before they were done, ${versus}.`} />
     </div>
   );
 }

@@ -45,26 +45,39 @@ export const money = (cents: number, currency: string): string => {
 export type Better = "up" | "down" | "none";
 
 export interface Change {
-  /** "↑ 12%", "↓ 40m". */
+  /** "↑ 12%", "↓ 40m", or for a count that was small before, "up from 3". */
   readonly text: string;
   /** By the direction and which way is better: never colour alone, the arrow says it too. */
   readonly tone: "success" | "danger" | "quiet";
+  /** The text is the two counts, not a share: "in the 30 days before" follows it, not "against". */
+  readonly plain?: true;
 }
 
+/** Below this many before, a count's change is said as the two counts: 1 to 133 is not "↑ 13200%". */
+const FEW = 10;
+
 /**
- * The change against the period before, as a share for a count or a time spent, and as a time for a wait. Absent when
- * the period before had nothing to compare with (a new workspace).
+ * The change against the period before, as a share for a time spent, as a time for a wait, and for a count as a share
+ * or, when the count before was under ten, as the count it rose or fell from. Absent when there is nothing to compare
+ * with: a time with nothing before (a new workspace), or a count that was and is none.
  */
-export const change = (now: number | undefined, before: number | undefined, better: Better, as: "share" | "wait" = "share"): Change | undefined => {
-  if (now === undefined || before === undefined || before <= 0) return undefined;
+export const change = (now: number | undefined, before: number | undefined, better: Better, as: "count" | "share" | "wait" = "share"): Change | undefined => {
+  if (now === undefined || before === undefined) return undefined;
   const d = now - before;
+  const tone = better === "none" || d === 0 ? "quiet" : d > 0 === (better === "up") ? "success" : "danger";
+  if (as === "count" && before < FEW) {
+    if (now === 0 && before === 0) return undefined;
+    return { text: d === 0 ? `same as ${count(before)}` : `${d > 0 ? "up" : "down"} from ${before === 0 ? "none" : count(before)}`, tone, plain: true };
+  }
+  if (before <= 0) return undefined;
   const still = as === "wait" ? Math.abs(d) < MIN : Math.abs(d) / before < 0.005;
   if (still) return { text: "→ same", tone: "quiet" };
-  const up = d > 0;
   const size = as === "wait" ? wait(Math.abs(d)) : `${Math.round((Math.abs(d) / before) * 100)}%`;
-  const tone = better === "none" ? "quiet" : up === (better === "up") ? "success" : "danger";
-  return { text: `${up ? "↑" : "↓"} ${size}`, tone };
+  return { text: `${d > 0 ? "↑" : "↓"} ${size}`, tone };
 };
+
+/** "↑ 12% against the 30 days before", "up from 1 in the 30 days before". */
+export const against = (c: Change, days: Period): string => `${c.text} ${c.plain === true ? "in" : "against"} ${before(days)}`;
 
 /** A column of the charts: one day, or one week of days from the period's first. */
 export interface Column {
