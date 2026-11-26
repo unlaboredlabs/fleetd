@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPairLink, pairLinkStep, parsePairLink, pastedPair } from "./pairLink";
+import { isPairLink, pairAgainTitle, pairLinkStep, parsePairLink, pastedPair, refusedWords } from "./pairLink";
 
 describe("parsePairLink", () => {
   it("reads the hub's origin and the code from a QR code's link", () => {
@@ -112,3 +112,14 @@ describe("pairLinkStep", () => {
     expect(pairLinkStep("https://example.com", "scanner", null)).toEqual({ t: "ignore" });
   });
 });
+
+describe("a key the workspace refused", () => {
+  it("says so in the person's words, titled for the device", () => {
+    // Seen on the Duo: the alert read the workspace's own "agent key fld_ep5kxy was revoked", and Settings' row
+    // "Pair This phone Again".
+    expect(pairAgainTitle("phone")).toBe("Pair This Phone Again");
+    expect(pairAgainTitle("iPad")).toBe("Pair This iPad Again");
+    expect(refusedWords("phone", "devbox")).toBe("devbox no longer accepts this phone's key. Pair it again with a new code from the workspace.");
+  });
+});
+

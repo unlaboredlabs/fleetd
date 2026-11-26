@@ -31,7 +31,7 @@ import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, show
 import { cloudDomain, WORKSPACE_DELETED, type PairFailure } from "./src/desktop";
 import { deviceName } from "./src/hub/deviceName";
 import { accountPreview, askedOn, deleteAccount } from "./src/accountDelete";
-import { pairLinkStep } from "./src/hub/pairLink";
+import { pairAgainTitle, pairLinkStep, refusedWords } from "./src/hub/pairLink";
 import { HubContext, HubStoreContext, SessionContext, type ChatsParams, type HubContextValue, type HubStore, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { NotifyAsk } from "./src/screens/NotifyAsk";
@@ -570,7 +570,7 @@ function Hub({ paired, hubs, account, onForget, onRefused, onShow, onMade, onSig
       return;
     }
     haptics.warning();
-    Alert.alert(DEVICE === "iPad" ? "Pair This iPad Again" : "Pair This Phone Again", refused, [
+    Alert.alert(pairAgainTitle(DEVICE), refusedWords(DEVICE, paired.hubName), [
       { text: "Not Now", style: "cancel" },
       { text: "Pair Again", onPress: () => onForget(`This ${DEVICE}'s key was refused: pair it again.`) },
     ]);

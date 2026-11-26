@@ -10,7 +10,7 @@ describe("Settings with a refused key", () => {
   it("offers to pair again under the status that says so", () => {
     // Seen on the Duo: after Not Now, Status read "Key refused" and nothing near it could be pressed.
     const status = settings.indexOf('<ListRow title="Status"');
-    const again = settings.indexOf("{hub.phase === \"refused\" ? <ListRow title={`Pair This ${DEVICE} Again`} onPress={forget} /> : null}");
+    const again = settings.indexOf("{hub.phase === \"refused\" ? <ListRow title={pairAgainTitle(DEVICE)} onPress={forget} chevron={false} /> : null}");
     expect(status).toBeGreaterThan(0);
     expect(again).toBeGreaterThan(status);
     expect(settings.slice(status, again)).not.toContain("</ListSection>");

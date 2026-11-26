@@ -62,6 +62,12 @@ export const pastedPair = (text: string): Pasted => {
   return code === null ? { ok: false, note: CODE_SHAPE } : { ok: true, code };
 };
 
+/** The refused key's question and Settings' row: "Pair This Phone Again", "Pair This iPad Again". */
+export const pairAgainTitle = (device: string): string => `Pair This ${device === "iPad" ? "iPad" : "Phone"} Again`;
+
+/** Why, in the person's words: the workspace's own reason names keys by their ids ("agent key fld_… was revoked"). */
+export const refusedWords = (device: string, hubName: string): string => `${hubName} no longer accepts this ${device}'s key. Pair it again with a new code from the workspace.`;
+
 /** What a pairing link does, by where it came from. */
 export type LinkStep =
   /** Not a pairing link: nothing to do (the scanner says it isn't one). */
