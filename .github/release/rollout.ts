@@ -12,7 +12,12 @@
 //   rollout.ts halt <build>     nobody new takes <build>
 //   rollout.ts pull <build>     everyone on <build> goes back to the build before it
 //   rollout.ts resume <build>   undoes a halt or a pull
-//   rollout.ts moving           exits 0 while a build waits on the gate or hasn't reached everyone yet
+//   rollout.ts moving           exits 0 while a build waits on the gate or hasn't reached everyone yet, or a phone
+//                               update hasn't
+//   rollout.ts phone-add <tar>  mobile-release.yml's update job: lists the phone update the package holds (RELEASE_SHA,
+//                               its commit) and serves its first stage
+//   rollout.ts phone-halt|phone-pull|phone-resume <update id>
+//                               the same flags for a phone update (phone-rollout.ts says what each serves)
 //
 // The first ring: a build passes once fleetd's own hub passed on it and the cloud runs it (its public /version names a
 // fleetd commit that holds the build's, with every instance settled). A stale cloud never holds everyone back: when the
@@ -22,15 +27,16 @@
 // The desktop app reads its feed on edge by its bucket (app/desktop/src/main/update-stage.ts): stage10-*.yml below 10,
 // stage50-*.yml below 50, latest-*.yml otherwise, and apps from before stages read latest. Each is the feed of the
 // newest build that reached that share (a build that didn't change the app has none: the nearest older build's), its
-// files named by their full address in that build's release. The phone's over-the-air updates aren't staged here: they
-// go out after each merge (mobile-release.yml, D800), and a bundle that crashes as it starts goes back to the one
-// before it on the phone itself.
+// files named by their full address in that build's release. The phone's over-the-air updates go out after each merge
+// (mobile-release.yml, D800) through stages of their own, by install (phone-rollout.ts): every tick writes what each
+// serves into edge's mobile-updates.tar.gz, and fleetd.sh deploys it.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRollout, percentAt, STAGES, type Rollout, type RolloutBuild } from "../../fleetd/src/update/rollout.ts";
 import { httpStatus, transient } from "../../fleetd/src/hub/train/github.ts";
+import { packageOf, parsePhoneRollout, phoneMoving, PLATFORMS, prunePhone, served, servedText, updateOf, writeServed, type PhoneRollout, type PhoneUpdate } from "./phone-rollout.ts";
 
 const HOUR = 3_600_000;
 const TAG = "edge";
@@ -260,37 +266,45 @@ function gh(args: string[], input?: string): string {
   return r.stdout;
 }
 
-function readRollout(): Rollout {
+/** A JSON file on the edge release (`none` while there is none). */
+function readJson<T>(name: string, parse: (text: string) => T, none: T): T {
   const dir = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-"));
-  const r = runGh(["release", "download", TAG, "-p", "rollout.json", "-D", dir]);
-  if (r.status !== 0 || !existsSync(join(dir, "rollout.json"))) {
-    if (/no assets match|not found/i.test(r.stderr)) return { builds: [] };
-    throw new Error(`couldn't read rollout.json: ${r.stderr.trim()}`);
+  const r = runGh(["release", "download", TAG, "-p", name, "-D", dir]);
+  if (r.status !== 0 || !existsSync(join(dir, name))) {
+    if (/no assets match|not found/i.test(r.stderr)) return none;
+    throw new Error(`couldn't read ${name}: ${r.stderr.trim()}`);
   }
-  return parseRollout(readFileSync(join(dir, "rollout.json"), "utf8"));
+  return parse(readFileSync(join(dir, name), "utf8"));
 }
 
-function writeRollout(r: Rollout): void {
+function writeJson(name: string, value: unknown): void {
   const dir = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-"));
-  const path = join(dir, "rollout.json");
-  writeFileSync(path, `${JSON.stringify(r, null, 2)}\n`);
+  const path = join(dir, name);
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
   gh(["release", "upload", TAG, path, "--clobber"]);
 }
 
-/** Applies `change` to rollout.json and writes it, until a read back holds it (`holds`); what it wrote. */
-function update(change: (r: Rollout) => boolean, holds: (r: Rollout) => boolean): Rollout {
+/** Applies `change` to a JSON file on the edge release and writes it, until a read back holds it (`holds`); what it
+ * wrote. */
+function updateJson<T>(read: () => T, name: string, change: (r: T) => boolean, holds: (r: T) => boolean): T {
   for (let attempt = 1; ; attempt++) {
-    const r = readRollout();
+    const r = read();
     if (!change(r)) return r;
-    writeRollout(r);
+    writeJson(name, r);
     // A write that crossed this one lands within seconds of it.
     Bun.sleepSync(3000);
-    const back = readRollout();
+    const back = read();
     if (holds(back)) return back;
     if (attempt >= 5) throw new Error("another write kept crossing this one; run it again");
     console.log("another write crossed this one; trying again");
   }
 }
+
+const readRollout = (): Rollout => readJson("rollout.json", parseRollout, { builds: [] });
+const update = (change: (r: Rollout) => boolean, holds: (r: Rollout) => boolean): Rollout => updateJson(readRollout, "rollout.json", change, holds);
+const readPhone = (): PhoneRollout => readJson("phone.json", parsePhoneRollout, { updates: [] });
+const updatePhone = (change: (r: PhoneRollout) => boolean, holds: (r: PhoneRollout) => boolean): PhoneRollout =>
+  updateJson(readPhone, "phone.json", change, holds);
 
 /** A release's file names; none when it doesn't exist (any more). GitHub failing isn't "none": it throws. */
 function assets(tag: string): string[] {
@@ -451,6 +465,102 @@ function flag(kind: "halt" | "pull" | "resume" | "pass", build: string): Rollout
   return r;
 }
 
+// ---- The phone's over-the-air updates (phone-rollout.ts) ----
+
+const tar = (args: string[]) => {
+  const r = spawnSync("tar", args, { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`tar ${args.join(" ")}: ${r.stderr.trim()}`);
+  return r.stdout;
+};
+
+/**
+ * Writes what each stage serves (`served`) into edge's mobile-updates.tar.gz when it changed, from the updates'
+ * packages, and deploys fleetd.sh. With nothing listed it leaves what edge holds.
+ */
+async function servePhone(p: PhoneRollout, now: number, work: string, edge: Set<string>): Promise<void> {
+  const s = served(p, now);
+  if (s.length === 0) return;
+  const text = servedText(s);
+  const held = edge.has("mobile-updates.tar.gz") ? spawnSync("tar", ["-xzOf", download(TAG, "mobile-updates.tar.gz", join(work, "phone-held")), "./served.txt"], { encoding: "utf8" }) : undefined;
+  if (held?.status === 0 && held.stdout === text) return;
+  const out = join(work, "phone-served");
+  const dir = (id: string) => join(work, "phone-packages", id);
+  for (const id of new Set(s.map((x) => x.from))) {
+    mkdirSync(dir(id), { recursive: true });
+    tar(["-xzf", download(TAG, packageOf(id), join(work, "phone-download", id)), "-C", dir(id)]);
+  }
+  writeServed(s, dir, out);
+  const tarball = join(work, "mobile-updates.tar.gz");
+  tar(["-czf", tarball, "-C", out, "."]);
+  gh(["release", "upload", TAG, tarball, "--clobber"]);
+  edge.add("mobile-updates.tar.gz");
+  console.log(`mobile-updates.tar.gz:\n${text}`);
+  const hook = process.env.SITE_DEPLOY_HOOK;
+  if (hook) await fetch(hook, { method: "POST" }).catch((e: unknown) => console.log(`the site's deploy hook failed: ${String(e)}`));
+  else console.log("::notice::No SITE_DEPLOY_HOOK secret: fleetd.sh serves these from its next deploy.");
+}
+
+/** Lists the update a package holds (mobile-release.yml's update job) and puts it on its first stage. */
+async function phoneAdd(path: string): Promise<void> {
+  const commit = process.env.RELEASE_SHA ?? "";
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("phone-add needs RELEASE_SHA");
+  const now = Date.now();
+  const u: PhoneUpdate = updateOf(tar(["-xzOf", path, "./updates.txt"]), commit, iso(now));
+  for (const platform of PLATFORMS) if (u.platforms[platform] && !tar(["-tzf", path]).includes(`./back/${u.platforms[platform]!.runtime}/${platform}`)) {
+    throw new Error(`the package has no back copy for ${platform}: a pull couldn't take phones back`);
+  }
+  const listed = readPhone().updates.some((x) => x.id === u.id);
+  if (listed) {
+    console.log(`phone update ${u.id} is listed already: nothing new`);
+    return;
+  }
+  // The package first: a listed update's package is always there to serve.
+  const named = join(mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-")), packageOf(u.id));
+  cpSync(path, named);
+  gh(["release", "upload", TAG, named, "--clobber"]);
+  const r = updatePhone(
+    (r) => {
+      if (r.updates.some((x) => x.id === u.id)) return false;
+      r.updates = [u, ...r.updates];
+      return true;
+    },
+    (r) => r.updates.some((x) => x.id === u.id),
+  );
+  console.log(`phone.json: added ${u.id} (${u.commit.slice(0, 9)}), ${r.updates.length} listed`);
+  await servePhone(r, now, mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-")), new Set(assets(TAG)));
+}
+
+function phoneFlag(kind: "halt" | "pull" | "resume", id: string): void {
+  const now = iso(Date.now());
+  const find = (r: PhoneRollout) => r.updates.find((u) => u.id === id);
+  updatePhone(
+    (r) => {
+      const u = find(r);
+      if (!u) throw new Error(`${id} isn't in phone.json (listed: ${r.updates.map((u) => u.id).join(", ") || "none"})`);
+      if (kind === "halt") {
+        if (u.haltedAt !== undefined) return false;
+        u.haltedAt = now;
+      } else if (kind === "pull") {
+        if (u.pulledAt !== undefined) return false;
+        u.pulledAt = now;
+      } else {
+        if (u.haltedAt === undefined && u.pulledAt === undefined) return false;
+        delete u.haltedAt;
+        delete u.pulledAt;
+      }
+      return true;
+    },
+    (r) => {
+      const u = find(r);
+      if (!u) return false;
+      if (kind === "halt") return u.haltedAt !== undefined;
+      if (kind === "pull") return u.pulledAt !== undefined;
+      return u.haltedAt === undefined && u.pulledAt === undefined;
+    },
+  );
+  console.log(`phone update ${id}: ${kind === "resume" ? "resumed" : kind === "halt" ? "halted" : "pulled"}`);
+}
+
 async function tick(): Promise<void> {
   const now = Date.now();
   const cloud = await readCloud();
@@ -475,6 +585,23 @@ async function tick(): Promise<void> {
   const edge = new Set(assets(TAG));
   writeFeeds(r, now, work, filesOf, edge);
 
+  // The phone's updates: each stage as far as it got, and the packages no longer listed gone.
+  let droppedPhone: string[] = [];
+  const phone = updatePhone(
+    (p) => {
+      const { kept, dropped } = prunePhone(p, now);
+      p.updates = kept;
+      droppedPhone = dropped;
+      return dropped.length > 0;
+    },
+    () => true,
+  );
+  await servePhone(phone, now, work, edge);
+  for (const id of droppedPhone) {
+    runGh(["release", "delete-asset", TAG, packageOf(id), "-y"]);
+    console.log(`${packageOf(id)}: removed, no longer listed`);
+  }
+
   // The builds this tick stopped listing lose their files; their releases stay, for their notes.
   for (const build of dropped) {
     for (const name of filesOf(build)) runGh(["release", "delete-asset", releaseOf(build), name, "-y"]);
@@ -489,12 +616,17 @@ if (import.meta.main) {
     if (command === "add") add();
     else if (command === "tick") await tick();
     // Exits 0 while something is still moving (`moving`), 1 once nothing is.
-    else if (command === "moving") process.exit(moving(readRollout(), Date.now()) ? 0 : 1);
+    else if (command === "moving") process.exit(moving(readRollout(), Date.now()) || phoneMoving(readPhone(), Date.now()) ? 0 : 1);
+    else if (command === "phone-add" && build) await phoneAdd(build);
+    else if ((command === "phone-halt" || command === "phone-pull" || command === "phone-resume") && build) {
+      phoneFlag(command.slice("phone-".length) as "halt" | "pull" | "resume", build);
+      await tick();
+    }
     else if ((command === "halt" || command === "pull" || command === "resume" || command === "pass") && build) {
       flag(command, build);
       await tick();
     } else {
-      console.error("usage: rollout.ts add | tick | pass <build> | halt <build> | pull <build> | resume <build>");
+      console.error("usage: rollout.ts add | tick | pass <build> | halt <build> | pull <build> | resume <build> | phone-add <package> | phone-halt <id> | phone-pull <id> | phone-resume <id>");
       process.exit(2);
     }
   } catch (e) {

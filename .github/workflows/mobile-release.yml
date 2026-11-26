@@ -383,11 +383,12 @@ jobs:
           retention-days: 30
 
   update:
-    # Signs the runtime job's export (.github/release/mobile-update.sh, with Node alone: no npm install near the key)
-    # and makes it edge's: the edge release's mobile-updates.tar.gz, which fleetd.sh serves (site/mobile-updates.sh)
-    # once its deploy hook rebuilds it, within minutes. Each build with the same native fingerprint takes it at its next
-    # launch or return to the app (app/mobile/src/appUpdate.ts); one that crashes as it starts goes back to the bundle
-    # before it, by expo-updates' own error recovery.
+    # Signs the runtime job's export (.github/release/mobile-update.sh, with Node alone: no npm install near the key),
+    # with the copy of what everyone has now that a pull would serve, and hands it to the phone's staged rollout
+    # (.github/release/phone-rollout.ts): about 10% of installs at once, 50% after an hour, everyone after 3 hours,
+    # fleetd.sh deployed at each step by its hook. Each build with the same native fingerprint in a stage takes it at its
+    # next launch or return to the app (app/mobile/src/appUpdate.ts); one that crashes as it starts goes back to the
+    # bundle before it, by expo-updates' own error recovery.
     name: update
     needs: [signing, runtime, decide]
     if: needs.decide.outputs.release == 'update'
@@ -395,6 +396,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      # Starts the rollout's ticker, which moves the update through its stages.
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -402,38 +405,34 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
       - uses: actions/download-artifact@v8
         with:
           name: mobile-export
           path: ${{ runner.temp }}/export
-      - name: Sign
-        env:
-          UPDATES_PRIVATE_KEY_PEM: ${{ secrets.UPDATES_PRIVATE_KEY_PEM }}
-        run: .github/release/mobile-update.sh sign "$RUNNER_TEMP/export" edge "$RUNNER_TEMP/mobile-updates.tar.gz"
-      # mobile-due.sh finds the updates that went out by this step's name.
-      - name: Publish the update
-        id: publish
+      - name: What everyone has now
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          tar -xzOf "$RUNNER_TEMP/mobile-updates.tar.gz" ./updates.txt > "$RUNNER_TEMP/updates.txt"
-          { echo "Over-the-air update for edge:"; echo; sed 's/^/    /' "$RUNNER_TEMP/updates.txt"; } | tee -a "$GITHUB_STEP_SUMMARY"
-          if gh release download edge -p mobile-updates.tar.gz -O "$RUNNER_TEMP/held.tar.gz" 2>/dev/null &&
-            tar -xzOf "$RUNNER_TEMP/held.tar.gz" ./updates.txt 2>/dev/null | cmp -s - "$RUNNER_TEMP/updates.txt"; then
-            echo "edge already holds these updates" | tee -a "$GITHUB_STEP_SUMMARY"
-          else
-            gh release upload edge "$RUNNER_TEMP/mobile-updates.tar.gz" --clobber
-            echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/served"
+          if gh release download edge -p mobile-updates.tar.gz -O "$RUNNER_TEMP/served.tar.gz" 2>/dev/null; then
+            tar -xzf "$RUNNER_TEMP/served.tar.gz" -C "$RUNNER_TEMP/served"
           fi
-      - name: Deploy fleetd.sh
-        # Its build fetches the tarball; without the hook, the next deploy of main carries it.
-        if: steps.publish.outputs.uploaded == 'true'
+      - name: Sign
         env:
+          UPDATES_PRIVATE_KEY_PEM: ${{ secrets.UPDATES_PRIVATE_KEY_PEM }}
+        run: .github/release/mobile-update.sh sign "$RUNNER_TEMP/export" edge "$RUNNER_TEMP/phone-update.tar.gz" "$RUNNER_TEMP/served"
+      # mobile-due.sh finds the updates that went out by this step's name.
+      - name: Publish the update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ inputs.sha || github.sha }}
           SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: |
-          if [ -n "$SITE_DEPLOY_HOOK" ]; then
-            curl -fsS -X POST -o /dev/null "$SITE_DEPLOY_HOOK"
-          else
-            echo "::notice::No SITE_DEPLOY_HOOK secret: fleetd.sh serves this update from its next deploy."
-          fi
+          { echo "Over-the-air update for edge, to about 10% of installs first:"; echo; tar -xzOf "$RUNNER_TEMP/phone-update.tar.gz" ./updates.txt | sed 's/^/    /'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          bun .github/release/rollout.ts phone-add "$RUNNER_TEMP/phone-update.tar.gz"
+          gh workflow run rollout.yml -f action=tick

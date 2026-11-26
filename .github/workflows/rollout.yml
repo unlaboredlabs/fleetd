@@ -1,5 +1,6 @@
 # Moves builds through the rollout (D701, .github/release/rollout.ts): every 10 minutes it checks the first ring's gate
-# and points the desktop app's feeds at the builds each stage has reached. GitHub's schedule alone lags by
+# and points the desktop app's feeds at the builds each stage has reached, and the phone's over-the-air updates at
+# theirs (.github/release/phone-rollout.ts). GitHub's schedule alone lags by
 # hours on this repo, so the ticker also starts after each edge run and each flag, and ticks every 10 minutes for as
 # long as a build is still moving (waiting on the gate, or not yet at everyone), then ends; one ticker at a time.
 # fleetd's own hub starts it with `pass` once it passed its self-check on a build. Halting or pulling a build is one
@@ -7,7 +8,8 @@
 #
 #   gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=0.9.4
 #
-# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) A flag has no
+# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) A phone update
+# the same way, by its iOS update id: action=phone-halt, phone-pull or phone-resume with build=<update id>. A flag has no
 # concurrency group: a queued run would cancel a waiting one and drop its halt; each write reads rollout.json back
 # instead. Only the ticker has one, which never cancels the ticker running.
 name: Rollout
@@ -22,12 +24,12 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "tick, or for one build: pass, halt, pull or resume"
+        description: "tick, or for one build: pass, halt, pull or resume; for one phone update: phone-halt, phone-pull or phone-resume"
         type: choice
-        options: [tick, pass, halt, pull, resume]
+        options: [tick, pass, halt, pull, resume, phone-halt, phone-pull, phone-resume]
         default: tick
       build:
-        description: The build's number, as 0.9.4 (not for tick)
+        description: The build's number, as 0.9.4, or the phone update's id (not for tick)
         type: string
         default: ""
 
@@ -52,6 +54,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ACTION: ${{ inputs.action }}
           BUILD: ${{ inputs.build }}
+          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: bun .github/release/rollout.ts "$ACTION" "$BUILD"
 
   ticker:
@@ -73,6 +76,7 @@ jobs:
       - name: Tick while a build is moving
         env:
           GH_TOKEN: ${{ github.token }}
+          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: |
           end=$(( $(date +%s) + 340 * 60 ))
           while :; do

@@ -65,6 +65,58 @@
         {
           "type": "header",
           "key": "expo-channel-name",
+          "value": "^(?<channel>edge)$"
+        },
+        {
+          "type": "header",
+          "key": "eas-client-id",
+          "value": "^(0[0-9A-Fa-f]|1[0-9Aa])[0-9A-Fa-f-]{34}$"
+        },
+        {
+          "type": "header",
+          "key": "expo-runtime-version",
+          "value": "^(?<runtime>[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"
+        },
+        {
+          "type": "header",
+          "key": "expo-platform",
+          "value": "^(?<platform>ios|android)$"
+        }
+      ],
+      "destination": "/updates/:channel/stage10/:runtime/:platform"
+    },
+    {
+      "source": "/updates",
+      "has": [
+        {
+          "type": "header",
+          "key": "expo-channel-name",
+          "value": "^(?<channel>edge)$"
+        },
+        {
+          "type": "header",
+          "key": "eas-client-id",
+          "value": "^[0-7][0-9A-Fa-f-]{35}$"
+        },
+        {
+          "type": "header",
+          "key": "expo-runtime-version",
+          "value": "^(?<runtime>[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"
+        },
+        {
+          "type": "header",
+          "key": "expo-platform",
+          "value": "^(?<platform>ios|android)$"
+        }
+      ],
+      "destination": "/updates/:channel/stage50/:runtime/:platform"
+    },
+    {
+      "source": "/updates",
+      "has": [
+        {
+          "type": "header",
+          "key": "expo-channel-name",
           "value": "^(?<channel>edge|stable)$"
         },
         {

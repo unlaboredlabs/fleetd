@@ -2,7 +2,8 @@
 // build-release.yml runs it on each release, after `expo export`:
 //
 //   node scripts/updates.ts --dist dist --out <dir> --url https://fleetd.sh/updates --channel edge \
-//     --key private-key.pem --config expo-config.json --runtime ios=<runtime version> --runtime android=<...>
+//     --key private-key.pem --config expo-config.json --runtime ios=<runtime version> --runtime android=<...> \
+//     [--served <dir>]
 //
 // <dir> becomes the channel's directory under the update URL (site/mobile-updates.sh unpacks it into site/updates/):
 // - <runtime version>/<platform>: the signed manifest, a whole multipart/mixed response body. Static hosting can't
@@ -12,6 +13,10 @@
 // - assets/<md5><ext>: the bundle and its assets, which the client checks against the manifest's hashes.
 // - updates.txt: "<platform> <runtime version> <update id>" per manifest, which the release compares with what it
 //   holds, so an unchanged release doesn't redeploy fleetd.sh.
+// - back/<runtime version>/<platform>, with --served <dir> (the channel's directory as fleetd.sh serves it now): what
+//   takes a phone back should the update be pulled (.github/release/rollout.ts). It is the update everyone had for
+//   that runtime version, signed again as a newer one (its files copied beside), else expo-updates'
+//   rollBackToEmbedded directive: either way newer than the update, as a phone takes nothing older than what it runs.
 //
 // A manifest's id comes from its contents, so a release whose JavaScript didn't change publishes the same id and no
 // phone downloads it again. Its createdAt is when it is signed, after every build its runtime version has (their runs
@@ -20,7 +25,7 @@
 // A launch bundle that isn't Hermes bytecode is refused: the builds run Hermes, and expo-updates would load it, fail,
 // and fall back to the bundle before it on every launch.
 import { createHash, sign } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -60,6 +65,12 @@ const TYPES: Record<string, string> = {
 
 const base64url = (b: Buffer) => b.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 
+/** A UUID-shaped id from the sha256 of `text`. */
+const uuidOf = (text: string): string => {
+  const h = createHash("sha256").update(text).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+};
+
 /** One file of the export as the manifest names it, and where it goes under the channel's directory. */
 function asset(dist: string, path: string, ext: string, launch: boolean, base: string): { asset: Asset; file: string } {
   const bytes = readFileSync(join(dist, path));
@@ -94,12 +105,10 @@ function manifest(opts: {
   const base = `${opts.url.replace(/\/+$/u, "")}/${opts.channel}`;
   const launch = asset(opts.dist, meta.bundle, "bundle", true, base);
   const rest = meta.assets.map((a) => asset(opts.dist, a.path, a.ext, false, base));
-  const id = createHash("sha256")
-    .update([opts.runtimeVersion, opts.platform, launch.asset.hash, ...rest.map((r) => r.asset.hash).sort()].join("\n"))
-    .digest("hex");
+  const id = uuidOf([opts.runtimeVersion, opts.platform, launch.asset.hash, ...rest.map((r) => r.asset.hash).sort()].join("\n"));
   return {
     manifest: {
-      id: `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20, 32)}`,
+      id,
       createdAt: opts.createdAt,
       runtimeVersion: opts.runtimeVersion,
       launchAsset: launch.asset,
@@ -111,15 +120,15 @@ function manifest(opts: {
   };
 }
 
-/** The manifest as a multipart/mixed body whose manifest part carries its expo-signature (RSA-SHA256 over the part's
- * bytes, as a structured-field dictionary). */
-function signedBody(m: Manifest, privateKeyPem: string): string {
+/** A manifest, or a directive, as a multipart/mixed body whose one part carries its expo-signature (RSA-SHA256 over
+ * the part's bytes, as a structured-field dictionary). */
+function signedBody(m: Manifest | Directive, privateKeyPem: string, part: "manifest" | "directive" = "manifest"): string {
   const json = JSON.stringify(m);
-  if (json.includes(`--${BOUNDARY}`)) throw new Error("the manifest contains the multipart boundary");
+  if (json.includes(`--${BOUNDARY}`)) throw new Error(`the ${part} contains the multipart boundary`);
   const sig = sign("sha256", Buffer.from(json, "utf8"), privateKeyPem).toString("base64");
   return [
     `--${BOUNDARY}`,
-    'Content-Disposition: form-data; name="manifest"',
+    `Content-Disposition: form-data; name="${part}"`,
     "Content-Type: application/json; charset=utf-8",
     `expo-signature: sig="${sig}", keyid="${KEY_ID}", alg="${ALG}"`,
     "",
@@ -129,7 +138,34 @@ function signedBody(m: Manifest, privateKeyPem: string): string {
   ].join("\r\n");
 }
 
-/** Writes the channel's directory: each platform's signed manifest and the files they name. */
+/** expo-updates' directive to run the bundle the build embeds, for a phone running an update older than `commitTime`. */
+type Directive = { type: "rollBackToEmbedded"; parameters: { commitTime: string } };
+
+/** The manifest a signed body holds (its JSON part). */
+export function manifestOf(body: string): Manifest | undefined {
+  const json = body.split("\r\n").find((l) => l.startsWith("{"));
+  const parsed = json === undefined ? undefined : (JSON.parse(json) as Partial<Manifest> & Partial<Directive>);
+  return parsed?.launchAsset === undefined ? undefined : (parsed as Manifest);
+}
+
+/** What takes a phone on `m` back should it be pulled: `served`'s manifest for its runtime version and platform (the
+ * update everyone had), signed again 1 ms newer than `m` under an id of its own, its files copied into `out`; else the
+ * rollBackToEmbedded directive, as newer. */
+function back(m: Manifest, platform: Platform, served: string, out: string, privateKeyPem: string): string {
+  const commitTime = new Date(Date.parse(m.createdAt) + 1).toISOString();
+  const held = join(served, m.runtimeVersion, platform);
+  const before = existsSync(held) ? manifestOf(readFileSync(held, "utf8")) : undefined;
+  if (before === undefined) return signedBody({ type: "rollBackToEmbedded", parameters: { commitTime } }, privateKeyPem, "directive");
+  for (const a of [before.launchAsset, ...before.assets]) {
+    const file = `assets/${a.key}${a.fileExtension}`;
+    mkdirSync(join(out, "assets"), { recursive: true });
+    copyFileSync(join(served, file), join(out, file));
+  }
+  return signedBody({ ...before, id: uuidOf(`back ${before.id} ${m.id}`), createdAt: commitTime }, privateKeyPem);
+}
+
+/** Writes the channel's directory: each platform's signed manifest and the files they name, and with `served` what
+ * takes a phone back from each (`back`). */
 export function publish(opts: {
   dist: string;
   out: string;
@@ -139,6 +175,7 @@ export function publish(opts: {
   runtimes: Partial<Record<Platform, string>>;
   createdAt: string;
   expoClient?: unknown;
+  served?: string;
 }): { platform: Platform; manifest: Manifest }[] {
   const written: { platform: Platform; manifest: Manifest }[] = [];
   for (const [platform, runtimeVersion] of Object.entries(opts.runtimes) as [Platform, string][]) {
@@ -150,6 +187,10 @@ export function publish(opts: {
     }
     mkdirSync(join(opts.out, runtimeVersion), { recursive: true });
     writeFileSync(join(opts.out, runtimeVersion, platform), signedBody(m, opts.privateKeyPem));
+    if (opts.served !== undefined) {
+      mkdirSync(join(opts.out, "back", runtimeVersion), { recursive: true });
+      writeFileSync(join(opts.out, "back", runtimeVersion, platform), back(m, platform, opts.served, opts.out, opts.privateKeyPem));
+    }
     written.push({ platform, manifest: m });
   }
   writeFileSync(join(opts.out, "updates.txt"), written.map((w) => `${w.platform} ${w.manifest.runtimeVersion} ${w.manifest.id}\n`).join(""));
@@ -166,6 +207,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       key: { type: "string" },
       config: { type: "string" },
       runtime: { type: "string", multiple: true },
+      served: { type: "string" },
     },
   });
   const { out, url, channel, key } = values;
@@ -187,6 +229,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     runtimes,
     createdAt: new Date().toISOString(),
     expoClient: values.config === undefined ? undefined : JSON.parse(readFileSync(values.config, "utf8")),
+    ...(values.served === undefined ? {} : { served: values.served }),
   })) {
     console.log(`${channel} ${platform} ${m.runtimeVersion}: update ${m.id}`);
   }
