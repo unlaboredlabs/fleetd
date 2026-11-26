@@ -96,7 +96,8 @@ function CheckedChip(props: RefChipProps) {
   const decision = r.kind === "decision";
   const projectRef = where ?? NO_PROJECT;
   const decisions = useToolQuery("decisions_list", { projectRef, limit: DECISIONS }, { enabled: decision && where !== undefined });
-  const file = useToolQuery("attachment_get", { projectRef, attachmentId: r.id, length: 1 }, { enabled: !decision && where !== undefined });
+  // One byte, for its name: without an offset, the workspace reads the whole file (up to 25 MiB) and ignores `length`.
+  const file = useToolQuery("attachment_get", { projectRef, attachmentId: r.id, offset: 0, length: 1 }, { enabled: !decision && where !== undefined });
   const found = decision ? decisions.data?.decisions.some((d) => d.decisionId === r.id) === true : file.data !== undefined;
   if (!found) return <>{r.id}</>;
   return <Chip {...props} project={where} named={decision ? {} : { title: file.data?.name }} />;
