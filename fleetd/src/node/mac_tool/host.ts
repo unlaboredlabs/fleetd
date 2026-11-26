@@ -514,7 +514,7 @@ export class Host {
     const names: string[] = [];
     for (const t of tasks) {
       if (safePart(t) !== t || !existsSync(join(this.root, t))) continue;
-      if (usedAt(join(this.root, t)) > now - ENDED_QUIET) continue;
+      if ((usedAt(join(this.root, t)) ?? 0) > now - ENDED_QUIET) continue;
       for (const job of this.jobs.get(t)?.jobs.keys() ?? []) this.kill(t, job);
       this.jobs.delete(t);
       this.sims?.end(t);
@@ -579,7 +579,15 @@ export class Host {
     }
     for (const name of names) {
       if (name.startsWith(".")) continue;
-      rmSync(join(this.root, name, "jobs"), { recursive: true, force: true });
+      const dir = join(this.root, name);
+      let at: Date | undefined;
+      try {
+        at = statSync(dir).mtime;
+      } catch {}
+      rmSync(join(dir, "jobs"), { recursive: true, force: true });
+      // The folder's own time stays: an older node's folder without `.used` goes by it (`usedAt`), and a removal here
+      // at each start kept it new for ever (T2970 on Nov 26).
+      if (at) utimesSync(dir, at, at);
     }
   }
 
@@ -589,17 +597,26 @@ export class Host {
   }
 }
 
-/** When a step last touched the agent's folder `dir` (its `.used`); 0 for none. */
-function usedAt(dir: string): number {
+/** A name fleetd gives an agent's folder: a task's id, or a session's. Only such a folder without `.used` is fleetd's. */
+const OURS = /^(T[1-9][0-9]*|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
+/** When a step last touched the agent's folder `dir` (its `.used`); a folder of fleetd's an older node made without
+ * one goes by its own time (a Rust node's, Nov 10, held 7 GB to Nov 26); undefined for any other. */
+function usedAt(dir: string): number | undefined {
   try {
     return statSync(join(dir, ".used")).mtimeMs;
   } catch {
-    return 0;
+    if (!OURS.test(basename(dir))) return undefined;
+    try {
+      return statSync(dir).mtimeMs;
+    } catch {
+      return undefined;
+    }
   }
 }
 
 /** The agents' folders under `root` (never a dot's: the mirrors, the shared cache), each with when a step last
- * touched it (its `.used`; one without is left alone), least recently first. */
+ * touched it (`usedAt`; one that isn't fleetd's is left alone), least recently first. */
 async function folders(root: string): Promise<{ name: string; used: number }[]> {
   let names: string[];
   try {
@@ -610,9 +627,8 @@ async function folders(root: string): Promise<{ name: string; used: number }[]> 
   const out: { name: string; used: number }[] = [];
   for (const name of names) {
     if (name.startsWith(".")) continue;
-    try {
-      out.push({ name, used: (await stat(join(root, name, ".used"))).mtimeMs });
-    } catch {}
+    const used = usedAt(join(root, name));
+    if (used !== undefined) out.push({ name, used });
   }
   return out.sort((a, b) => a.used - b.used);
 }

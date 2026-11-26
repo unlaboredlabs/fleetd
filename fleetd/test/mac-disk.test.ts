@@ -223,6 +223,25 @@ test("the sweep keeps a folder nothing touched for FOLDER_DAYS while its agent s
   expect(readdirSync(root).sort()).toEqual(["T2", "T3"]);
 });
 
+test("an older node's folder without .used goes by its own time, a node's start keeps that time, and a folder that isn't fleetd's never goes", async () => {
+  const { root } = mac();
+  const now = Date.now();
+  const old = (name: string) => {
+    mkdirSync(join(root, name, "repo"), { recursive: true });
+    const at = (now - 10 * DAY) / 1000;
+    utimesSync(join(root, name), at, at);
+  };
+  old("T2970");
+  old("my-project");
+  // A node's start drops its job logs and leaves the folder's time as it was (it made the folder new for ever before).
+  mkdirSync(join(root, "T2970", "jobs"));
+  utimesSync(join(root, "T2970"), (now - 10 * DAY) / 1000, (now - 10 * DAY) / 1000);
+  new Host(root, new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)))).forgetJobs();
+  expect(existsSync(join(root, "T2970", "jobs"))).toBe(false);
+  expect(await sweep(root, 3, now)).toEqual(["T2970"]);
+  expect(readdirSync(root)).toEqual(["my-project"]);
+});
+
 test("builds in Xcode's own DerivedData no build wrote to for FOLDER_DAYS go; newer ones stay", async () => {
   const { home } = mac();
   const dd = join(home, "Library", "Developer", "Xcode", "DerivedData");
