@@ -5,7 +5,7 @@
 // A Mac that runs agents (`ownMac`) is both: its agents' `mac` goes to the client, which the hub sends back to this
 // same node's host (hub/machine_roles/mac.ts `macFor`), so they get its simulators and Xcode through the same steps,
 // their jobs in their own worktrees. It makes its golden simulator only once an agent first asks for one.
-import { existsSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
@@ -16,8 +16,7 @@ import type { HostCheck, SimModels } from "../../shared/contracts.ts";
 import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
-import { findGolden } from "../device/ios/pool.ts";
-import { heldPath, MacSims, SIM_IDLE } from "../device/ios/sims.ts";
+import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
 import { installNode, nodeBin } from "../agents_mac/tools.ts";
 import { SimScreens, simctlTools } from "../device/ios/sim_screen.ts";
 import { iosDir } from "../device/ios/wrapper.ts";
@@ -112,20 +111,18 @@ function answerCalls(node: Node, h: Host): void {
 
 /**
  * A Mac that runs agents lends them its own tool: the hub sends its agents' steps back here (`own_mac`), their jobs
- * run in their worktrees, and its simulators start with the first `mac sim start`, or at once where a golden or a held
- * simulator is there from before. agent-device runs on the node's PATH's Node.js, else on a pinned one it installs.
+ * run in their worktrees, and its simulators make their golden at the first `mac sim start` (or a person's iPhone),
+ * never just because the node started. agent-device runs on the node's PATH's Node.js, else on a pinned one it
+ * installs then.
  */
 function startOwnMac(node: Node): void {
   node.area("caps").contribute(() => [CAP_OWN_MAC, CAP_SCREEN_CONTROL]);
   const h = host(node);
   h.own = node.config.machineId;
-  let making: Promise<MacSims | undefined> | undefined;
-  const make = () =>
-    (making ??= simulatorsHere()
-      ? withNode(node.home).then(() => startSims(node, h, new Simulators(node.home, { ...((node.config.ios ?? {}) as IosConfig), enabled: true }), simSetting(node)))
-      : Promise.resolve(undefined));
-  h.simsWanted = make;
-  if (findGolden(node.home) || existsSync(heldPath(node.home))) void make().then((sims) => (h.sims ??= sims));
+  if (simulatorsHere()) {
+    const ios = { ...((node.config.ios ?? {}) as IosConfig), enabled: true };
+    startSims(node, h, new Simulators(node.home, ios, { lazy: true, beforePrepare: () => withNode(node.home) }), simSetting(node));
+  }
   answerCalls(node, h);
   startHousekeeping(node, h, false);
 }
@@ -155,6 +152,7 @@ function withNode(home: string): Promise<void> {
 export function startSims(node: Node, h: Host, simulators: Simulators, setting?: number): MacSims {
   const sims = new MacSims(node.home, simulators, setting);
   h.sims = sims;
+  sims.cap = h.simCap;
   sims.screens = simScreens(node, simulators);
   const screens = sims.screens;
   // A screen's video starting is kept at once: a node that dies without its stop still leaves it to the next.
@@ -187,9 +185,10 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
   node.area("hb").contribute((hb) => {
     const ios = simulators.health();
     if (hb.load && ios) (hb.load as Record<string, unknown>).ios = ios;
-    if (!hb.load) return;
+    if (!hb.load || !simulators.offered()) return;
     readModels();
-    hb.load.hosts = [...(hb.load.hosts ?? []), iosHost(simulators.usable(), models && { ...models, live: sims.held.size, max: sims.budget() })];
+    // A Mac that runs agents is ready for a person's iPhone before its golden is made: their start waits for it.
+    hb.load.hosts = [...(hb.load.hosts ?? []), iosHost(simulators.startable(), models && { ...models, live: sims.held.size, max: sims.budget() })];
   });
   return sims;
 }

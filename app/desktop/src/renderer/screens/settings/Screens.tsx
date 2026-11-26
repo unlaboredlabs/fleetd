@@ -110,7 +110,7 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
               aria-label={`iOS simulators ${m.name} runs at once`}
               className={s.machineCap}
               value={m.sims.set === undefined ? "default" : String(m.sims.set)}
-              options={simChoices()}
+              options={simChoices(m.sims)}
               disabled={sims.disabled}
               onValueChange={(v) => sims.set(v === "default" ? { autoSims: true } : { maxSims: Number(v) })}
             />

@@ -383,6 +383,18 @@ test("a workspace whose only machine is a Mac: its agents get that Mac, at the n
   expect(await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "laptop", autoSims: true })).toMatchObject({
     output: { machine: { roles: ["agents", "sessions"], sims: { max: 2 } } },
   });
+  // The Mac hears a change at once, not at its next mac call, and again as it links.
+  const told = () => frames.filter((f) => f.action === "mac_sims").map((f) => f.sims);
+  await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "laptop", maxSims: 3 });
+  await tick();
+  expect(told().slice(-2)).toEqual([null, 3]);
+  t.link.link("laptop", ["browser", "own_mac"]);
+  await tick();
+  expect(told().at(-1)).toBe(3);
+  // Settings shows what the Mac says it runs: a small Mac runs fewer than its setting's default.
+  await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "laptop", autoSims: true });
+  t.link.deliver("laptop", load([{ host: "ios", ready: true, detail: "ok", sims: { models: [], live: 0, max: 1 } } as never]));
+  expect((await read())?.sims).toEqual({ max: 1 });
   // A Linux machine lends none, so it has no such setting to show.
   addMachine(t.hub, "box3");
   t.link.link("box3", ["browser"]);

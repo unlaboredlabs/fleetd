@@ -159,6 +159,10 @@ export class MacSims {
           ? await this.simulators.lendType(device ?? (await this.simulators.plainType()), as.runtime)
           : this.simulators.lendOrWait();
     } catch (e) {
+      // The Mac makes its golden first (a Mac that runs agents, at its first start): one that waits keeps its place.
+      if (wait && this.simulators.preparing()) {
+        return { step: "sim_queued", place: 1, secs: null, why: "this Mac is making its golden simulator, once: a few minutes" };
+      }
       this.queue.leave(agent.name);
       throw e;
     }

@@ -864,3 +864,93 @@ test("a simulator taken over after a node that died starts its idle time again, 
   expect(three.held.has("T1")).toBe(false);
   expect(readFileSync(endedPath(home.dir, "T1"), "utf8")).toContain(": this Mac isn't set up for iOS simulators any more. Run `mac sim start` again");
 });
+
+test("a simulator made from nothing (--device, a person's model) counts in the Mac's at once: the warm clone gives way", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  writeGolden(home.dir, xctestrun);
+  const { xcrun, log } = fakeXcrun(home.dir);
+  const simulators = new Simulators(home.dir, { enabled: true }, { simctl: new Simctl(setDir(home.dir), xcrun), runner: async () => {} });
+  const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
+  cleanups.push(() => sims.shutdown());
+  await simulators.start();
+  await until(() => simulators.warm() === 1);
+  const host = new Host(join(home.dir, "mac"), { open: () => null });
+  host.sims = sims;
+  await host.step(host.agent({ machineId: "devbox", projectId: "p1", threadId: "ta", taskId: "T1" }), { step: "sim_start" });
+  // One held and one warm: the Mac's two.
+  await until(() => simulators.warm() === 1);
+  const booted = () => readFileSync(log, "utf8").split("\n").filter((l) => /^boot /.test(l)).map((l) => l.split(" ")[1]!);
+  const warm = booted()[1]!;
+  const b = host.agent({ machineId: "devbox", projectId: "p1", threadId: "tb", taskId: "T2" });
+  const [own] = await host.step(b, { step: "sim_start", device: "iPhone 18 Pro" });
+  expect(own).toMatchObject({ device: "iPhone 18 Pro on iOS 27.0" });
+  const said = readFileSync(log, "utf8");
+  // The warm clone went before the new one was made: never three at once.
+  expect(said.indexOf(`delete ${warm}`)).toBeGreaterThan(-1);
+  expect(said.indexOf(`delete ${warm}`)).toBeLessThan(said.lastIndexOf("create fleetd-"));
+  expect(simulators.warm()).toBe(0);
+  await Bun.sleep(200);
+  expect(simulators.warm()).toBe(0);
+});
+
+test("a Mac that runs agents: its golden waits for the first start, which keeps its place while it is made", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  const { xcrun } = fakeXcrun(home.dir);
+  let made: (() => void) | undefined;
+  let asked = 0;
+  const simulators = new Simulators(home.dir, { enabled: true }, {
+    simctl: new Simctl(setDir(home.dir), xcrun),
+    runner: async () => {},
+    lazy: true,
+    prepare: (h) => {
+      asked++;
+      return new Promise((resolve) => (made = () => resolve(writeGolden(h, xctestrun))));
+    },
+  });
+  const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
+  cleanups.push(() => sims.shutdown());
+  await simulators.start();
+  // Nothing made at the node's start, and ready for a person's iPhone all the same.
+  expect(asked).toBe(0);
+  expect([simulators.usable(), simulators.startable(), simulators.offered()]).toEqual([false, true, true]);
+  expect(simulators.health()?.message).toBeUndefined();
+  const host = new Host(join(home.dir, "mac"), { open: () => null });
+  host.sims = sims;
+  const a = host.agent({ machineId: "laptop", projectId: "p1", threadId: "ta", taskId: "T1" });
+  // The first start makes it, and waits in line while it is made; one that doesn't wait hears why.
+  expect((await host.step(a, { step: "sim_start", wait: true }))[0]).toEqual({
+    step: "sim_queued",
+    place: 1,
+    secs: null,
+    why: "this Mac is making its golden simulator, once: a few minutes",
+  });
+  expect(asked).toBe(1);
+  made!();
+  await until(() => simulators.warm() === 1);
+  expect((await host.step(a, { step: "sim_start", wait: true }))[0]).toMatchObject({ step: "sim_start", device: "iPhone 18 on iOS 27.0" });
+});
+
+test("a Mac that runs agents without Xcode offers no simulators, and a start says Xcode is missing", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const noXcode = { err: "no Xcode: install it", fix: "xcodes install --latest --select" };
+  const simulators = new Simulators(home.dir, { enabled: true }, { lazy: true, xcode: () => noXcode });
+  const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
+  cleanups.push(() => sims.shutdown());
+  await simulators.start();
+  expect([simulators.offered(), simulators.startable()]).toEqual([false, false]);
+  expect(healthFrom({ enabled: true }, undefined, { preparing: false }, () => noXcode, () => true, true)).toBeUndefined();
+  const host = new Host(join(home.dir, "mac"), { open: () => null });
+  host.sims = sims;
+  const a = host.agent({ machineId: "laptop", projectId: "p1", threadId: "ta", taskId: "T1" });
+  await expect(host.step(a, { step: "sim_start", wait: true })).rejects.toThrow("This Mac can't run iOS simulators: no Xcode: install it.");
+  await expect(host.step(a, { step: "sim_start" })).rejects.toMatchObject({ fix: "do without a simulator and say so in your result; a person runs xcodes install --latest --select on the Mac" });
+});

@@ -230,9 +230,8 @@ test("mac sim start puts the forwarding agent-device first on the session's PATH
   expect(sent.map((s) => s.sim)).toEqual([true, undefined]);
 });
 
-test("a Mac that runs agents makes its simulators at the first mac sim start, at the number its screens settings say", async () => {
+test("a Mac's simulators at once: as its screens settings say, from each call and at once when they change", async () => {
   const { host, client, wt } = setup({ own: true, sims: 3 });
-  let made = 0;
   let budget: number | undefined;
   const sims = {
     held: new Map(),
@@ -246,18 +245,15 @@ test("a Mac that runs agents makes its simulators at the first mac sim start, at
     },
     end: () => true,
   };
-  host.simsWanted = async () => {
-    made++;
-    return sims as never;
-  };
-  await client.call("t1", wt, { step: "run", args: ["true"] });
-  expect(made).toBe(0);
+  host.sims = sims as never;
   expect(await client.call("t1", wt, { step: "sim_start" })).toMatchObject({ step: "sim_start", udid: "U1", mac: { here: true } });
-  expect([made, budget]).toEqual([1, 3]);
-  await client.call("t1", wt, { step: "sim_start" });
-  expect(made).toBe(1);
+  expect(budget).toBe(3);
+  // A change in Settings reaches the Mac at once (node_action mac_sims), its default again with null.
+  host.setSims(1);
+  expect(sims.cap).toBe(1);
+  host.setSims(null);
+  expect(sims.cap).toBeUndefined();
 });
-
 test("the Mac sweeps agents' folders nothing touched for FOLDER_DAYS, with their snapshots, and keeps the rest", async () => {
   const { client, wt, macRoot } = setup();
   await client.call("t1", wt, { step: "push" });

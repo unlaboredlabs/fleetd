@@ -98,6 +98,8 @@ export function healthFrom(
   state: PrepState,
   xcodeNow: () => Xcode = xcode,
   node: () => boolean = nodeRuns,
+  /** A Mac that runs agents: its golden waits for the first start, which installs Node.js where it lacks it. */
+  lazy = false,
 ): { health: IosHealth; placeable: boolean } | undefined {
   const of = (s: IosHealth["state"], message: string, fix: string | undefined, placeable: boolean) => ({
     health: { state: s, message: [...message].slice(0, 500).join(""), ...(fix ? { fix: [...fix].slice(0, 500).join("") } : {}) },
@@ -108,14 +110,16 @@ export function healthFrom(
     return of("preparing", "Making the golden iOS simulator: one boot left to settle, then agent-device's runner built with xcodebuild.", undefined, optedIn(config));
   }
   const x = xcodeNow();
-  if ("err" in x) return optedIn(config) ? of("unavailable", `No iOS simulators: ${x.err}.`, x.fix, false) : undefined;
+  // A Mac that runs agents without Xcode has no simulators to offer, and nothing wrong: only `mac sim start` says why.
+  if ("err" in x) return optedIn(config) && !lazy ? of("unavailable", `No iOS simulators: ${x.err}.`, x.fix, false) : undefined;
   if (!optedIn(config)) {
     return of("wanted", `Xcode with ${x.ok}; iOS simulators are the agents' Mac's: ${settingsPath()} › Setup › A Mac for agents joins one.`, undefined, false);
   }
-  if (!node()) return of("unavailable", "No iOS simulators: agent-device needs Node.js 22.12 or later on the node's PATH.", "brew install node", false);
+  if (!lazy && !node()) return of("unavailable", "No iOS simulators: agent-device needs Node.js 22.12 or later on the node's PATH.", "brew install node", false);
   if (state.failed) {
     return of("unavailable", `Making the golden iOS simulator failed: ${state.failed}. The next mac sim start tries again.`, undefined, true);
   }
+  if (lazy) return of("preparing", `Xcode with ${x.ok}; the Mac makes its golden iOS simulator at the first mac sim start.`, undefined, true);
   return of("preparing", `Xcode with ${x.ok}; the node makes its golden iOS simulator next.`, undefined, true);
 }
 
@@ -149,6 +153,13 @@ export type SimulatorsOptions = {
   runner?: RunnerStarter;
   /** How the golden is made: pool.ts's prepare, or a test's. */
   prepare?: (home: string, deviceType?: string) => Promise<Golden>;
+  /** A Mac that runs agents: its golden is made at the first start that wants one, never just because the node
+   * started, so a Mac nobody does iOS work on boots none. */
+  lazy?: boolean;
+  /** What runs before the golden is made (a Mac that runs agents: Node.js for agent-device). */
+  beforePrepare?: () => Promise<void>;
+  /** Whether Xcode can run simulators here; absent, as simctl says (none where a test makes its own golden). */
+  xcode?: () => Xcode;
 };
 
 /** The Mac's iOS simulators: its golden, and the warm pool agents' `mac sim start` lends from. */
@@ -185,7 +196,7 @@ export class Simulators {
       this.ready(golden);
       return new Set(keep);
     }
-    if (optedIn(this.config)) this.beginPrepare();
+    if (optedIn(this.config) && this.options.lazy !== true) this.beginPrepare();
     return new Set();
   }
 
@@ -194,7 +205,9 @@ export class Simulators {
     if (this.prep.at !== "wanted" && this.prep.at !== "missing") return;
     this.prep = { at: "preparing" };
     writeState(this.home, { preparing: true });
-    const make = this.options.prepare ?? ((home: string, type?: string) => prepare(home, type, this.simctl));
+    const before = this.options.beforePrepare ?? (async () => {});
+    const make =
+      this.options.prepare ?? ((home: string, type?: string) => before().then(() => prepare(home, type, this.simctl)));
     void make(this.home, this.config.deviceType).then(
       (golden) => {
         writeState(this.home, { preparing: false });
@@ -225,6 +238,25 @@ export class Simulators {
     return this.prep.at === "ready";
   }
 
+  /** Whether the Mac offers simulators at all: all but a Mac that runs agents and has no Xcode to make them with. */
+  offered(): boolean {
+    if (this.options.lazy !== true || this.prep.at === "ready") return true;
+    const x = this.xcodeNow();
+    return x === undefined || "ok" in x;
+  }
+
+  /** Whether a start may begin here now: its golden made, or (a Mac that runs agents) Xcode there to make it with. */
+  startable(): boolean {
+    if (this.prep.at === "ready") return true;
+    if (this.options.lazy !== true || this.prep.at === "starting") return false;
+    const x = this.xcodeNow();
+    return x === undefined || "ok" in x;
+  }
+
+  private xcodeNow(): Xcode | undefined {
+    return (this.options.xcode ?? (this.options.prepare ? undefined : xcode))?.();
+  }
+
   /** Boots the warm clone again where there is room for it now (a simulator went). */
   refill(): void {
     if (this.prep.at === "ready") this.prep.pool.refill();
@@ -233,7 +265,8 @@ export class Simulators {
   /** Where this Mac's simulators stand, for the doctor (the heartbeat's `load.ios`). */
   health(): IosHealth | undefined {
     if (this.config.enabled === false) return undefined;
-    return healthFrom(this.config, findGolden(this.home, this.config.deviceType), readState(this.home))?.health;
+    const lazy = this.options.lazy === true;
+    return healthFrom(this.config, findGolden(this.home, this.config.deviceType), readState(this.home), this.options.xcode ?? xcode, nodeRuns, lazy)?.health;
   }
 
   private pool(): Pool {
@@ -243,6 +276,15 @@ export class Simulators {
         "failed",
         "This Mac isn't set up for iOS sessions.",
         'say so in your result: a person opts a Mac in with "ios": {"enabled": true} in its node.json (fleetd docs: iOS sessions)',
+      );
+    }
+    // No Xcode, or no iOS runtime in it: said as it is, before any golden is tried.
+    const x = this.prep.at === "ready" ? undefined : this.xcodeNow();
+    if (x !== undefined && "err" in x) {
+      throw new ToolError(
+        "failed",
+        `This Mac can't run iOS simulators: ${x.err}.`,
+        x.fix === undefined ? "do without a simulator and say so in your result" : `do without a simulator and say so in your result; a person runs ${x.fix} on the Mac`,
       );
     }
     // A golden that failed is tried again by the next start that asks.
@@ -291,6 +333,8 @@ export class Simulators {
     }
     const golden = (wanted === pool.golden.deviceTypeName || wanted === pool.golden.deviceType) && (runtime === undefined || runtime === pool.golden.runtime);
     if (golden) return this.lendOrWait();
+    // One made from nothing counts in the Mac's simulators at once as a clone does: the warm clone gives way to it.
+    if (!this.room(pool.pooled())) await pool.shed();
     try {
       return { lent: await pool.make(wanted, runtime) };
     } catch (e) {

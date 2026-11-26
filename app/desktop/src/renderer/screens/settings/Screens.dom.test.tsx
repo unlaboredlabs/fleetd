@@ -252,3 +252,14 @@ it("a Mac that lends simulators picks how many run at once; a Linux machine has 
   await settle();
   expect(calls.filter((c) => c.tool === "machine_roles_set").map((c) => c.input)).toEqual([{ machineId: "laptop", maxSims: 3 }]);
 });
+
+it("says the number a small Mac really runs by default, and only the word once a number is set", async () => {
+  listed = [
+    { ...devbox, machineId: "mini", name: "mini", sims: { max: 1 } },
+    { ...devbox, machineId: "studio", name: "studio", sims: { max: 4, set: 4 } },
+  ];
+  await render();
+  const picker = (m: string) => row(m)?.querySelector<HTMLElement>("[data-screens-sims] [role='combobox']")?.textContent;
+  expect(picker("mini")).toContain("Default (1)");
+  expect(picker("studio")).toContain("4");
+});
