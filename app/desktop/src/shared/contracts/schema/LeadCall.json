@@ -693,6 +693,15 @@
         "device": {
           "$ref": "#/$defs/ScreenDevice"
         },
+        "downloads": {
+          "default": [],
+          "description": "What the screen's browser downloaded so far, newest last.",
+          "items": {
+            "$ref": "#/$defs/ScreenDownload"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -3733,6 +3742,30 @@
       },
       "required": [
         "controls"
+      ],
+      "type": "object"
+    },
+    "ScreenDownload": {
+      "description": "A file the screen's browser downloaded, as its machine keeps it: its name, its size and when it finished.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "bytes",
+        "at"
       ],
       "type": "object"
     },

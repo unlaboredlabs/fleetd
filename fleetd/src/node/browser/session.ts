@@ -2,7 +2,7 @@
 // it, the page it follows (the newest one open) and that page's screencast, which goes to the hub's live view while
 // the hub watches, at most one frame per LIVE_GAP and as the watcher's link has room. A person's input lands on the
 // followed page while they have control; the agent's commands are refused meanwhile.
-import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
+import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput, ScreenDownload } from "../../shared/contracts.ts";
 import type { Cdp, Event } from "./cdp.ts";
 import { jpegSize, Pacer } from "./fit.ts";
 import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
@@ -23,6 +23,17 @@ const LIVE_GAP = 33.333;
 const DOM_MAX_BYTES = 2 << 20;
 /** The longest the session's end waits for the DOM captures queued before it. */
 const CAPTURES_WAIT = 30_000;
+
+/** What a session's browser downloaded, kept in a folder of its own (downloads.ts, which the node's host makes). */
+export interface DownloadList {
+  /** The folder Chrome saves them in. */
+  readonly dir: string;
+  list(): ScreenDownload[];
+  /** `Browser.downloadWillBegin`. */
+  began(params: Record<string, unknown>): void;
+  /** `Browser.downloadProgress`: true when one completed and the list changed. */
+  progress(params: Record<string, unknown>): boolean;
+}
 
 export const PAUSED =
   "A person has control of the browser now. You are told the moment they hand it back (carry on with other work meanwhile, or end your turn); your next command after that sees the page as they left it.";
@@ -68,6 +79,10 @@ export class Session implements GuardSession {
   credentialsFilled = 0;
   /** The latest step, for the heartbeat. */
   step: BrowserAction | undefined;
+  /** What its browser downloaded (downloads.ts), once `downloadTo` named its folder; none in a hosted box. */
+  downloads: DownloadList | undefined;
+  /** Who is told when a download completes. */
+  onDownload: (() => void) | undefined;
   /** Who is told when control changes here (the agent's first command after a hand-back takes it). */
   onControl: ((control: BrowserControl) => void) | undefined;
   readonly startedAt: string;
@@ -380,6 +395,12 @@ export class Session implements GuardSession {
     }
   }
 
+  /** Saves what its browser downloads in `list`'s folder, and lists each file as it completes (`downloads`). */
+  async downloadTo(list: DownloadList): Promise<void> {
+    this.downloads = list;
+    await this.cdp.call(undefined, "Browser.setDownloadBehavior", { behavior: "allow", downloadPath: list.dir, eventsEnabled: true });
+  }
+
   control(): BrowserControl {
     return this.controlNow;
   }
@@ -547,6 +568,12 @@ export class Session implements GuardSession {
         this.liveFrame(String(e.params.data ?? ""), (e.params.metadata ?? {}) as Record<string, unknown>);
         return;
       }
+      case "Browser.downloadWillBegin":
+        this.downloads?.began(e.params);
+        return;
+      case "Browser.downloadProgress":
+        if (this.downloads?.progress(e.params)) this.onDownload?.();
+        return;
       case "Target.targetInfoChanged": {
         const info = e.params.targetInfo as { targetId?: string; url?: string };
         if (info.targetId && info.url !== undefined) {

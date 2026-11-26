@@ -149,6 +149,7 @@ export const TOOLS = {
   browser_recording_get: { scope: "read", module: "src/hub/browser" },
   screens_count: { scope: "read", module: "src/hub/browser" },
   browser_control: { scope: "operate", module: "src/hub/browser" },
+  browser_download_send: { scope: "operate", module: "src/hub/browser" },
   screen_open: { scope: "operate", module: "src/hub/machine_roles" },
   screen_end: { scope: "operate", module: "src/hub/machine_roles" },
   screen_control: { scope: "operate", module: "src/hub/machine_roles" },

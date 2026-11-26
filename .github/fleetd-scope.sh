@@ -31,6 +31,8 @@ paths=(
   app/desktop/src/shared/settingsPages.ts app/desktop/src/shared/settingsPathCheck.ts
   # The audit log's CSV, which `fleetd audit --csv` writes as the app's Export does.
   app/desktop/src/shared/auditCsv.ts
+  # The safe name a file goes in the chat under, which the hub stores attachments by and the apps match them with.
+  app/desktop/src/shared/files.ts
 )
 
 run=true

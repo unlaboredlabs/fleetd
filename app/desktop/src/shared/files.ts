@@ -113,3 +113,14 @@ export const numberedName = (name: string, n: number): string => {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? `${name.slice(0, dot)} (${String(n)})${name.slice(dot)}` : `${name} (${String(n)})`;
 };
+
+/**
+ * The name the hub keeps a file under (its attachments' `safeName`): letters, digits, dots, dashes, underscores and
+ * spaces, anything else an underscore, no leading dot, at most 100 characters. The hub may add an extension of its
+ * type after it.
+ */
+export function safeName(name: string): string {
+  const cleaned = Array.from(name).map((c) => (/^[\p{Alphabetic}\p{N}]$/u.test(c) || c === "." || c === "-" || c === "_" || c === " " ? c : "_")).join("");
+  const trimmed = cleaned.trim().replace(/^\.+/u, "");
+  return trimmed === "" ? "file" : Array.from(trimmed).slice(0, 100).join("");
+}

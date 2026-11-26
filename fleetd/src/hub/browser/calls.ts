@@ -70,6 +70,20 @@ function own(hub: Hub, caller: LeadCaller, id: string): BrowserSession | undefin
   return stored;
 }
 
+/**
+ * What its browser downloaded: the node's list now, after the ones the hub had that it no longer names (a report that
+ * leaves them out, a node that took the session over from another); at most DOWNLOADS_MAX.
+ */
+function downloadsOf(stored: BrowserSession | undefined, call: BrowserSessionCall): Pick<BrowserSession, "downloads"> {
+  const now = call.downloads ?? [];
+  const named = new Set(now.map((d) => d.name));
+  const all = [...(stored?.downloads ?? []).filter((d) => !named.has(d.name)), ...now].slice(-DOWNLOADS_MAX);
+  return all.length === 0 ? {} : { downloads: all };
+}
+
+/** The most downloads a session lists (node/browser/downloads.ts). */
+const DOWNLOADS_MAX = 32;
+
 type Written =
   | { kind: "final"; state: BrowserSession["state"] }
   | { kind: "short"; file: string; held: number; bytes: number }
@@ -99,6 +113,7 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
     files: call.files ?? [],
     ...(takeoverReason === undefined ? {} : { takeoverReason }),
     credentialsFilled: call.credentialsFilled ?? 0,
+    ...downloadsOf(stored, call),
     ...(call.note === undefined ? {} : { note: call.note }),
     ...(openedBy === undefined ? {} : { openedBy }),
     ...deviceOf(call.device),
@@ -122,6 +137,7 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
       now.state !== next.state ||
       now.control !== next.control ||
       (now.credentialsFilled ?? 0) !== (next.credentialsFilled ?? 0) ||
+      (now.downloads?.length ?? 0) !== (next.downloads?.length ?? 0) ||
       JSON.stringify(deviceOf(deviceIn(now))) !== JSON.stringify(deviceOf(call.device));
     return { kind: "done", changed, aside };
   });

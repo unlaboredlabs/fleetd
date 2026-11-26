@@ -10,6 +10,7 @@ import { parseProgress } from "../../src/node/actions/clone.ts";
 import { frontmatter } from "../../src/node/actions/skills.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
 import { oldProfilesDir } from "../../src/node/own_homes.ts";
+import { downloadsDir } from "../../src/node/browser/downloads.ts";
 import { claudeEndpoint } from "../../src/node/place/endpoint.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
@@ -435,6 +436,21 @@ test("read_image reads an image from the session's own folder only, and checks i
   expect(await refused("notes.md")).toContain("is not a .png, .jpg, .webp or .gif image");
   expect((await call("read_image", { sessionId: "nope", path: "shot.png" })).result).toMatchObject({ err: { code: "not_found" } });
   await ok("stop", { sessionId: "s3" });
+});
+
+test("read_download reads a file a screen's browser downloaded, from that session's own downloads folder only", async () => {
+  const dir = downloadsDir(nodeHome, "B1");
+  mkdirSync(dir, { recursive: true });
+  const pdf = Buffer.from("%PDF-1.7 a dummy PDF");
+  writeFileSync(join(dir, "dummy.pdf"), pdf);
+  writeFileSync(join(dir, "fake.pdf"), "not a pdf");
+  writeFileSync(join(nodeHome, "outside.pdf"), pdf);
+  expect(await ok("read_download", { sessionId: "B1", name: "dummy.pdf" })).toEqual({ kind: "image", name: "dummy.pdf", mime: "application/pdf", bytes: pdf.length, dataB64: pdf.toString("base64") });
+  const refused = async (sessionId: string, name: string) => ((await call("read_download", { sessionId, name })).result as { err: { code: string; message: string } }).err;
+  expect((await refused("B1", "fake.pdf")).code).toBe("invalid");
+  expect((await refused("B1", "../../outside.pdf")).message).toBe("../../outside.pdf is no download of screen B1");
+  expect((await refused("../B1", "dummy.pdf")).message).toBe("dummy.pdf is no download of screen ../B1");
+  expect((await refused("B2", "dummy.pdf")).code).toBe("invalid");
 });
 
 test("a bot's kept sign-ins are forgotten, and go with its bot", async () => {

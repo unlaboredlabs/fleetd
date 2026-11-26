@@ -4,8 +4,8 @@
 .card {
   box-sizing: border-box;
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
   width: min(100%, 460px);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   border: 1px solid var(--hairline);
@@ -23,8 +23,15 @@
 .asking:has(.open:hover) {
   background: color-mix(in srgb, var(--raised), var(--warning) 10%);
 }
+/* The picture, the words and the one button; under them, what it downloaded. */
+.main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
 /* Its one button on the title's line, as a row's end control is. */
-.card > button {
+.main > button {
   flex: none;
   margin-top: calc((1lh - var(--control)) / 2);
 }
@@ -161,4 +168,41 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* What an ended screen downloaded that the chat doesn't have: one row each, under the picture's left edge, a file's
+   mark, its name, its size, and Send to chat at the end. Space separates them from the card's words, no line. */
+.downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 var(--space-1);
+  list-style: none;
+}
+.download {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.fileIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+  stroke-width: 1.75;
+}
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.download > button {
+  flex: none;
+  margin-inline-start: auto;
 }

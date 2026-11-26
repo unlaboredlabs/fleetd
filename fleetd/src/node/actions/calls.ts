@@ -31,6 +31,9 @@ import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { dialFetch, type Fetcher } from "../sandbox/tailnet_fetch.ts";
 import { tailnetIp, tailnetName } from "../../shared/tailnet.ts";
 import { VERSION } from "../../shared/version.ts";
+import { dirname } from "node:path";
+import { downloadPath } from "../browser/downloads.ts";
+import { readImage } from "./image.ts";
 
 /** What these calls need of the node: its home and box key, its claude, and the session service's lookups. */
 export type CallContext = {
@@ -73,6 +76,7 @@ export const OPS = [
   "landed_log",
   "skills_list",
   "read_image",
+  "read_download",
   "vault_adopt",
   "vault_import_search",
   "vault_import_read",
@@ -361,6 +365,18 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
         throw invalid((error as Error).message);
       }
       return { kind: "image", name: image.name, mime: image.mime, bytes: image.bytes, dataB64: image.piece.toString("base64") };
+    }
+    case "read_download": {
+      // Only the session's own downloads folder, by a plain file name: never a path the call names.
+      const path = downloadPath(ctx.home, call.sessionId, call.name);
+      if (!path) throw invalid(`${call.name} is no download of screen ${call.sessionId}`);
+      let file;
+      try {
+        file = readImage(dirname(path), call.name, call.offset ?? 0, true);
+      } catch (error) {
+        throw invalid((error as Error).message);
+      }
+      return { kind: "image", name: file.name, mime: file.mime, bytes: file.bytes, dataB64: file.piece.toString("base64") };
     }
   }
 }

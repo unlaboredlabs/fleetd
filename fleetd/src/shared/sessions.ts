@@ -7,6 +7,7 @@
 import type {
   AttachmentMime,
   BoxPublicKey,
+  BrowserSessionId,
   ClaudeAccount,
   ClaudeEndpoint,
   ClonePhase,
@@ -262,7 +263,9 @@ export type SessionCall =
   | { op: "skills_list"; projectId: ProjectId }
   | { op: "put_file"; projectId: ProjectId; relPath: string; dataB64: string }
   | { op: "has_file"; projectId: ProjectId; relPath: string; sha256: string }
-  | { op: "read_image"; sessionId: ThreadId; path: string; offset?: number; file?: boolean };
+  | { op: "read_image"; sessionId: ThreadId; path: string; offset?: number; file?: boolean }
+  /** A piece of a file a screen's browser downloaded (node/browser/downloads.ts), by its name in the session's list. */
+  | { op: "read_download"; sessionId: BrowserSessionId; name: string; offset?: number };
 
 export type SessionCallOp = SessionCall["op"];
 

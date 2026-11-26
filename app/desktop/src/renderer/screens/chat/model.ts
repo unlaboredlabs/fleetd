@@ -52,7 +52,13 @@ export type Row =
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   /** A screen of the bot's, where it opened: its card (ScreenCard.tsx), live, asking or ended (screens.ts). */
-  | { readonly kind: "screen"; readonly key: string; readonly sessionId: string }
+  | {
+      readonly kind: "screen";
+      readonly key: string;
+      readonly sessionId: string;
+      /** The files the chat has since the screen opened, by name: its downloads already there aren't offered again. */
+      readonly inChat: readonly string[];
+    }
   /** Above the first message you hadn't seen when the chat opened. */
   | { readonly kind: "new"; readonly key: "new" }
   /** A window opened far back (a search hit, a pin) with more after it: reaching it reads the next page. */

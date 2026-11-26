@@ -18,6 +18,7 @@ import type {
   ProjectId,
   ScreenAppearance,
   ScreenControl,
+  ScreenDownload,
   ScreenOrientation,
   SessionHost,
   SessionKind,
@@ -195,6 +196,8 @@ export type BrowserSessionCall = {
   endedAt?: Timestamp;
   files?: BrowserRecordingEntry[];
   credentialsFilled?: number;
+  /** What the screen's browser downloaded so far, newest last. */
+  downloads?: ScreenDownload[];
   note?: string;
   /** A phone screen's device: its controls, orientation, fold and appearance now. */
   device?: ScreenDevice;

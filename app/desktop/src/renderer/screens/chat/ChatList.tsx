@@ -272,7 +272,7 @@ const RowView = memo(function RowView(props: {
     case "screen":
       return (
         <Suspense fallback={null}>
-          <ScreenCard project={project} sessionId={r.sessionId} />
+          <ScreenCard project={project} sessionId={r.sessionId} inChat={r.inChat} />
         </Suspense>
       );
   }

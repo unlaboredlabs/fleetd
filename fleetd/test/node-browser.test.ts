@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Cdp, type Transport } from "../src/node/browser/cdp.ts";
 import { findChrome } from "../src/node/browser/chrome.ts";
@@ -10,6 +10,7 @@ import { TAKING_OVER } from "../src/node/browser/broker.ts";
 import { NO_SESSION } from "../src/node/browser/cdp_proxy.ts";
 import { Proxy } from "../src/node/browser/proxy.ts";
 import { PAUSED, cdpInput } from "../src/node/browser/session.ts";
+import { downloadsDir } from "../src/node/browser/downloads.ts";
 import { playwrightDirs } from "./browser_rig.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
@@ -89,11 +90,12 @@ test("the proxy's URL is signed and survives a node restart on the same port", a
 });
 
 /** A browser that answers every command with its method, and has one page. */
-function fakeBrowser(): Transport & { got: Record<string, unknown>[] } {
+function fakeBrowser(): Transport & { got: Record<string, unknown>[]; emit: (method: string, params: Record<string, unknown>) => void } {
   let deliver: (text: string) => void = () => {};
   const got: Record<string, unknown>[] = [];
   return {
     got,
+    emit: (method, params) => deliver(JSON.stringify({ method, params })),
     send(text) {
       const m = JSON.parse(text) as { id: number; method: string; params: { targetId?: string } };
       got.push(m);
@@ -172,6 +174,22 @@ test("the agent's driver reaches its browser through the proxy, and waits while 
   const log = Buffer.from(String(link.calls.at(-2)!.args.dataB64), "base64").toString().trim().split("\n").map((l) => JSON.parse(l));
   expect(log.map((a: { tool: string }) => a.tool)).toEqual(["takeover", "handback", "agent_resumed"]);
   expect(link.calls.at(-1)!.args.files).toEqual([{ file: "actions", bytes: ended.files[0]!.bytes }]);
+});
+
+test("a session's browser saves its downloads in a folder of its own, and the hub hears of each one that completes", async () => {
+  const browser = fakeBrowser();
+  const { link, local, node } = nodeWith(async () => ({ cdp: new Cdp(browser) }));
+  const started = (await local.call("session_start", { purpose: "get the PDF" }, "t1")) as { sessionId: string };
+  const dir = downloadsDir(node.home, started.sessionId);
+  expect(browser.got.find((m) => m.method === "Browser.setDownloadBehavior")).toMatchObject({ params: { behavior: "allow", downloadPath: dir, eventsEnabled: true } });
+  browser.emit("Browser.downloadWillBegin", { frameId: "F", guid: "g1", url: "https://example.org/dummy.pdf", suggestedFilename: "dummy.pdf" });
+  writeFileSync(join(dir, "dummy.pdf"), "%PDF-1.7");
+  browser.emit("Browser.downloadProgress", { guid: "g1", totalBytes: 8, receivedBytes: 8, state: "completed", filePath: join(dir, "dummy.pdf") });
+  for (let i = 0; i < 100 && link.calls.at(-1)?.args.downloads === undefined; i++) await Bun.sleep(10);
+  expect(link.calls.at(-1)).toMatchObject({ op: "browser_session", args: { state: "live", downloads: [{ name: "dummy.pdf", bytes: 8 }] } });
+  // The end's reports leave it out; the hub keeps the list it had (hub-browser-downloads.test.ts).
+  await local.call("session_end", {}, "t1");
+  expect(existsSync(join(dir, "dummy.pdf"))).toBe(true);
 });
 
 const chrome = playwrightDirs.map(findChrome).find((c) => c !== undefined);

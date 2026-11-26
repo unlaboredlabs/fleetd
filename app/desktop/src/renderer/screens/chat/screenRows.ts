@@ -23,7 +23,11 @@ const msOf = (iso: string): number => {
 
 const itemOf = (r: Row): ChatItem | undefined => (r.kind === "message" || r.kind === "event" || r.kind === "inline" ? r.item : undefined);
 
-const screenRow = (id: string): Row => ({ kind: "screen", key: `screen:${id}`, sessionId: id });
+/** The files a message holds, by name: what a person attached, and a lead's file and image cards. */
+const filesOf = (item: ChatItem): string[] => [
+  ...item.attachments.map((a) => a.name),
+  ...(item.message?.parts ?? []).flatMap((p) => (p.block !== undefined && "name" in p.block && typeof p.block.name === "string" ? [p.block.name] : [])),
+];
 
 /**
  * The rows with each screen's card where it opened: before the lines (a day, a pause's time, "New") over the first
@@ -43,20 +47,30 @@ export const withScreens = (rows: readonly Row[], screens: readonly ScreenTime[]
   }
   ahead.reverse();
   const first = rows.map(itemOf).find((item) => item !== undefined);
+  const files = rows.flatMap((r) => {
+    const item = itemOf(r);
+    return item === undefined ? [] : filesOf(item).map((name) => ({ name, at: msOf(item.at) }));
+  });
+  const screenRow = (s: ScreenTime): Row => ({
+    kind: "screen",
+    key: `screen:${s.id}`,
+    sessionId: s.id,
+    inChat: files.filter((f) => f.at >= msOf(s.at)).map((f) => f.name),
+  });
   const out: Row[] = [];
   let next = 0;
   rows.forEach((row, i) => {
     const item = ahead[i];
     for (let s = byTime[next]; item !== undefined && s !== undefined && msOf(s.at) < msOf(item.at); s = byTime[next]) {
       // Before the oldest message loaded: it may belong further back, on a page not read yet.
-      if (item !== first || !at.hasOlder) out.push(screenRow(s.id));
+      if (item !== first || !at.hasOlder) out.push(screenRow(s));
       next += 1;
     }
     // A window's last row reads its next page: what opened after it belongs there.
     if (row.kind === "bottom") next = byTime.length;
     out.push(row);
   });
-  if (!at.newer) for (const s of byTime.slice(next)) out.push(screenRow(s.id));
+  if (!at.newer) for (const s of byTime.slice(next)) out.push(screenRow(s));
   return out;
 };
 
