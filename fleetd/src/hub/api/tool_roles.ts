@@ -226,6 +226,7 @@ export const TOOLS = {
   push_device_remove: { scope: "operate", module: "src/hub/push" },
   push_badge: { scope: "read", module: "src/hub/push" },
   push_relay_set: { scope: "admin", module: "src/hub/push" },
+  app_error_report: { scope: "read", module: "src/hub/app_errors" },
   agents_list: { scope: "read", module: "src/hub/agents" },
   agent_work: { scope: "read", module: "src/hub/agents" },
   pr_list: { scope: "read", module: "src/hub/prs" },

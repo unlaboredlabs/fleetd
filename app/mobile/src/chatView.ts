@@ -62,9 +62,17 @@ const partBubble = (text: string, p: NonNullable<NonNullable<ChatItem["message"]
   }
 };
 
-/** A message's files, as bubbles of their own after its words: pictures shown, anything else as a file to open. */
+/**
+ * A message's files, as bubbles of their own after its words: pictures shown, anything else as a file to open. One a
+ * workspace sent without its type or size (a newer or an older one than this build) is a file, never a throw: this
+ * draws in every chats list row.
+ */
 export const attachmentBubbles = (item: Pick<ChatItem, "attachments">): readonly Bubble[] =>
-  item.attachments.map((a): Bubble => (a.mime.startsWith("image/") ? { kind: "image", attachmentId: a.attachmentId, name: a.name } : { kind: "file", attachmentId: a.attachmentId, name: a.name, mime: a.mime, bytes: a.bytes }));
+  (item.attachments ?? []).map((a): Bubble => {
+    const mime = typeof a.mime === "string" ? a.mime : "";
+    const name = typeof a.name === "string" ? a.name : "File";
+    return mime.startsWith("image/") ? { kind: "image", attachmentId: a.attachmentId, name } : { kind: "file", attachmentId: a.attachmentId, name, mime, bytes: typeof a.bytes === "number" ? a.bytes : 0 };
+  });
 
 /** A file's size as Files words it. */
 export const fileSize = (n: number): string => (n < 1024 ? `${String(n)} bytes` : n < 1_048_576 ? `${String(Math.round(n / 1024))} KB` : `${(n / 1_048_576).toFixed(1)} MB`);

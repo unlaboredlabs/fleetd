@@ -701,6 +701,45 @@ export type AppError = {
 };
 
 /**
+ * One error the phone app caught (a screen's drawing failed, or the JavaScript threw where nothing caught it), as
+ * `app_error_report` takes it: where and on which build, never what the person sees or types. The app keeps the words
+ * of a message short and drops quoted text from them.
+ */
+export type AppErrorReport = {
+  /** When it happened, on the phone's clock. */
+  at: Timestamp;
+  /** The app's build number (CFBundleVersion, versionCode). */
+  build: string;
+  /** The phone's model identifier ("iPhone19,4"). */
+  device?: string;
+  /** Nothing caught it: the app ended (sent when it next starts). */
+  fatal: boolean;
+  message: string;
+  /** The phone's system version. */
+  os?: string;
+  platform: PushPlatform;
+  /** The route on top, or the screen whose drawing failed. */
+  screen?: string;
+  /** The JavaScript stack, then the components' (a screen's drawing). */
+  stack: string;
+  /** The over-the-air update it ran, or "embedded" for the build's own. */
+  update?: string;
+  /** Two panes side by side (an iPhone Duo unfolded, an iPad) rather than one. */
+  wide: boolean;
+  /** The window's size in points, "<width>x<height>". */
+  window: string;
+};
+
+export type AppErrorReportInput = {
+  errors: AppErrorReport[];
+};
+
+export type AppErrorReportOutput = {
+  /** How many went into the workspace's log. */
+  kept: number;
+};
+
+/**
  * `app.presence`: the app was focused on a project's screen (the event's machine and project) with input in the
  * last 60 s, for one interval. Only that: never keystrokes or content. At most one per minute per key.
  */
@@ -11381,6 +11420,7 @@ export interface ToolMap {
   agent_work: { input: AgentWorkInput; output: AgentWorkOutput };
   agents_list: { input: AgentsListInput; output: AgentsListOutput };
   antigravity_status: { input: AntigravityStatusInput; output: AntigravityStatusOutput };
+  app_error_report: { input: AppErrorReportInput; output: AppErrorReportOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   artifact_get: { input: ArtifactGetInput; output: ArtifactGetOutput };
   artifacts_list: { input: ArtifactsListInput; output: ArtifactsListOutput };

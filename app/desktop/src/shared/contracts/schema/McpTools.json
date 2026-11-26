@@ -910,6 +910,118 @@
       ],
       "type": "object"
     },
+    "AppErrorReport": {
+      "description": "One error the phone app caught (a screen's drawing failed, or the JavaScript threw where nothing caught it), as `app_error_report` takes it: where and on which build, never what the person sees or types. The app keeps the words of a message short and drops quoted text from them.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it happened, on the phone's clock."
+        },
+        "build": {
+          "description": "The app's build number (CFBundleVersion, versionCode).",
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "device": {
+          "description": "The phone's model identifier (\"iPhone19,4\").",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "fatal": {
+          "description": "Nothing caught it: the app ended (sent when it next starts).",
+          "type": "boolean"
+        },
+        "message": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "os": {
+          "description": "The phone's system version.",
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "platform": {
+          "$ref": "#/$defs/PushPlatform"
+        },
+        "screen": {
+          "description": "The route on top, or the screen whose drawing failed.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "stack": {
+          "description": "The JavaScript stack, then the components' (a screen's drawing).",
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "update": {
+          "description": "The over-the-air update it ran, or \"embedded\" for the build's own.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "wide": {
+          "description": "Two panes side by side (an iPhone Duo unfolded, an iPad) rather than one.",
+          "type": "boolean"
+        },
+        "window": {
+          "description": "The window's size in points, \"<width>x<height>\".",
+          "maxLength": 32,
+          "minLength": 3,
+          "pattern": "^[0-9]{1,5}x[0-9]{1,5}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "build",
+        "fatal",
+        "message",
+        "platform",
+        "stack",
+        "wide",
+        "window"
+      ],
+      "type": "object"
+    },
+    "AppErrorReportInput": {
+      "properties": {
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/AppErrorReport"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "errors"
+      ],
+      "type": "object"
+    },
+    "AppErrorReportOutput": {
+      "properties": {
+        "kept": {
+          "description": "How many went into the workspace's log.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kept"
+      ],
+      "type": "object"
+    },
     "ApprovalAnswerInput": {
       "properties": {
         "decision": {
@@ -11987,6 +12099,12 @@
         "antigravity_status.output": {
           "$ref": "#/$defs/AntigravityStatusOutput"
         },
+        "app_error_report.input": {
+          "$ref": "#/$defs/AppErrorReportInput"
+        },
+        "app_error_report.output": {
+          "$ref": "#/$defs/AppErrorReportOutput"
+        },
         "approval_answer.input": {
           "$ref": "#/$defs/ApprovalAnswerInput"
         },
@@ -13349,6 +13467,8 @@
         "agents_list.output",
         "antigravity_status.input",
         "antigravity_status.output",
+        "app_error_report.input",
+        "app_error_report.output",
         "approval_answer.input",
         "approval_answer.output",
         "artifact_get.input",
