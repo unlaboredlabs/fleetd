@@ -49,9 +49,9 @@ export function agentsFit(cpus: number, memTotalBytes: number | undefined, memPe
 /** Parallel build jobs for each agent: its share of the CPUs when the machine runs all the agents it fits, at least 2. */
 export const buildJobs = (cpus: number, agents: number) => Math.max(2, Math.floor(cpus / Math.max(1, agents)));
 
-/** buildJobs for this machine now. */
-export function buildJobsHere(): number {
-  const cpus = Math.max(1, availableParallelism());
+/** buildJobs for this machine now, with `cpus` CPUs: by default the ones this process may use. */
+export function buildJobsHere(cpus = availableParallelism()): number {
+  cpus = Math.max(1, cpus);
   return buildJobs(cpus, agentsFit(cpus, memTotal(), MEM_PER_AGENT));
 }
 
