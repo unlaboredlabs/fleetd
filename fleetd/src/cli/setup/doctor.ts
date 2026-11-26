@@ -11,7 +11,7 @@ import * as versions from "../versions.ts";
 import { Checklist, type State } from "./checklist.ts";
 import * as steps from "./steps.ts";
 import { isFailure } from "./steps.ts";
-import { noSetupFix, say, SETUP_USAGE } from "./shared.ts";
+import { noSetupFix, runningListen, say, SETUP_USAGE } from "./shared.ts";
 
 const KEY_FILE = "cli.key";
 
@@ -63,8 +63,11 @@ export async function connectWith(home: string, hub: string | undefined, client:
     } catch (error) {
       throw again((error as Error).message);
     }
-    if (!state) throw { message: `${home} has no workspace set up`, fix: noSetupFix(home) } satisfies Failure;
-    listen = `http://${state.listen}`;
+    // A workspace started by hand (fleetd workspace start) has no setup.json: the one with this home's database open is
+    // it, as fleetd pair finds it. Without this, fleetd status said "has no workspace set up" beside a running one.
+    const running = state ? undefined : runningListen(home);
+    if (!state && running === undefined) throw { message: `${home} has no workspace set up`, fix: noSetupFix(home) } satisfies Failure;
+    listen = `http://${state ? state.listen : running}`;
   }
   try {
     return await McpClient.connect(listen, key, client, 15_000);
