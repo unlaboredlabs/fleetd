@@ -353,7 +353,9 @@ gives you one of its own simulators. mac run, mac push and mac sim start say on 
                                    the Mac; only what changed goes across
   mac run [--bg] [--env NAME]... [--] <command line>
                                    runs it in your folder there with the Mac's shell, as ssh would; prints its output
-                                   and exits with its exit code. --bg runs it on and prints its job number
+                                   and exits with its exit code. --bg runs it on and prints its job number.
+                                   A job runs on through a restart of the workspace or a node (an update), and
+                                   mac run follows it again once the Mac is back
   mac logs <job> [-f]              a job's output so far (-f: follow it to its end)
   mac ps                           your jobs
   mac kill <job>                   ends a job
