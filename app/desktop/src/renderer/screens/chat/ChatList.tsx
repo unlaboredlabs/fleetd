@@ -3,7 +3,7 @@
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button, cx, preloadable, preloadWhenIdle, Text, VirtualList } from "../../ui";
 import { onWeb } from "../../src/web";
@@ -17,6 +17,8 @@ import { wakeShown } from "../../../shared/wake";
 import { useWake } from "./wake";
 import { WakeRow } from "./WakeRow";
 import { MessageView, useEnter } from "./Bubble";
+import { ChatShotsContext } from "./ImageViewer";
+import { chatShots } from "./shots";
 import { useGlide } from "./glide";
 import { useBubbleActions } from "./actions";
 import { markOf, useShown } from "./shown";
@@ -481,34 +483,39 @@ export function ChatList(props: {
   const writing = last?.kind === "message" && last.item.author === "lead" && last.item.state === "streaming";
   const waking = wakeShown(useWake(projectKey(props.project), writing));
   const shown = useMemo((): readonly Row[] => (waking ? [...rows, writing ? WAKE_WRITING : WAKE_ROW] : rows), [rows, waking, writing]);
+  // The picture viewer steps through the whole chat's pictures, not only the message's: read when it opens, so a
+  // streamed word re-renders no other message.
+  const pictures = useCallback(() => chatShots(rowsNow.current.flatMap((r) => (r.kind === "message" ? [r.item] : []))), []);
   return (
     <div className={s.log}>
-      <VirtualList
-        items={shown}
-        getKey={(r) => r.key}
-        estimateSize={56}
-        heights={heights}
-        // The list runs on behind the composer's island; its end keeps the island's room, so the last row scrolls
-        // clear of it and a new bubble rises from behind the island. Its first measure lands before the first paint;
-        // until then, a one-line island's.
-        paddingEnd={inset ?? 100}
-        followOutput={inWindow === undefined}
-        startAtEnd
-        paddingStart={props.under === true ? TOP_BAR : 0}
-        className={s.scroller}
-        virtualizerRef={virtualizer}
-        aria-label="Conversation with the lead"
-        renderItem={(r) => (
-          <RowView
-            row={r}
-            project={props.project}
-            mineLatest={r.key === mineLatest}
-            enter={entering?.get(r.key)}
-            onLoadOlder={props.onLoadOlder}
-            onLoadNewer={inWindow?.onLoadNewer ?? noop}
-          />
-        )}
-      />
+      <ChatShotsContext.Provider value={pictures}>
+        <VirtualList
+          items={shown}
+          getKey={(r) => r.key}
+          estimateSize={56}
+          heights={heights}
+          // The list runs on behind the composer's island; its end keeps the island's room, so the last row scrolls
+          // clear of it and a new bubble rises from behind the island. Its first measure lands before the first paint;
+          // until then, a one-line island's.
+          paddingEnd={inset ?? 100}
+          followOutput={inWindow === undefined}
+          startAtEnd
+          paddingStart={props.under === true ? TOP_BAR : 0}
+          className={s.scroller}
+          virtualizerRef={virtualizer}
+          aria-label="Conversation with the lead"
+          renderItem={(r) => (
+            <RowView
+              row={r}
+              project={props.project}
+              mineLatest={r.key === mineLatest}
+              enter={entering?.get(r.key)}
+              onLoadOlder={props.onLoadOlder}
+              onLoadNewer={inWindow?.onLoadNewer ?? noop}
+            />
+          )}
+        />
+      </ChatShotsContext.Provider>
       {latest === undefined ? null : latestSlot ? (
         createPortal(latestButton, latestSlot)
       ) : (

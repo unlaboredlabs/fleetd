@@ -1,6 +1,6 @@
 // What a message carries besides words: a picture, shown as itself with rounded corners as Messages does, which opens
-// full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens the
-// share sheet (Save to Files, another app). A picture's bubble reads its preview (session.preview, kept on disk), the
+// full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens in
+// iOS's own previewer (Quick Look), with Share in its corner. A picture's bubble reads its preview (session.preview, kept on disk), the
 // viewer the picture itself; a file is read only when it is opened, in pieces that resume after a drop.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -11,7 +11,7 @@ import { glyphOf, kindOf, type AttachmentGetOutput, type FileGlyph, type HubErro
 import { useSession } from "../hubContext";
 import { imageSize } from "../imageSize";
 import type { Typed } from "../hub/client";
-import { shareFile } from "../shareFile";
+import { openFile, shareFile } from "../shareFile";
 import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
@@ -123,8 +123,8 @@ export const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; reado
 
 /**
  * Any other file: its kind's glyph on a tile of its color, its name, and its kind and size. Tapping reads it from the
- * hub and opens the share sheet with the file as itself, its preview on top: Save to Files, or open it in Numbers,
- * Pages or another app. Nothing is read before the tap: a card costs no bytes.
+ * hub and shows it in iOS's own previewer (a PDF, a sheet, a note, code), Share in its corner for Save to Files or
+ * another app; one it can't show opens the share sheet. Nothing is read before the tap: a card costs no bytes.
  */
 export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean }) {
   const t = useTheme();
@@ -141,14 +141,14 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${kindOf(mime)}, ${name}${bytes > 0 ? `, ${fileSize(bytes)}` : ""}`}
-      accessibilityHint={failed !== undefined ? "Reads it again" : "Opens the share sheet to save it or open it in another app"}
+      accessibilityHint={failed !== undefined ? "Reads it again" : "Opens it"}
       disabled={got === "reading"}
       onPress={() => {
         haptics.tap();
         setGot("reading");
         void session.attachment(chatKey, attachmentId).then((read) => {
           setGot(read.ok ? undefined : read.error);
-          if (read.ok) void shareFile(read.output).catch(() => undefined);
+          if (read.ok) void openFile(read.output).catch(() => undefined);
         });
       }}
       style={({ pressed }) => [styles.file, { backgroundColor: fill, width: Math.min(bubbleMax(pane), FILE_WIDTH) }, pressed && styles.pressed]}
