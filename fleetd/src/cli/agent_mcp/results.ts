@@ -101,14 +101,14 @@ export function browserResult(answer: Record<string, unknown>): ToolResult {
   if (op === "session_end" && kind === "mac") {
     return text(
       `Mac screen session ${id} ended: its lease and app claims are free for the next agent; what you opened stays ` +
-        `on the Mac. Its recording (${files(result)}) goes to the hub.`,
+        `on the Mac. Its recording (${files(result)}) goes to the workspace.`,
       false,
     );
   }
   if (op === "session_end" && kind === "linux_desktop") {
     return text(
       `Desktop session ${id} ended; the desktop and everything on it are gone. Its recording (${files(result)}) goes ` +
-        `to the hub.${note(result)}`,
+        `to the workspace.${note(result)}`,
       false,
     );
   }
@@ -116,7 +116,7 @@ export function browserResult(answer: Record<string, unknown>): ToolResult {
     const ios = kind === "ios";
     return text(
       `${ios ? "iOS" : "Android"} session ${id} ended; the ${ios ? "simulator" : "emulator"} and everything done in ` +
-        `it are gone. Its recording (${files(result)}) goes to the hub.${note(result)}`,
+        `it are gone. Its recording (${files(result)}) goes to the workspace.${note(result)}`,
       false,
     );
   }
@@ -131,7 +131,7 @@ export function browserResult(answer: Record<string, unknown>): ToolResult {
   if (op === "session_end") {
     return text(
       `Browser session ${id} ended; the browser and its profile are gone. Its recording (${files(result)}) goes to ` +
-        `the hub.${note(result)}`,
+        `the workspace.${note(result)}`,
       false,
     );
   }
@@ -155,7 +155,7 @@ export function toolResult(answer: Record<string, unknown>): ToolResult {
   }
   const error = answer.error;
   const message = at(error, "message");
-  const said = typeof message === "string" ? message : "the hub refused the call";
+  const said = typeof message === "string" ? message : "the workspace refused the call";
   // The node couldn't reach a restarting hub: nothing refused the call.
   let words = said === HUB_UNREACHABLE ? said : `Refused: ${said}`;
   const fix = at(error, "fix");

@@ -279,7 +279,7 @@ export function menuBarView(read: MacMenuBarRead, hub: HubInput | null, now: num
       behind === null
         ? null
         : {
-            line: `This Mac runs fleetd ${behind.macVersion}; ${read.found.hubName} runs ${behind.hubVersion}. Update brings every machine level with the hub.`,
+            line: `This Mac runs fleetd ${behind.macVersion}; ${read.found.hubName} runs ${behind.hubVersion}. Update brings every machine level with the workspace.`,
             admin: behind.who === "admin",
             ...(behind.who === "admin" ? {} : { where: behind.who === "member" ? `Ask an admin of ${read.found.hubName}: ${HUB_UPDATE_WHERE}` : HUB_UPDATE_WHERE }),
           },

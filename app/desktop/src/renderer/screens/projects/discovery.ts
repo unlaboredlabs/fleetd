@@ -93,7 +93,7 @@ export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) 
     const detail = first && !project ? `checked out on ${name(first.machineId)}` : (c.description ?? "");
     found.push({ name: c.repo, source: { kind: "github" }, detail, private: c.private, ...(project ? { project } : {}) });
   }
-  const ghOn = gh.ghOn === undefined ? undefined : gh.ghOn === "hub" ? "the hub" : name(gh.ghOn);
+  const ghOn = gh.ghOn === undefined ? undefined : gh.ghOn === "hub" ? "the workspace" : name(gh.ghOn);
   const best = out.best !== undefined && home(out.best) ? out.best : undefined;
   return { workers, found, problems, ...(best ? { best } : {}), ...(ghOn ? { ghOn } : {}) };
 };

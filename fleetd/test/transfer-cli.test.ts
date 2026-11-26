@@ -68,7 +68,7 @@ describe("fleetd export, then fleetd import", () => {
   test("the passphrase comes from the environment or a file, and neither command prints it", async () => {
     const { p: from, bo, login, done } = await exported();
     expect(done.code).toBe(0);
-    expect(done.stdout).toStartWith(`Exported the hub at ${from.home} to ${from.file} (`);
+    expect(done.stdout).toStartWith(`Exported the workspace at ${from.home} to ${from.file} (`);
     expect(done.stdout).toContain("sealed under the passphrase");
     expect(done.stdout).toContain(`fleetd import ${from.file}`);
     expect(statSync(from.file).mode & 0o777).toBe(0o600);
@@ -81,7 +81,7 @@ describe("fleetd export, then fleetd import", () => {
     expect(loaded.stderr).toBe("");
     expect(loaded.code).toBe(0);
     expect(loaded.stdout).toStartWith(`Loaded ${from.file} (written by fleetd `);
-    expect(loaded.stdout).toContain("loaded, sealed to this hub's own keys");
+    expect(loaded.stdout).toContain("loaded, sealed to this workspace's own keys");
     // What isn't carried, as the commands that bring it back.
     expect(loaded.stdout).toContain(`fleetd pair --worker ${M}    # Dev box`);
     expect(loaded.stdout).toContain(`fleetd invite --person ${bo.personId}    # Bo, admin`);
@@ -116,7 +116,7 @@ describe("fleetd export, then fleetd import", () => {
     expect(without.stdout).toContain("secrets   not loaded");
   });
 
-  test("export refuses before it writes: a file that is there, a short passphrase, no hub", async () => {
+  test("export refuses before it writes: a file that is there, a short passphrase, no workspace", async () => {
     const { p: from } = await source();
     writeFileSync(from.file, "mine");
     process.env[PASSPHRASE_ENV] = PASS;
@@ -125,7 +125,7 @@ describe("fleetd export, then fleetd import", () => {
     process.env[PASSPHRASE_ENV] = "too short";
     expect(await exportCommand(["--home", from.home, "--out", out])).toMatchObject({ code: 1, stderr: "fleetd: The passphrase is 12 characters or more.\n" });
     expect(await exportCommand(["--home", from.home, "--out", out, "--passphrase-file", join(from.dir, "nowhere")])).toMatchObject({ code: 1 });
-    expect(await exportCommand(["--home", join(from.dir, "nowhere"), "--out", out])).toMatchObject({ code: 1, stderr: `fleetd: There is no hub at ${join(from.dir, "nowhere")}.\n` });
+    expect(await exportCommand(["--home", join(from.dir, "nowhere"), "--out", out])).toMatchObject({ code: 1, stderr: `fleetd: There is no workspace at ${join(from.dir, "nowhere")}.\n` });
     expect((await exportCommand(["--home", from.home, "--passphrase", PASS])).code).toBe(2);
     expect(existsSync(out) || existsSync(`${out}.part`)).toBe(false);
   });
@@ -158,12 +158,12 @@ describe("fleetd export, then fleetd import", () => {
     // A hub that has data: the one the export came from.
     const used = await importCommand([from.file, "--home", from.home]);
     expect(used.code).toBe(3);
-    expect(used.stderr).toStartWith("fleetd: This hub already has data");
+    expect(used.stderr).toStartWith("fleetd: This workspace already has data");
 
     expect(stateOf(to)).toEqual(before);
   });
 
-  test("import waits for the hub to be stopped: one that has the database open is refused", async () => {
+  test("import waits for the workspace to be stopped: one that has the database open is refused", async () => {
     const { p: from } = await exported();
     const to = await fresh();
     const before = stateOf(to);
@@ -177,7 +177,7 @@ describe("fleetd export, then fleetd import", () => {
       process.env[PASSPHRASE_ENV] = PASS;
       const refused = await importCommand([from.file, "--home", to.home]);
       expect(refused.code).toBe(3);
-      expect(refused.stderr).toStartWith(`fleetd: A hub is running on ${to.home}. Stop it`);
+      expect(refused.stderr).toStartWith(`fleetd: A workspace is running on ${to.home}. Stop it`);
       expect(refused.stderr).toEndWith("Nothing was changed.\n");
     } finally {
       holder.kill();

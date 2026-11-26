@@ -31,7 +31,7 @@ export function Artifacts({ navigation, route }: ChatInfoProps<"Artifacts">) {
   const list = useRead(() => (p === undefined ? Promise.resolve(undefined) : listArtifacts(session, p)), [session, p?.machineId, p?.projectId]);
   useArtifactsChanged(session, p, list.reload);
   const r = list.value;
-  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   return (
     <ScrollView
       style={{ backgroundColor: t.grouped }}

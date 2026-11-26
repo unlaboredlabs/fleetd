@@ -36,8 +36,8 @@ const RECONNECTS = "The app reconnects by itself.";
 const unreachable = (host: string, cause: string): Loss => ({
   reason: `${host} doesn't answer (${cause})`,
   fix: onTailnet(host)
-    ? "Check Tailscale is connected on this computer and on the hub's machine, and that the machine is awake."
-    : "Check the hub's machine is on and awake, and that this computer is on a network that can reach it.",
+    ? "Check Tailscale is connected on this computer and on the workspace's machine, and that the machine is awake."
+    : "Check the workspace's machine is on and awake, and that this computer is on a network that can reach it.",
 });
 
 const TLS = /^(CERT_|ERR_TLS_|ERR_SSL_|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|UNABLE_TO_(GET|VERIFY)_|EPROTO$)/u;
@@ -53,7 +53,7 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
     case "ECONNREFUSED":
       return {
         reason: `Nothing is listening at ${host}`,
-        fix: `Start the hub on that machine (\`fleetd doctor\` there says why it's down)${known ? "." : ", or check the address and port."}`,
+        fix: `Start the workspace on that machine (\`fleetd doctor\` there says why it's down)${known ? "." : ", or check the address and port."}`,
       };
     case "ENOTFOUND":
     case "EAI_AGAIN":
@@ -63,8 +63,8 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
         fix: onTailnet(host)
           ? "Check Tailscale is connected on this computer; tailnet names only resolve while it is."
           : known
-            ? "Check this computer is on a network that can reach the hub."
-            : "Check the hub address for typos, and that this computer is on the same network as the hub.",
+            ? "Check this computer is on a network that can reach the workspace."
+            : "Check the workspace address for typos, and that this computer is on the same network as the workspace.",
       };
     case "ETIMEDOUT":
     case "EHOSTUNREACH":
@@ -75,32 +75,32 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
     case "EPIPE":
       return {
         reason: `${host} cut the connection`,
-        fix: `The hub may have restarted, or a proxy or firewall is dropping it. ${RECONNECTS}`,
+        fix: `The workspace may have restarted, or a proxy or firewall is dropping it. ${RECONNECTS}`,
       };
   }
   if (TLS.test(errCode)) {
     return {
       reason: `The secure connection to ${host} failed (${error?.message ?? errCode})`,
-      fix: "If the hub serves plain HTTP, use an http:// address. Otherwise its certificate isn't one this computer trusts.",
+      fix: "If the workspace serves plain HTTP, use an http:// address. Otherwise its certificate isn't one this computer trusts.",
     };
   }
   // Node's HTTP parser (HPE_…: "Parse Error: Expected HTTP/…"): something answered that doesn't speak HTTP at all, most
   // often another program that took the hub's port.
   if (errCode.startsWith("HPE_")) {
     return {
-      reason: `Something other than a fleetd hub answered at ${host}`,
+      reason: `Something other than a fleetd workspace answered at ${host}`,
       fix: known
-        ? "Another program may have taken the hub's port. Run `fleetd doctor` on the hub's machine."
-        : "Check the address and port. If they're your hub's, another program may have taken its port: run `fleetd doctor` on the hub's machine.",
+        ? "Another program may have taken the workspace's port. Run `fleetd doctor` on the workspace's machine."
+        : "Check the address and port. If they're your workspace's, another program may have taken its port: run `fleetd doctor` on the workspace's machine.",
     };
   }
   const status = /Unexpected server response: (\d+)/u.exec(error?.message ?? "")?.[1];
   if (status !== undefined) {
     return status.startsWith("5")
-      ? { reason: `${host} answered with a server error (HTTP ${status})`, fix: "A proxy in front of the hub may be down. Run `fleetd doctor` on the hub." }
+      ? { reason: `${host} answered with a server error (HTTP ${status})`, fix: "A proxy in front of the workspace may be down. Run `fleetd doctor` on the workspace." }
       : {
-          reason: `${host} answered, but not as a fleetd hub (HTTP ${status})`,
-          fix: "Check the address and port. If it is your hub, update it with `fleetd update` on that machine.",
+          reason: `${host} answered, but not as a fleetd workspace (HTTP ${status})`,
+          fix: "Check the address and port. If it is your workspace, update it with `fleetd update` on that machine.",
         };
   }
   if (/handshake has timed out/iu.test(error?.message ?? "")) return unreachable(host, "timed out");
@@ -108,18 +108,18 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
   // No imports: the fixtures' build runs this file as it is.
   if (code === 1001 || code === 1012) {
     return {
-      reason: reason.startsWith("updating to ") ? "The hub is restarting into a new build" : "The hub is restarting or shutting down",
-      fix: `${RECONNECTS} If it doesn't come back, run \`fleetd doctor\` on the hub.`,
+      reason: reason.startsWith("updating to ") ? "The workspace is restarting into a new build" : "The workspace is restarting or shutting down",
+      fix: `${RECONNECTS} If it doesn't come back, run \`fleetd doctor\` on the workspace.`,
     };
   }
-  if (reason !== "") return { reason: `The hub closed the connection: ${reason.replace(/\.$/u, "")}`, fix: RECONNECTS };
+  if (reason !== "") return { reason: `The workspace closed the connection: ${reason.replace(/\.$/u, "")}`, fix: RECONNECTS };
   switch (code) {
     case 1011:
-      return { reason: "The hub hit an internal error", fix: "Run `fleetd doctor` on the hub; its log has the details." };
+      return { reason: "The workspace hit an internal error", fix: "Run `fleetd doctor` on the workspace; its log has the details." };
   }
-  if (wasOpen) return { reason: `The connection to ${host} dropped`, fix: `The hub may have restarted, or the network changed. ${RECONNECTS}` };
+  if (wasOpen) return { reason: `The connection to ${host} dropped`, fix: `The workspace may have restarted, or the network changed. ${RECONNECTS}` };
   if (error !== undefined) {
-    return { reason: `Can't connect to ${host}: ${error.message.replace(/\.$/u, "")}`, fix: `Check the hub is running (\`fleetd doctor\` on the hub)${known ? "." : " and the address is right."}` };
+    return { reason: `Can't connect to ${host}: ${error.message.replace(/\.$/u, "")}`, fix: `Check the workspace is running (\`fleetd doctor\` on the workspace)${known ? "." : " and the address is right."}` };
   }
   return { reason: `The connection to ${host} ended`, fix: RECONNECTS };
 };
@@ -135,8 +135,8 @@ export const explainAbandon = (hub: string, why: "not-ready" | "silent", opened 
     return {
       reason: `${host} stopped answering`,
       fix: onTailnet(host)
-        ? `The hub's machine may be asleep, or Tailscale dropped. ${RECONNECTS}`
-        : `The hub's machine may be asleep or off the network. ${RECONNECTS}`,
+        ? `The workspace's machine may be asleep, or Tailscale dropped. ${RECONNECTS}`
+        : `The workspace's machine may be asleep or off the network. ${RECONNECTS}`,
     };
   }
   if (known) {
@@ -148,6 +148,6 @@ export const explainAbandon = (hub: string, why: "not-ready" | "silent", opened 
   if (!opened) return unreachable(host, "timed out");
   return {
     reason: `${host} accepted the connection but never finished it`,
-    fix: "Check the address is your fleetd hub's (not another service on that port), and update the hub with `fleetd update` if it's old.",
+    fix: "Check the address is your fleetd workspace's (not another service on that port), and update the workspace with `fleetd update` if it's old.",
   };
 };

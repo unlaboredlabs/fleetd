@@ -124,7 +124,7 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
     void refreshCloud();
     const targets = await window.fleetd.cloud.moveTargets();
     const first = targets[0];
-    if (first === undefined) return setLocal({ at: "refused", message: "Every team of yours on fleetd cloud already has bots, and a hub moves only into an empty team. Sign in with another account." });
+    if (first === undefined) return setLocal({ at: "refused", message: "Every workspace of yours on fleetd cloud already has bots, and a workspace moves only into an empty workspace. Sign in with another account." });
     setChosen(first);
     setLocal({ at: "pick", targets, chosen: first.hub });
   };
@@ -148,11 +148,11 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
   if (shown) {
     const line =
       move.phase === "packing"
-        ? "Packing this hub…"
+        ? "Packing this workspace…"
         : move.phase === "uploading"
           ? `Uploading to ${move.team ?? "fleetd cloud"}… ${String(pct(move))}%`
           : move.phase === "loading"
-            ? `${move.team ?? "fleetd cloud"} is loading this hub…`
+            ? `${move.team ?? "fleetd cloud"} is loading this workspace…`
             : move.phase === "done"
               ? `Moved to ${move.team ?? "fleetd cloud"}.`
               : (move.failure?.message ?? "The move stopped.");
@@ -204,7 +204,7 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
         </>
       ) : move.phase === "done" ? (
         <Button variant="primary" disabled={team === undefined} onClick={() => team !== undefined && (onClose(), switchHub(team.id))}>
-          {`Open ${team?.label ?? move.team ?? "the team"}`}
+          {`Open ${team?.label ?? move.team ?? "the workspace"}`}
         </Button>
       ) : move.phase === "loading" ? null : (
         // While the cloud loads it, all or nothing, there is nothing to stop: no button at all.
@@ -216,9 +216,9 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
     body = (
       <div className={m.body}>
         {local.targets.length === 1 ? (
-          <Text>{`Into ${local.targets[0]?.name ?? "your team"}`}</Text>
+          <Text>{`Into ${local.targets[0]?.name ?? "your workspace"}`}</Text>
         ) : (
-          <div className={m.targets} role="radiogroup" aria-label="Team">
+          <div className={m.targets} role="radiogroup" aria-label="Workspace">
             {local.targets.map((t) => (
               <label key={t.hub}>
                 <input
@@ -280,7 +280,7 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
       open
       onOpenChange={(open) => !open && onClose()}
       title="Move to the cloud"
-      description={shown ? undefined : "This hub's bots, chats, memory, orders and vault go into a fleetd cloud team, and its machines rejoin there. Here it pauses."}
+      description={shown ? undefined : "This workspace's bots, chats, memory, orders and vault go into a fleetd cloud workspace, and its machines rejoin there. Here it pauses."}
       footer={footer}
     >
       <div data-screen="settings.hub.move">{body}</div>
@@ -301,10 +301,10 @@ export function MovedBanner() {
   // Failed while the pause stays: this hub lost track of the move, so whether the team has its bots is for the person to see.
   const text =
     move.phase === "done"
-      ? `This hub moved to fleetd cloud (${move.paused.team}). Its bots are paused here.`
+      ? `This workspace moved to fleetd cloud (${move.paused.team}). Its bots are paused here.`
       : move.phase === "failed"
-        ? `This hub's move to fleetd cloud (${move.paused.team}) may not have finished. Its bots are paused here until you check the team.`
-        : `Moving this hub to fleetd cloud (${move.paused.team})… Its bots are paused until it's done.`;
+        ? `This workspace's move to fleetd cloud (${move.paused.team}) may not have finished. Its bots are paused here until you check the workspace.`
+        : `Moving this workspace to fleetd cloud (${move.paused.team})… Its bots are paused until it's done.`;
   return (
     <div className={b.banner} data-tone="warning" role="status" data-banner="moved">
       <div className={b.bannerLine}>

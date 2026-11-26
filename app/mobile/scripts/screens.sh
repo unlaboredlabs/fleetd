@@ -55,7 +55,7 @@ say "phone lab up: $(cat "$LAB/lab.json" | tr -d '\n')"
 
 # A pairing code of its own for each simulator (a code pairs once), and the hub's address, as `fleetd pair` prints them.
 pair_code() { FLEETD_HOME=$home HOME=$home/hub-user "$FLEETD_BIN" pair --no-qr --name "$1" >"$WORK/pair.txt"; }
-# Its first word: "Pairing code: ABCD-2345  (single use, …)", "Hub address:  http://…".
+# Its first word: "Pairing code: ABCD-2345  (single use, …)", "Workspace:    http://…".
 pair_field() { sed -n "s/^$1: *//p" "$WORK/pair.txt" | head -n1 | cut -d' ' -f1; }
 
 # The newest runtime's simulator of that name, as the image installs them.
@@ -107,8 +107,8 @@ start() {
   pair_code "$device"
   try ad press 'label="Enter Code Manually"'
   # The field, not the caption over it that has the same label.
-  try ad wait 'role=text-field label="Hub address"' 30000
-  try ad fill 'role=text-field label="Hub address"' "$(pair_field "Hub address")"
+  try ad wait 'role=text-field label="Workspace address"' 30000
+  try ad fill 'role=text-field label="Workspace address"' "$(pair_field "Workspace")"
   try ad fill 'role=text-field label="Pairing code"' "$(pair_field "Pairing code")"
   try ad press 'label="Connect"'
   # Notifications: an app built without EXPO_PUBLIC_FLEETD_SCREENS (main's) asks once paired, declined here. The one

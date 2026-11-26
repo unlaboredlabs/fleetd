@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 import type { PairFailure } from "../../shared/pairing";
 
 const MAX_BYTES = 4096;
-const RERUN = "Run `fleetd pair` on the hub to write a fresh one, or type the address and code below.";
+const RERUN = "Run `fleetd pair` on the workspace to write a fresh one, or type the address and code below.";
 
 export type FileRead = { ok: true; text: string } | { ok: false; missing: true } | { ok: false; missing: false; failure: PairFailure };
 

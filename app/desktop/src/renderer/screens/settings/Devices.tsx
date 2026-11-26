@@ -61,7 +61,7 @@ function YourDevices({ title, reveal }: { title: string; reveal: string }) {
     <SettingsSection
       title={title}
       reveal={reveal}
-      hint="The apps signed in as you. Each acts as you on this hub, on every machine."
+      hint="The apps signed in as you. Each acts as you on this workspace, on every machine."
       aside={
         pairing === null ? (
           <Button icon={<Smartphone size={14} />} disabled={!live || read.data === undefined} onClick={pair}>
@@ -220,7 +220,7 @@ function PairPhone({ pairing, paired, onAgain, onClose }: { pairing: Pairing; pa
       ) : paired !== undefined ? (
         <div className={s.hubLine} role="status">
           <Check size={14} color="var(--success)" />
-          <Text size="sm">{`${paired.name} paired. It acts as you on this hub now.`}</Text>
+          <Text size="sm">{`${paired.name} paired. It acts as you on this workspace now.`}</Text>
         </div>
       ) : (
         <Shown out={pairing.out} life={codeLife(pairing.out.expiresAt, now)} />
@@ -253,7 +253,7 @@ function Shown({ out, life }: { out: PairCodeCreateOutput; life: string | null }
         <dl className={s.pairFields}>
           <dt>
             <Text size="xs" tone="quiet">
-              Hub
+              Workspace
             </Text>
           </dt>
           <dd>

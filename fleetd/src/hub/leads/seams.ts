@@ -36,7 +36,7 @@ export const unknownMachine = (machineId: string) =>
     `No machine ${machineId}.`,
     "Call fleetd_status to list machines.",
     undefined,
-    `This hub has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the hub admin.`,
+    `This workspace has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the workspace admin.`,
   );
 
 export const unknownThread = (r: { machineId: string; threadId: string }) =>
@@ -74,7 +74,7 @@ export type QueuePorts = {
 export const queuePorts = (hub: Hub) =>
   hub.area<QueuePorts>("queue_ports", () => ({
     send: async () => {
-      throw new ToolError("machine_offline", "The hub's write queue isn't running.");
+      throw new ToolError("machine_offline", "The workspace's write queue isn't running.");
     },
     isConnected: () => false,
     withdrawSteer: () => false,

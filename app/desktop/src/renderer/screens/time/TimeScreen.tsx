@@ -93,7 +93,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const offline =
     connection.view === "live" || (connection.view === "skeleton" && connection.reason === undefined)
       ? undefined
-      : "Not connected to the hub. The figures come back when it reconnects.";
+      : "Not connected to the workspace. The figures come back when it reconnects.";
   const names = useNames(order);
   const breakdown = data.breakdown?.ok === true ? data.breakdown.value : undefined;
   const coverage = data.spansCoverage ?? breakdown?.coverage;
@@ -316,11 +316,11 @@ export function TimeScreen(props: TimeScreenProps) {
         <TabPanel value="breakdown" className={cx(s.panel)}>
           {data.breakdown === undefined ? (
             <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.breakdown.offline" })}>
-              <Text tone="quiet">{offline ?? "Asking the hub where the time went…"}</Text>
+              <Text tone="quiet">{offline ?? "Asking the workspace where the time went…"}</Text>
             </div>
           ) : !data.breakdown.ok ? (
             <div className={cx(s.empty)} data-screen="time.breakdown.error">
-              <Text strong>The hub couldn&apos;t answer</Text>
+              <Text strong>The workspace couldn&apos;t answer</Text>
               <Text tone="quiet">{data.breakdown.error}</Text>
             </div>
           ) : (
@@ -330,11 +330,11 @@ export function TimeScreen(props: TimeScreenProps) {
         <TabPanel value="insights" className={cx(s.panel)}>
           {data.insights === undefined ? (
             <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.insights.offline" })}>
-              <Text tone="quiet">{offline ?? "Asking the hub for findings in this period…"}</Text>
+              <Text tone="quiet">{offline ?? "Asking the workspace for findings in this period…"}</Text>
             </div>
           ) : !data.insights.ok ? (
             <div className={cx(s.empty)} data-screen="time.insights.error">
-              <Text strong>The hub couldn&apos;t answer</Text>
+              <Text strong>The workspace couldn&apos;t answer</Text>
               <Text tone="quiet">{data.insights.error}</Text>
             </div>
           ) : (

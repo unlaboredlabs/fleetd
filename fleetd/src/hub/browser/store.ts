@@ -28,7 +28,7 @@ const MAX_GB_KEY = "max_gb_per_project";
 /** What a lost recording's folder is renamed to on its way out: `.{id}.lost-<ms>`, beside the recordings. */
 const ASIDE = ".lost-";
 /** What a session the hub ended with its task says. */
-export const OUTLIVED_NOTE = "its task ended with it still open, so the hub ended it";
+export const OUTLIVED_NOTE = "its task ended with it still open, so the workspace ended it";
 /** How long the hub keeps telling a node of a screen it ended. */
 const TELL_MS = DAY_MS;
 /** A session still live or uploading this long after it started is a partial upload its node never finished. */

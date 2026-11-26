@@ -16,7 +16,7 @@ const SPEEDS: readonly { readonly value: UpdateSpeed; readonly label: string }[]
 ];
 
 const SPEED_HINT = [
-  "Which builds of fleetd this hub takes. Every build runs on fleetd's own hub and cloud first, then reaches hubs in stages.",
+  "Which builds of fleetd this workspace takes. Every build runs on fleetd's own workspace and cloud first, then reaches workspaces in stages.",
   ["Fast", "each build within hours of passing those checks (the default)"],
   ["Steady", "only builds that have been out 2 days with no problems"],
 ] as const;

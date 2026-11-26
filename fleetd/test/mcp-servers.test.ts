@@ -398,7 +398,7 @@ test("the integrations policy reads names, blocks money and credentials, and ask
   expect(redact("https://user:pass1234@host.example/x")).toBe("https://[secret]@host.example/x");
 });
 
-test("sign-in URLs stay off plain HTTP to the internet, and challenges read as the Rust hub reads them", () => {
+test("sign-in URLs stay off plain HTTP to the internet, and challenges read as the Rust workspace reads them", () => {
   expect(() => secure("http://auth.example/token")).toThrow("plain HTTP");
   for (const ok of ["https://auth.example", "http://127.0.0.1:1/x", "http://devbox.tailb0000.ts.net/x", "http://100.100.1.2/x", "http://[fd7a:115c:a1e0::1]/x"]) {
     expect(secure(ok).toString()).toBeTruthy();
@@ -418,7 +418,7 @@ const serving = (port: number, to: string) =>
     },
   });
 
-test("the hub finds its Tailscale Serve https front by the port it proxies to", () => {
+test("the workspace finds its Tailscale Serve https front by the port it proxies to", () => {
   expect(serveFront(serving(4791, "http://100.100.1.2:4790"), { host: "100.100.1.2", port: 4790 })).toBe("https://devbox.example.ts.net:4791");
   expect(serveFront(serving(4791, "http://127.0.0.1:4790"), { host: "localhost", port: 4790 })).toBe("https://devbox.example.ts.net:4791");
   expect(serveFront(serving(4791, "http://100.100.1.2:4790"), { host: "0.0.0.0", port: 4790 })).toBe("https://devbox.example.ts.net:4791");
@@ -468,7 +468,7 @@ function httpsOnlyService() {
   return { server, base: `http://127.0.0.1:${port}` };
 }
 
-test("a sign-in from an app on plain http calls back at the hub's https front, and the app's dialog carries on", async () => {
+test("a sign-in from an app on plain http calls back at the workspace's https front, and the app's dialog carries on", async () => {
   const svc2 = httpsOnlyService();
   try {
     const server = {
@@ -823,7 +823,7 @@ test("a team server with no key that asks no one to sign in reaches the agents o
   await l.call("mcp_server_set", keyed);
   const kept = { ...keyed, headers: [{ kind: "keep", name: "Authorization" }] };
   const refused = l.call("mcp_server_set", kept, member);
-  await expect(refused).rejects.toMatchObject({ code: "forbidden", message: expect.stringContaining("only the hub's owners and admins change them") });
+  await expect(refused).rejects.toMatchObject({ code: "forbidden", message: expect.stringContaining("only the workspace's owners and admins change them") });
   await expect(refused).rejects.not.toMatchObject({ message: expect.stringContaining("doesn't ask anyone to sign in") });
 });
 

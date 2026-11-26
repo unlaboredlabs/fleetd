@@ -82,7 +82,7 @@ test("with no machine to keep it, the key isn't asked for, and the line says why
   expect(JSON.stringify(list.items)).not.toMatch(/box key|provider/);
 });
 
-test("the save speaks for the hub's owner, as only a person who administers it may, through a key revoked after", async () => {
+test("the save speaks for the workspace's owner, as only a person who administers it may, through a key revoked after", async () => {
   const { Fleet } = await import("./golden.ts");
   const { connect } = await import("../../src/cli/setup/doctor.ts");
   const { asOwner } = await import("../../src/cli/setup/connect_steps.ts");
@@ -95,7 +95,7 @@ test("the save speaks for the hub's owner, as only a person who administers it m
     // The CLI's own key is an agent's: the hub refuses it this.
     await expect(set(await connect(fleet.hubHome))).rejects.toMatchObject({ message: expect.stringContaining("owners and admins") });
     // As the owner, the hub takes the call: it has no key yet to keep under a new endpoint, so it says that instead.
-    await expect(asOwner(fleet.hubHome, set)).rejects.toMatchObject({ message: "The hub has no API key to keep." });
+    await expect(asOwner(fleet.hubHome, set)).rejects.toMatchObject({ message: "The workspace has no API key to keep." });
     const db = openHub(fleet.hubHome);
     try {
       const made = listKeys(db).filter((k) => k.name === "fleetd init");

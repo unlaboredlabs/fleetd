@@ -12,10 +12,10 @@ This page explains fleetd's parts and what happens after you ask a bot for somet
   or area of work.
 - **Lead**: the agent you talk to. It plans the work, starts other agents, and tells you when it's done.
 - **Agents**: the lead's helpers. Writers change code and open pull requests; reviewers check them.
-- **Hub**: the server that keeps every bot, chat and setting. You run it yourself, or use fleetd cloud, where we run it.
-- **Machines**: the computers agents run on. Your own machines connect out to the hub, so they need no open port. On
+- **Workspace**: the server that keeps every bot, chat and setting. You run it yourself, or use fleetd cloud, where we run it.
+- **Machines**: the computers agents run on. Your own machines connect out to the workspace, so they need no open port. On
   fleetd cloud, agents can also run on fleetd's computers.
-- **Apps**: the desktop app, the phone app and, on fleetd cloud, the web app. All of them talk to the hub.
+- **Apps**: the desktop app, the phone app and, on fleetd cloud, the web app. All of them talk to the workspace.
 
 ## From a message to a merge {#flow}
 
@@ -38,14 +38,14 @@ You can write at any time, even while agents work. See [Steering](/docs/steering
 
 ## Self-hosted or fleetd cloud
 
-The product is the same. The difference is who runs the hub and where agents can run.
+The product is the same. The difference is who runs the workspace and where agents can run.
 
 | | Self-hosted | fleetd cloud |
 |---|---|---|
-| Who runs the hub | You | Unlabored Labs, Inc., on servers in the EU |
+| Who runs the workspace | You | Unlabored Labs, Inc., on servers in the EU |
 | Agents run on | Your machines | Your machines, fleetd's computers, or both |
 | Apps | Desktop, phone | Desktop, phone, web |
 | Cost | Free | Plans from $20 a month; see [Billing](/docs/billing) |
 
-You can start self-hosted and [move to the cloud](/docs/moving-a-hub#cloud) later. Your bots and their history come
+You can start self-hosted and [move to the cloud](/docs/moving-a-workspace#cloud) later. Your bots and their history come
 with you.

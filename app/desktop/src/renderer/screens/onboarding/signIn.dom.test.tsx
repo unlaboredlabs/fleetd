@@ -119,20 +119,20 @@ it("on a build without the cloud's values, the first screen is today's connect f
   cloud.available = false;
   await mount(<OnboardingScreen />, unpaired);
   expect(screen()).toBe("onboarding");
-  expect(host.textContent).toContain("Hub address");
+  expect(host.textContent).toContain("Workspace address");
   expect(button("Sign in")).toBeUndefined();
   expect(button("Back")).toBeUndefined();
-  expect(host.textContent).not.toContain("fleetd hosts your hub");
+  expect(host.textContent).not.toContain("fleetd hosts your workspace");
 });
 
 it("offers both ways a line each; Use your own hub is the connect form, with the way back", async () => {
   await mount(<OnboardingScreen />, unpaired);
   expect(screen()).toBe("onboarding.ways");
-  expect(host.textContent).toContain("fleetd hosts your team. Agents run on fleetd's computers or your own.");
-  expect(host.textContent).toContain("A hub you run yourself. No fleetd account.");
-  click(/^Use your own hub/u);
+  expect(host.textContent).toContain("fleetd hosts your workspace. Agents run on fleetd's computers or your own.");
+  expect(host.textContent).toContain("A workspace you run yourself. No fleetd account.");
+  click(/^Use your own workspace/u);
   expect(screen()).toBe("onboarding");
-  expect(host.textContent).toContain("Hub address");
+  expect(host.textContent).toContain("Workspace address");
   click("Back");
   expect(screen()).toBe("onboarding.ways");
 });
@@ -143,10 +143,10 @@ it("on a Mac, Set up this Mac for agents is a third way on the first screen, str
   try {
     await mount(<OnboardingScreen />, unpaired);
     expect(screen()).toBe("onboarding.ways");
-    expect(host.querySelector("[data-way='agents-mac']")?.textContent).toContain("For builds and iOS simulators, with a code from your hub.");
+    expect(host.querySelector("[data-way='agents-mac']")?.textContent).toContain("For builds and iOS simulators, with a code from your workspace.");
     click(/^Set up this Mac for agents/u);
     expect(fleetd.macSetup.open).toHaveBeenCalledTimes(1);
-    click(/^Use your own hub/u);
+    click(/^Use your own workspace/u);
     expect(host.textContent).not.toContain("Is this the Mac for your agents?");
     expect(button(/^Set up this Mac for agents/u)).toBeUndefined();
   } finally {
@@ -225,7 +225,7 @@ it("asks about each invitation before anything connects: Join and Not now, then 
 
 it("no team of their own and one invitation: still asked, and Not now joins nothing", async () => {
   cloud.finish.mockImplementationOnce(() =>
-    Promise.resolve({ ok: false, failure: { code: "none_joined", message: "You didn't join a team, so you aren't signed in.", fix: "Sign in again when you want to join it." } }),
+    Promise.resolve({ ok: false, failure: { code: "none_joined", message: "You didn't join a workspace, so you aren't signed in.", fix: "Sign in again when you want to join it." } }),
   );
   await mount(<OnboardingScreen />, unpaired);
   await arriveWith({ email: "new@example.com", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }] });
@@ -235,7 +235,7 @@ it("no team of their own and one invitation: still asked, and Not now joins noth
   await settle();
   expect(cloud.finish).toHaveBeenCalledWith([]);
   expect(screen()).toBe("onboarding.ways");
-  expect(host.textContent).toContain("You didn't join a team, so you aren't signed in.");
+  expect(host.textContent).toContain("You didn't join a workspace, so you aren't signed in.");
 });
 
 it("in no team of their own, passing on every invitation: No team yet, with Make a team, which asks for one", async () => {
@@ -244,10 +244,10 @@ it("in no team of their own, passing on every invitation: No team yet, with Make
   click("Continue");
   click("Not now");
   expect(screen()).toBe("onboarding.no-team");
-  expect(host.querySelector("h1")?.textContent).toBe("No team yet");
+  expect(host.querySelector("h1")?.textContent).toBe("No workspace yet");
   expect(host.textContent).toContain("Make one of your own for new@example.com, or ask a teammate to invite this email.");
   expect(cloud.finish).not.toHaveBeenCalled();
-  click("Make a team");
+  click("Make a workspace");
   await settle();
   expect(cloud.finish).toHaveBeenCalledWith([], true);
 });
@@ -275,11 +275,11 @@ it("opens the team picked on the sign-in page, not the first listed", async () =
 
 it("a pairing link to a team of fleetd cloud says anyone can make one; a link to another hub doesn't", async () => {
   await mount(<OnboardingScreen hub="https://security.fleetd.dev" code="ABCD-2345-WXYZ-6789" />, unpaired);
-  expect(host.textContent).toContain("This is a fleetd cloud team. Anyone can make one, so join only if you know who sent you this link.");
+  expect(host.textContent).toContain("This is a fleetd cloud workspace. Anyone can make one, so join only if you know who sent you this link.");
   act(() => root.unmount());
   host.remove();
   await mount(<OnboardingScreen hub="https://hub.example:4790" code="ABCD-2345" />, unpaired);
-  expect(host.textContent).not.toContain("fleetd cloud team");
+  expect(host.textContent).not.toContain("fleetd cloud workspace");
 });
 
 it("Settings: Sign in and Sign out are off while a sign-in's teams connect, so no second sign-in starts under it", async () => {
@@ -296,7 +296,7 @@ it("Settings: Sign in and Sign out are off while a sign-in's teams connect, so n
   act(() => anywhere("Continue")?.click());
   await settle();
   expect(cloud.finish).toHaveBeenCalledWith([]);
-  expect(host.textContent).toContain("Connecting your teams…");
+  expect(host.textContent).toContain("Connecting your workspaces…");
   expect(button("Sign in")?.disabled).toBe(true);
   await act(async () => {
     connected({ ok: true, email: "sam@example.com", teams: [] });

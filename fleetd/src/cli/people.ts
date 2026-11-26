@@ -89,9 +89,9 @@ function invite(v: Parsed, o: { db: Db; home: string }): string {
   announcePeople(o.db, "invited", person, `${person.name} was invited as ${person.role}`, inviteId);
   const urls = localHubUrls(o.home);
   const link = deepLink(urls[0]!, minted.code);
-  let out = `Invited ${person.name} (${person.personId}) as ${person.role}.\nInvite link:  ${link}\nCode:         ${minted.code}  (single use, valid until ${minted.expiresAt})\nHub address:  ${urls[0]}\n`;
+  let out = `Invited ${person.name} (${person.personId}) as ${person.role}.\nInvite link:  ${link}\nCode:         ${minted.code}  (single use, valid until ${minted.expiresAt})\nWorkspace:    ${urls[0]}\n`;
   if (urls.length > 1) out += `  or:         ${urls.slice(1).join(", ")}\n`;
-  out += `\nSend ${person.name} the link, or the code and hub address to enter in the fleetd app. The device it pairs is theirs.\nTake it back with \`fleetd invite revoke ${inviteId}\`.\n`;
+  out += `\nSend ${person.name} the link, or the code and workspace address to enter in the fleetd app. The device it pairs is theirs.\nTake it back with \`fleetd invite revoke ${inviteId}\`.\n`;
   return out;
 }
 
@@ -152,7 +152,7 @@ function setRole(db: Db, raw: string, role: HubRole): string {
   const person = getPerson(db, id);
   if (!person || person.removedAt !== undefined) throw new Error(`no person ${id}`);
   if (person.role === "owner" && role !== "owner" && owners(db) <= 1) {
-    throw new Error(`${person.name} is the hub's only owner: make someone else an owner first`);
+    throw new Error(`${person.name} is the workspace's only owner: make someone else an owner first`);
   }
   const after = setPersonRole(db, id, role);
   if (!after) throw new Error(`no person ${id}`);
@@ -164,9 +164,9 @@ function remove(db: Db, raw: string): string {
   const id = personId(raw);
   const person = getPerson(db, id);
   if (!person || person.removedAt !== undefined) throw new Error(`no person ${id}`);
-  if (person.role === "owner" && owners(db) <= 1) throw new Error(`${person.name} is the hub's only owner`);
+  if (person.role === "owner" && owners(db) <= 1) throw new Error(`${person.name} is the workspace's only owner`);
   const removed = removePerson(db, id);
   if (!removed) throw new Error(`no person ${id}`);
-  announcePeople(db, "removed", removed[0], `${removed[0].name} was removed from the hub`);
+  announcePeople(db, "removed", removed[0], `${removed[0].name} was removed from the workspace`);
   return `Removed ${removed[0].name}; signed out ${removed[1]} device(s).\n`;
 }

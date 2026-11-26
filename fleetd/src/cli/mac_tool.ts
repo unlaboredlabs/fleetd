@@ -214,7 +214,7 @@ export async function here(
           throw new ToolError("machine_offline", why(e), "try again shortly");
         }
         const error = frame.error as { code?: string; message?: string; fix?: string; reason?: ErrorReason } | undefined;
-        if (error) throw new ToolError((error.code ?? "failed") as ErrorCode, error.message ?? "the hub sent no answer", error.fix, error.reason);
+        if (error) throw new ToolError((error.code ?? "failed") as ErrorCode, error.message ?? "the workspace sent no answer", error.fix, error.reason);
         return (frame.result ?? {}) as Record<string, unknown>;
       },
     };

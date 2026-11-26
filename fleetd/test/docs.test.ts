@@ -19,21 +19,21 @@ describe("docs", () => {
   });
 
   test("md text escapes markup", () => {
-    expect(mdText("<hub url>/mcp *a* | b")).toBe("\\<hub url\\>/mcp \\*a\\* \\| b");
+    expect(mdText("<workspace url>/mcp *a* | b")).toBe("\\<workspace url\\>/mcp \\*a\\* \\| b");
   });
 
   test("parses the real help", () => {
     const ids = parseHelp(usageText()).flatMap((g) => g.entries.map((e) => e.id));
-    for (const id of ["version", "init", "init-join", "machine-add", "pair-worker", "hub-key-create-human"]) expect(ids).toContain(id);
+    for (const id of ["version", "init", "init-join", "machine-add", "pair-worker", "workspace-key-create-human"]) expect(ids).toContain(id);
   });
 
   test("prose marks machine text", () => {
-    const commands = ["pair", "doctor", "hub"];
-    const words = ["pair", "doctor", "hub", "key", "revoke"];
+    const commands = ["pair", "doctor", "workspace"];
+    const words = ["pair", "doctor", "workspace", "key", "revoke"];
     expect(
       prose("the command fleetd pair --worker prints, then fleetd doctor. --yes (or ~/.fleetd/hub) and `fleetd node join`", commands, words),
     ).toBe("the command `fleetd pair --worker` prints, then `fleetd doctor`. `--yes` (or `~/.fleetd/hub`) and `fleetd node join`");
-    expect(prose("one device: fleetd hub key revoke <keyId>. The", commands, words)).toBe("one device: `fleetd hub key revoke` \\<keyId\\>. The");
+    expect(prose("one device: fleetd workspace key revoke <keyId>. The", commands, words)).toBe("one device: `fleetd workspace key revoke` \\<keyId\\>. The");
     expect(prose("replace this fleetd with", commands, words)).toBe("replace this fleetd with");
     expect(prose("print the fleetd doctor", commands, words)).toBe("print the fleetd doctor");
   });
@@ -43,13 +43,13 @@ describe("docs", () => {
   });
 
   test("a command's summary is its first sentence", () => {
-    expect(summary("set up fleetd (home default ~/.fleetd/hub; kept running): the hub. Run it again")).toBe(
+    expect(summary("set up fleetd (home default ~/.fleetd/hub; kept running): the workspace. Run it again")).toBe(
       "set up fleetd (home default ~/.fleetd/hub; kept running).",
     );
     expect(summary("stop being the agents' Mac")).toBe("stop being the agents' Mac.");
     expect(summary("see `a. b` here and there, then somewhere else. More")).toBe("see `a. b` here and there, then somewhere else.");
-    expect(summary("forget it: the hub's gh goes back to this machine's own login. More")).toBe(
-      "forget it: the hub's gh goes back to this machine's own login.",
+    expect(summary("forget it: the workspace's gh goes back to this machine's own login. More")).toBe(
+      "forget it: the workspace's gh goes back to this machine's own login.",
     );
   });
 
@@ -77,7 +77,7 @@ describe("docs", () => {
   });
 });
 
-test("the app's setup fixtures are the hub's own answers", () => {
+test("the app's setup fixtures are the workspace's own answers", () => {
   const saved = readFileSync(join(import.meta.dir, "../../app/desktop/fixtures/setup/steps.json"), "utf8");
   expect(fixtures()).toBe(saved);
 });

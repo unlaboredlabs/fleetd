@@ -13,7 +13,7 @@ import { keyDir, keyFromRecoveryCode, type KeyMode, recoveryCode, VaultKeyError,
 
 
 const fail = (code: number, message: string) => err(code, `fleetd: ${message}\n`);
-const RESTART = "Restart the hub so it reads the key again: systemctl --user restart fleetd-hub (or fleetd hub start).";
+const RESTART = "Restart the workspace so it reads the key again: fleetd workspace restart (or fleetd workspace start, for one run by hand).";
 
 async function secretLine(prompt: string): Promise<string | undefined> {
   if (process.stdin.isTTY) process.stderr.write(prompt);
@@ -63,7 +63,7 @@ export async function vaultCommand(argv: string[]): Promise<CliResult> {
         } finally {
           db.conn.close();
         }
-        return ok(`${code}\n\nKeep this somewhere other than the hub. With a copy of the hub's database, it opens every item in the vault.\n`);
+        return ok(`${code}\n\nKeep this somewhere other than the workspace. With a copy of the workspace's database, it opens every item in the vault.\n`);
       }
       case "restore-key": {
         const line = await secretLine("Recovery code: ");

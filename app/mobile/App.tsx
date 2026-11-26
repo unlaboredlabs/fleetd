@@ -241,7 +241,7 @@ export default function App() {
             hubs={hubs}
             account={account}
             onForget={forget}
-            onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch hubs", "This phone couldn't write its keychain. Try again."))}
+            onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch workspaces", "This phone couldn't write its keychain. Try again."))}
             onMade={(h) => show(h, [...hubs.filter((k) => k.hub !== h.hub), h])}
             onSignedIn={signedIn}
             onSignedOut={signedOut}
@@ -415,13 +415,13 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       void session.signOut().then((r) => {
         if (r.ok) return onForget();
         leaving.current = false;
-        Alert.alert("The hub didn't sign this phone out", `${r.error.message} Forget the hub here anyway? Then sign the phone out under Settings › You in the desktop app.`, [
+        Alert.alert("The workspace didn't sign this phone out", `${r.error.message} Forget the workspace here anyway? Then sign the phone out under Settings › You in the desktop app.`, [
           { text: "Cancel", style: "cancel" },
           { text: "Forget anyway", style: "destructive", onPress: () => onForget() },
         ]);
       });
     const disconnect = () =>
-      confirm(`Disconnect from ${paired.hubName}?`, "This phone signs out of the hub and stops getting its notifications. Pairing again takes a new code.", "Disconnect", () => {
+      confirm(`Disconnect from ${paired.hubName}?`, "This phone signs out of the workspace and stops getting its notifications. Pairing again takes a new code.", "Disconnect", () => {
         leaving.current = true;
         signOut();
       });
@@ -457,7 +457,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       new Promise<void>((resolve) =>
         confirm(
           "Sign Out of fleetd?",
-          `This phone drops its key on ${names === "" ? "your fleetd teams" : names} and stops getting their notifications. Agents keep running, and your own hubs stay as they are.`,
+          `This phone drops its key on ${names === "" ? "your fleetd workspaces" : names} and stops getting their notifications. Agents keep running, and workspaces you run yourself stay as they are.`,
           "Sign Out",
           () => {
             if (paired.cloud === true) leaving.current = true;
@@ -473,7 +473,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
             )
               .then(async (out) => {
                 await onSignedOut(out.hubs);
-                if (out.kept.length > 0) Alert.alert("Some teams weren't reached", `${out.kept.join(", ")} couldn't be reached, so this phone stays in its Devices until someone signs it out there.`);
+                if (out.kept.length > 0) Alert.alert("Some workspaces weren't reached", `${out.kept.join(", ")} couldn't be reached, so this phone stays in its Devices until someone signs it out there.`);
               })
               .finally(resolve);
           },

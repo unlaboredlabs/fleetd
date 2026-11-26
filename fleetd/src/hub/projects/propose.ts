@@ -60,7 +60,7 @@ function preview(shown: Shown): ToolPreview {
   // As `project_add` from a person's own device: everyone on the hub can use it, with a repo or without (D491).
   const whose = shown.repo === null ? "once you approve" : `cloned from ${shown.repo} once you approve`;
   // `onlyMe: false` for one release: an app from before D491 shows a card without it as a generic one, not New project.
-  const card = { ...shown, onlyMe: false, what: `A new bot on ${shown.machineId}, ${whose}. Everyone on this hub can use it. Nothing is made before that.` };
+  const card = { ...shown, onlyMe: false, what: `A new bot on ${shown.machineId}, ${whose}. Everyone on this workspace can use it. Nothing is made before that.` };
   return {
     server: "fleetd",
     tool: "project_propose",
@@ -111,7 +111,7 @@ const cloneDone = (hub: Hub, addId: string) => hub.db.conn.query("DELETE FROM pr
 
 /** What the lead whose proposal's clone a hub restart cut off is told (calls.ts `tellInterrupted`). */
 export const interrupted = (title: string, repo: string, path: string) =>
-  `project_propose: the hub restarted while cloning ${repo} into ${path}, so the bot ${title} was not created. Tell the person: they can add it with New bot in the app, where a clone that finished on the machine is added as it is.`;
+  `project_propose: the workspace restarted while cloning ${repo} into ${path}, so the bot ${title} was not created. Tell the person: they can add it with New bot in the app, where a clone that finished on the machine is added as it is.`;
 
 /**
  * A person approved the card showing `shown`: the project is made as their own `project_add` makes it, at the folder

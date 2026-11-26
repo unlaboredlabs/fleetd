@@ -115,7 +115,7 @@ function AddRepo({ project, onCancel, onDone }: { project: Project; onCancel: ()
     );
   };
   // Add repo says why it can't be used yet, under its fields.
-  const why = !live ? "Connect to the hub to add a repo." : (problem ?? (input === null ? `Type a checkout on ${machine}, or a GitHub URL.` : null));
+  const why = !live ? "Connect to the workspace to add a repo." : (problem ?? (input === null ? `Type a checkout on ${machine}, or a GitHub URL.` : null));
   return (
     <div className={s.addRepo} role="group" aria-label="Add a repo">
       <div className={s.inline}>

@@ -228,7 +228,7 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
   expect(host.querySelector("[data-provider-group='google'] [data-profile]")).toBeNull();
   // Google has none yet: it says so; its row's plus adds one.
   expect(host.querySelector("[data-provider-group='google']")?.textContent).toContain("No profiles yet");
-  expect(host.textContent).not.toContain("the hub has no API key");
+  expect(host.textContent).not.toContain("the workspace has no API key");
   await click(button("Add Anthropic profile"));
   expect(host.textContent).toContain("New Anthropic profile");
   // Where the models come from is said at the model picker, the only place the models show.
@@ -323,7 +323,7 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p.name === "wide" ? { ...p, refused: "claude refused claude-sonnet-5-5 on devbox" } : p));
   await render("project");
   // At rest: the hub's lead profile, named, and no words under it.
-  expect(leadPicker("Lead model").textContent).toBe("Hub default (medium)");
+  expect(leadPicker("Lead model").textContent).toBe("Workspace default (medium)");
   const row = leadPicker("Lead model").closest("section");
   expect(row?.querySelector("[data-hint]")).toBeNull();
   // Restart lead is there at rest too: a stuck lead starts again on the model it runs on, with no switch away and back.
@@ -355,9 +355,9 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   await click(button("Restart lead"));
   expect(host.textContent).toContain("Restarts after its turn");
   expect(host.textContent).not.toContain("Restart lead");
-  await pickLead("Hub default", "Lead model");
+  await pickLead("Workspace default", "Lead model");
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadDefault: true } });
-  expect(leadPicker("Lead model").textContent).toBe("Hub default (medium)");
+  expect(leadPicker("Lead model").textContent).toBe("Workspace default (medium)");
 });
 
 it("offers fast mode only on a model that has it", async () => {
@@ -372,7 +372,7 @@ it("allows a bot the default for good and another with project_set", async () =>
   await render("project");
   // The default has no switch: it is always allowed, and its hint says why.
   expect(host.querySelector("[aria-label='Allow high']")).toBeNull();
-  expect(host.querySelector("section[aria-label='high']")?.textContent).toContain("Always allowed: the hub's default.");
+  expect(host.querySelector("section[aria-label='high']")?.textContent).toContain("Always allowed: the workspace's default.");
   const allow = (name: string) => {
     const el = host.querySelector<HTMLButtonElement>(`[aria-label='Allow ${name}']`);
     if (el === null) throw new Error(`no switch for ${name}`);

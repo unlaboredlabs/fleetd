@@ -59,7 +59,7 @@ describe("the search field's filters", () => {
     expect(offers("   ", [], who)).toHaveLength(7);
     // A word, then a space before the next: still its hits.
     expect(offers("deploy ", [], who)).toEqual([]);
-    expect(offers("hub deploy", [], who)).toEqual([]);
+    expect(offers("workspace deploy", [], who)).toEqual([]);
     // A filter alone: its hits, not the filters left.
     expect(offers("", [lead], who)).toEqual([]);
     // A filter being typed, after words or not; one already picked isn't offered again.

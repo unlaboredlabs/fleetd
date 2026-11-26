@@ -15,7 +15,7 @@ const release: Release = { cli: NEXT, app: MINE };
 const LIVE: HubState = { phase: "live", hub: "http://devbox:4790", protocol: 1, version: MINE };
 const machines: MachineInput[] = [{ machineId: "builder", name: "builder", nodeVersion: MINE, online: true }];
 const part = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", machineId: "builder", from: MINE, state: "done", ...over });
-const HUB_DONE: UpdatePart = { part: "hub", name: "the hub", from: MINE, state: "done" };
+const HUB_DONE: UpdatePart = { part: "hub", name: "the workspace", from: MINE, state: "done" };
 const runOf = (parts: UpdatePart[], finished: boolean): UpdateRun =>
   ({ id: "U1", channel: "edge", to: NEXT, startedAt: "2026-10-26T09:58:00.000Z", parts, ...(finished ? { finishedAt: "2026-10-26T09:59:00.000Z" } : {}) });
 
@@ -126,9 +126,9 @@ describe("the word under your name", () => {
   });
 
   it("says Not updated when the hub didn't", () => {
-    const run = runOf([{ part: "hub", name: "the hub", from: MINE, state: "failed", stage: "checksum", message: "checksum mismatch" }], true);
+    const run = runOf([{ part: "hub", name: "the workspace", from: MINE, state: "failed", stage: "checksum", message: "checksum mismatch" }], true);
     expect(quiet({ run })?.note).toEqual({
-      title: "The hub didn't update",
+      title: "The workspace didn't update",
       action: { label: "Try again", act: "update" },
       details: false,
     });

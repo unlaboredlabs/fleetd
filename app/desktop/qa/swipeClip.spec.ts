@@ -69,8 +69,8 @@ test("records the sidebar's swipe on a Mac trackpad, both ways and at both ends"
       electron.focus({ steal: true });
       BrowserWindow.getAllWindows()[0]?.moveTop();
     });
-    const marks = page.locator("[role='group'][aria-label='Hubs'] button");
-    const at = () => page.evaluate(() => [...document.querySelectorAll("[role='group'][aria-label='Hubs'] button")].findIndex((b) => b.hasAttribute("aria-current")));
+    const marks = page.locator("[role='group'][aria-label='Workspaces'] button");
+    const at = () => page.evaluate(() => [...document.querySelectorAll("[role='group'][aria-label='Workspaces'] button")].findIndex((b) => b.hasAttribute("aria-current")));
     const still = () => expect.poll(() => page.evaluate(() => document.querySelector("nav[aria-label='Sidebar'] [data-moving]") === null), { timeout: 5_000 }).toBe(true);
     const box = await page.locator("nav[aria-label='Sidebar'] [data-reorder-row]").nth(3).boundingBox();
     const side = await page.locator("nav[aria-label='Sidebar']").boundingBox();
@@ -87,7 +87,7 @@ test("records the sidebar's swipe on a Mac trackpad, both ways and at both ends"
         await marks.nth(scene.from).click();
         await still();
       }
-      log(`${scene.name}: on hub ${String(scene.from)}`);
+      log(`${scene.name}: on workspace ${String(scene.from)}`);
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.waitForTimeout(300);
       // Every frame from here: its time, where the list and the hub beside it stand, and whether it moves.
@@ -153,7 +153,7 @@ test("records the sidebar's swipe on a Mac trackpad, both ways and at both ends"
         path.join(out, "clip.json"),
         JSON.stringify({ scene: scene.name, from: scene.from, to: await at(), posted, support, scale: 2, sidebar: side, scrolls: scene.scrolls, ...got, shots }),
       );
-      console.log(`${scene.name}: ${String(got.frames.length)} frames, ${String(got.wheels.length)} wheels, ${String(shots.length)} shots, hub ${String(scene.from)} -> ${String(await at())}`);
+      console.log(`${scene.name}: ${String(got.frames.length)} frames, ${String(got.wheels.length)} wheels, ${String(shots.length)} shots, workspace ${String(scene.from)} -> ${String(await at())}`);
     }
   } finally {
     await close();

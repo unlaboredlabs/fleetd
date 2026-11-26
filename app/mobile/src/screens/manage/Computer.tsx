@@ -38,7 +38,7 @@ export function Computer({ navigation, route }: ChatInfoProps<"Computer">) {
   if (p === undefined) {
     return (
       <View style={[styles.fill, { backgroundColor: t.grouped }]}>
-        {state.projects === undefined ? <ActivityIndicator style={styles.loading} color={t.secondary} /> : <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />}
+        {state.projects === undefined ? <ActivityIndicator style={styles.loading} color={t.secondary} /> : <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />}
       </View>
     );
   }

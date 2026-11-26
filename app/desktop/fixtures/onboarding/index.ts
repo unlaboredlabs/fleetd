@@ -9,7 +9,7 @@ const healthz = (protocol = PROTOCOL): JsonObject => ({ ok: true, version: "0.5.
 const FRESH = "2099-01-01T00:00:00Z";
 const appPair = (hub: string, expiresAt = FRESH): JsonObject => ({ hub, code: "ABCD-2345", expiresAt });
 const refuse = (status: number, code: string, message: string, fix: string): JsonObject => ({ status, body: { code, message, fix } });
-const NEW_CODE = "Run `fleetd pair` on the hub for a new code.";
+const NEW_CODE = "Run `fleetd pair` on the workspace for a new code.";
 
 /** Every chat state in `value` reads as a chat with no messages that waits on nobody. */
 const emptyChats = (value: unknown): void => {
@@ -48,21 +48,21 @@ export default defineGroup({
       emptyChats([f.snapshot, f.events, f.timeline, f.calls]);
       return f;
     })(),
-    unpaired("first-run", "First launch, no hub on this computer: the form with the no-hub line."),
-    unpaired("setup-terminal", "First launch, no hub here; Set up fleetd opens Terminal (nothing runs under a fixture).", { terminal: "Terminal" }),
-    unpaired("code-refused", "First launch, no hub on this computer; a hub elsewhere refuses the typed code.", {
+    unpaired("first-run", "First launch, no workspace on this computer: the form with the no-hub line."),
+    unpaired("setup-terminal", "First launch, no workspace here; Set up fleetd opens Terminal (nothing runs under a fixture).", { terminal: "Terminal" }),
+    unpaired("code-refused", "First launch, no workspace on this computer; a workspace elsewhere refuses the typed code.", {
       redeem: refuse(401, "pair_code_invalid", "That pairing code is unknown or was already used.", NEW_CODE),
     }),
-    unpaired("local-hub", "First launch with a hub on this computer: the found-your-hub line.", { healthz: healthz() }),
-    unpaired("link", "Opened from a fleetd://pair link (the route carries hub and code): filled in, not sent.", { healthz: healthz() }),
-    unpaired("app-pair", "fleetd init left a code, the hub says it was already used: auto-pair fails with the hub's fix.", {
+    unpaired("local-hub", "First launch with a workspace on this computer: the found-your-hub line.", { healthz: healthz() }),
+    unpaired("link", "Opened from a fleetd://pair link (the route carries workspace and code): filled in, not sent.", { healthz: healthz() }),
+    unpaired("app-pair", "fleetd init left a code, the workspace says it was already used: auto-pair fails with the workspace's fix.", {
       appPair: appPair("http://127.0.0.1:4790"),
       healthz: healthz(),
       redeem: refuse(401, "pair_code_invalid", "That pairing code is unknown or was already used.", NEW_CODE),
     }),
     unpaired("app-pair-expired", "fleetd init's code ran out before the app opened.", { appPair: appPair("http://127.0.0.1:4790", "2026-10-19T09:00:00Z"), healthz: healthz() }),
-    unpaired("app-pair-untrusted", "An app-pair.json naming a public hub: ignored, with why.", { appPair: appPair("https://hub.example.com") }),
-    unpaired("rate-limited", "Too many wrong codes from this address: the hub's wait-a-minute fix.", {
+    unpaired("app-pair-untrusted", "An app-pair.json naming a public workspace: ignored, with why.", { appPair: appPair("https://hub.example.com") }),
+    unpaired("rate-limited", "Too many wrong codes from this address: the workspace's wait-a-minute fix.", {
       appPair: appPair("http://127.0.0.1:4790"),
       healthz: healthz(),
       redeem: refuse(429, "pair_rate_limited", "Too many pairing attempts from this address.", "Wait a minute, then try again."),
@@ -78,17 +78,17 @@ export default defineGroup({
     }),
     (() => {
       // Tailnet names count as leaks here, so the Tailscale wording is covered by explain.test.ts instead.
-      const f = new Fixture("onboarding-not-found", "A saved hub whose name doesn't resolve from here.");
+      const f = new Fixture("onboarding-not-found", "A saved workspace whose name doesn't resolve from here.");
       f.state = { phase: "retrying", hub: HUB, ...explainLoss(HUB, 1006, "", { code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND devbox" }, false), retryAt: Date.parse(f.now) + 16_000 };
       return f;
     })(),
     (() => {
-      const f = new Fixture("onboarding-app-too-old", "A hub on a newer protocol than this app.");
+      const f = new Fixture("onboarding-app-too-old", "A workspace on a newer protocol than this app.");
       f.state = { phase: "live", hub: HUB, protocol: PROTOCOL + 1 };
       return f;
     })(),
     (() => {
-      const f = new Fixture("onboarding-hub-too-old", "A hub on an older protocol than this app.");
+      const f = new Fixture("onboarding-hub-too-old", "A workspace on an older protocol than this app.");
       f.state = { phase: "live", hub: HUB, protocol: PROTOCOL - 1 };
       return f;
     })(),

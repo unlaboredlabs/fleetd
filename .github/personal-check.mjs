@@ -1,5 +1,5 @@
 // This repo is public, so tracked files use neutral fixtures (devbox, buildbox, laptop, homeserver,
-// hub.your-tailnet.ts.net, acme/storefront, ada-lovelace) and never a maintainer's own machine, login or home directory.
+// fleetd.your-tailnet.ts.net, acme/storefront, ada-lovelace) and never a maintainer's own machine, login or home directory.
 // Run by CI's `site` job from the repo root: node .github/personal-check.mjs
 // --untracked also reads the files git doesn't track yet but doesn't ignore (scripts/check.sh, before a commit).
 import { execFileSync } from "node:child_process";

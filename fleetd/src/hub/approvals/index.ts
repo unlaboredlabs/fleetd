@@ -90,7 +90,7 @@ export function storeRefusal(e: unknown): ToolError {
     return refuse("invalid", `${e.message}.`, "Nothing to do: someone settled it first.");
   }
   console.error("approvals: request store failed:", e);
-  return refuse("failed", "The hub failed while saving the request.", "Try again shortly.");
+  return refuse("failed", "The workspace failed while saving the request.", "Try again shortly.");
 }
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
@@ -434,7 +434,7 @@ export class Approvals {
     if (root === undefined) {
       throw refuse(
         "not_found",
-        `The hub has no record of bot ${project.projectId} on ${project.machineId}.`,
+        `The workspace has no record of bot ${project.projectId} on ${project.machineId}.`,
         "Check fleetd_status, then run it again.",
       );
     }
@@ -600,7 +600,7 @@ export class Approvals {
     for (const r of this.listQuiet({ states: ["approved"], kind: "approval" })) {
       if (!r.gated) continue;
       if (r.evidence?.startsWith(RUNNING)) {
-        void this.recover(r, `the hub restarted while it ran on ${r.projectRef.machineId}`).catch((e) =>
+        void this.recover(r, `the workspace restarted while it ran on ${r.projectRef.machineId}`).catch((e) =>
           console.error(`approvals: ${r.requestId}'s result wasn't recovered:`, e),
         );
       } else {

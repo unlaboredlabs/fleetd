@@ -66,7 +66,7 @@ export function register(tools: Registry): void {
     return {
       runs,
       ...(input.runId !== undefined && runs.length === 0
-        ? { next: "No such run: the hub forgets runs when it restarts. Add the machine again; finished steps are skipped." }
+        ? { next: "No such run: the workspace forgets runs when it restarts. Add the machine again; finished steps are skipped." }
         : {}),
     };
   });
@@ -90,7 +90,7 @@ export function register(tools: Registry): void {
     }
     return {
       hosts,
-      next: "machine_add_plan shows what adding one runs; a machine the hub can't reach joins with machine_join's line.",
+      next: "machine_add_plan shows what adding one runs; a machine the workspace can't reach joins with machine_join's line.",
     };
   });
 
@@ -131,8 +131,8 @@ export function register(tools: Registry): void {
     const on = input.machineId ?? (mac ? "the Mac" : "the computer to add");
     const as = input.machineId === undefined ? " under its own name" : "";
     let next = mac
-      ? `Paste the line in Terminal on ${on}, logged in at its screen (an admin's account is fine): it installs fleetd and joins as the agents' Mac${as}. The code works once, until ${join.expiresAt}; the Mac must reach the hub at ${join.hub}, and needs no claude.`
-      : `Run the line on ${on}: it installs fleetd and joins${as}. The code works once, until ${join.expiresAt}; the machine needs claude and must reach the hub at ${join.hub}.`;
+      ? `Paste the line in Terminal on ${on}, logged in at its screen (an admin's account is fine): it installs fleetd and joins as the agents' Mac${as}. The code works once, until ${join.expiresAt}; the Mac must reach the workspace at ${join.hub}, and needs no claude.`
+      : `Run the line on ${on}: it installs fleetd and joins${as}. The code works once, until ${join.expiresAt}; the machine needs claude and must reach the workspace at ${join.hub}.`;
     const note = workerReachNote(join.hub);
     if (note !== undefined) next += ` ${note}`;
     return {
@@ -151,7 +151,7 @@ export function register(tools: Registry): void {
   tools.add("machine_claude_login", async (hub, caller, input) => {
     admin(caller);
     const m = input.machineId;
-    if (store(hub).machineGet(m) === undefined) throw new ToolError("not_found", `${m} is not one of this hub's machines.`);
+    if (store(hub).machineGet(m) === undefined) throw new ToolError("not_found", `${m} is not one of this workspace's machines.`);
     const code = input.code?.trim();
     if (code === "") throw new ToolError("invalid", "The code is empty: paste the one the sign-in page shows.");
     let answer;
@@ -183,7 +183,7 @@ export function register(tools: Registry): void {
   tools.add("machine_antigravity_login", async (hub, caller, input) => {
     admin(caller);
     const m = input.machineId;
-    if (store(hub).machineGet(m) === undefined) throw new ToolError("not_found", `${m} is not one of this hub's machines.`);
+    if (store(hub).machineGet(m) === undefined) throw new ToolError("not_found", `${m} is not one of this workspace's machines.`);
     const code = input.code?.trim();
     if (code === "") throw new ToolError("invalid", "The code is empty: paste the one the sign-in page shows.");
     let answer;
@@ -259,7 +259,7 @@ function admin(caller: Caller): void {
   if (allowsEverywhere(caller, "admin") && isHuman(caller)) return;
   throw new ToolError(
     "forbidden",
-    "Adding and removing machines is for the hub's owners and admins, from their own device.",
+    "Adding and removing machines is for the workspace's owners and admins, from their own device.",
     adminEverywhereFix(caller),
   );
 }

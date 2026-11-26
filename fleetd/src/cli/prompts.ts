@@ -50,7 +50,7 @@ export async function promptsCommand(argv: string[]): Promise<CliResult> {
     return usage((error as Error).message);
   }
   const home = resolveHome();
-  if (!existsSync(join(home, "hub.sqlite"))) return err(1, `fleetd: no hub in ${home}; run this on the hub machine\n`);
+  if (!existsSync(join(home, "hub.sqlite"))) return err(1, `fleetd: no workspace in ${home}; run this on the workspace's machine\n`);
   if ((verb === "edit" || verb === "reset") && isLiveHubHome(home)) return err(1, `fleetd: ${liveHubRefusal(`Prompts ${verb}`)}\n`);
   let db: HubDb;
   try {
@@ -93,7 +93,7 @@ async function run(db: HubDb, verb: string, v: Exclude<ReturnType<typeof parse>,
   if (id === undefined) return usage(`prompts ${verb} needs a prompt id (see fleetd prompts list)`);
   const e = getEntry(id);
   if (e === undefined) return err(2, `fleetd: There is no prompt ${id}. See fleetd prompts list.\n`);
-  if (project !== undefined && !perProject(e)) return usage(`${e.id} has one hub-wide text; leave out --project`);
+  if (project !== undefined && !perProject(e)) return usage(`${e.id} has one workspace-wide text; leave out --project`);
   const scope: PromptScope = project !== undefined ? "project" : "global";
   let text: string;
   try {
@@ -105,7 +105,7 @@ async function run(db: HubDb, verb: string, v: Exclude<ReturnType<typeof parse>,
       prompts.reset(e, scope, project);
       announce(db, e, scope, project, {});
       const detail = prompts.detail(e, project);
-      const level = { default: "the shipped text", global: "the hub-wide override", project: "the bot override" }[detail.scope];
+      const level = { default: "the shipped text", global: "the workspace-wide override", project: "the bot override" }[detail.scope];
       text = `${e.id} is back to ${level} (${detail.effective.ref}).`;
     } else if (verb === "edit") text = await edit(db, prompts, e, scope, project);
     else return usage(`unknown prompts command '${verb}'`);
@@ -155,7 +155,7 @@ function announce(db: HubDb, e: RegistryEntry, scope: PromptScope, project: Proj
   appendEvent(db, {
     type: "prompt.changed",
     ...(project ? { machineId: project.machineId, projectId: project.projectId } : {}),
-    summary: project ? `Prompt ${e.id} changed for ${project.machineId}/${project.projectId}` : `Prompt ${e.id} changed hub-wide`,
+    summary: project ? `Prompt ${e.id} changed for ${project.machineId}/${project.projectId}` : `Prompt ${e.id} changed workspace-wide`,
     data: sortKeys({ ...data, id: e.id, scope, ...(project ? { projectRef: project } : {}) }),
   });
 }

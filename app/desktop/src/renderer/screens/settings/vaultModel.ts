@@ -505,7 +505,7 @@ export const importOutcome = (card: Pick<VaultImportCard, "state" | "imported">)
 export const vaultErrorWords = (e: { readonly reason?: string | undefined }): string | undefined => {
   if (e.reason === "vault_locked") return "The vault is locked. Unlock it under Settings › Vault.";
   if (e.reason === "vault_rate_limited") return "Too many reveals in the last hour. Try again later.";
-  if (e.reason === "vault_key_missing") return "The vault's key is missing on the hub. An owner restores it with the recovery code (fleetd vault restore-key).";
+  if (e.reason === "vault_key_missing") return "The vault's key is missing on the workspace. An owner restores it with the recovery code (fleetd vault restore-key).";
   return undefined;
 };
 

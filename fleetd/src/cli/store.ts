@@ -123,7 +123,7 @@ export function createKey(
   kind: "agent" | "human",
   person?: string,
 ): { info: KeyInfo; key: string } {
-  writable(db, "Creating a hub key");
+  writable(db, "Creating a workspace key");
   const personId = kind === "agent" ? null : (person ?? ensureOwner(db).personId);
   const now = Date.now();
   const key = secret(KEY_PREFIX);
@@ -151,11 +151,11 @@ export function listKeys(db: HubDb): KeyInfo[] {
 
 /** Revokes a key. Throws when there is no key. */
 export function revokeKey(db: HubDb, keyId: string): void {
-  writable(db, "Revoking a hub key");
+  writable(db, "Revoking a workspace key");
   const changed = db.conn
     .query("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?")
     .run(Date.now(), keyId).changes;
-  if (changed === 0) throw new Error(`no agent key ${keyId}; run \`fleetd hub key list\` to see key ids`);
+  if (changed === 0) throw new Error(`no agent key ${keyId}; run \`fleetd workspace key list\` to see key ids`);
 }
 
 /** Whether `key` is a live key of this hub (hub/auth `verify`, without its last-used write). */
@@ -260,7 +260,7 @@ export function ensureOwner(db: HubDb): Person {
     // The live hub from an agent's session: its owner as it is; a hub that has none yet would need a write.
     const owner = db.conn.query<PersonRow, []>(OWNER).get();
     if (owner) return person(owner);
-    writable(db, "Making the hub's owner");
+    writable(db, "Making the workspace's owner");
   }
   return db.transaction((c) => {
     let owner = c.query<PersonRow, []>(OWNER).get();
@@ -427,7 +427,7 @@ export function appendEvent(
   db: HubDb,
   event: { type: string; machineId?: string; projectId?: string; summary: string; data?: unknown },
 ) {
-  writable(db, "Writing to the hub's event log");
+  writable(db, "Writing to the workspace's event log");
   const now = Date.now();
   db.conn.query("DELETE FROM events WHERE created_ms < ?").run(now - RETENTION_MS);
   let summary = event.summary;

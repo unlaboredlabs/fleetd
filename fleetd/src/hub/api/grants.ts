@@ -5,7 +5,7 @@ import { allows } from "../auth/allows.ts";
 
 /** The fix for a person's device refused an admin write. */
 export const REPAIR_FIX =
-  "Run `fleetd pair` on the hub machine, then pair this app again with the new code: it grants admin.";
+  "Run `fleetd pair` on the workspace's machine, then pair this app again with the new code: it grants admin.";
 
 export const isHuman = (caller: Caller) => caller.kind === "human";
 
@@ -14,7 +14,7 @@ export function forbidden(role: Role, machine?: MachineId): ToolError {
   return new ToolError(
     "forbidden",
     message,
-    "Ask the hub admin for a key with that grant (fleetd hub key create --role … --machines …).",
+    "Ask the workspace admin for a key with that grant (fleetd workspace key create --role … --machines …).",
   );
 }
 

@@ -41,7 +41,7 @@ test("a Mac trackpad's swipes over the sidebar switch one hub each, back and on 
     // Every hub the sidebar shows, in turn, by its place among the marks.
     await page.evaluate(() => {
       const w = window as Recorded;
-      const on = () => [...document.querySelectorAll("[role='group'][aria-label='Hubs'] button")].findIndex((b) => b.hasAttribute("aria-current"));
+      const on = () => [...document.querySelectorAll("[role='group'][aria-label='Workspaces'] button")].findIndex((b) => b.hasAttribute("aria-current"));
       let last = on();
       w.__hubs = [last];
       new MutationObserver(() => {
@@ -105,9 +105,9 @@ test("a Mac trackpad's swipes over the sidebar switch one hub each, back and on 
     /** Posts `scrolls`, and checks the hubs it showed, in turn. */
     const play = async (scrolls: readonly Scroll[], hubs: number[]) => {
       const got = await post(scrolls);
-      expect.soft(got.hubs, `the hubs shown; the page's wheel events [ms, dx, dy, cancelable, its own ms]: ${got.wheels}`).toEqual(hubs);
+      expect.soft(got.hubs, `the workspaces shown; the page's wheel events [ms, dx, dy, cancelable, its own ms]: ${got.wheels}`).toEqual(hubs);
     };
-    const at = () => page.evaluate(() => [...document.querySelectorAll("[role='group'][aria-label='Hubs'] button")].findIndex((b) => b.hasAttribute("aria-current")));
+    const at = () => page.evaluate(() => [...document.querySelectorAll("[role='group'][aria-label='Workspaces'] button")].findIndex((b) => b.hasAttribute("aria-current")));
 
     expect(await at()).toBe(0);
     await test.step("a swipe switches one hub", async () => {
@@ -144,7 +144,7 @@ test("a Mac trackpad's swipes over the sidebar switch one hub each, back and on 
     await test.step("a press while a slide settles lands it, and goes to the row under it", async () => {
       await list.evaluate((el) => (el.scrollTop = 0));
       const before = await page.evaluate(() => window.location.hash);
-      await page.locator("[role='group'][aria-label='Hubs'] button").nth(1).click();
+      await page.locator("[role='group'][aria-label='Workspaces'] button").nth(1).click();
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await expect.poll(() => page.evaluate(() => window.location.hash), { timeout: 5_000 }).not.toBe(before);
       expect(await at()).toBe(1);

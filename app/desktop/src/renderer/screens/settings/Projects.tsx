@@ -99,7 +99,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
       <div className={s.scroll} data-screen="settings.projects">
         <div className={s.column}>
           <PageHead title="Bots" />
-          <Text tone="quiet">Not connected. Connect to a hub to change its bots' settings.</Text>
+          <Text tone="quiet">Not connected. Connect to a workspace to change its bots' settings.</Text>
         </div>
       </div>
     );
@@ -165,7 +165,7 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
     const fresh = await refresh().catch(() => undefined);
     setChecking(false);
     if (fresh?.worktrees === undefined) {
-      setBlocked(`Its worktrees can't be listed now: ${fresh?.worktreesUnknown ?? "the hub didn't answer."} Delete once they can, so no uncommitted work goes unseen.`);
+      setBlocked(`Its worktrees can't be listed now: ${fresh?.worktreesUnknown ?? "the workspace didn't answer."} Delete once they can, so no uncommitted work goes unseen.`);
       return;
     }
     setDeleting({
@@ -225,7 +225,7 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
           title="Delete bot"
           hint={
             gone
-              ? `${project.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
+              ? `${project.machineId} was removed from this workspace, so no machine holds its files: deleting only forgets it in fleetd.`
               : `Stops it and erases everything fleetd keeps for it, its worktrees too. ${plain ? "Its folder stays unless you tick it when you delete." : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}`
           }
           line={unknown !== null ? `Deleting needs its machine to list its worktrees first: ${unknown}` : null}
@@ -595,7 +595,7 @@ function EnvEditor(props: {
       open
       onOpenChange={(open) => !open && !busy && props.onClose()}
       title={was ? `Edit ${was.name}` : "Add a variable"}
-      description={kind === "secret" ? "Kept encrypted on the hub's machines. Never shown again." : "Shown here and kept by the hub."}
+      description={kind === "secret" ? "Kept encrypted on the workspace's machines. Never shown again." : "Shown here and kept by the workspace."}
       footer={
         <>
           <Button onClick={props.onClose} disabled={busy}>

@@ -30,9 +30,9 @@ export const PAGE_SESSION = {
 } as const;
 
 export const screensPage = (preview: Fixture): Fixture => {
-  const f = Fixture.from(preview, "sessions-page", "Screens page: live and recent screens across the hub's bots, Home among them, on devbox, buildbox and the agents' Mac.");
+  const f = Fixture.from(preview, "sessions-page", "Screens page: live and recent screens across the workspace's bots, Home among them, on devbox, buildbox and the agents' Mac.");
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
-  if (f.state.phase !== "live") throw new Error("sessions-preview's hub isn't live");
+  if (f.state.phase !== "live") throw new Error("sessions-preview's workspace isn't live");
   f.state = { ...f.state, features: [...(f.state.features ?? []), "screen_thumbs"] };
   const snapshot = f.snapshot;
   if (snapshot === undefined) throw new Error("sessions-preview has no snapshot");

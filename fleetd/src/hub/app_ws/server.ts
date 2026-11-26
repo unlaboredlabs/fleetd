@@ -33,7 +33,7 @@ export const MAX_CALLS_IN_FLIGHT = 32;
  */
 const CLOSE_RESTART = APP_CLOSE_RESTART;
 /** `CLOSE_RESTART`'s reason when no update restarts the hub. */
-const RESTARTING = "hub restarting";
+const RESTARTING = "workspace restarting";
 /** "Try again later": the connection fell too far behind; the app reconnects and reads again. */
 const CLOSE_TOO_FAR_BEHIND = 1013;
 /** "Invalid frame payload data": a compressed frame that doesn't inflate. */
@@ -327,7 +327,7 @@ export class AppWs {
 
   private tooFarBehind(conn: AppConn): void {
     console.warn(`an app connection stopped reading (${conn.buffered()} bytes waiting): closed it, the app reconnects and reads again`);
-    this.close(conn, CLOSE_TOO_FAR_BEHIND, "it stopped reading what the hub sent");
+    this.close(conn, CLOSE_TOO_FAR_BEHIND, "it stopped reading what the workspace sent");
   }
 
   private open(ws: ServerWebSocket<SocketData>, early: EarlyAuth | undefined): void {
@@ -524,7 +524,7 @@ export class AppWs {
         if ("output" in result) frame = { t: "result", id, output: result.output };
         else if (result.error.kind === "tool") frame = errorFrame(result.error.error, id);
         else if (result.error.kind === "unknown") {
-          frame = errorFrame(new ToolError("not_found", `No tool ${tool}.`, "Use a tool name from the hub's MCP tool list."), id);
+          frame = errorFrame(new ToolError("not_found", `No tool ${tool}.`, "Use a tool name from the workspace's MCP tool list."), id);
         } else {
           const detail = `Invalid ${tool} input: ${result.error.message}`;
           frame = errorFrame(new ToolError("invalid", detail.slice(0, 1000), "Check the input against the tool's input schema."), id);

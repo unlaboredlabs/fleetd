@@ -18,7 +18,7 @@ vi.hoisted(() => {
 const CLOUD = { version: "0.9.0", protocol: 1, busy: [], admin: true, leftOut: ["hub_update", "hub_restart"] };
 const SELF_RUN = { version: "0.9.0", protocol: 1, busy: [], admin: true };
 const NEVER = new Promise<CallOutcome>(() => undefined);
-const failing = (): Promise<CallOutcome> => Promise.resolve({ ok: false, error: { code: "timeout", message: "The hub didn't answer in time." } });
+const failing = (): Promise<CallOutcome> => Promise.resolve({ ok: false, error: { code: "timeout", message: "The workspace didn't answer in time." } });
 const answering = (output: object) => (): Promise<CallOutcome> => Promise.resolve({ ok: true, output });
 
 let host: HTMLDivElement;

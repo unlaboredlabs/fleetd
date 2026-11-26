@@ -18,14 +18,14 @@ export interface Paired {
 
 export type PairResult = { readonly ok: true; readonly paired: Paired } | { readonly ok: false; readonly failure: PairFailure };
 
-const NEW_CODE = `Run \`fleetd pair\` on your hub and type the code it prints. ${CLOUD_CODE}`;
+const NEW_CODE = `Run \`fleetd pair\` on your workspace's machine and type the code it prints. ${CLOUD_CODE}`;
 
 /** The hub's refusals of a code, in the phone's words (the hub's are a terminal's). */
 const CODE_REFUSED: Readonly<Record<string, string>> = {
   pair_code_expired: "This pairing code has expired: a code works for 15 minutes.",
-  pair_code_invalid: "This pairing code was already used, or isn't one this hub made.",
+  pair_code_invalid: "This pairing code was already used, or isn't one this workspace made.",
 };
-const NEW_SCAN = `Show a new code on the hub (\`fleetd pair\`, or the desktop app) and scan or type it. ${CLOUD_CODE}`;
+const NEW_SCAN = `Show a new code from your workspace (\`fleetd pair\`, or the desktop app) and scan or type it. ${CLOUD_CODE}`;
 
 const failed = (message: string, fix?: string): PairResult => ({ ok: false, failure: fix === undefined ? { code: "", message } : { code: "", message, fix } });
 
@@ -58,21 +58,21 @@ export const pair = async (fetch: Fetch, hub: string, typed: string, deviceName:
   } catch {
     return failed(
       abort.signal.aborted ? `${origin.origin} didn't answer within ${String(PAIR_TIMEOUT_MS / 1000)} s.` : `Can't reach ${origin.origin}.`,
-      "Check the hub is running and that this phone reaches it: on a tailnet, that Tailscale is on.",
+      "Check the workspace is running and that this phone reaches it: on a tailnet, that Tailscale is on.",
     );
   } finally {
     clearTimeout(timer);
   }
   const answered = typeof response.url === "string" ? response.url.toLowerCase() : "";
   if (response.redirected || (answered !== "" && answered !== `${origin.origin}/pair`.toLowerCase())) {
-    return failed(`${origin.origin} redirected the pairing to another address.`, "Type the hub's own address: the one `fleetd pair` prints.");
+    return failed(`${origin.origin} redirected the pairing to another address.`, "Type the workspace's own address: the one `fleetd pair` prints.");
   }
   const body = (await readJson(response)) as Record<string, unknown> | undefined;
   if (response.ok) {
     const { key, hubName } = body ?? {};
     return str(key) && key !== "" && str(hubName)
       ? { ok: true, paired: { hub: origin.origin, key, hubName } }
-      : failed(`${origin.origin} answered, but not like a fleetd hub.`, "Check the address is your fleetd hub's.");
+      : failed(`${origin.origin} answered, but not like a fleetd workspace.`, "Check the address is your fleetd workspace's.");
   }
   const { code: hubCode, message, fix } = body ?? {};
   const refused = str(hubCode) ? CODE_REFUSED[hubCode] : undefined;
@@ -80,5 +80,5 @@ export const pair = async (fetch: Fetch, hub: string, typed: string, deviceName:
   if (str(hubCode) && str(message) && message !== "") {
     return { ok: false, failure: str(fix) ? { code: hubCode, message, fix } : { code: hubCode, message } };
   }
-  return failed(`${origin.origin} answered ${String(response.status)}.`, "Check the address is your fleetd hub's.");
+  return failed(`${origin.origin} answered ${String(response.status)}.`, "Check the address is your fleetd workspace's.");
 };

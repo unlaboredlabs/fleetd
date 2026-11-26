@@ -223,7 +223,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     if (form.busy) return;
     const into = target();
     if (into === null) {
-      return fail({ code: "", message: `Name the hub, in up to ${String(LABEL_MAX)} characters.`, fix: "Any name you like: Personal, Acme, Side project." }, nameField.current);
+      return fail({ code: "", message: `Name the workspace, in up to ${String(LABEL_MAX)} characters.`, fix: "Any name you like: Personal, Acme, Side project." }, nameField.current);
     }
     const missing = missingField(form);
     if (missing !== null) {
@@ -245,7 +245,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       dispatch({ type: "paired", hubName: form.hub.trim() });
       done();
     } else {
-      fail({ code: "", message: outcome.message, fix: `Check the address, or create a key on the hub with \`${KEY_CREATE}\`.` }, keyField.current);
+      fail({ code: "", message: outcome.message, fix: `Check the address, or create a key on the workspace with \`${KEY_CREATE}\`.` }, keyField.current);
     }
   };
 
@@ -266,13 +266,13 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
             <ColorPick value={color} onChange={setColor} />
           </>
         ) : null}
-        <Field label="Hub address">
+        <Field label="Workspace address">
           <Input
             ref={hubField}
             mono
             value={form.hub}
             onChange={(e) => dispatch({ type: "edit", field: "hub", value: e.target.value })}
-            placeholder={form.setupHere ? "http://your-hub:4790" : LOCAL_HUB}
+            placeholder={form.setupHere ? "http://your-workspace:4790" : LOCAL_HUB}
             autoComplete="off"
           />
         </Field>
@@ -317,7 +317,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       {form.error === null ? null : <Failure failure={form.error} />}
       {form.linkNote === null ? null : <Prose text={form.linkNote} />}
       <div className={s.hint}>
-        <Text tone="quiet">{form.useKey ? "On the hub, create a key for this device:" : "No code yet? On the hub, run this and type the code it prints:"}</Text>
+        <Text tone="quiet">{form.useKey ? "On the workspace, create a key for this device:" : "No code yet? On the workspace, run this and type the code it prints:"}</Text>
         <CommandLine command={form.useKey ? KEY_CREATE : "fleetd pair"} />
       </div>
       <div className={s.toggle}>
@@ -331,8 +331,8 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   const id = form.useKey ? "onboarding.key" : "onboarding";
   if (adding) {
     return (
-      <Page id={id} title="Add a hub">
-        <Prose text="Pair this app with one more hub. The hubs you have stay connected, each under its own name." tone="quiet" />
+      <Page id={id} title="Add a workspace">
+        <Prose text="Pair this app with one more workspace. The workspaces you have stay connected, each under its own name." tone="quiet" />
         {connect}
         <div>
           <Button
@@ -350,9 +350,9 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   if (link.another === true) {
     const current = state.phase === "unpaired" ? null : state.hub;
     return (
-      <Page id={id} title={several ? `Pair ${self.label} again` : "Pair with another hub"}>
+      <Page id={id} title={several ? `Pair ${self.label} again` : "Pair with another workspace"}>
         {current === null ? null : (
-          <Prose text={`This app stays on \`${current}\` until the new hub pairs.`} tone="quiet" />
+          <Prose text={`This app stays on \`${current}\` until the new workspace pairs.`} tone="quiet" />
         )}
         {connect}
         <div>
@@ -362,7 +362,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
               window.location.hash = "#/settings/hubs";
             }}
           >
-            {current === null ? "Back to settings" : "Keep this hub"}
+            {current === null ? "Back to settings" : "Keep this workspace"}
           </Button>
         </div>
       </Page>
@@ -370,7 +370,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   }
   if (!welcome) {
     return (
-      <Page id={id} title="Connect to your fleetd hub">
+      <Page id={id} title="Connect to your fleetd workspace">
         {connect}
       </Page>
     );
@@ -388,7 +388,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       {form.setupHere ? <SetupHere /> : null}
       <section className={s.section} aria-labelledby="connect-here">
         <Text as="h2" id="connect-here" size="md" strong>
-          {form.setupHere ? "Or connect to a hub on another computer" : "Pair with your hub"}
+          {form.setupHere ? "Or connect to a workspace on another computer" : "Pair with your workspace"}
         </Text>
         {connect}
       </section>
@@ -407,7 +407,7 @@ function KeyStoreLine() {
 function Connecting({ reach }: { reach: Reaching }) {
   const seconds = useSecondsUntil(reach.retryAt);
   return (
-    <Page id="onboarding.connecting" title={reach.reason === null ? "Connecting to your hub" : "Can't reach your hub"}>
+    <Page id="onboarding.connecting" title={reach.reason === null ? "Connecting to your workspace" : "Can't reach your workspace"}>
       <Text tone="quiet" mono size="sm">
         {reach.hub}
       </Text>
@@ -416,7 +416,7 @@ function Connecting({ reach }: { reach: Reaching }) {
           failure={{
             code: "",
             message: reach.reason,
-            fix: reach.fix ?? "Check the hub is running (`fleetd doctor` on the hub) and that this computer can reach it.",
+            fix: reach.fix ?? "Check the workspace is running (`fleetd doctor` on the workspace) and that this computer can reach it.",
           }}
         />
       )}
@@ -430,7 +430,7 @@ function Connecting({ reach }: { reach: Reaching }) {
 
 function Mismatch({ failure }: { failure: PairFailure }) {
   return (
-    <Page id="onboarding.mismatch" title={failure.code === "hub_too_old" ? "Your hub needs an update" : "This app needs an update"}>
+    <Page id="onboarding.mismatch" title={failure.code === "hub_too_old" ? "Your workspace needs an update" : "This app needs an update"}>
       <Failure failure={failure} />
       <ForgetHub />
     </Page>
@@ -442,7 +442,7 @@ function Connected({ hub }: { hub: string }) {
     window.location.hash = "#/";
   }, []);
   return (
-    <Page id="onboarding.connected" title="Connected to your hub">
+    <Page id="onboarding.connected" title="Connected to your workspace">
       <Text tone="quiet" mono size="sm">
         {hub}
       </Text>
@@ -456,7 +456,7 @@ function ForgetHub() {
   return (
     <div>
       <Button variant="secondary" onClick={() => void window.fleetd.hub.forget(id)}>
-        Connect to another hub
+        Connect to another workspace
       </Button>
     </div>
   );

@@ -60,7 +60,7 @@ describe("a secret request", () => {
     // No machines at all, as at a cold launch from the cache: never "The hub doesn't know the machine".
     expect(secretTarget({}, secret("Q1"), false)).toEqual({ ok: false, offline: true });
     expect(secretTarget(devbox({ status: "offline", boxPubKey: key }), secret("Q1"), false)).toEqual({ ok: false, offline: true });
-    expect(OFFLINE_LINE.secret).toBe("Offline: save it once the hub is back.");
+    expect(OFFLINE_LINE.secret).toBe("Offline: save it once the workspace is back.");
     // A request that names no destination says so either way: that is the request, not the connection.
     expect(secretTarget({}, { ...secret("Q1"), sink: "env:devbox:relative" }, false)).toMatchObject({ ok: false, fix: expect.stringContaining("a destination") as unknown });
   });
@@ -88,7 +88,7 @@ describe("a command approval", () => {
   });
 
   it("offline, an open one says why it can't be answered; an answered one says nothing more", () => {
-    expect(approvalOffline("open", false)).toBe("Offline: approve once the hub is back.");
+    expect(approvalOffline("open", false)).toBe("Offline: approve once the workspace is back.");
     expect(approvalOffline("open", true)).toBeUndefined();
     expect(approvalOffline("approved", false)).toBeUndefined();
   });

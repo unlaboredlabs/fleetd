@@ -76,7 +76,7 @@ export async function check(ctx: Ctx): Promise<string[]> {
     ctx.count("plain variables moved in on a second run (want 0)", migratePlain(hub));
     const first = await adopt(hub, ctx.machineId, ask);
     ctx.count("values adopted from the node", first.adopted);
-    ctx.count("adopted values that differed from the hub's record", first.mismatched);
+    ctx.count("adopted values that differed from the workspace's record", first.mismatched);
     ctx.count("system order variables skipped", first.skippedSystem);
     const before = v.store.select("1 = 1", []).length;
     await adopt(hub, ctx.machineId, ask);
@@ -88,7 +88,7 @@ export async function check(ctx: Ctx): Promise<string[]> {
       if (rows.length !== 1) problems.push(`${what} maps to ${rows.length} items, not 1`);
       else if (fingerprint && fingerprintOf(value(rows[0]!)) !== fingerprint) {
         // The node's newer value wins (§7): the item holds what the node held.
-        ctx.count(`${what}s whose node value is newer than the hub's record`, 1);
+        ctx.count(`${what}s whose node value is newer than the workspace's record`, 1);
       }
     };
     for (const r of ctx.db.all<{ machine_id: string; project_id: string; name: string; kind: string; value: string | null; fingerprint: string | null }>(

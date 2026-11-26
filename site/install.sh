@@ -2,23 +2,23 @@
 # fleetd installer: curl -fsSL https://fleetd.sh | sh
 #
 #   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
-#   sh -s -- --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
-#            [--version <hub's version>]
+#   sh -s -- --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
+#            [--version <workspace's version>]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
 # --app); the app then updates itself. The CLI needs macOS 13 (Bun's floor): on an older Mac the installer stops before
 # changing anything. It replaces the earlier GPUI app in the same place; the new app takes over its
-# hub key when it first opens. Every download is checked against the release's checksums. Safe to run again; it
+# workspace key when it first opens. Every download is checked against the release's checksums. Safe to run again; it
 # replaces what it installed.
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
 # With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
-# makes this machine a worker of that hub without asking for its address or code, with or without a terminal.
+# makes this machine a worker of that workspace without asking for its address or code, with or without a terminal.
 # --mac joins the agents' Mac (docs: agents-mac.md): run in Terminal logged in at the Mac's screen (an admin's account
 # is fine), which it checks before it downloads anything; it installs no app there.
-# --version (in the agents' Mac's join line) installs the hub's own build and channel: a tagged version from its own
-# release, an edge one from the edge release, which holds the hub's build until main moves on and a newer one after;
-# the hub's Update then brings the hub level with it. FLEETD_CHANNEL is then not read.
+# --version (in the agents' Mac's join line) installs the workspace's own build and channel: a tagged version from its own
+# release, an edge one from the edge release, which holds the workspace's build until main moves on and a newer one after;
+# the workspace's Update then brings the workspace level with it. FLEETD_CHANNEL is then not read.
 #
 # FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
 # D203, is edge too). Every build goes out on edge (D701); stable, a tagged release, has none yet, and says so.
@@ -253,10 +253,10 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --no-init     don't start the setup wizard (fleetd init) after installing
   --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
          [--version <version>]
-                join that hub as a worker (fleetd init --join) after installing: the
-                command fleetd pair --worker prints on the hub; --mac joins the agents'
-                Mac, from Terminal logged in at its screen; --version installs the
-                hub's own build
+                join that workspace as a worker (fleetd init --join) after installing:
+                the command fleetd pair --worker prints on the workspace's machine;
+                --mac joins the agents' Mac, from Terminal logged in at its screen;
+                --version installs the workspace's own build
   --uninstall   stop and remove fleetd's services on this machine, then the CLI and
                 the app (fleetd's data in ~/.fleetd stays)
 
@@ -598,7 +598,7 @@ uninstall() {
     "$bin_dir/fleetd" uninstall || rc=$?
   fi
   # 126 and 127: no CLI that runs here (deleted, damaged, another machine's build). A CLI from before W890 removes only
-  # the hub's service and exits 0, so what it left goes the same way.
+  # the workspace's service and exits 0, so what it left goes the same way.
   case "$rc" in
     0) [ -z "$(units)" ] || stop_units ;;
     126 | 127) stop_units ;;
@@ -742,7 +742,7 @@ main() {
   fi
 
   channel="${FLEETD_CHANNEL:-edge}"
-  # The hub's own channel, from its version.
+  # The workspace's own channel, from its version.
   case "$hub_version" in
     "") ;;
     *-edge.* | *-nightly.*) channel=edge ;;
@@ -766,7 +766,7 @@ main() {
     macos="$(sw_vers -productVersion 2>/dev/null || true)"
     case "${macos%%.*}" in
       "" | *[!0-9]*) ;;
-      *) [ "${macos%%.*}" -ge 13 ] || die "fleetd's CLI and hub need macOS 13 or newer, and this Mac runs ${macos}; nothing was changed." ;;
+      *) [ "${macos%%.*}" -ge 13 ] || die "fleetd's CLI and workspace need macOS 13 or newer, and this Mac runs ${macos}; nothing was changed." ;;
     esac
   fi
   platform="$os $arch"
@@ -785,9 +785,9 @@ Install it with this machine's package manager (sudo apt install curl, say), the
     if [ "$base" = "https://github.com/$REPO/releases/download/edge" ]; then
       base="https://github.com/$REPO/releases/download/nightly"
     fi
-    # A hub built from source runs a version no release was made for: the newest stable build joins it.
+    # A workspace built from source runs a version no release was made for: the newest stable build joins it.
     if [ "$base" = "https://github.com/$REPO/releases/download/v${hub_version#v}" ]; then
-      warn "there is no release of fleetd $hub_version, the hub's version, so this machine gets the newest stable one"
+      warn "there is no release of fleetd $hub_version, the workspace's version, so this machine gets the newest stable one"
       base="https://github.com/$REPO/releases/latest/download"
     fi
     if ! spin Release "looking for the $channel release" lists; then
@@ -805,11 +805,11 @@ Check this machine's connection, and that the $channel channel has a release, th
     version="$(tr -d '\n' < "$tmp/release.json" | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   done_step Release "$channel${version:+ · $version}"
 
-  # The edge release holds the hub's build until main moves on: then this machine gets the newer one, and says so.
+  # The edge release holds the workspace's build until main moves on: then this machine gets the newer one, and says so.
   if [ "$channel" = edge ] && [ -n "$hub_version" ] && [ -f "$tmp/release.json" ]; then
     edge_now="$(tr -d '\n' < "$tmp/release.json" | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
     if [ -n "$edge_now" ] && [ "$edge_now" != "$hub_version" ]; then
-      say "your hub runs an older edge build ($hub_version) than the newest ($edge_now), which this machine gets. To bring the hub level, press Update in the app on your main machine (or run fleetd update on the hub)."
+      say "your workspace runs an older edge build ($hub_version) than the newest ($edge_now), which this machine gets. To bring the workspace level, press Update in the app on your main machine (or run fleetd update on the workspace's machine)."
     fi
   fi
 
@@ -838,7 +838,7 @@ There is no fleetd build for $os-$arch on the $channel channel yet."
   fi
   summary="Installed fleetd${version:+ $version}"
   if [ -n "$join" ]; then
-    footer "$summary. Joining the hub at $join"
+    footer "$summary. Joining the workspace at $join"
     join_hub
     return
   fi

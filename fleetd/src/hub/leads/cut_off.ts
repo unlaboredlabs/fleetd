@@ -96,7 +96,7 @@ export type End =
  * A bot in hosted sandboxes (fleetd's computers on a cloud team) has no machine of its own to sign in on: with no
  * account it is told where an admin adds the key, which its next turn then runs on (leads/index.ts `accountMoved`). */
 export function signedOutLine(account: ClaudeAccount | undefined, machineId?: string): string {
-  if (account?.kind === "hub") return `The hub's Claude API key stopped working for this bot: an admin replaces it in ${settingsPath()} › Setup › Claude. The lead carries on by itself once it is.`;
+  if (account?.kind === "hub") return `The workspace's Claude API key stopped working for this bot: an admin replaces it in ${settingsPath()} › Setup › Claude. The lead carries on by itself once it is.`;
   if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Accounts › Claude. The lead carries on by itself once it is.";
   if (machineId === RUNNER_ID) {
     return `This bot has no Claude account to run on yet: an admin adds a Claude API key in ${settingsPath("Providers", "Anthropic")}. The lead carries on by itself once it is.`;

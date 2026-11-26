@@ -66,7 +66,7 @@ export function Dms({ navigation, route }: ChatInfoProps<"Dms">) {
     if (e.contentOffset.y + e.layoutMeasurement.height >= e.contentSize.height - AHEAD) readOlder();
   };
 
-  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   return (
     <ScrollView
       style={{ backgroundColor: t.grouped }}

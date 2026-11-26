@@ -100,7 +100,7 @@ describe("parseRequest", () => {
     expect(parseRequest(IPC.hubFocus, ["hub", ""]).ok).toBe(false);
     expect(parseRequest(IPC.hubFocus, ["hub", { board: true }]).ok).toBe(false);
     expect(parseRequest(IPC.hubFocus, ["hub"]).ok).toBe(false);
-    expect(parseRequest(IPC.hubFocus, ["Not a hub", null]).ok).toBe(false);
+    expect(parseRequest(IPC.hubFocus, ["Not a workspace", null]).ok).toBe(false);
   });
 
   it("trims a pasted URL and key, and refuses blank ones", () => {

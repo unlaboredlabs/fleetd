@@ -19,5 +19,5 @@ export function start(hub: Hub): void {
       .then(() => sendState(hub, [machineId]))
       .catch(() => {});
   });
-  every(hub, "tailnet: the hub's Tailscale", 60_000, check);
+  every(hub, "tailnet: the workspace's Tailscale", 60_000, check);
 }

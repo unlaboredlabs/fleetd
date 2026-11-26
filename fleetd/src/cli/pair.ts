@@ -59,7 +59,7 @@ export function localHubUrls(home: string): string[] {
   const running = setup === undefined ? runningListen(home) : undefined;
   const listenText = setup?.listen ?? running ?? DEFAULT_LISTEN;
   const parsed = parseListen(listenText);
-  if (!parsed) throw new Error(`the hub's listen address '${listenText}' is not host:port`);
+  if (!parsed) throw new Error(`the workspace's listen address '${listenText}' is not host:port`);
   const [host, port] = parsed;
   const everywhere = host === "0.0.0.0" || host === "::";
   const configured = setup?.url !== undefined && !setup.url.includes("0.0.0.0") && !setup.url.includes("[::]") ? setup.url : undefined;
@@ -140,12 +140,12 @@ export function phoneUrl(urls: string[]): string | undefined {
 /** Why a worker told to reach the hub at `hub` can join only from the hub's own computer; undefined when another can. */
 export function workerReachNote(hub: string): string | undefined {
   return phoneUrl([hub]) === undefined
-    ? `The hub is only at ${hub}, which no other machine reaches, so only a node on the hub's own computer can join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port> (${settingsPath()} › Setup › Where the hub listens), then try again.`
+    ? `The workspace is only at ${hub}, which no other machine reaches, so only a node on the workspace's own computer can join it. For another machine, give the workspace its tailnet or LAN address: on the workspace's machine, run fleetd init --listen <ip>:<port> --url http://<name>:<port> (${settingsPath()} › Setup › Where the workspace listens), then try again.`
     : undefined;
 }
 
 export const loopbackOnlyFix = (device: string, then: string) =>
-  `Give the hub an address ${device} reaches, its tailnet or LAN address: on the hub, run \`fleetd init --listen <ip>:<port> --url http://<name>:<port>\` (${settingsPath()} › Setup › Where the hub listens), then ${then}.`;
+  `Give the workspace an address ${device} reaches, its tailnet or LAN address: on the workspace's machine, run \`fleetd init --listen <ip>:<port> --url http://<name>:<port>\` (${settingsPath()} › Setup › Where the workspace listens), then ${then}.`;
 export const phoneLoopbackFix = () => loopbackOnlyFix("your phone", "pair the phone again");
 
 /** `tailscale ip -4`, only when a `tailscale` binary is on PATH. */
@@ -224,7 +224,7 @@ export function workerCommand(home: string | undefined, machine: string): string
   if (!isMachineId(machine)) throw new Error(`'${machine}' is not a machine id ([a-z0-9-]{1,32})`);
   const dir = resolveHome(home);
   const join = workerJoin(dir, machine, false, false);
-  let text = `On ${machine}, run:\n\n  ${join.line}\n\nThe code works once, until ${untilWords(join.expiresAt)}. ${machine} needs claude installed and must reach the hub at that address.\n`;
+  let text = `On ${machine}, run:\n\n  ${join.line}\n\nThe code works once, until ${untilWords(join.expiresAt)}. ${machine} needs claude installed and must reach the workspace at that address.\n`;
   const note = workerReachNote(join.hub);
   if (note !== undefined) text += `\n${note}\n`;
   return text;
@@ -330,12 +330,12 @@ export function joinLine(hub: string, code: string, machine: string | undefined,
 function describe(minted: Minted, qr: boolean): string {
   const [shown, scan] = qr ? phoneQr(minted) : ["", false];
   let out = shown;
-  out += `Pairing code: ${minted.code}  (single use, valid until ${minted.expiresAt})\nGrants:       ${minted.role} on every machine\nHub address:  ${minted.urls[0]}\n`;
+  out += `Pairing code: ${minted.code}  (single use, valid until ${minted.expiresAt})\nGrants:       ${minted.role} on every machine\nWorkspace:    ${minted.urls[0]}\n`;
   if (minted.urls.length > 1) out += `  or:         ${minted.urls.slice(1).join(", ")}\n`;
   const phone = scan
     ? "On a phone, scan the QR with the\nfleetd app. On another device, enter"
     : "On a phone or another device,\nenter";
-  out += `Pairing link: ${minted.deepLink}\n\nThe fleetd app on this machine pairs by itself when it opens. ${phone} the code and hub address above in the app, or open the link there.\n`;
+  out += `Pairing link: ${minted.deepLink}\n\nThe fleetd app on this machine pairs by itself when it opens. ${phone} the code and workspace address above in the app, or open the link there.\n`;
   return out;
 }
 
@@ -343,7 +343,7 @@ function phoneQr(minted: Minted): [string, boolean] {
   const hub = phoneUrl(minted.urls);
   if (hub === undefined) {
     return [
-      `No QR for a phone: the hub is only at ${minted.urls.join(", ")}, which a phone can't reach. ${phoneLoopbackFix()}\n\n`,
+      `No QR for a phone: the workspace is only at ${minted.urls.join(", ")}, which a phone can't reach. ${phoneLoopbackFix()}\n\n`,
       false,
     ];
   }

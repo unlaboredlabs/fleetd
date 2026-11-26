@@ -46,7 +46,7 @@ export function sessionOf(hub: Hub, caller: LeadCaller): ThreadRef {
     throw new ToolError("forbidden", "Only a lead or a task's agent puts an image or file in the chat.");
   }
   if (!thread) {
-    throw new ToolError("not_found", "The hub knows no session of yours to read the file from.", "Call chat_file from your own session.");
+    throw new ToolError("not_found", "The workspace knows no session of yours to read the file from.", "Call chat_file from your own session.");
   }
   return thread;
 }

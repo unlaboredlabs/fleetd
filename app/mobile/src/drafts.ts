@@ -52,7 +52,7 @@ export const sendSlot = (d: Draft, canStop: boolean): "send" | "stop" | "none" =
 
 /** How long a draft's upload stays sendable: the hub's 24 h for an unused upload, less an hour for a slow send. */
 export const UPLOAD_KEPT_MS = 23 * 3600 * 1000;
-export const EXPIRED = "It was uploaded over a day ago, and the hub doesn't keep an unsent file that long. Remove it and attach it again.";
+export const EXPIRED = "It was uploaded over a day ago, and the workspace doesn't keep an unsent file that long. Remove it and attach it again.";
 
 const stale = (f: DraftFile, now: number): boolean => f.ref !== undefined && f.error === undefined && (f.uploadedAt === undefined || now - f.uploadedAt >= UPLOAD_KEPT_MS);
 

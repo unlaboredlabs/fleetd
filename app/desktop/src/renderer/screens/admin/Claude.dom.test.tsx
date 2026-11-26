@@ -223,8 +223,8 @@ it("saves the hub's key and endpoint sealed through main, tests it at once, and 
   expect(host.querySelector("[data-screen='settings.hub.setup.step'] [data-part='admin.claude']")).not.toBeNull();
   expect(host.querySelector("[data-screen='settings.hub.setup']")).toBeNull();
   // What leads run on is one line under the key, with the owner's subscription they fall back to.
-  expect(section("Hub API key").textContent).toContain("Leads and automations run on the hub's key, once it has one, else your subscription.");
-  expect(section("Hub API key").textContent).toContain("The hub owner's subscription (yours) isn't connected.");
+  expect(section("Workspace API key").textContent).toContain("Leads and automations run on the workspace's key, once it has one, else your subscription.");
+  expect(section("Workspace API key").textContent).toContain("The workspace owner's subscription (yours) isn't connected.");
   expect(host.querySelector("section[aria-label='Leads and unrequested work']")).toBeNull();
   await type("API key", KEY);
   await type("Endpoint", "https://gateway.devbox.example");
@@ -246,29 +246,29 @@ it("saves the hub's key and endpoint sealed through main, tests it at once, and 
 
 it("speaks of the team on a fleetd cloud team, and says plainly when it can't take a key yet", async () => {
   await render(noKey, { me: sam, admin: true }, true);
-  const key = section("Team API key");
-  expect(key.textContent).toContain("Leads and automations run on the team's key, once it has one, else your subscription.");
-  expect(key.textContent).toContain("The team owner's subscription (yours) isn't connected.");
-  expect(host.textContent).toContain("Members may use the team's API key");
+  const key = section("Workspace API key");
+  expect(key.textContent).toContain("Leads and automations run on the workspace's key, once it has one, else your subscription.");
+  expect(key.textContent).toContain("The workspace owner's subscription (yours) isn't connected.");
+  expect(host.textContent).toContain("Members may use the workspace's API key");
   expect(host.textContent).not.toMatch(/the hub|Hub API key|hub owner/u);
   await type("API key", KEY);
   await click(button("Save and test"));
   expect(sealed).toEqual([]);
-  expect(host.textContent).toContain("This team can't take a key yet: its computers aren't ready. Try again in a few minutes.");
+  expect(host.textContent).toContain("This workspace can't take a key yet: its computers aren't ready. Try again in a few minutes.");
   expect(host.textContent).not.toContain("box key");
 });
 
 it("shows where the key is, the members switch and the owner's subscription; each person's account, with a pause and their GitHub, on People", async () => {
   await render(withKey);
-  const key = section("Hub API key");
+  const key = section("Workspace API key");
   expect(key.textContent).toContain("Sealed on devbox. Through https://gateway.devbox.example.");
   expect(key.textContent).toContain("Not on buildbox: nothing runs on it there.");
   expect(key.textContent).toContain("Worked on devbox");
   expect(key.textContent).toContain("Leads and automations run on this key, else your subscription.");
-  expect(key.textContent).not.toContain("The hub owner's subscription");
+  expect(key.textContent).not.toContain("The workspace owner's subscription");
   // Everyone's account is on People now.
   expect(host.querySelector("[role='list'][aria-label='Claude accounts']")).toBeNull();
-  const toggle = section("Members may use the hub's API key").querySelector<HTMLElement>("[role='switch']");
+  const toggle = section("Members may use the workspace's API key").querySelector<HTMLElement>("[role='switch']");
   if (toggle === null) throw new Error("no switch");
   expect(toggle.getAttribute("aria-checked")).toBe("true");
   await click(toggle);
@@ -283,7 +283,7 @@ it("shows where the key is, the members switch and the owner's subscription; eac
   const line = (name: string) => host.querySelector<HTMLElement>(`[role='listitem'][aria-label='${name}']`)?.textContent ?? "";
   expect(line("Sam Rivera")).toContain("Claude: Own subscription · GitHub: sam-rivera");
   expect(line("Sam Rivera")).not.toContain("Paused");
-  expect(line("Alice Chen")).toContain("Claude: Hub API key · GitHub: not connected");
+  expect(line("Alice Chen")).toContain("Claude: Workspace API key · GitHub: not connected");
   expect(line("Bob Okafor")).toContain("Claude: Own subscription");
   expect(line("Bob Okafor")).toContain("Paused on devbox until");
 });
@@ -305,13 +305,13 @@ it("drops a failed Test once the setting it tried is changed", async () => {
   await render(withKey);
   testWorks = false;
   await click(button("Test"));
-  expect(section("Hub API key").textContent).toContain("Failed on devbox");
+  expect(section("Workspace API key").textContent).toContain("Failed on devbox");
   // Back to Anthropic's own endpoint: the hub forgets the Test, so the screen does too.
   await click(button("Change"));
   await type("Endpoint", "");
   await click(button("Save and test"));
   expect(sealed).toEqual([{ account: "hub_api", boxes: expect.any(Array) as unknown }]);
-  expect(section("Hub API key").textContent).not.toContain("Failed on devbox");
+  expect(section("Workspace API key").textContent).not.toContain("Failed on devbox");
 });
 
 it("reaches the same controls from Claude's row on Setup, from the old Hub accounts link, and from a search for the members switch", async () => {
@@ -322,17 +322,17 @@ it("reaches the same controls from Claude's row on Setup, from the old Hub accou
   const accounts = host.querySelector<HTMLElement>("[data-screen='settings.hub.setup.error'] [data-screen='settings.hub.accounts']");
   expect(document.activeElement).toBe(accounts);
   expect([...(accounts?.querySelectorAll("[data-step]") ?? [])].map((r) => r.getAttribute("data-step"))).toEqual(["claude", "github"]);
-  expect(host.querySelector("section[aria-label='Hub API key']")).toBeNull();
+  expect(host.querySelector("section[aria-label='Workspace API key']")).toBeNull();
   await click(button("Claude"));
-  expect(section("Hub API key").textContent).toContain("Sealed on devbox.");
-  expect(section("Members may use the hub's API key").querySelector("[role='switch']")).not.toBeNull();
+  expect(section("Workspace API key").textContent).toContain("Sealed on devbox.");
+  expect(section("Members may use the workspace's API key").querySelector("[role='switch']")).not.toBeNull();
   // A search for Hub accounts, with an account open, goes back to them all.
   await act(async () => {
     revealNext("hub.accounts");
     await Promise.resolve();
   });
   for (let i = 0; i < 4; i++) await settle();
-  expect(host.querySelector("section[aria-label='Hub API key']")).toBeNull();
+  expect(host.querySelector("section[aria-label='Workspace API key']")).toBeNull();
   expect(document.activeElement).toBe(host.querySelector("[data-screen='settings.hub.accounts']"));
   // One for the switch opens the account that holds it, with the switch in focus.
   await act(async () => {
@@ -340,7 +340,7 @@ it("reaches the same controls from Claude's row on Setup, from the old Hub accou
     await Promise.resolve();
   });
   for (let i = 0; i < 4; i++) await settle();
-  expect(document.activeElement).toBe(section("Members may use the hub's API key").querySelector("[role='switch']"));
+  expect(document.activeElement).toBe(section("Members may use the workspace's API key").querySelector("[role='switch']"));
   // And one for the GitHub App, GitHub's.
   await act(async () => {
     revealNext("admin.github");
@@ -348,7 +348,7 @@ it("reaches the same controls from Claude's row on Setup, from the old Hub accou
   });
   for (let i = 0; i < 4; i++) await settle();
   expect(host.querySelector("[data-screen='settings.hub.setup.step'] [data-part='admin.github']")).not.toBeNull();
-  expect(host.querySelector("section[aria-label='Hub API key']")).toBeNull();
+  expect(host.querySelector("section[aria-label='Workspace API key']")).toBeNull();
 });
 
 it("shows a member who follows the link none of it, and reads nothing", async () => {

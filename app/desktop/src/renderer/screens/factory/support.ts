@@ -26,7 +26,7 @@ export const useMetricsSupport = (): boolean | undefined => {
       // The probe's input is empty on purpose: it must not run a read.
       const outcome = await layer.call("metrics_get", {} as never);
       const known = metricsSupport(outcome);
-      if (known === undefined) throw new Error("couldn't tell whether the hub reports metrics");
+      if (known === undefined) throw new Error("couldn't tell whether the workspace reports metrics");
       return known;
     },
     enabled: fresh,

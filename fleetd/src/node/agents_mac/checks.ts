@@ -346,7 +346,7 @@ export function keepAwake(why: string | undefined, sleep?: number): MacCheck {
     return check(
       "keep_awake",
       "warn",
-      `The Mac sleeps after ${String(sleep)} min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its hub.`,
+      `The Mac sleeps after ${String(sleep)} min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its workspace.`,
       { label: "Turn on Prevent automatic sleeping when the display is off in System Settings › Energy", command: `open "${ENERGY_PANE}"` },
     );
   }

@@ -36,9 +36,9 @@ const lacksPeople = (error: unknown): boolean => error instanceof CallError && l
 export function NeedsUpdate() {
   return (
     <div className={s.stack}>
-      <Text tone="quiet">This hub needs updating to manage people. The other Hub pages work as they are.</Text>
+      <Text tone="quiet">This workspace needs updating to manage people. The other Workspace pages work as they are.</Text>
       <span>
-        <Button onClick={() => openUpdates(true)}>Update the hub</Button>
+        <Button onClick={() => openUpdates(true)}>Update the workspace</Button>
       </span>
     </div>
   );
@@ -68,7 +68,7 @@ export function People({ me }: { me: Person | undefined }) {
         />
         {canInvite && inviting ? byEmail ? <EmailInviteSection /> : <InviteSection /> : null}
         {!live ? (
-          <Text tone="quiet">Connect to a hub to see and change this.</Text>
+          <Text tone="quiet">Connect to a workspace to see and change this.</Text>
         ) : lacksPeople(read.error) ? (
           <NeedsUpdate />
         ) : read.error ? (
@@ -93,14 +93,12 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
   const usage = useToolQuery("usage_status", noInput, { enabled: live });
   const nowMs = useNow(true, 60_000);
   const noMachine = useNoMachine();
-  const cloud = useHub().cloud === true;
   const accounts = (personId: string) => {
     const line = accountsLine(
       claude.data?.people?.find((p) => p.person.personId === personId),
       github.data?.people?.find((p) => p.person.personId === personId),
       github.data?.app !== undefined,
       noMachine,
-      cloud,
     );
     const pause = pauseLine({ kind: "person", personId }, usage.data?.machines ?? [], nowMs);
     return { line, pause };
@@ -203,7 +201,7 @@ function PersonLine({
               items={[{ label: "Revoke invite", onSelect: () => run("invite_revoke", { inviteId: invite.inviteId }, "Not revoked"), danger: true }]}
             />
           ) : row.removable ? (
-            <RowMenu label={p.name} disabled={!live || busy} items={[{ label: "Remove from hub", onSelect: onRemove, danger: true }]} />
+            <RowMenu label={p.name} disabled={!live || busy} items={[{ label: "Remove from workspace", onSelect: onRemove, danger: true }]} />
           ) : (
             <span className={a.menuRoom} />
           )}

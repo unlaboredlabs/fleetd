@@ -21,13 +21,13 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
     throw new ToolError(
       "forbidden",
       `You can't change this bot's MCP servers: that takes Operate access to ${scope.machineId}.`,
-      "Ask the hub's owner or an admin to give it to you.",
+      "Ask the workspace's owner or an admin to give it to you.",
     );
   }
   if (human) {
     throw new ToolError(
       "forbidden",
-      "Global MCP servers reach every teammate's agents: only the hub's owners and admins change them.",
+      "Global MCP servers reach every teammate's agents: only the workspace's owners and admins change them.",
       "Ask an owner or admin to add it in Connections.",
     );
   }
@@ -79,7 +79,7 @@ export function mayAddPlain(caller: AgentKeyInfo, transport: McpServer["transpor
   })();
   throw new ToolError(
     "forbidden",
-    `${at} doesn't ask anyone to sign in, so every bot's agents would get it as it is: only the hub's owners and admins add such a server.`,
+    `${at} doesn't ask anyone to sign in, so every bot's agents would get it as it is: only the workspace's owners and admins add such a server.`,
     "Ask an owner or admin to add it in Connections.",
   );
 }

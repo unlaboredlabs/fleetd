@@ -21,7 +21,7 @@ export function identify(caller: Caller, byPid: (pid: number) => PeerSession): P
   return caller === undefined ? undefined : byPid(caller);
 }
 
-export const HUB_UNREACHABLE = "fleetd hub is restarting; try again shortly";
+export const HUB_UNREACHABLE = "fleetd workspace is restarting; try again shortly";
 /** How long a call waits for the hub link to be up. */
 const LINK_WAIT_MS = 5_000;
 /** How long it waits instead when the link dropped within RECENT_DROP_MS: the hub is likely restarting for an update. */
@@ -79,7 +79,7 @@ export class LeadRelay {
       this.#dropped = performance.now();
       const pending = [...this.#pending];
       this.#pending.clear();
-      for (const [id, answer] of pending) answer(unanswered(id, "the link to the fleetd hub dropped before it answered"));
+      for (const [id, answer] of pending) answer(unanswered(id, "the link to the fleetd workspace dropped before it answered"));
     };
   }
 
@@ -112,13 +112,13 @@ export class LeadRelay {
     if (!send) return errorFrame(callerId, { code: "machine_offline", message: HUB_UNREACHABLE });
     const callId = isCallId(callerId) ? callerId : undefined;
     if (frame.resent && !(callId && this.hubCan(LEAD_CALL_ONCE)))
-      return unanswered(callerId, "the connection was cut before the answer came, and this hub can't take the call again safely");
+      return unanswered(callerId, "the connection was cut before the answer came, and this workspace can't take the call again safely");
     const id = `lc-${++this.#nextId}`;
     const answered = new Promise<LeadResultFrame>((resolve) => this.#pending.set(id, resolve));
     send({ t: "lead_call", ...frame, id, ...(callId ? { callId } : {}) });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<LeadResultFrame>((resolve) => {
-      timer = setTimeout(() => resolve(unanswered(id, `the fleetd hub did not answer within ${Math.round(waitMs / 1000)} s`)), waitMs);
+      timer = setTimeout(() => resolve(unanswered(id, `the fleetd workspace did not answer within ${Math.round(waitMs / 1000)} s`)), waitMs);
     });
     const result = await Promise.race([answered, timeout]);
     clearTimeout(timer);

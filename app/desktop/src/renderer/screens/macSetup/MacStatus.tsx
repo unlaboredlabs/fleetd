@@ -152,12 +152,12 @@ export function HubBehindLine({ behind, hubUrl }: { behind: HubBehind; hubUrl: s
   };
   const line =
     asked === "started"
-      ? "Your hub is updating. It restarts in a moment, then runs the same build as this Mac."
+      ? "Your workspace is updating. It restarts in a moment, then runs the same build as this Mac."
       : behind.who === "admin"
-        ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; Update brings the hub level."
+        ? "Your workspace runs an older fleetd than this Mac. Agents can use the Mac already; Update brings the workspace level."
         : behind.who === "member"
-          ? `Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in ${settingsPath(false, "Machines", "Updates")}.`
-          : `Your hub runs an older fleetd than this Mac. Agents can use the Mac already. ${HUB_UPDATE_WHERE}`;
+          ? `Your workspace runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the workspace to press Update in ${settingsPath(false, "Machines", "Updates")}.`
+          : `Your workspace runs an older fleetd than this Mac. Agents can use the Mac already. ${HUB_UPDATE_WHERE}`;
   return (
     <div className={s.notice} role="status" data-hub-behind={behind.who}>
       <Text size="sm">{line}</Text>
@@ -169,7 +169,7 @@ export function HubBehindLine({ behind, hubUrl }: { behind: HubBehind; hubUrl: s
       {behind.who === "admin" && asked !== "started" ? (
         <div className={s.actions}>
           <Button variant="secondary" size="md" disabled={asked === "asking"} onClick={update}>
-            {asked === "asking" ? "Starting the update…" : "Update the hub"}
+            {asked === "asking" ? "Starting the update…" : "Update the workspace"}
           </Button>
         </div>
       ) : null}

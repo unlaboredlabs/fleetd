@@ -114,7 +114,7 @@ export const relay: Route = (req, ctx: RouteContext) => {
     place = placeByRelay(hub.db.conn, hashed);
   } catch (e) {
     console.warn("session relay: lookup failed:", e);
-    return new Response("the hub failed", { status: 500 });
+    return new Response("the workspace failed", { status: 500 });
   }
   if (!place) {
     return new Response("no session open at this relay", { status: 410, headers: { [GONE_HEADER]: goneProof(hashed) } });

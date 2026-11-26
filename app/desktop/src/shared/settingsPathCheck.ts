@@ -4,15 +4,15 @@
 import { ACCOUNT_ROWS, HUB_PAGES, YOU_PAGES } from "./settingsPages";
 
 /** What may follow "Settings › ": You's pages and the groups (a bot's pages are said as "the bot's Settings › …"). */
-const FIRST = [...Object.values(YOU_PAGES), "Bots", "Hub", "Team"];
-const UNDER: Readonly<Record<string, readonly string[]>> = { Accounts: ACCOUNT_ROWS, Hub: Object.values(HUB_PAGES), Team: Object.values(HUB_PAGES) };
+const FIRST = [...Object.values(YOU_PAGES), "Bots", "Workspace"];
+const UNDER: Readonly<Record<string, readonly string[]>> = { Accounts: ACCOUNT_ROWS, Workspace: Object.values(HUB_PAGES) };
 
 /** Another place's Settings, not fleetd's: macOS's, a GitHub organisation's, a bot's own pages. */
 const ELSEWHERE = /(System|organisation's|organization's|bot's|project's|repo's)\s+$/iu;
 
 /**
  * Each "Settings › …" path in `text` that names a page fleetd's Settings doesn't have, as written. A path's first
- * part is one of FIRST; under Accounts, Hub and Team, the next part (when there is one) is one of theirs.
+ * part is one of FIRST; under Accounts and Workspace, the next part (when there is one) is one of theirs.
  */
 export function settingsPathProblems(text: string): string[] {
   const out: string[] = [];

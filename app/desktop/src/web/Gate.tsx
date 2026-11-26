@@ -137,13 +137,13 @@ function NoTeam({ email, removed, actions }: { email: string; removed: string | 
     void actions.makeTeam().then((failure) => setRefused(failure ?? undefined));
   };
   return (
-    <Stage id="web.no-team" bot="idle" title="No team yet">
+    <Stage id="web.no-team" bot="idle" title="No workspace yet">
       {removed === undefined ? null : <Text tone="quiet">{removed}</Text>}
-      <Text strong>{`${email} isn't in a fleetd team`}</Text>
+      <Text strong>{`${email} isn't in a fleetd workspace`}</Text>
       <Text tone="quiet">{refused ? `${refused.message} ${refused.fix ?? ""}`.trim() : "Make one of your own, or ask a teammate to invite this email."}</Text>
       <div className={st.actions}>
         <Button variant="primary" size="md" disabled={refused === undefined} onClick={make}>
-          Make a team
+          Make a workspace
         </Button>
         <Button size="md" onClick={actions.signOut}>
           Sign out

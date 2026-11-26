@@ -101,7 +101,7 @@ const laptopChecks = (wrong: { out?: boolean; kvm?: boolean }): JsonObject[] => 
     ? check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login", on: "machine" })
     : check("claude_login", "ok", "laptop: claude is logged in."),
   check("runner_conformance", "ok", "claude speaks the stream-json protocol fleetd expects."),
-  check("commit_identity", "ok", "laptop commits as dev@example.com, the hub's identity."),
+  check("commit_identity", "ok", "laptop commits as dev@example.com, the workspace's identity."),
   wrong.kvm === true
     ? check("android", "warn", "Android screens are off: /dev/kvm isn't readable by dev.", { kind: "manual", label: "Let dev use KVM, then log in again", command: "sudo usermod -aG kvm dev", on: "machine" })
     : check("android", "ok", "Android screens run on KVM."),
@@ -161,7 +161,7 @@ function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => Js
     next: "In the fleetd app on the Mac, choose Set up this Mac for agents and type the code.",
   });
   f.answer("mac_code_status", undefined, { state: "open" });
-  f.answer("machine_remove", undefined, { machineId: "mac-mini", steps: [], revoked: true, next: "revoked mac-mini's node key; the hub refuses that node from now on." });
+  f.answer("machine_remove", undefined, { machineId: "mac-mini", steps: [], revoked: true, next: "revoked mac-mini's node key; the workspace refuses that node from now on." });
   f.answer("machine_claude_login", undefined, {
     machineId: "laptop",
     loginUrl: "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference&state=s1",
@@ -191,7 +191,7 @@ function joinedWith(from: Fixture, name: string, note: string, mine: JsonObject[
 const machinesOf = (f: Fixture): JsonObject[] => (Array.isArray(f.snapshot?.["machines"]) ? f.snapshot["machines"].filter(isObject) : []);
 
 /** A hub just set up: devbox, which runs it, is its only machine. */
-function one(from: Fixture, name = "machines-one", note = "A hub just set up: devbox is its only machine, and well"): Fixture {
+function one(from: Fixture, name = "machines-one", note = "A workspace just set up: devbox is its only machine, and well"): Fixture {
   const f = hub(from, name, note, () => []);
   const { degradedReason: _, ...devbox } = machinesOf(f).find((m) => m["machineId"] === "devbox") ?? {};
   f.snapshot = { ...f.snapshot, machines: [{ ...devbox, status: "online", nodeVersion: "0.9.0" }] };
@@ -340,7 +340,7 @@ function none(from: Fixture): Fixture {
     status: "degraded",
     lastSeenAt: f.now,
     nodeVersion: "0.9.0",
-    degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
+    degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the workspace's API key or your Claude subscription in Settings",
     degradedCause: "claude_login",
   };
   f.snapshot = { ...f.snapshot, machines: [runner] };
@@ -382,7 +382,7 @@ const BILLING: JsonObject = {
 
 export default defineGroup({
   fixtures: (base) => [
-    hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
+    hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's workspace that sees builder-1 and mac-mini", () => []),
     joined(base("typical")),
     joinedWith(base("typical"), "machines-well", "laptop joined and well: its page says nothing of its checks", laptopChecks({})),
     joinedWith(base("typical"), "machines-logged-out", "laptop joined with claude logged out: the one row, and Log in from the app", laptopChecks({ out: true })),
@@ -390,18 +390,18 @@ export default defineGroup({
     one(base("empty")),
     sandboxes(base("typical"), "machines-sandboxes-off", "No hosted sandbox account yet: each provider's name and Connect, and that none runs agents yet", SANDBOXES_OFF),
     sandboxes(base("typical"), "machines-sandboxes-on", "fleetd's computers connected, its key refused at its last test", SANDBOXES_ON_PAUSED),
-    sandboxes(base("typical"), "machines-revyl-removed", "A hub that had Revyl connected before fleetd removed it: one plain line above the providers", {
+    sandboxes(base("typical"), "machines-revyl-removed", "A workspace that had Revyl connected before fleetd removed it: one plain line above the providers", {
       ...SANDBOXES_ON,
       removed: ["Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine."],
     }),
     tailscale(base("typical"), "machines-tailscale-off", "No Tailscale connection: its row with Connect, nothing under it", TAILNET_OFF),
-    tailscale(base("typical"), "machines-tailscale-login", "Connect pressed: the hub waits for the sign-in at Tailscale's page, with Open sign-in and Cancel", TAILNET_LOGIN),
+    tailscale(base("typical"), "machines-tailscale-login", "Connect pressed: the workspace waits for the sign-in at Tailscale's page, with Open sign-in and Cancel", TAILNET_LOGIN),
     tailscale(base("typical"), "machines-tailscale-on", "Tailscale connected: the tailnet's name and the gateway device's, Disconnect in its menu", TAILNET_ON),
-    tailscale(base("typical"), "machines-tailscale-failed", "The gateway ended on the hub: why, under the row, and Connect again", {
+    tailscale(base("typical"), "machines-tailscale-failed", "The gateway ended on the workspace: why, under the row, and Connect again", {
       status: "failed",
       problem: "Tailscale signed the gateway out (its key expired, or it was removed from the tailnet): connect it again",
     }),
-    sandboxes(base("typical"), "machines-e2b-removed", "A hub that had E2B and Daytona connected before fleetd removed them: a plain line each above the providers", {
+    sandboxes(base("typical"), "machines-e2b-removed", "A workspace that had E2B and Daytona connected before fleetd removed them: a plain line each above the providers", {
       ...SANDBOXES_OFF,
       placing: true,
       removed: [
@@ -413,7 +413,7 @@ export default defineGroup({
     places(base("typical"), "machines-places", "devbox busy, laptop logged out, buildbox offline; fleetd's computers connected, so Linux machine is a pick"),
     onePlace(base("empty")),
     none(base("empty")),
-    hostedOnly(base("empty"), "machines-hosted-starting", "fleetd's computers connected and the hub's runner coming up: Starting… on its row, no button", {
+    hostedOnly(base("empty"), "machines-hosted-starting", "fleetd's computers connected and the workspace's runner coming up: Starting… on its row, no button", {
       status: "degraded",
       degradedReason: "Starting…",
       degradedCause: "starting",

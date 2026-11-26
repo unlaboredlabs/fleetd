@@ -60,7 +60,7 @@ export type LeadHooks = {
   elsewhere?(r: ProjectRef): string[] | undefined;
 };
 
-const unwired = (what: string) => new ToolError("failed", `${what} is not wired in this hub yet.`);
+const unwired = (what: string) => new ToolError("failed", `${what} is not wired in this workspace yet.`);
 
 export type LeadWiring = { ports: LeadPorts; hooks: LeadHooks };
 

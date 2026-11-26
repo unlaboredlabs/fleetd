@@ -65,9 +65,9 @@ const fakeHub = (resumes: boolean, drop: (n: number, tool: string) => "before" |
   const call: TransferCall = (tool, input) => {
     calls.push({ tool, input });
     const how = drop(calls.length, tool);
-    if (how === "before") return Promise.resolve(refuse("disconnected", "The app disconnected from the hub."));
+    if (how === "before") return Promise.resolve(refuse("disconnected", "The app disconnected from the workspace."));
     const out = handle(tool, input);
-    return Promise.resolve(how === "after" ? refuse("disconnected", "The connection to the hub dropped before it answered.") : out);
+    return Promise.resolve(how === "after" ? refuse("disconnected", "The connection to the workspace dropped before it answered.") : out);
   };
   return { call, calls, files };
 };
@@ -116,12 +116,12 @@ describe("sending a file", () => {
 
   it("gives up, with the link's words, once the link stays down past its budget", async () => {
     let waited = 0;
-    const down: TransferCall = () => Promise.resolve(refuse("offline", "Not connected to the hub."));
+    const down: TransferCall = () => Promise.resolve(refuse("offline", "Not connected to the workspace."));
     const sent = await sendFile(down, 10, () => "AAAA", "a.txt", "text/plain", undefined, (ms) => {
       waited += ms;
       return Promise.resolve();
     });
-    expect(sent).toEqual({ ok: false, message: "Not connected to the hub." });
+    expect(sent).toEqual({ ok: false, message: "Not connected to the workspace." });
     expect(waited).toBeGreaterThanOrEqual(RECONNECT_BUDGET_MS);
   });
 

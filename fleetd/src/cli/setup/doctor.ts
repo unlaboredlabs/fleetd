@@ -34,7 +34,7 @@ export function cliKey(home: string): string {
 
 const again = (message: string): Failure => ({
   message,
-  fix: "fleetd init (it starts the hub and repairs its setup)",
+  fix: "fleetd init (it starts the workspace and repairs its setup)",
 });
 
 /** The hub on this machine, with the CLI's own admin key. Throws a Failure. */
@@ -63,7 +63,7 @@ export async function connectWith(home: string, hub: string | undefined, client:
     } catch (error) {
       throw again((error as Error).message);
     }
-    if (!state) throw { message: `${home} has no hub set up`, fix: noSetupFix(home) } satisfies Failure;
+    if (!state) throw { message: `${home} has no workspace set up`, fix: noSetupFix(home) } satisfies Failure;
     listen = `http://${state.listen}`;
   }
   try {
@@ -83,19 +83,19 @@ export function unreachable(listen: string, said: string): Failure {
     port = new URL(listen).port || port;
   } catch {}
   if (/ConnectionRefused|ECONNREFUSED|Unable to connect/i.test(said)) {
-    return again(`nothing answers at ${listen}: the hub isn't running`);
+    return again(`nothing answers at ${listen}: the workspace isn't running`);
   }
   if (/closed unexpectedly|ECONNRESET|Malformed_HTTP_Response|Parse Error|Expected HTTP|HTTP \d{3}|invalid JSON|no answer to|without text content/i.test(said)) {
     const which = process.platform === "darwin" ? `lsof -nP -iTCP:${port} -sTCP:LISTEN` : `ss -ltnp 'sport = :${port}'`;
     return {
-      message: `something else answers at ${listen}, not fleetd's hub: another program may have taken port ${port}`,
+      message: `something else answers at ${listen}, not fleetd's workspace: another program may have taken port ${port}`,
       fix: `see which with ${which}, stop it, then run fleetd init`,
     };
   }
   if (/timed out|timeout/i.test(said)) {
-    return { message: `the hub at ${listen} didn't answer within 15 seconds`, fix: "fleetd doctor again in a minute; if it keeps failing, fleetd init" };
+    return { message: `the workspace at ${listen} didn't answer within 15 seconds`, fix: "fleetd doctor again in a minute; if it keeps failing, fleetd init" };
   }
-  return again(`the hub doesn't answer at ${listen}: ${said.replace(/\s*For more information, pass `verbose: true`.*$/s, "").replace(/\.+$/, "")}`);
+  return again(`the workspace doesn't answer at ${listen}: ${said.replace(/\s*For more information, pass `verbose: true`.*$/s, "").replace(/\.+$/, "")}`);
 }
 
 async function listChecks(client: McpClient): Promise<any[]> {
@@ -112,7 +112,7 @@ async function listChecks(client: McpClient): Promise<any[]> {
   if (!Array.isArray(checks)) {
     throw {
       message: "doctor_list answered in an unknown shape: invalid type: null, expected a sequence",
-      fix: "fleetd update, so this CLI matches the hub",
+      fix: "fleetd update, so this CLI matches the workspace",
     } satisfies Failure;
   }
   return checks;
@@ -135,7 +135,7 @@ export async function addProject(home: string, machineId: string, path: string):
     const m = (error as Error).message;
     throw {
       message: `project_add failed: ${m}`,
-      fix: m.includes("not found") ? "this hub's fleetd predates project_add: fleetd update, then run fleetd init again" : fix,
+      fix: m.includes("not found") ? "this workspace's fleetd predates project_add: fleetd update, then run fleetd init again" : fix,
     } satisfies Failure;
   }
   if (result.isError) {
@@ -199,7 +199,7 @@ export function show(list: Checklist, checks: any[], idle: string[]): Tally {
       const message = String(check.message).replace(/\.+$/, "");
       // This hub's nodes say what it is and that it's optional; an older node's words don't.
       const said = /optional/i.test(message) ? message : `${extra} are optional: ${message}`;
-      list.finish(check.machineId ?? "hub", "skipped", said, typeof fix === "string" ? fix : undefined);
+      list.finish(check.machineId ?? "workspace", "skipped", said, typeof fix === "string" ? fix : undefined);
       continue;
     }
     if (said.some(([m, msg]) => m === check.machineId && msg === check.message)) continue;
@@ -211,7 +211,7 @@ export function show(list: Checklist, checks: any[], idle: string[]): Tally {
         : (check.fix.command ?? (check.fix.kind === "auto" ? "fleetd doctor --fix" : check.fix.label));
     if (state === "failed" && fix === undefined) fix = "fleetd doctor again once the cause is gone";
     if (fix !== undefined && list.hasFix(fix)) continue;
-    const title = check.machineId ?? "hub";
+    const title = check.machineId ?? "workspace";
     if (stillChecking(check.message)) {
       list.skipped(`doctor ${title}`, "still checking its claude; run fleetd doctor in a minute for the result");
       continue;

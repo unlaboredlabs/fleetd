@@ -19,7 +19,7 @@ The chat opens at once and the lead is ready for your first message. Repos clone
 
 On the phone, tap **+** in Chats, then **New Bot**.
 
-From a terminal on the hub machine:
+From a terminal on the workspace machine:
 
 ```sh
 fleetd project add https://github.com/acme/storefront   # clone a repo
@@ -102,7 +102,7 @@ Work this bot asked of others shows in the panel's **Plan** tab, under **Asked o
 
 ## Who sees a bot {#who-sees}
 
-Every bot is open to everyone on the hub, as their [role](/docs/people#roles) allows. For work only you should see, use a hub of your own.
+Every bot is open to everyone on the workspace, as their [role](/docs/people#roles) allows. For work only you should see, use a workspace of your own.
 
 ## Clean-up {#cleanup}
 

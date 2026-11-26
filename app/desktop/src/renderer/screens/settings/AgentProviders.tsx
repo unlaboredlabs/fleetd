@@ -95,7 +95,7 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
         {google.status === undefined || google.status.keyIn.length === 0 ? null : (
           <SettingsRow
             title="Bots with their own key"
-            hint="Their agents on Google run on the GEMINI_API_KEY in the bot's Vault instead of the team's."
+            hint="Their agents on Google run on the GEMINI_API_KEY in the bot's Vault instead of the workspace's."
             line={google.status.keyIn.map((r) => projects?.find((p) => p.machineId === r.machineId && p.projectId === r.projectId)?.title ?? r.projectId).join(", ")}
             data={{ "data-row": "gemini-bots" }}
           />

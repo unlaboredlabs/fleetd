@@ -280,8 +280,8 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     shown === undefined && unreachable(state.hub) && !hubSays.hold ? (
       <EmptyState
         icon="offline"
-        title="Can't Reach the Hub"
-        body={`${paired.hubName} isn't answering. Check that this phone is on the hub's network, or its VPN, and that the hub is running.`}
+        title="Can't Reach the Workspace"
+        body={`${paired.hubName} isn't answering. Check that this phone is on the workspace's network, or its VPN, and that the workspace is running.`}
         action={{
           label: "Try Again",
           onPress: () => {

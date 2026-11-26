@@ -47,7 +47,7 @@ const MAX_LISTED_ROOTS = 5;
 export function outsideEveryProject(machineId: string, cwd: string, roots: string[]): [string, string] {
   if (roots.length === 0) {
     return [
-      `the hub knows no bots on ${machineId} yet, so it cannot tell which bot ${cwd} belongs to`,
+      `the workspace knows no bots on ${machineId} yet, so it cannot tell which bot ${cwd} belongs to`,
       `check that the node on ${machineId} is online and has added the bot (fleetd_status), then run the command again`,
     ];
   }

@@ -49,7 +49,7 @@ const setup = (fake: FakeAccounts, over: Partial<CloudPorts> & { email?: string;
       // As a hub does: revoking the caller's own key closes its socket (4401) before any answer, so the call fails
       // the way the client fails it, and the hub refuses the key from then on.
       h.refused = true;
-      return Promise.resolve({ ok: false, error: { code: "forbidden", message: "The hub refused the key (unauthorized)." } });
+      return Promise.resolve({ ok: false, error: { code: "forbidden", message: "The workspace refused the key (unauthorized)." } });
     },
     refused: () => h.refused === true,
   });
@@ -226,7 +226,7 @@ describe("signing in to fleetd cloud", () => {
     const { account, hubs, saved } = setup(fake);
     await signInAll(account);
     const [acme, side, ops] = hubs;
-    if (acme === undefined || side === undefined || ops === undefined) throw new Error("every team should have connected");
+    if (acme === undefined || side === undefined || ops === undefined) throw new Error("every workspace should have connected");
     side.offline = true;
     ops.forbids = true;
     const session = [...fake.sessions][0];
@@ -280,7 +280,7 @@ describe("signing in to fleetd cloud", () => {
     const arrived = await account.signIn();
     expect(arrived).toEqual({ ok: true, arrival: { email: "new@acme.example", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }], canMake: true } });
     const out = await account.finish([]);
-    expect(out).toEqual({ ok: false, failure: { code: "none_joined", message: "You didn't join a team, so you aren't signed in.", fix: "Sign in again when you want to join it." } });
+    expect(out).toEqual({ ok: false, failure: { code: "none_joined", message: "You didn't join a workspace, so you aren't signed in.", fix: "Sign in again when you want to join it." } });
     expect(hubs).toEqual([]);
     expect(saved()).toBeNull();
     await expect.poll(() => fake.sessions.size).toBe(0);
@@ -427,7 +427,7 @@ describe("signing in to fleetd cloud", () => {
     const first = setup(fake, { hubs });
     await signInAll(first.account);
     const [acme, side] = hubs;
-    if (acme === undefined || side === undefined) throw new Error("both teams should have connected");
+    if (acme === undefined || side === undefined) throw new Error("both workspaces should have connected");
     const old = { acme: acme.key, side: side.key };
     side.offline = true;
     const out = await signInAll(setup(fake, { hubs }).account);

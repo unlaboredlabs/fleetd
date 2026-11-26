@@ -7,7 +7,7 @@
 //     they are on for the team (Billing's own top line says what's wrong; on iOS, which sells nothing (D733), in
 //     Billing's plain words, with no call to buy). A phone sign-up only ever saw "Choose a Plan" here, and read it as
 //     having to pay;
-//   - Claude: the team's Anthropic API key, or someone's Claude subscription;
+//   - Claude: the workspace's Anthropic API key, or someone's Claude subscription;
 //   - a bot, which + starts.
 // Only an owner or admin sees it, who can do each step; a member, or a self-hosted hub, sees No Chats Yet.
 import type { ClaudeAccountsGetOutput, Machine } from "../../desktop/src/shared/contracts";
@@ -72,7 +72,7 @@ export const firstRunSteps = (
     done: where,
   });
   const claude = claudeConnected(accounts);
-  steps.push({ id: "claude", title: claude ? "Claude Connected" : "Connect Claude", detail: claude ? undefined : "The team's Anthropic API key, or a Claude subscription, for its agents.", done: claude });
+  steps.push({ id: "claude", title: claude ? "Claude Connected" : "Connect Claude", detail: claude ? undefined : "The workspace's Anthropic API key, or a Claude subscription, for its agents.", done: claude });
   steps.push({ id: "bot", title: "Start a Bot", detail: "Make one, and its chat shows up here.", done: false });
   return steps;
 };

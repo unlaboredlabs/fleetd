@@ -35,8 +35,8 @@ Each server's row has a menu:
 - **Bots**: change which bots use it.
 - **Disconnect**: remove it, and erase its secrets from every machine.
 
-A bot's own server replaces a team server of the same name in that bot. Use this to turn a team server off for one
-bot.
+A bot's own server replaces a workspace-wide server of the same name in that bot. Use this to turn a workspace-wide
+server off for one bot.
 
 ## When changes reach agents {#takes-effect}
 
@@ -52,12 +52,12 @@ Agents on Google Antigravity reach every server too, through a search for the to
 
 ## Secrets {#secrets}
 
-Header and variable values come from the vault. The hub seals them for each machine and never stores them in the
+Header and variable values come from the vault. The workspace seals them for each machine and never stores them in the
 clear. A secret is never shown again after you save it.
 
 If an agent prints a secret, fleetd masks it before the output leaves the machine.
 
-A machine that's offline when you save a team server with secrets doesn't get them. The row lists such machines: save
+A machine that's offline when you save a workspace-wide server with secrets doesn't get them. The row lists such machines: save
 the server again once they're back.
 
 ## Servers on your tailnet {#tailnet}

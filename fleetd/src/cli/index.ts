@@ -1,5 +1,6 @@
 // The `fleetd` command line: one binary, the same subcommands, arguments, output and
-// exit codes as the Rust one. Exit codes: 0 ok, 1 failed, 2 usage, 3 refused, 4 hub or node unreachable.
+// exit codes as the Rust one. Exit codes: 0 ok, 1 failed, 2 usage, 3 refused, 4 workspace or node unreachable.
+// `hub` (`hub start`, `hub key`) is `workspace`'s old name, still taken and in no usage.
 // Every command is a dynamic import, so a short one (`fleetd version`) loads only what it uses: cold start matters.
 import { initFromArgv } from "../shared/home.ts";
 import { keepRunningBinary } from "../update/running.ts";
@@ -16,14 +17,14 @@ commands:
   version    print the fleetd version and protocol
   help       show this message
 ${U.UPDATE_USAGE}
-setting up (on the hub machine):
+setting up (on the workspace's machine):
 ${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.GITHUB_APP_USAGE}
-moving a hub:
+moving a workspace:
 ${U.EXPORT_USAGE}
 bots:
 ${U.PROJECT_USAGE}
 running by hand:
-${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}${U.VAULT_USAGE}`;
+${U.WORKSPACE_USAGE}${U.WORKSPACE_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}${U.VAULT_USAGE}`;
 
 /** `fleetd <command> … --help` (or `-h`): that command's usage. After `--` they are arguments. */
 export function helpFor(argv: string[]): string | undefined {
@@ -49,12 +50,12 @@ export function helpFor(argv: string[]): string | undefined {
         return U.GITHUB_APP_USAGE;
       case "project":
         return U.PROJECT_USAGE;
+      case "workspace":
       case "hub":
-        return rest[0] === "start"
-          ? U.HUB_START_USAGE
-          : rest[0] === "key"
-            ? U.HUB_KEY_USAGE
-            : `${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}`;
+        if (rest[0] === "key") return U.WORKSPACE_KEY_USAGE;
+        return rest[0] === "start" || rest[0] === "stop" || rest[0] === "restart"
+          ? U.WORKSPACE_USAGE
+          : `${U.WORKSPACE_USAGE}${U.WORKSPACE_KEY_USAGE}`;
       case "node":
         return U.NODE_USAGE;
       case "prompts":
@@ -153,7 +154,8 @@ export async function main(argv: string[]): Promise<number> {
       process.stdout.write(help);
       return 0;
     }
-    if (command === "hub" && sub === "start") return await (await import("../hub/serve/index.ts")).hubStart(argv.slice(2));
+    const workspace = command === "workspace" || command === "hub";
+    if (workspace && sub === "start") return await (await import("../hub/serve/index.ts")).hubStart(argv.slice(2));
     if (command === "agent-mcp") return await (await import("./agent_mcp/index.ts")).agentMcp(rest);
     if (command === "mcp-relay") return await (await import("./mcp_relay.ts")).mcpRelay(rest);
     if (command === "mcp-gateway") return await (await import("./mcp_gateway.ts")).mcpGateway(rest);
@@ -192,9 +194,11 @@ export async function main(argv: string[]): Promise<number> {
         return emit(await (await import("./transfer.ts")).exportCommand(rest));
       case "import":
         return emit(await (await import("./transfer.ts")).importCommand(rest));
+      case "workspace":
       case "hub":
         if (sub === "key") return emit((await import("./hub_key.ts")).hubKey(argv.slice(2)));
-        process.stderr.write(`fleetd: unknown hub command '${sub ?? ""}'\n\n${usageText()}`);
+        if (sub === "stop" || sub === "restart") return await (await import("./workspace.ts")).serviceCommand(sub, argv.slice(2));
+        process.stderr.write(`fleetd: unknown workspace command '${sub ?? ""}'\n\n${usageText()}`);
         return 2;
       default:
         process.stderr.write(`fleetd: unknown command '${command}'\n\n${usageText()}`);

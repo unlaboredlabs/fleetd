@@ -21,7 +21,7 @@ export function vaultProblem(scope: McpScope, item: ItemRow | undefined, field?:
   if ((field ?? defaultField(item.kind)) !== defaultField(item.kind)) {
     return item.kind === "login" ? `${item.label} is a login: it gives its password.` : `${item.label} is a variable: it gives its value.`;
   }
-  if (item.kind === "login") return item.scope === "hub" ? undefined : `${item.label} isn't in the team vault: move it there first.`;
+  if (item.kind === "login") return item.scope === "hub" ? undefined : `${item.label} isn't in the workspace vault: move it there first.`;
   if (item.meta.sink !== undefined) return `${item.label} is kept for one request only: pick a login or a bot's variable.`;
   const own = scope.kind === "project" && item.scope === "project" && item.machineId === scope.machineId && item.projectId === scope.projectId;
   if (own) return undefined;

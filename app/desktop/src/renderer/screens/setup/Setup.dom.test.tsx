@@ -255,8 +255,8 @@ describe("setup", () => {
   it("holds the hub's Claude key and endpoint on its step, and opens Your accounts for a subscription", async () => {
     await render(<SetupScreen view="claude" />);
     // The key's own controls, as Settings › Hub › Setup › Claude has them: nothing to open for it.
-    expect(pane()?.textContent).toContain("Hub API key");
-    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open Hub › Setup › Claude")).toBe(false);
+    expect(pane()?.textContent).toContain("Workspace API key");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open Workspace › Setup › Claude")).toBe(false);
     // Done, so its guide folds under the controls.
     await click(button("Show the guide"));
     await click(button("Open Accounts"));
@@ -344,12 +344,12 @@ describe("Settings › Hub › Setup", () => {
     // One checklist: the accounts first, Claude done and saying what it uses, the others when they are needed; then
     // the other steps left; then the done ones, each still a row to change a value or test one.
     expect(rows("Steps")).toEqual([
-      "claude:ClaudeUses the hub's API key",
+      "claude:ClaudeUses the workspace's API key",
       "github:GitHubBefore the first PR",
       "onepassword:1PasswordBefore the first login",
       "people:Invite peopleOptional",
       "mac:A Mac for agentsOptional",
-      "address:Where the hub listensDone",
+      "address:Where the workspace listensDone",
       "machines:Where agents runDone",
     ]);
     // Nothing required is left: no line says so. Titles and rows only: no rail, no guide, no control of an account.
@@ -379,7 +379,7 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     expect(settings()?.textContent).toContain("All set up");
     expect([...document.querySelectorAll("[role='list']")].map((l) => l.getAttribute("aria-label"))).toEqual(["Steps"]);
-    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordDone"]);
+    expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the workspace's API key", "github:GitHubUses the workspace's GitHub App", "onepassword:1PasswordDone"]);
     expect(rows("Steps").slice(3).map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
   });
 
@@ -419,7 +419,7 @@ describe("Settings › Hub › Setup", () => {
     expect(button("Hide the guide")).not.toBeNull();
     // Back: GitHub is done, and still a row, in its place.
     await click(back());
-    expect(rows("Steps").slice(0, 2)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App"]);
+    expect(rows("Steps").slice(0, 2)).toEqual(["claude:ClaudeUses the workspace's API key", "github:GitHubUses the workspace's GitHub App"]);
     expect(settings()?.textContent).toContain("4 of 7 done");
   });
 
@@ -444,7 +444,7 @@ describe("Settings › Hub › Setup", () => {
     // Done now: only a done account's guide can be hidden.
     expect(button("Hide the guide")).not.toBeNull();
     await click(back());
-    expect(github()).toBe("github:GitHubUses the hub's GitHub App");
+    expect(github()).toBe("github:GitHubUses the workspace's GitHub App");
     // Remove: the row stops saying the hub uses it.
     await click(button("GitHub"));
     lists = asked("setup_list");
@@ -477,13 +477,13 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     await click(button("Claude"));
     expect(pane()?.getAttribute("data-step")).toBe("claude");
-    const key = pane()?.querySelector<HTMLElement>("section[aria-label='Hub API key']");
+    const key = pane()?.querySelector<HTMLElement>("section[aria-label='Workspace API key']");
     expect(key?.textContent).toContain("Sealed on devbox.");
     expect([...(key?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())).toEqual(["Test", "Change", "Remove"]);
-    expect(pane()?.querySelector("section[aria-label=\"Members may use the hub's API key\"] [role='switch']")).not.toBeNull();
+    expect(pane()?.querySelector("section[aria-label=\"Members may use the workspace's API key\"] [role='switch']")).not.toBeNull();
     // The guide and the step's Test wait behind one line: at rest the key's own Test is the only one.
     const tests = () => [...(pane()?.querySelectorAll("button") ?? [])].filter((b) => b.textContent.trim() === "Test");
-    expect(pane()?.textContent).not.toContain("Give the hub an API key");
+    expect(pane()?.textContent).not.toContain("Give the workspace an API key");
     expect(tests()).toHaveLength(1);
     await click(tests()[0] as HTMLElement);
     expect(calls.filter((c) => c.tool === "claude_account_test").map((c) => c.input)).toEqual([{ account: "hub_api" }]);
@@ -491,13 +491,13 @@ describe("Settings › Hub › Setup", () => {
     // Shown, the guide is the first run's, less the button back to this page, and its Test reads all of the hub's
     // checks for Claude.
     await click(button("Show the guide"));
-    expect(pane()?.textContent).toContain("Give the hub an API key");
+    expect(pane()?.textContent).toContain("Give the workspace an API key");
     expect([...(pane()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith("Open "))).toEqual(["Open Accounts"]);
     expect(tests()).toHaveLength(2);
     await click(tests()[1] as HTMLElement);
     expect(calls.filter((c) => c.tool === "setup_test").map((c) => c.input)).toEqual([{ step: "claude" }]);
     await click(button("Hide the guide"));
-    expect(pane()?.textContent).not.toContain("Give the hub an API key");
+    expect(pane()?.textContent).not.toContain("Give the workspace an API key");
     expect(tests()).toHaveLength(1);
   });
 
@@ -507,7 +507,7 @@ describe("Settings › Hub › Setup", () => {
     expect(pane()?.getAttribute("data-step")).toBe("people");
     expect(pane()?.querySelector("[data-part]")).toBeNull();
     expect(pane()?.textContent).not.toContain("Show the guide");
-    await click(button("Open Hub › People"));
+    await click(button("Open Workspace › People"));
     expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hub.people" });
   });
 });

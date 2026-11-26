@@ -117,10 +117,10 @@ const size = (bytes: number) => {
 export function failureOf(error: unknown, team: string): HubMoveFailure {
   if (error instanceof Stopped) return error.failure;
   if (error instanceof CloudUnreached) {
-    return { reason: "offline", message: "This hub lost its connection to fleetd cloud during the move.", fix: "Check this hub's internet connection, then press Move again." };
+    return { reason: "offline", message: "This workspace lost its connection to fleetd cloud during the move.", fix: "Check this workspace's internet connection, then press Move again." };
   }
   if (error instanceof TransferError) {
-    return { reason: error.reason === "newer" ? "newer" : "failed", message: error.message, fix: "Update fleetd on this hub, then press Move again." };
+    return { reason: error.reason === "newer" ? "newer" : "failed", message: error.message, fix: "Update fleetd on this workspace, then press Move again." };
   }
   if (error instanceof CloudRefusal) return refusalOf(error, team);
   return { reason: "failed", message: `The move stopped: ${(error as Error)?.message ?? String(error)}.`, fix: "Press Move again." };
@@ -129,11 +129,11 @@ export function failureOf(error: unknown, team: string): HubMoveFailure {
 function refusalOf(r: { status?: number; code: string; reason?: string | undefined; message: string; fix?: string | undefined }, team: string): HubMoveFailure {
   switch (r.reason) {
     case "not_empty":
-      return { reason: "not_empty", message: `${team} already has bots or data, and a hub moves only into an empty team.`, fix: "Sign in again and move into a new team." };
+      return { reason: "not_empty", message: `${team} already has bots or data, and a workspace moves only into an empty team.`, fix: "Sign in again and move into a new team." };
     case "too_large":
-      return { reason: "too_large", message: `This hub is too big for ${team}: ${r.message}`, fix: "Remove old recordings and attachments from this hub, then press Move again." };
+      return { reason: "too_large", message: `This workspace is too big for ${team}: ${r.message}`, fix: "Remove old recordings and attachments from this workspace, then press Move again." };
     case "newer":
-      return { reason: "newer", message: "fleetd cloud runs an older fleetd than this hub, so it can't take this hub's data yet.", fix: "Try again later: fleetd cloud updates within a day." };
+      return { reason: "newer", message: "fleetd cloud runs an older fleetd than this workspace, so it can't take this workspace's data yet.", fix: "Try again later: fleetd cloud updates within a day." };
     case "busy":
       return { reason: "refused", message: `Another move into ${team} is running.`, fix: "Wait for it to end, then press Move again." };
     case "cancelled":
@@ -141,7 +141,7 @@ function refusalOf(r: { status?: number; code: string; reason?: string | undefin
     case undefined:
       if (r.status === 401 || (r.status === 403 && (r.code === "unauthorized" || r.code === "" || r.code === "forbidden"))) {
         return r.status === 403 && r.code === "forbidden"
-          ? { reason: "signed_out", message: `Only an owner of ${team} can move a hub into it.`, fix: "Sign in as the team's owner, then press Move again." }
+          ? { reason: "signed_out", message: `Only an owner of ${team} can move a workspace into it.`, fix: "Sign in as the team's owner, then press Move again." }
           : { reason: "signed_out", message: "Your sign-in to fleetd cloud ended during the move.", fix: "Sign in again, then press Move." };
       }
   }
@@ -192,7 +192,7 @@ export class Mover {
   hold(): string | undefined {
     const k = this.kept;
     if (k === undefined) return undefined;
-    return k.done ? `this hub moved to fleetd cloud (${k.team})` : `this hub is moving to fleetd cloud (${k.team})`;
+    return k.done ? `this workspace moved to fleetd cloud (${k.team})` : `this workspace is moving to fleetd cloud (${k.team})`;
   }
 
   /** Resolves once the pause is lifted (or `signal` aborts). */
@@ -252,9 +252,9 @@ export class Mover {
   }
 
   start(input: HubMoveStartInput): HubMove {
-    if (this.busy()) throw new ToolError("failed", "This hub is moving already.", "Wait for it to end.");
-    if (this.kept?.done) throw new ToolError("failed", `This hub moved to ${this.kept.team} already.`, "Press Undo first to move it again.");
-    if (this.kept !== undefined) throw new ToolError("failed", `This hub is finishing a move into ${this.kept.team}.`, "Wait for it to end.");
+    if (this.busy()) throw new ToolError("failed", "This workspace is moving already.", "Wait for it to end.");
+    if (this.kept?.done) throw new ToolError("failed", `This workspace moved to ${this.kept.team} already.`, "Press Undo first to move it again.");
+    if (this.kept !== undefined) throw new ToolError("failed", `This workspace is finishing a move into ${this.kept.team}.`, "Wait for it to end.");
     const url = input.url.replace(/\/+$/, "");
     if (!/^(https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?|http:\/\/127\.0\.0\.1:\d{1,5})$/.test(url)) throw new ToolError("invalid", "That isn't a fleetd cloud team's address.");
     if (input.key.length < 8 || input.key.length > 500) throw new ToolError("invalid", "That isn't a device key.");
@@ -275,14 +275,14 @@ export class Mover {
   /** Stops a move before the cloud has started its import; refused once it has. */
   cancel(): HubMove {
     if (!this.busy()) return this.status();
-    if (this.kept?.started) throw new ToolError("failed", "fleetd cloud is loading this hub's data now, which can't be stopped halfway.", "Wait for it to end.");
+    if (this.kept?.started) throw new ToolError("failed", "fleetd cloud is loading this workspace's data now, which can't be stopped halfway.", "Wait for it to end.");
     this.job?.abort();
     return this.status();
   }
 
   /** Undo: the pause lifts and this hub runs as before; its data was never changed. */
   resume(): HubMove {
-    if (this.busy()) throw new ToolError("failed", "This hub is moving now.", this.kept?.started ? "Wait for it to end." : "Stop the move first.");
+    if (this.busy()) throw new ToolError("failed", "This workspace is moving now.", this.kept?.started ? "Wait for it to end." : "Stop the move first.");
     this.kept = undefined;
     this.save();
     this.phase = "idle";
@@ -305,7 +305,7 @@ export class Mover {
       return;
     }
     const c = this.client();
-    const restarted: HubMoveFailure = { reason: "restarted", message: "This hub restarted during the move, so the move stopped. Nothing changed on either side.", fix: "Press Move again." };
+    const restarted: HubMoveFailure = { reason: "restarted", message: "This workspace restarted during the move, so the move stopped. Nothing changed on either side.", fix: "Press Move again." };
     if (!c || !k.runId) return this.fail(restarted);
     // The restart may have cut its start's answer off: the run says whether the cloud took it.
     const runId = k.runId;
@@ -338,7 +338,7 @@ export class Mover {
     const file = join(this.hub.config.home, EXPORT_FILE);
     const c = this.client();
     try {
-      if (!c) throw stop("failed", "This hub couldn't keep the team's key for the move.", "Press Move again.");
+      if (!c) throw stop("failed", "This workspace couldn't keep the team's key for the move.", "Press Move again.");
       await this.pack(file, signal);
       const runId = await this.upload(c, file, signal);
       if (signal.aborted) throw stop("cancelled", "The move was stopped. Nothing changed on either side.", "Press Move to start again.");
@@ -399,7 +399,7 @@ export class Mover {
     if (run === undefined) return this.unsure(team, failureOf(new CloudUnreached("no answer"), team));
     if (run.state === "uploading") {
       await c.drop(runId).catch(() => {});
-      return this.fail(stopped ?? { reason: "offline", message: "fleetd cloud never got the start of the move. Nothing changed on either side.", fix: "Check this hub's internet connection, then press Move again." });
+      return this.fail(stopped ?? { reason: "offline", message: "fleetd cloud never got the start of the move. Nothing changed on either side.", fix: "Check this workspace's internet connection, then press Move again." });
     }
     this.kept!.started = true;
     this.save();
@@ -408,7 +408,7 @@ export class Mover {
 
   /** The cloud may have the import, and this hub can't tell: the pause stays, and Undo is the person's once they've looked. */
   private unsure(team: string, why: HubMoveFailure): void {
-    this.failure = { reason: why.reason, message: `${why.message} fleetd cloud may still have loaded this hub's data.`, fix: `Open ${team} to see whether its bots arrived; if they didn't, press Undo here.` };
+    this.failure = { reason: why.reason, message: `${why.message} fleetd cloud may still have loaded this workspace's data.`, fix: `Open ${team} to see whether its bots arrived; if they didn't, press Undo here.` };
     this.phase = "failed";
   }
 
@@ -417,7 +417,7 @@ export class Mover {
     const v = vault(this.hub);
     const items = this.hub.db.conn.query<{ n: number }, []>("SELECT count(*) AS n FROM vault_items").get()?.n ?? 0;
     if (items > 0 && v.keys.locked) {
-      throw stop("vault_locked", "This hub's vault is locked, so its logins and cards can't move.", "Unlock the vault in Settings › Vault, then press Move again.");
+      throw stop("vault_locked", "This workspace's vault is locked, so its logins and cards can't move.", "Unlock the vault in Settings › Vault, then press Move again.");
     }
     this.passphrase = this.deps.passphrase();
     mkdirSync(join(this.hub.config.home, "move"), { recursive: true, mode: 0o700 });
@@ -464,11 +464,11 @@ export class Mover {
         throw why;
       };
       if (begun.maxBytes !== undefined && total > begun.maxBytes) {
-        await drop(stop("too_large", `This hub's data is ${size(total)}, and ${team} has room for ${size(begun.maxBytes)}.`, "Remove old recordings and attachments from this hub, then press Move again."));
+        await drop(stop("too_large", `This workspace's data is ${size(total)}, and ${team} has room for ${size(begun.maxBytes)}.`, "Remove old recordings and attachments from this workspace, then press Move again."));
       }
       if (begun.migrations !== undefined) {
         const theirs = new Set(begun.migrations);
-        if (ours.some((m) => !theirs.has(m))) await drop(stop("newer", "fleetd cloud runs an older fleetd than this hub, so it can't take this hub's data yet.", "Try again later: fleetd cloud updates within a day."));
+        if (ours.some((m) => !theirs.has(m))) await drop(stop("newer", "fleetd cloud runs an older fleetd than this workspace, so it can't take this workspace's data yet.", "Try again later: fleetd cloud updates within a day."));
       }
       let gone = false;
       this.bytes = 0;
@@ -488,7 +488,7 @@ export class Mover {
         this.bytes = at;
       }
       if (!gone) return runId;
-      if (runs >= UPLOAD_RUNS) throw stop("refused", "fleetd cloud kept dropping this hub's upload.", "Press Move again in a few minutes.");
+      if (runs >= UPLOAD_RUNS) throw stop("refused", "fleetd cloud kept dropping this workspace's upload.", "Press Move again in a few minutes.");
     }
   }
 
@@ -515,7 +515,7 @@ export class Mover {
     const team = this.kept?.team ?? "the team";
     let run: RunAnswer;
     try {
-      if (!c) throw stop("failed", "This hub lost the team's key.", "Sign in again; if the team got this hub's bots, press Undo here and use the team.");
+      if (!c) throw stop("failed", "This workspace lost the team's key.", "Sign in again; if the team got this workspace's bots, press Undo here and use the team.");
       for (;;) {
         run = await this.retrying(() => c.run(runId), signal);
         if (run.state === "done" || run.state === "failed" || run.state === "uploading") break;
@@ -531,11 +531,11 @@ export class Mover {
     if (run.state === "uploading") {
       // The cloud never took the start (an older note of this hub's said it had): the upload goes, the pause lifts.
       await c.drop(runId).catch(() => {});
-      this.fail({ reason: "failed", message: "fleetd cloud never started loading this hub's data. Nothing changed on either side.", fix: "Press Move again." });
+      this.fail({ reason: "failed", message: "fleetd cloud never started loading this workspace's data. Nothing changed on either side.", fix: "Press Move again." });
       return;
     }
     if (run.state === "failed") {
-      this.fail(run.error ? refusalOf(run.error, team) : { reason: "failed", message: "fleetd cloud couldn't load this hub's data.", fix: "Press Move again." });
+      this.fail(run.error ? refusalOf(run.error, team) : { reason: "failed", message: "fleetd cloud couldn't load this workspace's data.", fix: "Press Move again." });
       return;
     }
     const summary = run.summary ?? {};
@@ -604,7 +604,7 @@ export class Mover {
         if (m.state !== "updating") {
           set(id, "updating", `${m.name} runs an older fleetd that can't move by itself, so it is updating first.`);
           const started = updates(this.hub).start(undefined, false);
-          if (!("run" in started)) set(id, "updating", `${m.name} runs an older fleetd that can't move by itself. Update it (${settingsPath("Machines", "Updates")}); it moves once it runs the hub's fleetd.`);
+          if (!("run" in started)) set(id, "updating", `${m.name} runs an older fleetd that can't move by itself. Update it (${settingsPath("Machines", "Updates")}); it moves once it runs the workspace's fleetd.`);
         }
         continue;
       }

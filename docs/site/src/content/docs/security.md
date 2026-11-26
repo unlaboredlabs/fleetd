@@ -10,7 +10,7 @@ small team that trusts each other.
 
 - Agents run as your OS user, with no sandbox. On their machine, they can reach what you can.
 - So run agents on machines with nothing on them you'd mind them reading.
-- Give a hub only to people you trust with every bot on it, and each other's vault logins.
+- Give a workspace only to people you trust with every bot on it, and each other's vault logins.
 - fleetd keeps secrets out of agents' tools, transcripts and logs, and limits what its own keys can open.
 
 ## What an agent can reach {#agent-reach}
@@ -19,8 +19,8 @@ An agent runs as the OS user its machine runs fleetd as, usually you. On that ma
 
 - your files, and any key or token kept in them;
 - your logins there: `gh`, SSH keys, git credentials and other CLIs you signed in to;
-- fleetd's own files in `~/.fleetd`: the machine's key and the secrets it holds for its work. On the hub's machine,
-  that includes the hub's database and the vault's key.
+- fleetd's own files in `~/.fleetd`: the machine's key and the secrets it holds for its work. On the workspace's machine,
+  that includes the workspace's database and the vault's key.
 
 fleetd keeps these values out of agents' environments and transcripts, but an agent that goes looking can read the
 files. A separate OS user is the only real wall, and fleetd doesn't set one up (except, optionally, on
@@ -51,7 +51,7 @@ unasked.
 
 ## Network {#network}
 
-- **The hub isn't public.** `fleetd init` listens on your Tailscale address, or on `127.0.0.1` without Tailscale.
+- **The workspace isn't public.** `fleetd init` listens on your Tailscale address, or on `127.0.0.1` without Tailscale.
 - **Plain HTTP only on loopback or Tailscale**, whose tunnel is encrypted. Anywhere else, put HTTPS in front.
 - **Machines connect out.** Each proves itself with its own key pair, and none opens a port beyond loopback.
 - **Codes work once.** Pairing and machine codes expire after 15 minutes, invites after 7 days. The agents' Mac's
@@ -59,7 +59,7 @@ unasked.
 
 ## Keys and devices {#keys}
 
-- **Agent keys** (`fld_…`, for MCP clients and scripts) are shown once. The hub keeps only their hash. A revoked key
+- **Agent keys** (`fld_…`, for MCP clients and scripts) are shown once. The workspace keeps only their hash. A revoked key
   stops on its next request.
 - **Device keys** belong to a person's app. The desktop app keeps its key in the OS keychain, or in a file only you
   can read when there is none.
@@ -73,7 +73,7 @@ never gets more than its code, and never more than its person's role allows.
 
 ### Which agent is calling {#node-socket}
 
-Agents reach the hub through their machine's socket, `~/.fleetd/node/node.sock` (mode `0600`). The machine works out
+Agents reach the workspace through their machine's socket, `~/.fleetd/node/node.sock` (mode `0600`). The machine works out
 who is calling from the process tree, not from anything the caller says:
 
 - A process started by an agent's session acts as that agent, on its own bot only.
@@ -86,23 +86,23 @@ agents you don't trust as a different OS user.
 
 ### The fleetd CLI inside a session {#cli-in-session}
 
-Inside an agent's session, the `fleetd` CLI only reads the hub: `status`, lists and history work, and anything that
-would change the hub is refused with what to do instead. This stops an agent changing the hub by accident. It
-doesn't stop one that means to, since it can read the hub's files directly.
+Inside an agent's session, the `fleetd` CLI only reads the workspace: `status`, lists and history work, and anything that
+would change the workspace is refused with what to do instead. This stops an agent changing the workspace by accident. It
+doesn't stop one that means to, since it can read the workspace's files directly.
 
 ## People {#people}
 
-Every person on a hub is an owner, admin or member. Only owners and admins invite people, change roles and change
-hub-wide settings. The hub always keeps an owner. Removing a person signs out all their devices at once.
+Every person on a workspace is an owner, admin or member. Only owners and admins invite people, change roles and change
+workspace-wide settings. The workspace always keeps an owner. Removing a person signs out all their devices at once.
 
-Every bot is open to everyone on the hub, and fleetd records who did what. Work only you should see goes on a hub of
-your own. Whoever runs the hub's machine, and any agent on it, can read the hub's database.
+Every bot is open to everyone on the workspace, and fleetd records who did what. Work only you should see goes on a workspace of
+your own. Whoever runs the workspace's machine, and any agent on it, can read the workspace's database.
 
 ## Claude accounts {#claude}
 
-The hub's API key and each person's [subscription token](/docs/people#claude) are handled like any other secret:
+The workspace's API key and each person's [subscription token](/docs/people#claude) are handled like any other secret:
 
-- The app seals the value to each machine's key. The hub only passes it on and never sees it.
+- The app seals the value to each machine's key. The workspace only passes it on and never sees it.
 - The machine passes it only to the agents on that account, and masks it in everything they report.
 - One person's subscription runs only work they started. Removing them forgets their token everywhere.
 
@@ -110,22 +110,22 @@ The value is in the agent's environment, so any process of that OS user can read
 
 ## The vault {#vault}
 
-The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted on the hub.
+The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted on the workspace.
 
 - **Stored encrypted.** Each item is sealed with AES-256-GCM under its own key, wrapped by the vault's root key. The
-  root key sits outside the hub's folder, in your keychain, or behind a passphrase. A copy of the database alone opens
+  root key sits outside the workspace's folder, in your keychain, or behind a passphrase. A copy of the database alone opens
   nothing.
-- **Sealed in transit.** What you type is sealed to the hub. A fill is sealed to the one machine that uses it.
+- **Sealed in transit.** What you type is sealed to the workspace. A fill is sealed to the one machine that uses it.
 - **Filled, never shown.** Agents fill a login only on that login's own sites, and a card only at a checkout they
   recorded first. They have no tool to show, change or delete an item. Fills are rate-limited and logged, never with a value.
 - **Revealed only by people.** An item's creator or an admin can reveal it, behind Touch ID, Face ID or a system
   confirm, at most 30 times an hour.
-- **Its limit.** An agent on the hub's machine can read the root key file and the database, so the whole vault. Run
+- **Its limit.** An agent on the workspace's machine can read the root key file and the database, so the whole vault. Run
   agents on other machines if that matters to you.
 
 ## Secrets and commands {#secrets}
 
-- **Secrets never reach the hub in plain text.** The app seals each value before sending it. Lists show only a
+- **Secrets never reach the workspace in plain text.** The app seals each value before sending it. Lists show only a
   fingerprint.
 - **Notifications** carry a one-line summary, never a secret.
 - **An approved command runs exactly as you saw it**, and only after you approve it.

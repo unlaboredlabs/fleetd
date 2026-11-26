@@ -76,10 +76,10 @@ beforeEach(() => {
 });
 afterEach(() => t.done());
 
-test("the row reads the hub computer's Tailscale; Connect and Disconnect turn the route on and off and tell the machines", async () => {
+test("the row reads the workspace computer's Tailscale; Connect and Disconnect turn the route on and off and tell the machines", async () => {
   hubTailscale = { running: false };
   expect(await call<TailnetState>("tailnet_get")).toEqual({ status: "failed", problem: NOT_RUNNING });
-  await expect(call("tailnet_connect")).rejects.toMatchObject({ message: "Tailscale isn't running on the hub's computer." });
+  await expect(call("tailnet_connect")).rejects.toMatchObject({ message: "Tailscale isn't running on the workspace's computer." });
   expect(told).toEqual([]);
 
   hubTailscale = { running: true, tailnet: "ada@example.com", device: "devbox.tail1234.ts.net", suffix: "tail1234.ts.net" };
@@ -98,7 +98,7 @@ test("the row reads the hub computer's Tailscale; Connect and Disconnect turn th
   expect(told.at(-1)).toEqual({ machineId: "laptop", tailnet: { suffix: "tail1234.ts.net" } });
 });
 
-test("a machine off the tailnet reaches a tailnet MCP server through the hub, and an agent's relay calls its tool", async () => {
+test("a machine off the tailnet reaches a tailnet MCP server through the workspace, and an agent's relay calls its tool", async () => {
   const server = serve(t.hub, t.tools, 0);
   const home = tempHome();
   try {

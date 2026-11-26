@@ -30,7 +30,7 @@ export const postPage = (postTo: string, state: string, manifest: string): strin
   `<body style="margin:0;height:90vh;display:grid;place-items:center;font:14px/1.5 system-ui,sans-serif;color:#444;background:#fafafa">` +
   `<form id="f" method="post" action="${escape(`${postTo}?state=${encodeURIComponent(state)}`)}" style="max-width:28rem;padding:0 1.5rem">` +
   `<input type="hidden" name="manifest" value="${escape(manifest)}">` +
-  `<p style="margin:0 0 .5rem">Taking you to GitHub to create the hub&#39;s App…</p><button>Continue to GitHub</button></form>` +
+  `<p style="margin:0 0 .5rem">Taking you to GitHub to create the workspace&#39;s App…</p><button>Continue to GitHub</button></form>` +
   `<script>document.getElementById("f").submit()</script></body>`;
 
 type Answer = { kind: "code"; code: string } | { kind: "cancelled" } | { kind: "timeout" };
@@ -127,7 +127,7 @@ export const createGithubApp = async (
     if (a.kind === "timeout") return failed("timeout", "GitHub didn't send the App back in time.", "Press Create GitHub App again, and finish on GitHub's page within 15 minutes.");
     const out = await call("github_app_create", { code: a.code });
     if (answered !== undefined) {
-      if (out.ok) send(answered, 200, landing("The App is created", "The hub keeps its keys. Go back to fleetd to install it on your repositories."));
+      if (out.ok) send(answered, 200, landing("The App is created", "The workspace keeps its keys. Go back to fleetd to install it on your repositories."));
       else send(answered, 200, landing("Not created", `${out.error.message} Go back to fleetd to try again.`));
     }
     return out;

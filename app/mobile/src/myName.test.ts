@@ -135,8 +135,8 @@ describe("The field, as the screen drives it", () => {
     const going = rig();
     going.field.typed("Samuel Rivera");
     going.field.gone();
-    await going.answer({ ok: false, error: "The hub can't be reached." });
-    expect(going.lost).toEqual(["The hub can't be reached."]);
+    await going.answer({ ok: false, error: "The workspace can't be reached." });
+    expect(going.lost).toEqual(["The workspace can't be reached."]);
 
     // Sent on leaving the field, and still on its way as the screen went.
     const sentBefore = rig();
@@ -144,8 +144,8 @@ describe("The field, as the screen drives it", () => {
     sentBefore.field.left();
     const drawn = sentBefore.shown.length;
     sentBefore.field.gone();
-    await sentBefore.answer({ ok: false, error: "The hub can't be reached." });
-    expect(sentBefore.lost).toEqual(["The hub can't be reached."]);
+    await sentBefore.answer({ ok: false, error: "The workspace can't be reached." });
+    expect(sentBefore.lost).toEqual(["The workspace can't be reached."]);
     expect(sentBefore.shown.length).toBe(drawn);
   });
 });

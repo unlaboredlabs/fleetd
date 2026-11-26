@@ -15,7 +15,7 @@ import { store } from "../store/hub_store.ts";
 export const HOSTED_ID = RUNNER_ID;
 
 /** Why nothing joins as HOSTED_ID, or acts on it as a computer: `what` ends the sentence. */
-export const hostedIdRefused = (what: string) => `"${HOSTED_ID}" was the hub's hosted sandboxes, which fleetd no longer runs: ${what}`;
+export const hostedIdRefused = (what: string) => `"${HOSTED_ID}" was the workspace's hosted sandboxes, which fleetd no longer runs: ${what}`;
 
 /** Where the hub's hosted sandboxes kept their bots' checkouts, under the hub's home. */
 export const hostedFiles = (hubHome: string) => join(hubHome, "runner");
@@ -29,7 +29,7 @@ export function filesOf(hub: Hub, r: ProjectRef): string {
 
 /** Why bot `r`, which ran in a hosted sandbox, does nothing now, and what to do: what a message to it is answered. */
 export const hostedGone = (hub: Hub, r: ProjectRef): { message: string; fix: string } => ({
-  message: `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${filesOf(hub, r)} on the hub's machine.`,
+  message: `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${filesOf(hub, r)} on the workspace's machine.`,
   fix: "Add its repo on one of your computers to keep working on it.",
 });
 

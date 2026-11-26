@@ -7,7 +7,7 @@ export const EVIDENCE_MAX = 2000;
 export const NO_ASK = "fleetd:no-ask";
 /** Evidence while an approved command runs; replaced by its result. */
 export const RUNNING = "running on";
-export const NOT_RUN_AFTER_RESTART = "not run: the hub restarted before it ran; approve it again to run it";
+export const NOT_RUN_AFTER_RESTART = "not run: the workspace restarted before it ran; approve it again to run it";
 export const HUMAN_ONLY_SECRET_FIX =
   "Enter it from the fleetd desktop app or another client with a --human key; agent keys never handle secret values.";
 /** How long the hub waits for a node to link again, to ask it for the result of an approved command it lost. */

@@ -125,7 +125,7 @@ export const readSession = async (fetch: Fetch): Promise<SessionRead> => {
 export const MADE_READS_MS = [500, 1000, 2000, 4000] as const;
 
 /** A team made, and not listed yet by the session read this many times: said in place of No team yet's line. */
-export const NOT_LISTED_YET: WebFailure = { code: "not_listed_yet", message: "Your team is made, but fleetd cloud isn't showing it yet.", fix: "Press Make a team again in a moment to open it." };
+export const NOT_LISTED_YET: WebFailure = { code: "not_listed_yet", message: "Your workspace is made, but fleetd cloud isn't showing it yet.", fix: "Press Make a workspace again in a moment to open it." };
 
 /**
  * After Make a team: the session read again (`read`), at MADE_READS_MS apart, until it lists a team; true once it

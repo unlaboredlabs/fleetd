@@ -47,7 +47,7 @@ export async function renew(
     out = await ask({ server: name, fingerprint: stale, ...(refused ? { refused: true } : {}) });
   } catch (e) {
     const why = e instanceof ToolError ? e.message : (e as Error).message;
-    return { refused: `fleetd couldn't ask its hub to renew ${name}'s sign-in (${why})`, signedOut: false };
+    return { refused: `fleetd couldn't ask its workspace to renew ${name}'s sign-in (${why})`, signedOut: false };
   }
   const problem = typeof out.problem === "string" ? out.problem : undefined;
   if (out.renewed === "signed_out") return { refused: problem ?? `${name} is signed out`, signedOut: true };
@@ -89,7 +89,7 @@ export async function viaRoute(
 ): Promise<Fetched> {
   const h = headersOf(home, session, name);
   if ("refused" in h) return h;
-  if (!h.viaHub) return { refused: `${name} isn't reached through the hub's Tailscale route from this machine`, signedOut: false };
+  if (!h.viaHub) return { refused: `${name} isn't reached through the workspace's Tailscale route from this machine`, signedOut: false };
   if (h.transport.type !== "http" || !h.transport.url) {
     return { refused: `${name} uses the older SSE transport, which reaches the tailnet only from a machine on it: put this machine on the tailnet`, signedOut: false };
   }
@@ -111,7 +111,7 @@ export async function viaRoute(
     });
     return { status: res.status, headers: [...res.headers.entries()], body: await res.text() };
   } catch (e) {
-    return { refused: `the hub's Tailscale route didn't reach ${name} (${(e as Error).message})`, signedOut: false };
+    return { refused: `the workspace's Tailscale route didn't reach ${name} (${(e as Error).message})`, signedOut: false };
   }
 }
 

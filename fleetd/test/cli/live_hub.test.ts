@@ -15,7 +15,7 @@ import { seedHubDb } from "../helpers.ts";
 
 const CASE_MS = 30_000;
 const said = (text: string) => {
-  expect(text).toContain("would change the live hub");
+  expect(text).toContain("would change the live workspace");
   expect(text).toContain("only reads it");
   expect(text).toContain("repo_add, repo_create, repo_remove, project_setup, project_propose");
   expect(text).toContain("set FLEETD_HOME");
@@ -47,7 +47,7 @@ describe("the CLI from an agent's session", () => {
     await Promise.all([live?.stop(), throwaway?.stop()]);
   });
 
-  test("a key is not created or revoked on the live hub, nor its key file written", async () => {
+  test("a key is not created or revoked on the live workspace, nor its key file written", async () => {
     const made = await live.run(["hub", "key", "create", "--name", "ci", "--role", "read", "--machines", "*"], { env: session });
     expect(made.code).toBe(1);
     expect(made.stdout).toBe("");
@@ -67,7 +67,7 @@ describe("the CLI from an agent's session", () => {
     said(revoked.stderr);
   }, CASE_MS);
 
-  test("a tool above read is refused before it reaches the live hub; reads go", async () => {
+  test("a tool above read is refused before it reaches the live workspace; reads go", async () => {
     const claim = await live.run(["work", "claim", "the cart page", "--paths", "app/cart.ts", "--key-file", "../human.key"], { cwd: "repo", env: session });
     expect(claim.code).toBe(3);
     said(claim.stderr);
@@ -87,7 +87,7 @@ describe("the CLI from an agent's session", () => {
     expect(set.stderr).not.toContain("No machine devbox");
   }, CASE_MS);
 
-  test("the live hub's address is the live hub from any home", async () => {
+  test("the live workspace's address is the live workspace from any home", async () => {
     const key = join(live.cwd, "human.key");
     const read = await throwaway.run(["status", "--hub", live.hubUrl, "--key-file", key], { env: session });
     expect(read.code).toBe(0);
@@ -96,7 +96,7 @@ describe("the CLI from an agent's session", () => {
     said(claim.stderr);
   }, CASE_MS);
 
-  test("prompts edits, the vault's key and machines are left to a person on the live hub", async () => {
+  test("prompts edits, the vault's key and machines are left to a person on the live workspace", async () => {
     const reset = await live.run(["prompts", "reset", "lead.start"], { env: session });
     expect(reset.code).toBe(1);
     said(reset.stderr);
@@ -115,7 +115,7 @@ describe("the CLI from an agent's session", () => {
     said(machine.stdout + machine.stderr);
   }, CASE_MS);
 
-  test("init, uninstall and a second hub start leave the live hub alone", async () => {
+  test("init, uninstall and a second workspace start leave the live workspace alone", async () => {
     const setup = readFileSync(join(live.hubHome, "setup.json"), "utf8");
     const listen = live.hubUrl.replace("http://", "");
     const init = await live.run(["init", "--no-service", "--listen", listen, "--url", "http://changed.example:1", "--git-identity", "Dev <dev@example.com>"], { env: session });
@@ -135,7 +135,7 @@ describe("the CLI from an agent's session", () => {
     expect(existsSync(join(live.hubHome, "hub.sqlite"))).toBe(true);
   }, CASE_MS);
 
-  test("a throwaway hub the session started works in full", async () => {
+  test("a throwaway workspace the session started works in full", async () => {
     const made = await throwaway.run(["hub", "key", "create", "--name", "ci", "--role", "read", "--machines", "*"], { env: session });
     expect(made.stderr).toContain("created key_");
     expect(made.code).toBe(0);
@@ -155,7 +155,7 @@ describe("the CLI from an agent's session", () => {
   }, CASE_MS);
 });
 
-describe("which hub is the live one", () => {
+describe("which workspace is the live one", () => {
   let root: string;
   let liveHome: string;
   let otherHome: string;
@@ -182,7 +182,7 @@ describe("which hub is the live one", () => {
   afterEach(() => standInSession(undefined));
   afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-  test("outside a session nothing is the live hub, and its database takes writes", () => {
+  test("outside a session nothing is the live workspace, and its database takes writes", () => {
     standInSession(null);
     expect(sessionThreadId()).toBeUndefined();
     expect(isLiveHubHome(liveHome)).toBe(false);
@@ -197,7 +197,7 @@ describe("which hub is the live one", () => {
     }
   });
 
-  test("in a session the live hub's database opens read-only and every write is refused", () => {
+  test("in a session the live workspace's database opens read-only and every write is refused", () => {
     inSession();
     expect(sessionThreadId()).toBe("t-agent");
     expect(isLiveHubHome(liveHome)).toBe(true);
@@ -216,7 +216,7 @@ describe("which hub is the live one", () => {
     expect(hubKey(["create", "--name", "x", "--role", "read", "--machines", "*"], liveHome).code).toBe(1);
   });
 
-  test("in a session a throwaway hub's home is not the live one", () => {
+  test("in a session a throwaway workspace's home is not the live one", () => {
     inSession();
     expect(isLiveHubHome(otherHome)).toBe(false);
     const db = openHub(otherHome);
@@ -229,7 +229,7 @@ describe("which hub is the live one", () => {
     expect(hubKey(["create", "--name", "y", "--role", "read", "--machines", "*"], otherHome).code).toBe(0);
   });
 
-  test("the live hub's addresses: its listen, its url, the node's hub and this machine at its port", () => {
+  test("the live workspace's addresses: its listen, its url, the node's workspace and this machine at its port", () => {
     inSession();
     for (const url of ["http://0.0.0.0:4790", "http://devbox.example:4790/mcp", "http://hub.example:4791", "http://127.0.0.1:4790", "http://localhost:4790", "http://[::1]:4790"]) {
       expect(isLiveHubUrl(url)).toBe(true);
@@ -240,7 +240,7 @@ describe("which hub is the live one", () => {
     }
   });
 
-  test("a live hub on the tailnet only: a throwaway hub on loopback at its port is not it", () => {
+  test("a live workspace on the tailnet only: a throwaway workspace on loopback at its port is not it", () => {
     const file = join(liveHome, "setup.json");
     const before = readFileSync(file, "utf8");
     writeFileSync(file, JSON.stringify({ listen: "100.64.0.1:4790", url: "http://devbox.example:4790", machines: {} }));
@@ -255,7 +255,7 @@ describe("which hub is the live one", () => {
     }
   });
 
-  test("only read tools go to the live hub", () => {
+  test("only read tools go to the live workspace", () => {
     inSession();
     const hub = "http://127.0.0.1:4790/mcp";
     for (const tool of ["fleetd_status", "project_get", "project_repo_list", "events_wait"]) expect(liveHubToolRefusal(hub, tool)).toBeUndefined();

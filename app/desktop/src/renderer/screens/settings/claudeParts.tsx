@@ -45,7 +45,7 @@ export function useTest() {
  * (offline) come back to say so; the value itself never does.
  */
 /** A fleetd cloud team with nothing yet that takes a key (its computers not ready): said plainly, not as machines. */
-export const CLOUD_NOT_READY = "This team can't take a key yet: its computers aren't ready. Try again in a few minutes.";
+export const CLOUD_NOT_READY = "This workspace can't take a key yet: its computers aren't ready. Try again in a few minutes.";
 
 export function useSave() {
   const { hub } = useDataLayer();

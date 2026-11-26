@@ -72,7 +72,7 @@ function theMac(hub: Hub): { machineId: string; key: string | undefined } {
   if (!machineId) {
     throw new ToolError(
       "machine_offline",
-      "No agents' Mac is online: none joined this hub, it's turned off, or it's waiting for its account to log in again after a restart.",
+      "No agents' Mac is online: none joined this workspace, it's turned off, or it's waiting for its account to log in again after a restart.",
       `do without the Mac and say so in your result; an admin connects one in ${settingsPath()} › Machines`,
     );
   }

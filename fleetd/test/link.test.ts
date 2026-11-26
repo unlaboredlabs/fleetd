@@ -45,14 +45,14 @@ async function until(check: () => boolean, ms = 3000) {
 test("a node that isn't enrolled is refused with the fix in the close reason", async () => {
   const node = new FakeNode(url, { machineId: "stranger" });
   const closed = await node.closed;
-  expect(closed).toEqual({ code: 4001, reason: "stranger is not enrolled: run fleetd pair --worker stranger on the hub" });
+  expect(closed).toEqual({ code: 4001, reason: "stranger is not enrolled: run fleetd pair --worker stranger on the workspace's machine" });
 });
 
 test("a node on another protocol is told which side to update", async () => {
   const node = new FakeNode(url, { machineId: "old", protocol: 99 });
   const closed = await node.closed;
   expect(closed.code).toBe(4002);
-  expect(closed.reason).toContain("the hub runs an older fleetd than this machine");
+  expect(closed.reason).toContain("the workspace runs an older fleetd than this machine");
 });
 
 test("an enroll token links once; the machine is online once its runner answers", async () => {
@@ -83,7 +83,7 @@ test("an enroll token links once; the machine is online once its runner answers"
   const late = new FakeNode(url, { machineId: "worker-2", enrollToken: token });
   expect(await late.closed).toEqual({
     code: 4001,
-    reason: "enrollment token was already used. Fix: on the hub, run fleetd pair --worker worker-2 for a new code",
+    reason: "enrollment token was already used. Fix: on the workspace's machine, run fleetd pair --worker worker-2 for a new code",
   });
   again.close();
   await again.closed;
@@ -152,7 +152,7 @@ test("request() resolves with the reply its id names, and fails as lost when the
   off();
 
   await expect(links.request("nowhere", { t: "cmd_check", cwd: "/", argv: ["true"] })).rejects.toThrow(
-    "nowhere's node is not linked to the hub",
+    "nowhere's node is not linked to the workspace",
   );
   const pending = links.request("worker-4", { t: "cmd_check", cwd: "/", argv: ["sleep", "9"], timeoutSec: 60 });
   await node.next((f) => f.t === "cmd_check");
@@ -279,7 +279,7 @@ test("the events announcing a link say the node's version", async () => {
   await third.closed;
 });
 
-test("a node removed from the hub is ended at its next heartbeat", async () => {
+test("a node removed from the workspace is ended at its next heartbeat", async () => {
   const node = await linked("worker-8");
   hub.auth.nodes.revokeNode("worker-8");
   node.send({ t: "hb", at: new Date().toISOString() });
@@ -294,7 +294,7 @@ test("a removed machine's node, back with its key, is told it was removed; anoth
   const back = new FakeNode(url, { machineId: "worker-12", key: node.key });
   expect(await back.closed).toEqual({ code: 4001, reason: "worker-12 was removed from this hub: its node key is revoked" });
   const other = new FakeNode(url, { machineId: "worker-12" });
-  expect(await other.closed).toEqual({ code: 4001, reason: "worker-12 is not enrolled: run fleetd pair --worker worker-12 on the hub" });
+  expect(await other.closed).toEqual({ code: 4001, reason: "worker-12 is not enrolled: run fleetd pair --worker worker-12 on the workspace's machine" });
   // Enrolled again with a new code, the same key links.
   const again = await linked("worker-12", { key: node.key });
   again.close();
@@ -330,7 +330,7 @@ test("a lead call is answered on its link with a lead_result for its id", async 
   await node.closed;
 });
 
-test("cmd_check gets its cmd_result; the hub beats every heartbeatMs", async () => {
+test("cmd_check gets its cmd_result; the workspace beats every heartbeatMs", async () => {
   const saved = links.timings;
   links.timings = { ...saved, heartbeatMs: 20 };
   const node = await linked("worker-11", { cmdCheck: false });
@@ -452,7 +452,7 @@ test("a frame that doesn't decode is refused alone; a broken lead call is answer
     node.send({ t: "from_the_future", id: "f1", secret: "s3cret" });
     node.send({ t: "lead_call", id: "c9", call: { op: "factory_status" } });
     const answer = await node.next((f) => f.t === "lead_result" && f.id === "c9");
-    expect(answer.error).toMatchObject({ code: "invalid", message: "the hub could not read this call: missing field `cwd`" });
+    expect(answer.error).toMatchObject({ code: "invalid", message: "the workspace could not read this call: missing field `cwd`" });
     // The link carries on: a request still gets its reply.
     const action = links.request("worker-14", { t: "node_action", action: "probe" });
     const asked = await node.next((f) => f.t === "node_action");
@@ -529,7 +529,7 @@ test("a lead call in flight at the stop is answered, then the link closes as a r
   inFlight.end();
   await stopping;
   expect(Date.now() - started).toBeLessThan(500);
-  expect(await node.closed).toEqual({ code: 1012, reason: "hub restarting" });
+  expect(await node.closed).toEqual({ code: 1012, reason: "workspace restarting" });
   await t.done();
 });
 
@@ -544,7 +544,7 @@ test("the stop waits for lead calls only so long", async () => {
   await t.done();
 });
 
-test("the hub links a node that proves itself in its upgrade, a stale proof alike, and an upgrade with none", async () => {
+test("the workspace links a node that proves itself in its upgrade, a stale proof alike, and an upgrade with none", async () => {
   const machineId = "worker-proof";
   const identity = new NodeIdentity(new Uint8Array(32).fill(3));
   const { token } = hub.auth.nodes.createEnrollToken(machineId, "test");
@@ -608,7 +608,7 @@ test("a machine that holds bots doesn't leave by itself, whatever its hello says
   expect(store(hub).projectsList("worker-claims-mac")).toHaveLength(1);
 });
 
-test("Stop being the agents' Mac tells a hub that answers, and says when the hub wasn't reached", async () => {
+test("Stop being the agents' Mac tells a workspace that answers, and says when the workspace wasn't reached", async () => {
   const machineId = "mac-tells";
   const identity = new NodeIdentity(new Uint8Array(32).fill(7));
   const { token } = hub.auth.nodes.createEnrollToken(machineId, "test");
@@ -627,7 +627,7 @@ test("Stop being the agents' Mac tells a hub that answers, and says when the hub
   expect(Date.now() - started).toBeLessThan(3000);
 });
 
-test("a node its hub holds no key for ends its link as unknown, not removed", async () => {
+test("a node its workspace holds no key for ends its link as unknown, not removed", async () => {
   const fatal = await runNode({
     settings: { hub: `http://127.0.0.1:${server.port}`, machineId: "never-joined", name: "never-joined", nodeVersion: "0.0.0-test" },
     identity: new NodeIdentity(new Uint8Array(32).fill(9)),

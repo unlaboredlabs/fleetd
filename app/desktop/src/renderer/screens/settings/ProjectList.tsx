@@ -39,7 +39,7 @@ export function ProjectList() {
           <PageHead title="Bots" />
           <SettingsSection>
             <GroupNote>
-              Not connected. Connect to a hub to change its bots&apos; settings.
+              Not connected. Connect to a workspace to change its bots&apos; settings.
             </GroupNote>
           </SettingsSection>
         </div>

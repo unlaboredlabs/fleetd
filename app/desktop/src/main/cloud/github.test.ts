@@ -103,7 +103,7 @@ describe("fleetd's GitHub App on a cloud team", () => {
       const cloud = realCloud(cloudConfig(fake.url, fake.clientId, true, fake.authorizeUrl), hubs, dir, true, open);
       expect(await cloud.installGithub("hub")).toEqual({ ok: true });
       // A self-hosted hub (not at a team address): refused here, the team never asked.
-      expect(await cloud.installGithub("own")).toEqual({ ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } });
+      expect(await cloud.installGithub("own")).toEqual({ ok: false, failure: { code: "", message: "That workspace isn't one of your fleetd cloud workspaces." } });
       expect(fake.installs).toEqual(["acme sam@acme.example"]);
       expect(opened).toHaveLength(1);
     } finally {

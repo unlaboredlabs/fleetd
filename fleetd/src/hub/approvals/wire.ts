@@ -31,7 +31,7 @@ function nodeError(e: unknown): NodeCommandError {
   return new NodeCommandError(typeof reason === "string" ? reason : "failed", message);
 }
 
-const offline = (m: string) => new NodeCommandError("offline", `${m}'s node is not linked to the hub`);
+const offline = (m: string) => new NodeCommandError("offline", `${m}'s node is not linked to the workspace`);
 
 function gatedOutcome(result: Record<string, unknown>): GatedOutcome {
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);

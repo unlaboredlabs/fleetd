@@ -178,12 +178,12 @@ export function releaseOf(version: string, override?: string): [string, boolean]
 function stillHolds(now: string | undefined, version: string, asset: string) {
   if (now === version) return;
   throw new Error(
-    `this hub runs fleetd ${version}, and the edge release is now ${now ?? "another build"}, so it has no ${asset} of this hub's build. Fix: update the hub (fleetd update)`,
+    `this workspace runs fleetd ${version}, and the edge release is now ${now ?? "another build"}, so it has no ${asset} of this workspace's build. Fix: update the workspace (fleetd update)`,
   );
 }
 
 const missing = (asset: string, version: string, why: string) =>
-  `no ${asset} of fleetd ${version} to copy to the machine: ${why.replace(/\.+$/, "")}. Fix: run a released fleetd on the hub`;
+  `no ${asset} of fleetd ${version} to copy to the machine: ${why.replace(/\.+$/, "")}. Fix: run a released fleetd on the workspace's machine`;
 
 /** Where a step stands in a run, as the CLI labels it. */
 export type Stage = { kind: "probe" } | { kind: "step"; index: number; total: number } | { kind: "hub" };
@@ -203,7 +203,7 @@ export interface Progress {
 export const print: Progress = {
   begin(step) {
     if (step.stage.kind === "probe") say(`[probe] ${step.title}`);
-    else if (step.stage.kind === "hub") say(`[hub] ${step.title}`);
+    else if (step.stage.kind === "hub") say(`[workspace] ${step.title}`);
     else {
       say(`[${step.stage.index}/${step.stage.total}] ${step.title}`);
       if (step.command !== undefined) say(`  $ ${step.command}`);
@@ -280,7 +280,7 @@ function parseAdd(argv: string[]): AddArgs | number {
       local: "bool",
       "machine-id": "str",
       "dry-run": "bool",
-      "hub-url": "str",
+      "workspace-url": "str",
       "ssh-config": "str",
       "no-service": "bool",
       "claude-config-dir": "str",
@@ -297,7 +297,7 @@ function parseAdd(argv: string[]): AddArgs | number {
     ...(host === undefined ? {} : { host }),
     ...(opt("machine-id") === undefined ? {} : { machineId: opt("machine-id")! }),
     dryRun: v.flag("dry-run"),
-    ...(opt("hub-url") === undefined ? {} : { hubUrl: opt("hub-url")! }),
+    ...(opt("workspace-url") === undefined ? {} : { hubUrl: opt("workspace-url")! }),
     ...(opt("ssh-config") === undefined ? {} : { sshConfig: opt("ssh-config")! }),
     enroll: { kind: "hub" },
     noService: v.flag("no-service"),
@@ -348,7 +348,7 @@ export const preparedPlatform = (p: Prepared) => `${p.facts.platform}-${p.facts.
 
 /** The join to run again after one that stopped before it enrolled. */
 function joinAgain(a: AddArgs, hub: string, code: string, machineId: string): string {
-  if (a.mac) return "the join line you pasted again (it has --mac and the hub's version)";
+  if (a.mac) return "the join line you pasted again (it has --mac and the workspace's version)";
   let line = `fleetd init --join ${q(hub)} --code ${q(code)} --machine-id ${q(machineId)}`;
   if (a.gitIdentity) line += ` --git-identity ${q(`${a.gitIdentity.name} <${a.gitIdentity.email}>`)}`;
   if (a.claudeConfigDir !== undefined) line += ` --claude-config-dir ${q(a.claudeConfigDir)}`;
@@ -371,10 +371,10 @@ export function resolve(a: AddArgs, exe: string): Resolved {
     } catch (error) {
       throw Stop.fail((error as Error).message);
     }
-    if (state === undefined) throw Stop.fail(`${home} has no hub set up. Fix: ${noSetupFix(home)}`);
+    if (state === undefined) throw Stop.fail(`${home} has no workspace set up. Fix: ${noSetupFix(home)}`);
   }
   const hubUrl = a.hubUrl ?? state?.url;
-  if (hubUrl === undefined) throw new Stop(2, "--hub-url is required to join a hub");
+  if (hubUrl === undefined) throw new Stop(2, "--workspace-url is required to join a workspace");
   let binary: Uint8Array;
   try {
     binary = new Uint8Array(readFileSync(exe));
@@ -442,7 +442,7 @@ function dryRun(r: Resolved) {
   if (note !== undefined) say(`note: ${note}`);
   say("[probe] read the machine's state (read-only)");
   plan.steps.forEach((s, i) => print.begin(planStep(i + 1, plan.steps.length, s, r.exe, r.binary.length)));
-  say(`[hub] wait until ${r.machineId} is online`);
+  say(`[workspace] wait until ${r.machineId} is online`);
   for (const n of plan.notes) say(`note: ${n}`);
 }
 
@@ -515,7 +515,7 @@ export async function prepare(
     const has = facts.digests.get(factsLayout(facts).bin) === wanted;
     const step: Begin = {
       stage: { kind: "hub" },
-      title: `download fleetd ${VERSION} for ${target[0]}-${target[1]} (this hub's is a ${input.binaryTarget[0]}-${input.binaryTarget[1]} build), checked against its release's SHA256SUMS`,
+      title: `download fleetd ${VERSION} for ${target[0]}-${target[1]} (this workspace's is a ${input.binaryTarget[0]}-${input.binaryTarget[1]} build), checked against its release's SHA256SUMS`,
     };
     if (!has && fetch) {
       progress.begin(step);
@@ -542,7 +542,7 @@ export async function prepare(
   // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
   if (r.enroll.kind === "keep" && plan.steps.some((s) => s.stdin?.kind === "enrollToken")) {
     throw Stop.fail(
-      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: on the hub, run fleetd pair --worker ${r.machineId}, then run what it prints here with --rejoin`,
+      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: on the workspace's machine, run fleetd pair --worker ${r.machineId}, then run what it prints here with --rejoin`,
     );
   }
   const prepared: Prepared = { facts, plan, input, ...(fetched === undefined ? {} : { fetched }) };
@@ -605,7 +605,7 @@ export async function execute(
         } catch (error) {
           throw Stop.fail((error as Error).message);
         }
-      } else throw new Error("only a hub or a code enrolls");
+      } else throw new Error("only a workspace or a code enrolls");
     }
     const result = await runner.run(r.target, step.command, stdin);
     if (result.code !== 0 && stepNeedsGuiSession(plan.platform, result.code)) {
@@ -614,7 +614,7 @@ export async function execute(
     if (result.code !== 0) {
       const fix =
         step.stdin?.kind === "enrollToken" && r.joining
-          ? "the code is single use and lasts 15 minutes: on the hub, run fleetd pair --worker for a new one"
+          ? "the code is single use and lasts 15 minutes: on the workspace's machine, run fleetd pair --worker for a new one"
           : `fix that, then run ${r.again}; finished steps are skipped`;
       throw Stop.fail(`step ${i + 1} failed (exit ${result.code}):\n${tail(`${result.stdout}\n${result.stderr}`)}\nFix: ${fix}.`);
     }
@@ -633,7 +633,7 @@ export async function execute(
       progress.begin(waitStep(r.machineId));
       if (!(await waitLinked(hub.db, r.machineId, stepsDone, 120_000))) {
         throw Stop.fail(
-          `${r.machineId} did not come online within 2 min. Its node log is ${plan.layout.logs}/node.log on ${r.host}; the node must reach the hub at ${input.hubUrl}. Fix: make that address reachable from ${r.host} (fleetd init --url <address>), then run ${r.again}`,
+          `${r.machineId} did not come online within 2 min. Its node log is ${plan.layout.logs}/node.log on ${r.host}; the node must reach the workspace at ${input.hubUrl}. Fix: make that address reachable from ${r.host} (fleetd init --url <address>), then run ${r.again}`,
         );
       }
       progress.done("");
@@ -694,7 +694,7 @@ export async function add(a: AddArgs, progress: Progress = print): Promise<Added
     if (isLiveHubHome(r.home)) throw Stop.fail(liveHubRefusal("machine add"));
     const listen = parseListen(r.state!.listen) ?? ["", 0];
     if ((await probeListen(listen)) !== "hub") {
-      throw Stop.fail(`no hub answers at ${listen[0]}:${listen[1]}. Fix: fleetd init (it starts the hub), then run ${r.again}`);
+      throw Stop.fail(`no workspace answers at ${listen[0]}:${listen[1]}. Fix: fleetd init (it starts the workspace), then run ${r.again}`);
     }
     db = openHub(r.home);
   }
@@ -743,7 +743,7 @@ export async function remove(
   let remoteOk = true;
   if (record === undefined) {
     progress.say(
-      `${machineId} was not set up by fleetd machine add from this hub, so only its key is revoked here; its node stops when it next reaches the hub.`,
+      `${machineId} was not set up by fleetd machine add from this workspace, so only its key is revoked here; its node stops when it next reaches the workspace.`,
     );
   } else {
     const target: SshTarget = {
@@ -792,13 +792,13 @@ export async function remove(
     throw Stop.fail((error as Error).message);
   }
   progress.say(
-    revoked ? `revoked ${machineId}'s node key; the hub refuses that node from now on.` : `the hub held no node key for ${machineId}.`,
+    revoked ? `revoked ${machineId}'s node key; the workspace refuses that node from now on.` : `the workspace held no node key for ${machineId}.`,
   );
   if (erased === 1) progress.say(`erased ${machineId}'s bot: its chat, memory, skills, files, orders and tasks.`);
   else if (erased > 1) progress.say(`erased ${machineId}'s ${erased} bots: their chats, memory, skills, files, orders and tasks.`);
   if (rows > 0) {
     progress.say(
-      `the hub forgot ${machineId}'s sessions, checkouts and settings (${rows} rows); the factory metrics stay as history.`,
+      `the workspace forgot ${machineId}'s sessions, checkouts and settings (${rows} rows); the factory metrics stay as history.`,
     );
   }
   if (state !== undefined && record !== undefined) {
@@ -829,7 +829,7 @@ export function leadsOn(hub: HubSide, machineId: string): string | undefined {
 
 /** How to bring a machine back instead of removing it. */
 export const repair = (machineId: string) =>
-  `to repair ${machineId} instead, run fleetd pair --worker ${machineId} on the hub and the line it prints on ${machineId} with --rejoin`;
+  `to repair ${machineId} instead, run fleetd pair --worker ${machineId} on the workspace's machine and the line it prints on ${machineId} with --rejoin`;
 
 // ---- candidates (fleetd init and the app's Add machine) ----
 

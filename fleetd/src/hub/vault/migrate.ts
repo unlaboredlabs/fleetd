@@ -186,7 +186,7 @@ export async function adopt(hub: Hub, m: string, ask?: () => Promise<Record<stri
         const value = valueOf(hub, x.sealed, x.fingerprint);
         const row = saveItem(hub, v, { kind: "env", scope: "order", ...r, workstreamId: order, envName: x.name, secret: true, fields: { value }, source: { kind: "adopted", from: "order_env" }, held: true }, "adopt");
         held(hub, row, m, `order:${x.projectId}/${order}`, x.fingerprint);
-        if (kept && kept.fingerprint !== x.fingerprint) conflict(row, `${x.name}: the node held a newer value than the hub recorded`);
+        if (kept && kept.fingerprint !== x.fingerprint) conflict(row, `${x.name}: the node held a newer value than the workspace recorded`);
         adopted++;
         continue;
       }
@@ -210,7 +210,7 @@ export async function adopt(hub: Hub, m: string, ask?: () => Promise<Record<stri
       if (!x.secret) continue; // plain ones come from the hub's rows (migratePlain)
       const row = saveItem(hub, v, { kind: "env", scope: "project", ...r, envName: x.name, secret: true, fields: { value: valueOf(hub, x.sealed, x.fingerprint) }, source: { kind: "adopted", from: "project_env" }, held: true }, "adopt");
       held(hub, row, m, `project:${x.projectId}`, x.fingerprint);
-      if (hubRow?.fingerprint !== x.fingerprint) conflict(row, `${x.name}: the node held a value the hub didn't record`);
+      if (hubRow?.fingerprint !== x.fingerprint) conflict(row, `${x.name}: the node held a value the workspace didn't record`);
       adopted++;
     } catch (e) {
       conflict(undefined, `${x.name} on ${m}/${x.projectId}: ${(e as Error).message}`.slice(0, 300));
@@ -220,7 +220,7 @@ export async function adopt(hub: Hub, m: string, ask?: () => Promise<Record<stri
     try {
       const r = sinkProject(hub, m, s);
       if (!r) {
-        conflict(undefined, `a ${s.kind}: sink on ${m} answers no request the hub knows`);
+        conflict(undefined, `a ${s.kind}: sink on ${m} answers no request the workspace knows`);
         continue;
       }
       const already = sinkItem(hub, { kind: s.kind, machineId: m, path: s.path, secretKey: s.secretKey });

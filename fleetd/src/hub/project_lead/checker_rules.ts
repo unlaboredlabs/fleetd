@@ -95,7 +95,7 @@ export type Context = {
   today: string;
 };
 
-export const TURN_NOT_PORTED = "the Bun hub can't run the checker's session yet (src/hub/executor: turn)";
+export const TURN_NOT_PORTED = "the Bun workspace can't run the checker's session yet (src/hub/executor: turn)";
 
 const field = (input: unknown) => (input !== null && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined);
 

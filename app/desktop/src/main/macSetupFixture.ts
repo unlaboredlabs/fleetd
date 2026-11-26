@@ -88,7 +88,7 @@ const ATTENTION: ReadonlyArray<object> = [
   {
     id: "keep_awake",
     state: "warn",
-    message: "The Mac sleeps after 1 min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its hub.",
+    message: "The Mac sleeps after 1 min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its workspace.",
     fix: "Turn on Prevent automatic sleeping when the display is off in System Settings › Energy",
     command: 'open "x-apple.systempreferences:com.apple.Energy-Settings.extension"',
   },
@@ -181,7 +181,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
       return later(
         600,
         code === "000000"
-          ? json(401, { code: "pair_code_invalid", message: "that code isn't open on this hub", fix: "On your main machine, open Add machine › A Mac for agents for a new code, then type it here." })
+          ? json(401, { code: "pair_code_invalid", message: "that code isn't open on this workspace", fix: "On your main machine, open Add machine › A Mac for agents for a new code, then type it here." })
           : code === "222222"
             ? json(200, { setup: 2, hub: { url: HUB } })
             : json(200, answer),

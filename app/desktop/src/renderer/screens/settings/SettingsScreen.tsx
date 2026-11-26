@@ -126,7 +126,7 @@ function HubsAndDevices() {
   return (
     <div className={s.scroll} data-screen="settings.hubs">
       <div className={s.column}>
-        <PageHead title="Hubs & devices" />
+        <PageHead title="Workspaces & devices" />
         <CloudAccountSettings />
         <HubsSettings />
         <Part reveal="devices" screen="settings.devices">

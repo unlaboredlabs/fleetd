@@ -153,7 +153,7 @@ export type ApprovalHooks = {
   vaultSecret(request: HumanRequest, sealed: string, by: { name: string; person?: PersonRef; machines: string[] }): Promise<{ fingerprint: string; bytes: number } | undefined>;
 };
 
-export const NOT_PORTED_ORDERS = "The Bun hub can't set an order's variable yet (src/hub/projects: order_env).";
+export const NOT_PORTED_ORDERS = "The Bun workspace can't set an order's variable yet (src/hub/projects: order_env).";
 
 /** The hooks before their areas set them: order variables refused, project reads unknown, every prompt asks. */
 export const defaultHooks = (): ApprovalHooks => ({
@@ -164,11 +164,11 @@ export const defaultHooks = (): ApprovalHooks => ({
   allowSite: async () => {},
   ownAutomation: async () => undefined,
   automationConfirm: async () => false,
-  projectProposal: async () => ({ deny: "Blocked by fleetd: this hub can't put a new bot on a card yet." }),
-  projectProposed: async () => "this hub can't create a bot from a card yet",
+  projectProposal: async () => ({ deny: "Blocked by fleetd: this workspace can't put a new bot on a card yet." }),
+  projectProposed: async () => "this workspace can't create a bot from a card yet",
   ownImage: async () => false,
   approvalSettings: async () => undefined,
-  checkAction: async () => ({ note: { verdict: "ask", reason: "the approval checker isn't ported to the Bun hub yet" } }),
+  checkAction: async () => ({ note: { verdict: "ask", reason: "the approval checker isn't ported to the Bun workspace yet" } }),
   autoApproved: async () => {},
   promptVerdict: () => undefined,
   siteVisit: () => undefined,

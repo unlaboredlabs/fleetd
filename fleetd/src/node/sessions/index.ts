@@ -313,13 +313,13 @@ export function runnerClaude(account: ClaudeAccount | undefined, endpoint?: stri
     if (endpoint === undefined || tailnet || !privateByName(endpoint)) return on;
     return {
       ...on,
-      problem: `the hub's Claude endpoint ${endpoint} is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Connections`,
+      problem: `the workspace's Claude endpoint ${endpoint} is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Connections`,
     };
   }
   return {
     ...info,
     problem:
-      "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
+      "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the workspace's API key or your Claude subscription in Settings",
   };
 }
 
@@ -1018,7 +1018,7 @@ export class SessionService {
     if (!isAbsolute(workspaceRoot) || !existsSync(workspaceRoot) || !statSync(workspaceRoot).isDirectory())
       throw invalid(`${workspaceRoot} is not a directory on this machine`);
     if (isRunner() && !workspaceRoot.startsWith(`${this.home}/`))
-      throw invalid(`a bot that runs in hosted sandboxes is cloned from GitHub, not added from a folder of the hub's machine (${workspaceRoot})`);
+      throw invalid(`a bot that runs in hosted sandboxes is cloned from GitHub, not added from a folder of the workspace's machine (${workspaceRoot})`);
     this.#machine(this.store.upsertProject({ projectId, title, workspaceRoot, updatedAt: nowIso() }));
     return folder ? { kind: "folder", path: workspaceRoot } : { kind: "done" };
   }
@@ -1514,7 +1514,7 @@ export class SessionService {
     stages.done("spec");
     const mark = marker(id);
     const provider = hostedOf(row.local.hosted);
-    if (agy && provider !== undefined) throw new Refusal("runner_unavailable", "Antigravity agents run on this hub's own machines, not in hosted sandboxes yet");
+    if (agy && provider !== undefined) throw new Refusal("runner_unavailable", "Antigravity agents run on this workspace's own machines, not in hosted sandboxes yet");
     const agent = agy ? await this.#antigravity(row, spec, mark) : undefined;
     const place = pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(provider ? { hosted: provider } : {}), ...(row.local.size ? { size: row.local.size } : {}) });
     const launch = {

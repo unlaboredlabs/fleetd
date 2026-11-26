@@ -117,9 +117,9 @@ export class PairingService {
   async auto(): Promise<PairOutcome> {
     const fail = (message: string): PairOutcome => ({
       ok: false,
-      failure: { code: "", message, fix: "Run `fleetd pair` on the hub and type the code it prints." },
+      failure: { code: "", message, fix: "Run `fleetd pair` on the workspace and type the code it prints." },
     });
-    if (!this.#deps.firstRun()) return fail("This app already has a hub key, so it won't pair from app-pair.json.");
+    if (!this.#deps.firstRun()) return fail("This app already has a workspace key, so it won't pair from app-pair.json.");
     const loaded = await this.#load();
     if (loaded.kind === "untrusted") return { ok: false, failure: loaded.failure };
     if (loaded.kind === "none") return fail("No pairing code from `fleetd init` on this computer.");
@@ -138,7 +138,7 @@ export class PairingService {
         failure: {
           code: "",
           message: CODE_SHAPE,
-          fix: "Run `fleetd pair` on the hub and type the code it prints.",
+          fix: "Run `fleetd pair` on the workspace and type the code it prints.",
         },
       };
     }
@@ -154,7 +154,7 @@ export class PairingService {
           failure: {
             code: "",
             message: `Paired with ${result.paired.hubName}, but the key couldn't be kept: ${connected.message}`,
-            fix: "Run `fleetd pair` on the hub for a new code and try again.",
+            fix: "Run `fleetd pair` on the workspace for a new code and try again.",
           },
         };
   }
@@ -165,13 +165,13 @@ export class PairingService {
     if (!read.ok) return read.missing ? { kind: "none" } : { kind: "untrusted", failure: read.failure };
     const untrusted = (why: string): Loaded => ({
       kind: "untrusted",
-      failure: { code: "", message: `Ignored ${path}: ${why}`, fix: "Type your hub's address and a code from `fleetd pair` below." },
+      failure: { code: "", message: `Ignored ${path}: ${why}`, fix: "Type your workspace's address and a code from `fleetd pair` below." },
     });
     const pair = readAppPair(read.text, this.#deps.now());
     if (pair === null) return untrusted("it isn't a pairing file.");
     const origin = hubOrigin(pair.hub);
     if (!origin.ok || !privateHubOrigin(origin.origin)) {
-      return untrusted(`its hub (${pair.hub}) isn't on this computer, a private network or a tailnet.`);
+      return untrusted(`its workspace (${pair.hub}) isn't on this computer, a private network or a tailnet.`);
     }
     return { kind: "found", pair: { ...pair, origin: origin.origin } };
   }

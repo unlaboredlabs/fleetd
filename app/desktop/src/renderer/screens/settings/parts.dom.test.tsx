@@ -29,7 +29,7 @@ beforeEach(() => {
             <HintLines
               lines={[
                 ["Member", "their own bots"],
-                ["Admin", "the hub too"],
+                ["Admin", "the workspace too"],
               ]}
             />
           }
@@ -138,5 +138,5 @@ it("a section's hint is on its label, and a list row's on the row", () => {
 
 it("a hint for several choices says each on a line of its own, its name first", () => {
   const lines = [...(named("Role").querySelector("[data-hint]")?.children ?? [])].map((l) => l.textContent);
-  expect(lines).toEqual(["Member: their own bots", "Admin: the hub too"]);
+  expect(lines).toEqual(["Member: their own bots", "Admin: the workspace too"]);
 });

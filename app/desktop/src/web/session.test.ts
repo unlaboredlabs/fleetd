@@ -132,7 +132,7 @@ describe("after Make a team", () => {
     const waited: number[] = [];
     expect(await untilListed(reads([session(0)]), (ms) => (waited.push(ms), Promise.resolve()))).toBe("not_yet");
     expect(waited).toEqual([500, 1000, 2000, 4000]);
-    expect(NOT_LISTED_YET.message).toBe("Your team is made, but fleetd cloud isn't showing it yet.");
+    expect(NOT_LISTED_YET.message).toBe("Your workspace is made, but fleetd cloud isn't showing it yet.");
     expect(await untilListed(reads([session(0), { ok: false, signedOut: true }]), () => Promise.resolve())).toBe("signed_out");
   });
 });

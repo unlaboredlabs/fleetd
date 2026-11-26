@@ -96,7 +96,7 @@ function sealOwn(hub: Hub, plain: string): Uint8Array {
   try {
     key = hubBoxKey(hub);
   } catch (e) {
-    throw new Error(`the hub's box key can't be read: ${(e as Error).message}`);
+    throw new Error(`the workspace's box key can't be read: ${(e as Error).message}`);
   }
   return seal(publicKeyOf(key), new TextEncoder().encode(plain));
 }
@@ -106,10 +106,10 @@ export function openOwn(hub: Hub, sealed: Uint8Array): string {
   try {
     key = hubBoxKey(hub);
   } catch (e) {
-    throw new Error(`the hub's box key can't be read: ${(e as Error).message}`);
+    throw new Error(`the workspace's box key can't be read: ${(e as Error).message}`);
   }
   const plain = openSealed(key, sealed);
-  if (!plain) throw new Error("a token was sealed to another box key: the hub's home changed. Sign in again");
+  if (!plain) throw new Error("a token was sealed to another box key: the workspace's home changed. Sign in again");
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(plain);
   } catch {
@@ -306,7 +306,7 @@ export function finish(hub: Hub, st: string, code: string | undefined, error: st
     try {
       row = byState(hub, st);
     } catch (e) {
-      return { failed: `The hub can't read its sign-ins: ${(e as Error).message}` };
+      return { failed: `The workspace can't read its sign-ins: ${(e as Error).message}` };
     }
     if (!row) {
       return { failed: "This sign-in link was already used, or replaced by a newer one. Start the sign-in again from fleetd." };

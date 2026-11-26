@@ -74,7 +74,7 @@ describe("browserTransport", () => {
     socket?.onmessage?.({ data: new ArrayBuffer(4) });
     socket?.onclose?.({ code: 1003, reason: "" });
     expect(socket?.closed).toBe(1003);
-    expect(heard.filter((h) => h.startsWith("close"))).toEqual(["close:1006:the hub sent a frame this page can't read"]);
+    expect(heard.filter((h) => h.startsWith("close"))).toEqual(["close:1006:the workspace sent a frame this page can't read"]);
   });
 
   it("closes at once when the client drops it, as the desktop's terminate does", () => {

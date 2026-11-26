@@ -31,10 +31,10 @@ export function accountFromKey(key: string): ClaudeAccount | undefined {
 /** One way some work could run, and whether it is there. */
 type Way = { account: ClaudeAccount; held?: string[]; barred?: string };
 
-const accountText = (a: ClaudeAccount) => (a.kind === "hub" ? "The hub's API key" : "The Claude subscription this runs on");
+const accountText = (a: ClaudeAccount) => (a.kind === "hub" ? "The workspace's API key" : "The Claude subscription this runs on");
 const connectText = (a: ClaudeAccount) =>
   a.kind === "hub"
-    ? "Save the hub's API key on the Hub pages of the app's Settings"
+    ? "Save the workspace's API key on the Workspace pages of the app's Settings"
     : "Connect the subscription in Settings › Accounts › Claude";
 
 /** The hub's Claude setup at one moment: what a launch's account is decided from. */
@@ -82,7 +82,7 @@ export class Setup {
       const own: Way = { account: { kind: "person", personId: person }, held: this.subscriptionHeld(person) };
       const theHub: Way = {
         ...hub,
-        ...(this.hubApi !== undefined && !this.mayUseHubApi(person) ? { barred: "members may not use the hub's API on this hub" } : {}),
+        ...(this.hubApi !== undefined && !this.mayUseHubApi(person) ? { barred: "members may not use the workspace's API on this workspace" } : {}),
       };
       const choice = this.choices.get(person);
       ways = choice === "subscription" ? [own] : choice === "hub_api" ? [theHub] : [own, theHub];
@@ -108,10 +108,10 @@ export class Setup {
       "connect your subscription in Settings › Accounts › Claude (paste the token `claude setup-token` prints)";
     const choice = this.choices.get(person);
     if (choice === "hub_api" && this.hubApi === undefined) {
-      return `The hub has no API key yet: ${subscribe}, or ask an admin to add one on the Hub pages of the app's Settings.`;
+      return `The workspace has no API key yet: ${subscribe}, or ask an admin to add one on the Workspace pages of the app's Settings.`;
     }
-    if (choice === "hub_api") return `Members may not use the hub's API on this hub: ${subscribe}, or ask an admin.`;
-    if (this.hubApi !== undefined && !this.mayUseHubApi(person)) return `Members may not use the hub's API on this hub: ${subscribe}.`;
+    if (choice === "hub_api") return `Members may not use the workspace's API on this workspace: ${subscribe}, or ask an admin.`;
+    if (this.hubApi !== undefined && !this.mayUseHubApi(person)) return `Members may not use the workspace's API on this workspace: ${subscribe}.`;
     return `Open Settings › Accounts › Claude and ${subscribe}.`;
   }
 

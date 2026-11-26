@@ -23,7 +23,7 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   sites: "Only a person allows a site: they answer the card its first visit shows, or add it in the bot's settings in the app.",
   agents: "Only a person picks a bot's profiles and models and sets its max agents: Settings › Bots › Agents in the app.",
   card: "Only a person gives a bot a card: the bot's Vault in the app, on their own device.",
-  vault: "Only a person adds, changes or removes vault items: the team vault in Settings › Vault, a bot's variables in its Vault tab. For a secret you need, call request_secret.",
+  vault: "Only a person adds, changes or removes vault items: the workspace vault in Settings › Vault, a bot's variables in its Vault tab. For a secret you need, call request_secret.",
   get mcp_servers() {
     return `Only a person adds or removes MCP servers: ${settingsPath()} › Bot defaults › Tools & skills, or the bot's own settings, in the app.`;
   },

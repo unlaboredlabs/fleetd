@@ -68,7 +68,7 @@ export class LinkFatal extends Error {
     readonly removed = false,
     readonly unknown = false,
   ) {
-    super(`hub refused this node: ${reason}`);
+    super(`workspace refused this node: ${reason}`);
   }
 }
 
@@ -86,7 +86,7 @@ export function linkUrl(hub: string): string {
   try {
     url = new URL(hub);
   } catch (error) {
-    throw new Error(`hub URL '${hub}' does not parse: ${(error as Error).message}`);
+    throw new Error(`workspace URL '${hub}' does not parse: ${(error as Error).message}`);
   }
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = "/node/link";
@@ -206,10 +206,10 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
       redial.linked();
       const since = downSince;
       downSince = undefined;
-      if (!linkedOnce) log("info", "linked to hub", { hubId, machineId: options.settings.machineId });
+      if (!linkedOnce) log("info", "linked to workspace", { hubId, machineId: options.settings.machineId });
       else if (since !== undefined)
-        log("info", "hub link back", { hubId, machineId: options.settings.machineId, downS: Math.floor((Date.now() - since) / 1000) });
-      else log("info", "linked to hub again", { hubId, machineId: options.settings.machineId });
+        log("info", "workspace link back", { hubId, machineId: options.settings.machineId, downS: Math.floor((Date.now() - since) / 1000) });
+      else log("info", "linked to workspace again", { hubId, machineId: options.settings.machineId });
       linkedOnce = true;
       if (enrollToken !== undefined) {
         enrollToken = undefined;
@@ -220,19 +220,19 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
     });
     if (end.kind === "fatal") return end.fatal;
     if (end.kind === "woke") {
-      log("info", "the machine woke; linking to the hub again");
+      log("info", "the machine woke; linking to the workspace again");
       continue;
     }
     if (end.kind === "relink") {
-      log("info", "linking to the hub again", { why: end.why });
+      log("info", "linking to the workspace again", { why: end.why });
       continue;
     }
     if (options.signal?.aborted) break;
     const delay = redial.next(end.kind === "restarting", Date.now(), 0.8 + Math.random() * 0.4);
     if (downSince === undefined) {
       downSince = Date.now();
-      log("warn", "hub link lost; reconnecting until it is back", { why: end.why, retryInMs: delay });
-    } else log("debug", "hub link still down", { why: end.why, retryInMs: delay });
+      log("warn", "workspace link lost; reconnecting until it is back", { why: end.why, retryInMs: delay });
+    } else log("debug", "workspace link still down", { why: end.why, retryInMs: delay });
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, delay);
       options.signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
@@ -383,7 +383,7 @@ function runLinkOnce(
             onCrossed?.();
           });
       });
-      writes = writes.catch((error) => finish({ kind: "lost", why: `writing to the hub: ${(error as Error).message}` }));
+      writes = writes.catch((error) => finish({ kind: "lost", why: `writing to the workspace: ${(error as Error).message}` }));
     };
     const ctx = (hubId: string, hubCaps: string[]): LinkContext => ({
       hubId,
@@ -395,14 +395,14 @@ function runLinkOnce(
     });
 
     const connectTimer = after(CONNECT_TIMEOUT_MS, () =>
-      finish({ kind: "lost", why: `the hub did not answer the link within ${CONNECT_TIMEOUT_MS / 1000} s` }),
+      finish({ kind: "lost", why: `the workspace did not answer the link within ${CONNECT_TIMEOUT_MS / 1000} s` }),
     );
     let handshake: ReturnType<typeof setTimeout> | undefined;
     const waitFor = (what: "challenge" | "welcome") => {
       stage = what;
       if (handshake) clearTimeout(handshake);
       handshake = after(HANDSHAKE_TIMEOUT_MS, () =>
-        finish({ kind: "lost", why: `no ${what} from the hub for ${HANDSHAKE_TIMEOUT_MS / 1000} s` }),
+        finish({ kind: "lost", why: `no ${what} from the workspace for ${HANDSHAKE_TIMEOUT_MS / 1000} s` }),
       );
     };
     let hello: string[] = [];
@@ -413,7 +413,7 @@ function runLinkOnce(
       const now = Date.now();
       const deadMs = !announces || bulkOut > 0 || inbound ? quiet.bulkMs : quiet.deadMs;
       if (now >= heard + deadMs)
-        return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(deadMs / 1000)} s, and no answer to a ping` });
+        return finish({ kind: "lost", why: `nothing from the workspace for ${Math.round(deadMs / 1000)} s, and no answer to a ping` });
       if (now >= heard + quiet.probeMs && pinged !== heard) {
         pinged = heard;
         try {
@@ -429,7 +429,7 @@ function runLinkOnce(
         case "challenge": {
           if (frame.t !== "challenge") return finish({ kind: "lost", why: `expected a challenge, got ${frame.t}` });
           const nonce = String(frame.nonce ?? "");
-          if (isUpgradeProofMessage(nonce)) return finish({ kind: "lost", why: "the hub's challenge is not a nonce" });
+          if (isUpgradeProofMessage(nonce)) return finish({ kind: "lost", why: "the workspace's challenge is not a nonce" });
           hello = options.capabilities();
           const helloFrame: NodeFrame = {
             t: "hello",
@@ -476,7 +476,7 @@ function runLinkOnce(
           } catch (error) {
             // A request its handler can't take (a field it can't read) is answered as one that doesn't decode, so the
             // hub's wait for it ends now.
-            (options.log ?? defaultLog)("warn", "a hub frame's handler threw", { t: frame.t, error: String(error) });
+            (options.log ?? defaultLog)("warn", "a workspace frame's handler threw", { t: frame.t, error: String(error) });
             const answer = refusal(knownBy(frame, String(error)));
             if (answer) send(answer);
           }
@@ -532,21 +532,21 @@ function runLinkOnce(
         if ("bad" in read) {
           const { bad } = read;
           // The handshake has no room for a frame it can't read.
-          if (stage !== "live") return finish({ kind: "lost", why: `hub sent a ${bad.tag} frame that does not decode: ${bad.error}` });
+          if (stage !== "live") return finish({ kind: "lost", why: `workspace sent a ${bad.tag} frame that does not decode: ${bad.error}` });
           const log = options.log ?? defaultLog;
           // Refused alone on a live link: the frames around it still read. Only a flood of them ends the link.
           if (!badFrames.take(Date.now())) {
-            log("warn", "too many hub frames that do not decode; dropping the link", { tag: bad.tag, bytes: raw.length, error: bad.error });
-            return finish({ kind: "lost", why: "the hub sent too many frames that do not decode" });
+            log("warn", "too many workspace frames that do not decode; dropping the link", { tag: bad.tag, bytes: raw.length, error: bad.error });
+            return finish({ kind: "lost", why: "the workspace sent too many frames that do not decode" });
           }
-          log("warn", "a hub frame does not decode; refused it alone", { tag: bad.tag, bytes: raw.length, error: bad.error });
+          log("warn", "a workspace frame does not decode; refused it alone", { tag: bad.tag, bytes: raw.length, error: bad.error });
           const answer = refusal(bad);
           if (answer) send(answer);
           return;
         }
         const { frame } = read;
         if (!sizeAllowed(frame, raw.length)) {
-          (options.log ?? defaultLog)("warn", "hub frame over the cap for anything but a file transfer; ignored", {
+          (options.log ?? defaultLog)("warn", "workspace frame over the cap for anything but a file transfer; ignored", {
             kind: frame.t,
             bytes: raw.length,
           });
@@ -557,7 +557,7 @@ function runLinkOnce(
     });
     ws.addEventListener("close", (event) => {
       const { code, reason } = event as CloseEvent;
-      if (stage === "connect") return finish({ kind: "lost", why: `cannot reach the hub: closed with ${code}` });
+      if (stage === "connect") return finish({ kind: "lost", why: `cannot reach the workspace: closed with ${code}` });
       // After the frames that came before it.
       reads = reads.then(() => {
         if (code === CLOSE.UNAUTHORIZED || code === CLOSE.PROTOCOL_MISMATCH)
@@ -569,12 +569,12 @@ function runLinkOnce(
               code === CLOSE.UNAUTHORIZED && reason.includes(NOT_ENROLLED),
             ),
           });
-        const why = `hub closed the link (${code} ${reason})`.trim();
+        const why = `workspace closed the link (${code} ${reason})`.trim();
         finish(code === CLOSE.RESTART ? { kind: "restarting", why } : { kind: "lost", why });
       });
     });
     ws.addEventListener("error", () => {
-      if (stage === "connect") finish({ kind: "lost", why: "cannot reach the hub: connection refused or failed" });
+      if (stage === "connect") finish({ kind: "lost", why: "cannot reach the workspace: connection refused or failed" });
     });
   });
 }

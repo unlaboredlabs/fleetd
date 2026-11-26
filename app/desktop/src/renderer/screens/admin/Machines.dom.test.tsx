@@ -123,7 +123,7 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
           error: {
             code: "invalid",
             message: "devbox still runs the leads of app and site. Removing it anyway deletes those bots, with their chats and history.",
-            fix: "to repair devbox instead, run fleetd pair --worker devbox on the hub and the line it prints on devbox with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
+            fix: "to repair devbox instead, run fleetd pair --worker devbox on the workspace and the line it prints on devbox with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
           },
         });
       }
@@ -324,7 +324,7 @@ it("says plainly what removing a machine that runs leads stops, and removes it o
 it("says a machine the hub set up loses its service as well as its key", async () => {
   await render(<MachinePage machineId="builder-1" />);
   await click(button("Remove…"));
-  expect(document.querySelector("[role='dialog']")?.textContent).toContain("The hub stops and removes builder-1's node service, then revokes its key.");
+  expect(document.querySelector("[role='dialog']")?.textContent).toContain("The workspace stops and removes builder-1's node service, then revokes its key.");
   // Its projects and their history go with it, and the confirm says so.
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("its bots are deleted from fleetd with their chats, memory, skills, files and orders");
 });
@@ -389,8 +389,8 @@ it("checks a machine the hub hasn't checked yet as its page opens, once", async 
 it("checks a machine again as its page opens when the hub couldn't answer some of its checks, unless it is offline", async () => {
   const reruns = () => calls.filter((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true);
   checks = [
-    { id: "builder-1/commit_identity", scope: "machine", machineId: "builder-1", status: "unknown", message: "builder-1's node is not linked to the hub" },
-    check("commit_identity", "unknown", "laptop's node is not linked to the hub"),
+    { id: "builder-1/commit_identity", scope: "machine", machineId: "builder-1", status: "unknown", message: "builder-1's node is not linked to the workspace" },
+    check("commit_identity", "unknown", "laptop's node is not linked to the workspace"),
   ];
   await render(<MachinePage machineId="builder-1" />);
   expect(reruns()).toHaveLength(1);
@@ -415,9 +415,9 @@ it("gives each fix as the command to run on the machine, with Copy", async () =>
 it("gives a fix that runs on the hub as the command to run on the hub's machine, not the machine's", async () => {
   checks = LOGGED_OUT.map((c) =>
     c.id === "laptop/commit_identity"
-      ? check("commit_identity", "warn", "Commits on laptop use ada@home.example; the hub's identity is 1+ada-lovelace@users.noreply.github.com.", {
+      ? check("commit_identity", "warn", "Commits on laptop use ada@home.example; the workspace's identity is 1+ada-lovelace@users.noreply.github.com.", {
           kind: "manual",
-          label: "Join laptop again: run this on the hub, then the line it prints on laptop; it carries the identity",
+          label: "Join laptop again: run this on the workspace, then the line it prints on laptop; it carries the identity",
           command: "fleetd pair --worker laptop",
           on: "hub",
         })
@@ -426,9 +426,9 @@ it("gives a fix that runs on the hub as the command to run on the hub's machine,
   await render(<MachinePage machineId="laptop" />);
   const identity = () => host.querySelector("[data-problem='commit_identity']");
   // Named once the hub has said which machine it runs on (machine_hosts, asked as the fix shows).
-  await vi.waitFor(() => expect(identity()?.getAttribute("data-fix")).toBe("devbox, the hub"));
-  expect(identity()?.textContent).toContain("Commits on laptop use ada@home.example; the hub's identity is 1+ada-lovelace@users.noreply.github.com");
-  expect(identity()?.textContent).toContain("Run on devbox, the hub:");
+  await vi.waitFor(() => expect(identity()?.getAttribute("data-fix")).toBe("devbox, the workspace"));
+  expect(identity()?.textContent).toContain("Commits on laptop use ada@home.example; the workspace's identity is 1+ada-lovelace@users.noreply.github.com");
+  expect(identity()?.textContent).toContain("Run on devbox, the workspace:");
   expect(identity()?.querySelector("button")?.previousElementSibling?.textContent).toBe("fleetd pair --worker laptop");
 });
 
@@ -544,7 +544,7 @@ it("holds what a machine is for, its agents and its screens on its page, under w
 
 it("says so when the hub has no such machine", async () => {
   await render(<MachinePage machineId="ghost" />);
-  expect(host.textContent).toContain("This hub has no such machine. It may have been removed.");
+  expect(host.textContent).toContain("This workspace has no such machine. It may have been removed.");
   expect(host.querySelector("[data-problem]")).toBeNull();
 });
 

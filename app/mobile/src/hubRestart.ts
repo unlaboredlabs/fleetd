@@ -4,10 +4,10 @@
 import type { HubError, HubRestartOutput, HubState } from "./desktop";
 import type { Restart } from "./store";
 
-export const RESTART_TITLE = "Restart the hub?";
+export const RESTART_TITLE = "Restart the workspace?";
 export const RESTART_NOTE = "It is back in about a second, and running agents carry on. A lead whose profile changed since it started comes back on the current one, with its chat, memory and open orders.";
 /** Under the row, always. */
-export const RESTART_FOOTER = "The hub is back in about a second. Agents carry on.";
+export const RESTART_FOOTER = "The workspace is back in about a second. Agents carry on.";
 
 /** How long a hub that took the restart may stay up before the row says it didn't restart. */
 export const RESTART_WAIT_MS = 20_000;
@@ -27,7 +27,7 @@ export const afterAnswer = (asked: number, out: { readonly ok: true; readonly ou
   if (out.ok) return { at: "restarting", asked, leads: out.output.leads };
   if (out.error.code === "disconnected") return { at: "restarting", asked, leads: 0 };
   // A hub from before the tool.
-  if (out.error.code === "not_found") return { at: "failed", message: "This hub runs a fleetd from before Restart Hub. Update fleetd on it first." };
+  if (out.error.code === "not_found") return { at: "failed", message: "This workspace runs a fleetd from before Restart Workspace. Update fleetd on it first." };
   return { at: "failed", message: `${sentence(out.error.message)}${out.error.fix === undefined ? "" : ` ${sentence(out.error.fix)}`}` };
 };
 
@@ -39,7 +39,7 @@ export const afterLink = (step: RestartStep, hub: HubState, restart: Restart | n
   if (step.at !== "restarting") return step;
   if (hub.phase === "live" && restart !== null && restart.t !== "down" && (restart.at ?? 0) >= step.asked) return { at: "done", leads: step.leads };
   const away = hub.phase !== "live" || (restart?.t === "down" && restart.since >= step.asked);
-  if (!away && now - step.asked >= RESTART_WAIT_MS) return { at: "failed", message: "The hub took the restart but is still up. Try again, or restart its service on the hub's machine." };
+  if (!away && now - step.asked >= RESTART_WAIT_MS) return { at: "failed", message: "The workspace took the restart but is still up. Try again, or run `fleetd workspace restart` on its machine." };
   return step;
 };
 

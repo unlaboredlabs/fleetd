@@ -8,7 +8,7 @@ import type { TaskKind } from "../../shared/contracts.ts";
  */
 export function resolveProfile(spawn: string | undefined, kind: TaskKind, allowed: string[]): string {
   const fallback = allowed[0];
-  if (fallback === undefined) throw new Error("the hub's profiles were not read");
+  if (fallback === undefined) throw new Error("the workspace's profiles were not read");
   if (kind === "review" || spawn === undefined) return fallback;
   if (allowed.includes(spawn)) return spawn;
   throw new Error(`this bot doesn't allow profile ${spawn}; it allows ${allowed.join(", ")}`);

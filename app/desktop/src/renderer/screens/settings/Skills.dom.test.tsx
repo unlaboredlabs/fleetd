@@ -130,9 +130,9 @@ it("shows a member a bot's skills and only names the hub-wide ones", async () =>
   // The hub-wide ones are a line, not rows: nothing to open, edit, update or delete.
   expect(rowNamed("pr-review")).toBeUndefined();
   expect(rowNamed("standup")).toBeUndefined();
-  const line = document.querySelector("[aria-label='Hub-wide skills']");
+  const line = document.querySelector("[aria-label='Workspace-wide skills']");
   expect(line?.textContent).toContain("pr-review, standup");
-  expect(texts()).not.toContain("Hub-wide skills in Bot defaults");
+  expect(texts()).not.toContain("Workspace-wide skills in Bot defaults");
   expect(texts()).not.toContain("Update");
   expect(document.body.textContent).not.toMatch(/Global/u);
 });
@@ -171,7 +171,7 @@ it("writes a member's install into the bot, never hub-wide", async () => {
 it("gives an admin on a bot's page only the way to Bot defaults", async () => {
   await render("settings", true);
   expect(rowNamed("pr-review")).toBeUndefined();
-  expect(texts()).toContain("Hub-wide skills in Bot defaults");
+  expect(texts()).toContain("Workspace-wide skills in Bot defaults");
 });
 
 it("keeps Every bot's skills from a member, and reads none of it", async () => {

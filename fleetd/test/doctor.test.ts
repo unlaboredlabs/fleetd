@@ -19,7 +19,7 @@ import { caller, testHub } from "./hub-helpers.ts";
 
 const NO_SETUP = { machines: {} };
 
-test("a fix says where its command runs, and the identity's runs on the hub", () => {
+test("a fix says where its command runs, and the identity's runs on the workspace's machine", () => {
   const config = {
     gitIdentity: { name: "ada", email: "1+ada@users.noreply.github.com" },
     machines: { "builder-1": { sshHost: "builder-1", local: false, platform: "linux" as const, uid: 1000 } },
@@ -215,11 +215,11 @@ test("the GitHub App check reads its installations and last Test", () => {
   expect(at(c.githubApp(app(false)))).toEqual([
     "hub/github_app",
     "warn",
-    'The hub\'s GitHub App "fleetd on devbox" isn\'t installed on any repository yet.',
+    'The workspace\'s GitHub App "fleetd on devbox" isn\'t installed on any repository yet.',
   ]);
   expect(c.githubApp(app(true, [false, "GitHub refused (401)."])).status).toBe("fail");
   expect(at(c.githubApp(app(true, [true, "It works."])))).toEqual(["hub/github_app", "ok", "It works."]);
-  expect(c.githubApp(app(true)).message).toBe('The hub\'s GitHub App "fleetd on devbox" is installed on acme.');
+  expect(c.githubApp(app(true)).message).toBe('The workspace\'s GitHub App "fleetd on devbox" is installed on acme.');
   expect(c.githubApp(app(false)).fix?.command).toBe("fleetd github-app test");
 });
 
@@ -259,11 +259,11 @@ test("the Claude checks read the key and the owner's subscription", () => {
   const at = (e: DoctorCheck) => [e.id, e.status, e.message];
   const machines = ["devbox", "buildbox"];
   const none: c.ClaudeSetupView = { owner: ["Sam Rivera", undefined], machines, configured: false };
-  expect(at(c.claudeKey(none))).toEqual(["hub/claude_key", "unknown", "The hub has no Claude API key."]);
+  expect(at(c.claudeKey(none))).toEqual(["hub/claude_key", "unknown", "The workspace has no Claude API key."]);
   expect(at(c.claudeOwner(none))).toEqual([
     "hub/claude_owner",
     "unknown",
-    "Sam Rivera, the hub's owner, has no Claude subscription connected.",
+    "Sam Rivera, the workspace's owner, has no Claude subscription connected.",
   ]);
   const api = (sealedOn: ClaudeSealedOn[], lastTest?: ClaudeTest) =>
     ({ endpoint: "https://gateway.devbox.example", sealedOn, updatedAt: "2026-10-27T09:00:00.000Z", ...(lastTest ? { lastTest } : {}) }) as c.ClaudeSetupView["hubApi"];
@@ -272,7 +272,7 @@ test("the Claude checks read the key and the owner's subscription", () => {
   const failed = c.claudeKey(withApi(api(both, tested(false))));
   expect(failed.status).toBe("fail");
   expect(failed.message).toBe(
-    "The hub's Claude API key (through https://gateway.devbox.example) failed its Test on devbox: Invalid API key · Fix external API key.",
+    "The workspace's Claude API key (through https://gateway.devbox.example) failed its Test on devbox: Invalid API key · Fix external API key.",
   );
   const partly = c.claudeKey(withApi(api([sealed("devbox")], tested(true))));
   expect(partly.status).toBe("warn");
@@ -395,7 +395,7 @@ test("disk, usage, recovery, unowned sessions and the Mac's own checks", () => {
   );
   const many = Array.from({ length: 7 }, (_, i) => ({ threadId: `t${i}`, title: `Session ${i}` }));
   expect(c.unownedSessions("devbox", false, many).message).toBe(
-    'devbox runs 7 sessions no agent or lead of this hub owns: "Session 0" (t0), "Session 1" (t1), "Session 2" (t2), "Session 3" (t3), "Session 4" (t4) and 2 more. Nothing watches or counts them.',
+    'devbox runs 7 sessions no agent or lead of this workspace owns: "Session 0" (t0), "Session 1" (t1), "Session 2" (t2), "Session 3" (t3), "Session 4" (t4) and 2 more. Nothing watches or counts them.',
   );
   expect(c.unownedSessions("devbox", true, many).status).toBe("unknown");
   const mac = c.macSetup("mac", false, {
@@ -412,7 +412,7 @@ test("disk, usage, recovery, unowned sessions and the Mac's own checks", () => {
   expect(long.message).toContain(`"${"x".repeat(59)}…" (t)`);
 });
 
-test("setup.json: absent is empty, invalid says why, and the hub's own address on loopback", () => {
+test("setup.json: absent is empty, invalid says why, and the workspace's own address on loopback", () => {
   const { hub, home, done } = testHub();
   try {
     expect(readHubSetup(home)).toEqual([{ machines: {} }, undefined]);
@@ -477,7 +477,7 @@ test("doctor_list runs every check once, then answers from the last run until re
   expect(ids).toContain("lab-b/online");
   // Machine checks follow the hub's, in machine id order.
   expect(ids.indexOf("devbox/online")).toBeLessThan(ids.indexOf("lab-b/online"));
-  expect(first.checks.find((x) => x.id === "hub/gh_auth")?.message).toBe("gh is logged in on the hub as ada.");
+  expect(first.checks.find((x) => x.id === "hub/gh_auth")?.message).toBe("gh is logged in on the workspace's machine as ada.");
   expect(first.checks.find((x) => x.id === "lab-b/commit_identity")?.message).toBe("lab-b is offline.");
   expect(first.checks.find((x) => x.id === "devbox/online")).toMatchObject({ checkedAt: "2026-11-08T10:00:00.000Z" });
   expect(first.next).toBe("Each failing check names the command that fixes it.");
@@ -541,7 +541,7 @@ test("doctor_fix answers with the command a person runs, and only for admins or 
   await expect(call("doctor_fix", { checkId: "hub/nothing" })).rejects.toMatchObject({ message: "No doctor check hub/nothing." });
 });
 
-test("a missing binary, a command's exit and a dead URL are what the hub checks read", async () => {
+test("a missing binary, a command's exit and a dead URL are what the workspace checks read", async () => {
   expect(await runCmd("fleetd-no-such-binary-xyz", [])).toEqual({ ran: false, error: "ENOENT" });
   const sh = await runCmd("sh", ["-c", "echo out; echo err >&2; exit 3"]);
   expect(sh).toEqual({ ran: true, exitCode: 3, stdout: "out\n", stderr: "err\n" });
@@ -554,7 +554,7 @@ test("a missing binary, a command's exit and a dead URL are what the hub checks 
   expect(await health(`http://127.0.0.1:${server.port}`)).toEqual({ ok: false, why: "ECONNREFUSED" });
 });
 
-test("a test hub whose doctor has no stand-ins never starts the real gh: its run fails at once (test/preload.ts)", async () => {
+test("a test workspace whose doctor has no stand-ins never starts the real gh: its run fails at once (test/preload.ts)", async () => {
   const t = testHub();
   cleanup = t.done;
   const d = doctor(t.hub);
@@ -562,7 +562,7 @@ test("a test hub whose doctor has no stand-ins never starts the real gh: its run
   await expect(d.list(false)).rejects.toThrow("a test started the real gh: give this hub's doctor stand-ins");
 });
 
-test("the hub's own sources read a fresh hub as nothing set up", async () => {
+test("the workspace's own sources read a fresh workspace as nothing set up", async () => {
   const t = testHub();
   cleanup = t.done;
   const s = hubSources(t.hub);
@@ -571,7 +571,7 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   expect(s.bases("lab-a")).toEqual([]);
   expect(s.sameComputer("lab-a")).toEqual([]);
   expect(s.claudeSetup()).toEqual({ configured: false, machines: [] });
-  expect(await s.probe("lab-a")).toEqual({ ok: false, why: "lab-a's node is not linked to the hub" });
+  expect(await s.probe("lab-a")).toEqual({ ok: false, why: "lab-a's node is not linked to the workspace" });
   expect(await s.runnerInfo("lab-a")).toBeUndefined();
   // The usage area's own view of the machine's breaker: closed on a hub with no limit hit.
   expect(await s.usageBreaker("lab-a")).toMatchObject({ state: "closed" });

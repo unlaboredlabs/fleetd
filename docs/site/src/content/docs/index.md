@@ -10,7 +10,7 @@ or fleetd's computers, and lands checked pull requests.
 
 ## Start here
 
-1. [Quick start](/docs/quick-start): set up a hub and send your first message.
+1. [Quick start](/docs/quick-start): set up a workspace and send your first message.
 2. [Install](/docs/install): what the installer puts where, and its options.
 3. [How fleetd works](/docs/how-fleetd-works): the parts, and how work goes from a chat to a merge.
 

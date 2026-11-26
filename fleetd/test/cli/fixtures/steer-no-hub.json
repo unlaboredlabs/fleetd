@@ -1,5 +1,5 @@
 {
   "code": 4,
   "stdout": "",
-  "stderr": "fleetd steer: no hub is set up on this machine ($HOME/hub); pass --hub <url>\n"
+  "stderr": "fleetd steer: no workspace is set up on this machine ($HOME/hub); pass --workspace <url>\n"
 }

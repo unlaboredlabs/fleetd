@@ -155,7 +155,7 @@ async function writeTable(conn: Database, tar: TarWriter, name: string, s: Seali
     await put(writer.add(row));
   }
   await put(writer.end());
-  if (unopened > 0) skipped.push(`${plural(unopened, "row")} of ${name}: this hub's keys don't open ${unopened === 1 ? "its secret" : "their secrets"}`);
+  if (unopened > 0) skipped.push(`${plural(unopened, "row")} of ${name}: this workspace's keys don't open ${unopened === 1 ? "its secret" : "their secrets"}`);
   const sequence = conn.query<{ seq: number }, [string]>("SELECT seq FROM sqlite_sequence WHERE name = ?").get(name)?.seq;
   return { name, columns, rows, parts, ...(sequence === undefined ? {} : { sequence }) };
 }
@@ -219,7 +219,7 @@ export async function exportHub(o: ExportOptions): Promise<ExportSummary> {
     const known = new Set(MIGRATIONS.map((m) => m.name));
     const newer = [...present].filter((t) => !fateOf(t)).concat([...ran.keys()].filter((m) => !known.has(m)));
     if (newer.length > 0) {
-      throw new TransferError("newer", `A newer fleetd wrote this hub's database (${newer[0]} is new to this one). Update fleetd (fleetd update), then export again.`);
+      throw new TransferError("newer", `A newer fleetd wrote this workspace's database (${newer[0]} is new to this one). Update fleetd (fleetd update), then export again.`);
     }
     const headerBytes = jsonBytes(header);
     const headerPart = { path: HEADER_PATH, ...(await tar.entry(HEADER_PATH, headerBytes.length, headerBytes)) };
@@ -275,7 +275,7 @@ export async function exportHub(o: ExportOptions): Promise<ExportSummary> {
         throw e;
       }
     }
-    if (missing > 0) skipped.push(`${plural(missing, "file")} of the ${name} that the hub's home no longer has`);
+    if (missing > 0) skipped.push(`${plural(missing, "file")} of the ${name} that the workspace's home no longer has`);
     files.push({ area: name, files: out });
   };
   await area("attachments", attachments);

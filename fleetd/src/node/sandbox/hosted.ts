@@ -77,9 +77,9 @@ export class Sandboxes {
   /** `node_action` sandbox_check: the provider's list of fleetd's sandboxes with the key the hub sealed to this node. */
   async check(frame: NodeAction): Promise<NodeActionResult> {
     const no = (reason: KnownSandboxCheckReason, message: string): NodeActionResult => ({ id: frame.id, ok: false, reason, message: message.slice(0, 500) });
-    if (!frame.sandbox) return no("failed", "the hub sent no key to test");
+    if (!frame.sandbox) return no("failed", "the workspace sent no key to test");
     const plain = this.box.open(new Uint8Array(Buffer.from(frame.sandbox, "base64")));
-    if (!plain) return no("failed", "the key the hub sent didn't open on this machine");
+    if (!plain) return no("failed", "the key the workspace sent didn't open on this machine");
     let parsed: { provider?: unknown; key?: unknown; domain?: unknown };
     try {
       parsed = JSON.parse(new TextDecoder().decode(plain)) as typeof parsed;
@@ -90,7 +90,7 @@ export class Sandboxes {
     }
     const id = String(parsed.provider ?? "");
     const key = typeof parsed.key === "string" ? parsed.key : "";
-    if (!isProvider(id) || key === "") return no("failed", "the hub sent no provider and key to test");
+    if (!isProvider(id) || key === "") return no("failed", "the workspace sent no provider and key to test");
     const domain = typeof parsed.domain === "string" && parsed.domain !== "" ? parsed.domain : undefined;
     const signal = AbortSignal.timeout(CHECK_WAIT);
     try {

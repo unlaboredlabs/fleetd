@@ -175,17 +175,17 @@ async function until(k: Kit, ok: (m: HubMove) => boolean, what = "the move"): Pr
 
 const ended = (m: HubMove) => m.phase === "done" || m.phase === "failed";
 
-test("a move pauses the hub at once, uploads its export in pieces under a passphrase it made, and stays paused once done", async () => {
+test("a move pauses the workspace at once, uploads its export in pieces under a passphrase it made, and stays paused once done", async () => {
   const k = await kit();
   await k.o.call(k.o.device().caller, "vault_item_create", { kind: "login", label: "Shop", sites: ["shop.example"], fields: { username: "a", password: "b" } }).catch(() => undefined);
   const first = start(k);
   expect(first.phase).toBe("packing");
   expect(first.paused?.team).toBe("acme");
-  expect(mover(k.o.hub).hold()).toBe("this hub is moving to fleetd cloud (acme)");
+  expect(mover(k.o.hub).hold()).toBe("this workspace is moving to fleetd cloud (acme)");
   const done = await until(k, ended);
   expect(done.phase).toBe("done");
   expect(done.paused).toBeDefined();
-  expect(mover(k.o.hub).hold()).toBe("this hub moved to fleetd cloud (acme)");
+  expect(mover(k.o.hub).hold()).toBe("this workspace moved to fleetd cloud (acme)");
   // Every call carried the owner's key; the passphrase went in the start's header only, and opens the export's secrets.
   expect(k.cloud.c.auth.every((a) => a === `Bearer ${KEY}`)).toBe(true);
   expect(k.cloud.c.secretsOpened).toBe(true);
@@ -203,8 +203,8 @@ test("Undo lifts the pause: leads, agents and automations run here again", async
   start(k);
   await until(k, ended);
   const hooks = leadWiring(k.o.hub).hooks;
-  expect(hooks.moved?.()).toBe("this hub moved to fleetd cloud (acme)");
-  expect(hooks.usageHold?.({ machineId: "devbox", threadId: "t" })).toBe("this hub moved to fleetd cloud (acme)");
+  expect(hooks.moved?.()).toBe("this workspace moved to fleetd cloud (acme)");
+  expect(hooks.usageHold?.({ machineId: "devbox", threadId: "t" })).toBe("this workspace moved to fleetd cloud (acme)");
   let cleared = false;
   void hooks.whenClear?.({ machineId: "devbox", threadId: "t" }).then(() => (cleared = true));
   await Bun.sleep(5);
@@ -217,7 +217,7 @@ test("Undo lifts the pause: leads, agents and automations run here again", async
   expect(hooks.moved?.()).toBeUndefined();
 });
 
-test("a moved hub's automations skip their runs, saying why", async () => {
+test("a moved workspace's automations skip their runs, saying why", async () => {
   const k = await kit();
   store(k.o.hub).projectsUpsertMany(PROJECT.machineId, [{ projectId: PROJECT.projectId, title: "Shop", workspaceRoot: "/w/shop", lastActivityAt: "2026-10-17T10:00:00Z", repos: [] } as never]);
   const [a] = automations(k.o.hub).create({ projectRef: PROJECT, name: "nightly", prompt: "check", webhook: true, by: "human" } as never);
@@ -225,7 +225,7 @@ test("a moved hub's automations skip their runs, saying why", async () => {
   await until(k, ended);
   const run = await automations(k.o.hub).run(a.automationId, { kind: "webhook", payload: "x" });
   expect(run.state).toBe("skipped");
-  expect(run.why).toBe("this hub moved to fleetd cloud (acme)");
+  expect(run.why).toBe("this workspace moved to fleetd cloud (acme)");
 });
 
 test("a cut mid-upload is waited out and the same piece is sent again", async () => {
@@ -265,7 +265,7 @@ async function stops(setup: (k: Kit) => void, reason: string) {
   return { k, m };
 }
 
-test("a cut longer than the move waits out stops it, the upload given up and the hub as it was", async () => {
+test("a cut longer than the move waits out stops it, the upload given up and the workspace as it was", async () => {
   const { k, m } = await stops((k) => (k.cloud.c.cut = "PUT"), "offline");
   expect(m.failure?.fix).toContain("internet connection");
   k.cloud.c.cut = undefined;
@@ -278,17 +278,17 @@ test("a team that already has data refuses the move: it says to move into a new 
     (k) => k.cloud.c.once.push(["POST /transfer/v1/imports", { status: 409, body: { code: "conflict", reason: "not_empty", message: "This team already has data.", fix: "Import into a new team." } }]),
     "not_empty",
   );
-  expect(m.failure?.message).toBe("acme already has bots or data, and a hub moves only into an empty team.");
+  expect(m.failure?.message).toBe("acme already has bots or data, and a workspace moves only into an empty team.");
   expect(k.cloud.c.pieces.size).toBe(0);
 });
 
-test("a hub too big for the team is refused before a piece goes up", async () => {
+test("a workspace too big for the team is refused before a piece goes up", async () => {
   const { k } = await stops((k) => (k.cloud.c.begin = { pieceBytes: 4096, maxBytes: 1000 }), "too_large");
   expect(k.cloud.c.calls.some((c) => c.startsWith("PUT"))).toBe(false);
   expect(k.cloud.c.dropped.length).toBe(1);
 });
 
-test("a cloud on an older fleetd than the hub is said before the upload", async () => {
+test("a cloud on an older fleetd than the workspace is said before the upload", async () => {
   const { m, k } = await stops((k) => (k.cloud.c.begin = { pieceBytes: 4096, migrations: MIGRATIONS.slice(0, 3).map((x) => x.name) }), "newer");
   expect(m.failure?.fix).toContain("Try again later");
   expect(k.cloud.c.calls.some((c) => c.startsWith("PUT"))).toBe(false);
@@ -351,7 +351,7 @@ test("Stop before the cloud loads it ends the upload: nothing changed on either 
   expect(m.paused).toBeUndefined();
 });
 
-test("only a person with Admin everywhere moves the hub", async () => {
+test("only a person with Admin everywhere moves the workspace", async () => {
   const k = await kit();
   const member = k.o.device(k.o.owner.personId, "phone", [{ role: "operate", machines: "*" }]);
   await expect(k.o.call(member.caller, "hub_move_start", { url: TEAM, key: KEY, team: "acme" })).rejects.toThrow("forbidden");
@@ -406,7 +406,7 @@ test("a node too old to rejoin by itself is updated first, and says so plainly",
 test("a hand-off the node refuses is said and tried again with a fresh code", async () => {
   const k = await kit({ machines: ["devbox"] });
   let n = 0;
-  k.nodeAnswer = () => (++n === 1 ? { ok: false, message: "the new hub refused it: that code ran out" } : { ok: true, message: "enrolled" });
+  k.nodeAnswer = () => (++n === 1 ? { ok: false, message: "the new workspace refused it: that code ran out" } : { ok: true, message: "enrolled" });
   k.cloud.c.outcome = { state: "done", summary: { machines: [{ machineId: "devbox", name: "devbox" }] } };
   start(k);
   await until(k, (m) => m.machines[0]?.state === "rejoining" && k.sent.length === 2, "the second hand-off");

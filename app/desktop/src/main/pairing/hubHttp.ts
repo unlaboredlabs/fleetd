@@ -14,7 +14,7 @@ const HubFailure = z.object({ code: z.string(), message: z.string().min(1), fix:
 
 const Healthz = z.object({ ok: z.literal(true), version: z.string(), protocol: z.int() });
 
-const CHECK_ADDRESS = `Check the address is your fleetd hub's, e.g. ${LOCAL_HUB}.`;
+const CHECK_ADDRESS = `Check the address is your fleetd workspace's, e.g. ${LOCAL_HUB}.`;
 
 /** Network-level failures in words, with what to check. */
 const unreachable = (origin: string, error: unknown): PairFailure => {
@@ -22,7 +22,7 @@ const unreachable = (origin: string, error: unknown): PairFailure => {
   return {
     code: "",
     message: timedOut ? `${origin} didn't answer within ${PAIR_TIMEOUT_MS / 1000} s.` : `Can't reach ${origin}.`,
-    fix: "Check the hub is running (`fleetd doctor` on the hub) and that this address is reachable from this computer.",
+    fix: "Check the workspace is running (`fleetd doctor` on the workspace) and that this address is reachable from this computer.",
   };
 };
 
@@ -72,7 +72,7 @@ export const redeem = async (
     const paired = Paired.safeParse(body);
     return paired.success
       ? { ok: true, paired: paired.data }
-      : { ok: false, failure: { code: "", message: `${origin} answered, but not like a fleetd hub.`, fix: CHECK_ADDRESS } };
+      : { ok: false, failure: { code: "", message: `${origin} answered, but not like a fleetd workspace.`, fix: CHECK_ADDRESS } };
   }
   const failure = HubFailure.safeParse(body);
   if (failure.success) {
@@ -86,7 +86,7 @@ export const redeem = async (
         ? {
             code: "",
             message: `${origin} doesn't take pairing codes.`,
-            fix: "If this is your hub, update it (`fleetd update` on the hub), or use a key instead.",
+            fix: "If this is your workspace, update it (`fleetd update` on the workspace), or use a key instead.",
           }
         : { code: "", message: `${origin} answered HTTP ${response.status} to pairing.`, fix: CHECK_ADDRESS },
   };

@@ -125,7 +125,7 @@ test("a lead whose hosted sandbox doesn't come up says so in the chat, once a ru
   };
   await until(async () => (await lines()).length === 1 && timers.asked.length === 1);
   expect(await lines()).toEqual([
-    "The lead couldn't start: no sandbox came up for it at fleetd's computers. It tries again by itself in about 10 minutes, and your message is kept for it. If it keeps failing, check fleetd's computers in Settings › Hub › Machines.",
+    "The lead couldn't start: no sandbox came up for it at fleetd's computers. It tries again by itself in about 10 minutes, and your message is kept for it. If it keeps failing, check fleetd's computers in Settings › Workspace › Machines.",
   ]);
   // In the person's words: no path, no git, no clock time.
   expect((await lines())[0]).not.toMatch(/\/|git|\d:\d\d/);
@@ -184,7 +184,7 @@ test("a lead's start again is bounded: three, at 10, 20 and 40 minutes, then the
   done();
 }, 30_000);
 
-test("after a hub restart, a lead's start again that was due keeps its time", async () => {
+test("after a workspace restart, a lead's start again that was due keeps its time", async () => {
   const timers = sleeps();
   const { hub, clock, call, done } = withFlow({ sleep: timers.sleep });
   await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
@@ -248,7 +248,7 @@ test("a lead whose Claude sign-in stopped working says so plainly, wakes nothing
   done();
 }, 30_000);
 
-test("a lead on the hub's API key whose key stopped working is told where an admin replaces it", async () => {
+test("a lead on the workspace's API key whose key stopped working is told where an admin replaces it", async () => {
   const { hub, clock, call, done } = withFlow();
   await call(human, "chat_send", { projectRef: PROJECT, text: "hello", clientRequestId: "c1" });
   accounts(hub).setThreadAccount(PROJECT.machineId, "lead-1", { kind: "hub" });
@@ -264,7 +264,7 @@ test("a lead on the hub's API key whose key stopped working is told where an adm
   const lines = async () =>
     (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system").map((m: { text: string }) => m.text);
   for (let i = 0; i < 200 && (await lines()).length === 0; i++) await Bun.sleep(10);
-  expect(await lines()).toEqual(["The hub's Claude API key stopped working for this bot: an admin replaces it in Settings › Hub › Setup › Claude. The lead carries on by itself once it is."]);
+  expect(await lines()).toEqual(["The workspace's Claude API key stopped working for this bot: an admin replaces it in Settings › Workspace › Setup › Claude. The lead carries on by itself once it is."]);
   done();
 }, 30_000);
 

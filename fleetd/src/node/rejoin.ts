@@ -17,9 +17,9 @@ export type RejoinAsk = { hub: string; code: string };
 export function readRejoin(raw: unknown, current: string): RejoinAsk | string {
   const r = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
   const { hub, code } = r;
-  if (typeof hub !== "string" || !/^(https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?|http:\/\/127\.0\.0\.1:\d{1,5})$/.test(hub)) return "the new hub's address isn't one";
+  if (typeof hub !== "string" || !/^(https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?|http:\/\/127\.0\.0\.1:\d{1,5})$/.test(hub)) return "the new workspace's address isn't one";
   if (typeof code !== "string" || !/^[A-Za-z0-9_-]{8,200}$/.test(code)) return "the code isn't one";
-  if (hub === current.replace(/\/+$/, "")) return "that is this machine's hub already";
+  if (hub === current.replace(/\/+$/, "")) return "that is this machine's workspace already";
   return { hub, code };
 }
 
@@ -62,8 +62,8 @@ export async function enrolAt(ask: RejoinAsk, p: EnrolPorts): Promise<{ ok: true
     // Welcomed is enrolled: the link is let go at once, not waited for.
     const end = await Promise.race([linked, welcome, timedOut]);
     if (welcomed) return { ok: true };
-    if (end === "timeout" || end === "welcomed") return { ok: false, message: "the new hub didn't answer within a minute" };
-    return { ok: false, message: end === undefined ? "the new hub closed the link" : `the new hub refused it: ${end.message.replace(/^hub refused this node: /, "")}` };
+    if (end === "timeout" || end === "welcomed") return { ok: false, message: "the new workspace didn't answer within a minute" };
+    return { ok: false, message: end === undefined ? "the new workspace closed the link" : `the new workspace refused it: ${end.message.replace(/^(hub|workspace) refused this node: /, "")}` };
   } finally {
     clearTimeout(timer);
     stop.abort();

@@ -27,7 +27,7 @@ export function restartLine(step: RestartStep): { tone: "quiet" | "success" | "d
       return null;
     case "asking":
     case "restarting":
-      return { tone: "quiet", text: "Restarting the hub…" };
+      return { tone: "quiet", text: "Restarting the workspace…" };
     case "done":
       return {
         tone: "success",
@@ -65,7 +65,7 @@ export function useHubRestart(): { step: RestartStep; restart: () => void } {
       return;
     }
     const late = setTimeout(() => {
-      if (!away.current) setStep({ at: "failed", message: "The hub took the restart but is still up.", fix: "Try again, or restart its service on the hub's machine." });
+      if (!away.current) setStep({ at: "failed", message: "The workspace took the restart but is still up.", fix: "Try again, or restart its service on the workspace's machine." });
     }, RESTART_WAIT_MS);
     return () => clearTimeout(late);
   }, [restarting, layer]);
@@ -78,7 +78,7 @@ export function useHubRestart(): { step: RestartStep; restart: () => void } {
       else if (cutOff(out.error)) {
         away.current = true;
         setStep({ at: "restarting", leads: 0 });
-      } else if (lacksTool(out.error)) setStep({ at: "failed", message: "This hub runs a fleetd from before Restart hub.", fix: "Update fleetd on it first." });
+      } else if (lacksTool(out.error)) setStep({ at: "failed", message: "This workspace runs a fleetd from before Restart workspace.", fix: "Update fleetd on it first." });
       else setStep({ at: "failed", message: out.error.message, fix: out.error.fix });
     });
   };

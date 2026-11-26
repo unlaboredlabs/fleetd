@@ -97,7 +97,7 @@ test.skipIf(!BIN || process.platform !== "linux")("an admin restarts the hub fro
   const answered = await asAdmin.callTool("hub_restart", {}, 10_000);
   expect(answered.isError, JSON.stringify(answered.body)).toBe(false);
   expect(answered.body).toMatchObject({ leads: 0 });
-  expect(answered.body.next).toContain("The hub restarts now");
+  expect(answered.body.next).toContain("The workspace restarts now");
 
   // Stopped by its service manager, it exits cleanly; nothing else of this test stops it.
   expect(await first.exited).toBe(0);

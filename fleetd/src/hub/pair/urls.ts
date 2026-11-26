@@ -71,8 +71,8 @@ export function phoneUrl(urls: Iterable<string>): string | undefined {
 
 /** What to do when the hub has no address `device` ("your phone", "the Mac") can reach, `then` once it has one. */
 export const loopbackOnlyFix = (device: string, then: string) =>
-  `Give the hub an address ${device} reaches, its tailnet or LAN address: on the hub, run \`fleetd init --listen ` +
-  `<ip>:<port> --url http://<name>:<port>\` (${settingsPath()} › Setup › Where the hub listens), then ${then}.`;
+  `Give the workspace an address ${device} reaches, its tailnet or LAN address: on the workspace's machine, run \`fleetd init --listen ` +
+  `<ip>:<port> --url http://<name>:<port>\` (${settingsPath()} › Setup › Where the workspace listens), then ${then}.`;
 
 export const phoneLoopbackFix = () => loopbackOnlyFix("your phone", "pair the phone again");
 
@@ -210,9 +210,9 @@ export async function phoneHubUrl(hub: Hub, appUrl: string | undefined): Promise
 export function workerReachNote(hub: string): string | undefined {
   if (phoneUrl([hub]) !== undefined) return undefined;
   return (
-    `The hub is only at ${hub}, which no other machine reaches, so only a node on the hub's own computer can ` +
-    "join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init " +
-    `--listen <ip>:<port> --url http://<name>:<port> (${settingsPath()} › Setup › Where the hub listens), then ` +
+    `The workspace is only at ${hub}, which no other machine reaches, so only a node on the workspace's own computer can ` +
+    "join it. For another machine, give the workspace its tailnet or LAN address: on the workspace's machine, run fleetd init " +
+    `--listen <ip>:<port> --url http://<name>:<port> (${settingsPath()} › Setup › Where the workspace listens), then ` +
     "try again."
   );
 }

@@ -40,7 +40,7 @@ type AccountFile = { value: string; endpoint?: string };
 export const accountKey = (account: ClaudeAccount) => (account.kind === "hub" ? "hub" : account.personId);
 const path = (home: string, account: ClaudeAccount) => join(home, DIR, `${accountKey(account)}.json`);
 /** "the hub's API key", "p_abcdefgh's subscription": what errors name. */
-const shown = (account: ClaudeAccount) => (account.kind === "hub" ? "the hub's API key" : `${account.personId}'s subscription`);
+const shown = (account: ClaudeAccount) => (account.kind === "hub" ? "the workspace's API key" : `${account.personId}'s subscription`);
 const accountVar = (account: ClaudeAccount) => (account.kind === "hub" ? API_KEY_ENV : OAUTH_TOKEN_ENV);
 
 const read = (home: string, account: ClaudeAccount): AccountFile | undefined => readSecret(path(home, account), shown(account));
@@ -67,7 +67,7 @@ function readSecret(file: string, what: string): AccountFile | undefined {
 /** Saves the account's secret (a new value, or a new endpoint for the one held), or forgets it with no `set`. The
  * fingerprint of the value held afterwards; none once forgotten. */
 export function applyAccount(home: string, account: ClaudeAccount, set: ClaudeSecretSet | undefined, boxKey: NodeBoxKey | undefined): string | undefined {
-  if (set?.endpoint !== undefined && account.kind !== "hub") throw new Error("only the hub's API key takes an endpoint");
+  if (set?.endpoint !== undefined && account.kind !== "hub") throw new Error("only the workspace's API key takes an endpoint");
   return applySecret(path(home, account), shown(account), set, boxKey);
 }
 
@@ -193,7 +193,7 @@ export function accountSettingsEnv(accountVars: Vars): Env {
  * with the key masked, when the node holds no key or the endpoint lists none (a gateway without the Models API). */
 export async function hubModels(home: string): Promise<ApiModel[]> {
   const file = read(home, { kind: "hub" });
-  if (!file) throw new Error("this machine holds no hub API key");
+  if (!file) throw new Error("this machine holds no workspace API key");
   const base = (file.endpoint ?? "https://api.anthropic.com").replace(/\/+$/, "");
   const masker = new Masker([[API_KEY_ENV, file.value]]);
   let response: Response;

@@ -160,7 +160,7 @@ const pickTab = async (set: string, name: string) => {
 it("has You and Bots for a member as one flat list, Bots listing the bots, each opening its four pages under tabs", async () => {
   await render("#/settings/general", false);
   // You, then Bots: All bots and each bot by name. No Hub group for a member.
-  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", "All bots", "docs", "storefront"]);
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Workspaces & devices", "All bots", "docs", "storefront"]);
   expect(groups()).toEqual(["You", "Bots"]);
   // Nothing to pick in the index.
   expect(nav()?.querySelector("[role='combobox'], select")).toBeNull();
@@ -195,7 +195,7 @@ it("has You and Bots for a member as one flat list, Bots listing the bots, each 
 it("says Bots isn't connected while the hub isn't live, rather than loading for good", async () => {
   await render("#/settings/projects", false, false);
   expect(screen()).toBe("settings.projects.list");
-  expect(host.textContent).toContain("Not connected. Connect to a hub to change its bots' settings.");
+  expect(host.textContent).toContain("Not connected. Connect to a workspace to change its bots' settings.");
   expect(host.textContent).not.toContain("Loading…");
 });
 
@@ -250,39 +250,39 @@ const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']"
 it("has the Hub group for an admin only, and Vault only on a hub with the vault", async () => {
   const bots = ["All bots", "docs", "storefront"];
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Providers", "Bot defaults", "Setup"]);
-  expect(groups()).toEqual(["You", "Bots", "Hub"]);
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Workspaces & devices", ...bots, "People", "Machines", "Providers", "Bot defaults", "Setup"]);
+  expect(groups()).toEqual(["You", "Bots", "Workspace"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Providers", "Bot defaults", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Workspaces & devices", ...bots, "People", "Machines", "Providers", "Bot defaults", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
-  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Workspaces & devices", ...bots]);
 });
 
 it("names the admin group Team on a fleetd cloud team, never Hub", async () => {
   await render("#/settings/general", true, true, ["vault"], true);
-  expect(groups()).toEqual(["You", "Bots", "Team"]);
+  expect(groups()).toEqual(["You", "Bots", "Workspace"]);
 });
 
 it("ends a fleetd cloud team's Team group with its owner's Delete team: one confirm, the name typed, the team's refusal shown", async () => {
   const deleteTeam = vi.fn((_hub: string, _name: string) =>
     Promise.resolve(
       deleteTeam.mock.calls.length === 1
-        ? { ok: false, failure: { code: "running", message: "An agent is running in this team.", fix: "Stop them, then delete the team." } }
+        ? { ok: false, failure: { code: "running", message: "An agent is running in this workspace.", fix: "Stop them, then delete the workspace." } }
         : { ok: true },
     ),
   );
   (window.fleetd as unknown as { cloud: unknown }).cloud = { deleteTeam, billing: () => new Promise(() => undefined) };
   await render("#/settings/general", true, true, [], true);
-  expect(rows().slice(-2)).toEqual(["Setup", "Delete team"]);
-  await click(button("Delete team", nav() as HTMLElement));
+  expect(rows().slice(-2)).toEqual(["Setup", "Delete workspace"]);
+  await click(button("Delete workspace", nav() as HTMLElement));
   // The confirm opens over the sheet, itself a dialog.
   const dialog = () => [...document.querySelectorAll<HTMLElement>("[role='dialog']")].find((d) => d.textContent.includes("Type acme to confirm")) ?? null;
   expect(dialog()?.textContent).toContain("Delete acme?");
-  const go = () => button("Delete team", dialog() as HTMLElement);
+  const go = () => button("Delete workspace", dialog() as HTMLElement);
   // Nothing is asked of the team until a name is typed; the team, not this app, says whether it is its name.
   expect(go().disabled).toBe(true);
   const type = async (text: string) => {
@@ -300,7 +300,7 @@ it("ends a fleetd cloud team's Team group with its owner's Delete team: one conf
   expect(go().disabled).toBe(false);
   await click(go());
   // The team's refusal, in its words, and the dialog stays.
-  expect(dialog()?.querySelector("[role='alert']")?.textContent).toBe("An agent is running in this team.Stop them, then delete the team.");
+  expect(dialog()?.querySelector("[role='alert']")?.textContent).toBe("An agent is running in this workspace.Stop them, then delete the workspace.");
   await click(go());
   expect(deleteTeam.mock.calls.map((c) => c[1])).toEqual([" Acme Inc ", " Acme Inc "]);
   expect(dialog()).toBeNull();
@@ -309,12 +309,12 @@ it("ends a fleetd cloud team's Team group with its owner's Delete team: one conf
 it("has no Delete team for an admin who isn't the owner, nor on a self-hosted hub", async () => {
   adminRole = "admin";
   await render("#/settings/general", true, true, [], true);
-  expect(rows()).not.toContain("Delete team");
+  expect(rows()).not.toContain("Delete workspace");
   act(() => root.unmount());
   root = createRoot(host);
   adminRole = "owner";
   await render("#/settings/general", true);
-  expect(rows()).not.toContain("Delete team");
+  expect(rows()).not.toContain("Delete workspace");
 });
 
 // Every link Settings ever had (the palette's, a chat's, a notification's, a bookmark): the page it opens, the part of
@@ -325,8 +325,8 @@ const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: strin
   ["#/settings/accounts", "settings.accounts", null, "Accounts"],
   ["#/settings/vault", "settings.vault", null, "Vault"],
   ["#/settings/your-memory", "settings.your-memory", null, "Memory"],
-  ["#/settings/devices", "settings.hubs", "settings.devices", "Hubs & devices"],
-  ["#/settings/hubs", "settings.hubs", null, "Hubs & devices"],
+  ["#/settings/devices", "settings.hubs", "settings.devices", "Workspaces & devices"],
+  ["#/settings/hubs", "settings.hubs", null, "Workspaces & devices"],
   ["#/settings/projects", "settings.projects.list", null, "All bots"],
   ["#/settings/agents?for=devbox/docs", "settings.agents", null, "docs"],
   ["#/settings/instructions?for=devbox/docs", "settings.instructions", null, "docs"],
@@ -364,7 +364,7 @@ it("lands a Billing link on a self-hosted hub on People, and lists no Billing ro
   await render("#/settings/hub/billing", true, true, ["vault"]);
   expect(screen()).toBe("settings.hub.people");
   expect(window.location.hash).toBe("#/settings/hub/people");
-  expect(host.textContent).not.toContain("Billing is for fleetd cloud teams.");
+  expect(host.textContent).not.toContain("Billing is for fleetd cloud workspaces.");
   expect([...host.querySelectorAll("nav button")].some((b) => b.textContent === "Billing")).toBe(false);
 });
 

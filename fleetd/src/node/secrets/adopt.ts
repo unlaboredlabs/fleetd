@@ -43,7 +43,7 @@ const sorted = <T>(vars: Record<string, T> | undefined): [string, T][] => Object
 /** Everything the node holds for the vault, each value sealed to `to` (the hub's box public key, base64). */
 export function adopt(ctx: Pick<SecretsContext, "home" | "roots" | "machineId">, to: string): { vars: VaultAdoptVar[]; sinks: VaultAdoptSink[] } {
   const hub = Buffer.from(to, "base64");
-  if (hub.length !== 32) throw new Error("the hub's box key is not 32 bytes");
+  if (hub.length !== 32) throw new Error("the workspace's box key is not 32 bytes");
   const sealed = (value: string) => {
     const bytes = Buffer.from(value, "utf8");
     try {

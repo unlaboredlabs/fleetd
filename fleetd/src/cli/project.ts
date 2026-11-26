@@ -23,7 +23,7 @@ const SPEC = {
     "use-existing": "bool",
     copy: "bool",
     yes: "bool",
-    hub: "str",
+    workspace: "str",
     "max-agents": "str",
     "pause-extras": "bool",
     "fleet-cap": "str",
@@ -203,11 +203,11 @@ export async function projectCommand(argv: string[]): Promise<number> {
       } catch (error) {
         return out.fail(new Stop(3, `cannot read --key-file: ${ioMessage(error)}`));
       }
-      client = await connectWith(home, v.str("hub"), "fleetd-project", key);
+      client = await connectWith(home, v.str("workspace"), "fleetd-project", key);
     } else if (keyFile !== undefined) {
       return usage("--key-file is for project stop, project profile and project set --merges or --merge-mode");
     } else {
-      client = await connectTo(home, v.str("hub"), "fleetd-project");
+      client = await connectTo(home, v.str("workspace"), "fleetd-project");
     }
   } catch (f) {
     if (isFailure(f)) return out.fail(new Stop(4, f.message, f.fix));
@@ -595,7 +595,7 @@ function rolesLine(machine: any): string {
 
 export async function machineSetCommand(argv: string[]): Promise<number> {
   const v = parse(argv, {
-    options: { "max-agents": "str", roles: "str", "max-sessions": "str", hub: "str" },
+    options: { "max-agents": "str", roles: "str", "max-sessions": "str", workspace: "str" },
     positionals: true,
   });
   if (v instanceof ArgError) return machineUsage(v.message);
@@ -628,7 +628,7 @@ export async function machineSetCommand(argv: string[]): Promise<number> {
   const out = new Out(isTty());
   let client;
   try {
-    client = await connectTo(home, v.str("hub"), "fleetd-machine");
+    client = await connectTo(home, v.str("workspace"), "fleetd-machine");
   } catch (f) {
     if (isFailure(f)) return out.fail(new Stop(4, f.message, f.fix));
     throw f;

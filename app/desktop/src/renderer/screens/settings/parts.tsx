@@ -16,7 +16,7 @@ import g from "./groups.module.css";
 export const useProjects = (): ReadonlyArray<ProjectSummary> | undefined => useData(selectProjects);
 
 export function scopeName(scope: Scope, projects: ReadonlyArray<ProjectSummary> | undefined): string {
-  if (scope.kind === "hub") return "Hub-wide";
+  if (scope.kind === "hub") return "Workspace-wide";
   const p = projects?.find((x) => x.machineId === scope.ref.machineId && x.projectId === scope.ref.projectId);
   return p?.title ?? scope.ref.projectId;
 }

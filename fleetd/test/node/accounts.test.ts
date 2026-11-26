@@ -110,7 +110,7 @@ test("an account's Test runs claude on that account alone, and masks what claude
   expect(() => tried(false, "", "boom")).toThrow("boom");
 });
 
-test("the hub's key keeps its endpoint, lists the gateway's models, and reseals to another machine", async () => {
+test("the workspace's key keeps its endpoint, lists the gateway's models, and reseals to another machine", async () => {
   let seen = null as string | null;
   const api = Bun.serve({
     port: 0,
@@ -120,7 +120,7 @@ test("the hub's key keeps its endpoint, lists the gateway's models, and reseals 
     },
   });
   try {
-    expect((await ok("claude_models")).error).toBe("this machine holds no hub API key");
+    expect((await ok("claude_models")).error).toBe("this machine holds no workspace API key");
     await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub") } });
     const endpoint = `http://127.0.0.1:${api.port}/`;
     const kept = await ok("claude_account_secret", { account: { kind: "hub" }, set: { endpoint } });
@@ -138,7 +138,7 @@ test("the hub's key keeps its endpoint, lists the gateway's models, and reseals 
   expect(existsSync(join(nodeHome, "claude-accounts", "hub.json"))).toBe(false);
 });
 
-test("the hub key's Test says plainly when its endpoint doesn't answer, by host, before claude runs", async () => {
+test("the workspace key's Test says plainly when its endpoint doesn't answer, by host, before claude runs", async () => {
   const gone = Bun.serve({ port: 0, fetch: () => new Response("") });
   const port = gone.port;
   gone.stop(true);
@@ -180,7 +180,7 @@ async function onRunner(dial: NodeTailnet["dial"] | undefined, fn: () => Promise
   }
 }
 
-test("on the hub's runner, a tailnet endpoint's Test goes through the team's gateway, its key with it", async () => {
+test("on the workspace's runner, a tailnet endpoint's Test goes through the team's gateway, its key with it", async () => {
   let key = null as string | null;
   const api = Bun.serve({
     port: 0,
@@ -213,7 +213,7 @@ test("on the hub's runner, a tailnet endpoint's Test goes through the team's gat
   }
 });
 
-test("on the hub's runner, an endpoint the Test doesn't reach says what to do", async () => {
+test("on the workspace's runner, an endpoint the Test doesn't reach says what to do", async () => {
   // Through the gateway: the tailnet's access rules.
   await onRunner(
     async () => {

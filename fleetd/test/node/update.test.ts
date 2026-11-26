@@ -90,7 +90,7 @@ test("a node told another flavour refuses, and changes nothing", async () => {
     expect(await stage({ version: "1.0.0", channel: "stable" }, p, feed, previous)).toEqual({ kind: "current" });
     expect(await stage({ version: "1.0.0", channel: "stable", flavour: "bun" }, p, feed, previous)).toEqual({ kind: "current" });
     const refused = await stage({ version: "1.1.0", channel: "stable", flavour: "rust" }, p, feed, previous).catch((e: { stage: string; message: string }) => e);
-    expect(refused).toMatchObject({ stage: "install", message: "the hub asked for fleetd's rust build, which releases no longer have; this node stays on bun" });
+    expect(refused).toMatchObject({ stage: "install", message: "the workspace asked for fleetd's rust build, which releases no longer have; this node stays on bun" });
     expect(readFileSync(p.exe, "utf8")).toBe("old build");
   } finally {
     home.done();
@@ -107,7 +107,7 @@ test("an update that can't run says why, and changes nothing", async () => {
     expect(await why(stage({ version: "1.1.0", channel: "stable" }, place(home.dir, { services: [] }), feed, previous))).toContain("can't restart itself");
     expect(await why(stage({ version: "1.1.0", channel: "stable" }, place(home.dir, { releaseBuild: false }), feed, previous))).toContain("runs a local build");
     expect(await why(stage({ version: "1.2.0", channel: "stable" }, place(home.dir), feed, previous))).toBe(
-      "the channel's newest build is now 1.1.0, not the hub's 1.2.0: update again",
+      "the channel's newest build is now 1.1.0, not the workspace's 1.2.0: update again",
     );
     expect(readFileSync(place(home.dir).exe, "utf8")).toBe("old build");
     // A verdict the watcher wrote while this node still runs: the restart was refused.

@@ -170,8 +170,8 @@ export function orderText(a: Automation, run: AutomationRun, payload: string | u
     else if (s && due !== undefined) when = `its schedule (${s.cron ?? ""}), due ${local(due, s)}`;
     else when = "its schedule";
     if (run.lateMin !== undefined && once) {
-      how = `${when}. It comes ${run.lateMin} min late, since the hub was down or its last run was still open then: say that it comes late`;
-    } else if (run.lateMin !== undefined) how = `${when}; the hub was down then, so this is that run ${run.lateMin} min late, once`;
+      how = `${when}. It comes ${run.lateMin} min late, since the workspace was down or its last run was still open then: say that it comes late`;
+    } else if (run.lateMin !== undefined) how = `${when}; the workspace was down then, so this is that run ${run.lateMin} min late, once`;
     else how = when;
   } else how = run.trigger === "webhook" ? "its webhook" : "Run now";
   let text =

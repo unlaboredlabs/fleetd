@@ -4,11 +4,11 @@ description: Plans, credits and computer time for fleetd's computers on fleetd c
 ---
 
 On fleetd cloud, you pay only for agents that run on fleetd's computers. Agents on your own machines are free, and a
-hub you run yourself has no billing at all.
+workspace you run yourself has no billing at all.
 
 ## Where {#where}
 
-Owners and admins open **Settings › Team › Billing** in the desktop, web or phone app. It shows:
+Owners and admins open **Settings › Workspace › Billing** in the desktop, web or phone app. It shows:
 
 - **Plan**: your plan, with **Pick a plan** or **Change plan**.
 - **Credits**: what's left, with **Add credits**.

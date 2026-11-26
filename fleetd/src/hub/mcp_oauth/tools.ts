@@ -53,7 +53,7 @@ export function register(tools: Registry): void {
         if (text === undefined) {
           throw new ToolError(
             "invalid",
-            "The client secret wasn't sealed to this hub's key.",
+            "The client secret wasn't sealed to this workspace's key.",
             "Type it again: the app seals it to the key mcp_oauth_start gives.",
           );
         }
@@ -83,7 +83,7 @@ export function register(tools: Registry): void {
     try {
       boxPubKey = hubBoxPublic(hub);
     } catch (e) {
-      throw new ToolError("failed", `The hub's box key can't be read: ${(e as Error).message}.`);
+      throw new ToolError("failed", `The workspace's box key can't be read: ${(e as Error).message}.`);
     }
     return {
       redirectUri: redirect,
@@ -110,7 +110,7 @@ export async function redirectUri(hub: Hub, appUrl: string | undefined): Promise
     parsed = undefined;
   }
   if (!parsed || !["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) {
-    throw new ToolError("invalid", `${base} isn't the hub's address.`, "Pass hubUrl as the app reaches the hub: http://<host>:<port>.");
+    throw new ToolError("invalid", `${base} isn't the workspace's address.`, "Pass hubUrl as the app reaches the workspace: http://<host>:<port>.");
   }
   return `${parsed.toString().replace(/\/+$/, "")}/oauth/callback`;
 }

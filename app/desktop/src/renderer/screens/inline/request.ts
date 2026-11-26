@@ -40,7 +40,7 @@ export type SecretTarget =
   | { readonly ok: false; readonly offline: true };
 
 /** The one line an open item says while there is no fresh connection: nothing can be answered now. */
-export const OFFLINE_LINE = { secret: "Offline: save it once the hub is back.", approval: "Offline: approve once the hub is back." } as const;
+export const OFFLINE_LINE = { secret: "Offline: save it once the workspace is back.", approval: "Offline: approve once the workspace is back." } as const;
 
 /** Why an open approval can't be answered now, or undefined when it can. */
 export const approvalOffline = (state: string, live: boolean): string | undefined =>

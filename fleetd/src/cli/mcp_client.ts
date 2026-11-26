@@ -15,7 +15,7 @@ export class McpError extends Error {
     super(message);
   }
   static unauthorized() {
-    return new McpError("the hub refused the key (401)", true);
+    return new McpError("the workspace refused the key (401)", true);
   }
 }
 

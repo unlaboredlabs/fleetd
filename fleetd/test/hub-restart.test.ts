@@ -105,7 +105,7 @@ const until = async (what: () => boolean) => {
 
 const settle = () => Bun.sleep(30);
 
-test("only a person's key with Admin on every machine restarts the hub", async () => {
+test("only a person's key with Admin on every machine restarts the workspace", async () => {
   const t = testHub();
   cleanups.push(t.done);
   const { restarts, restart } = hubWithService(t);
@@ -113,15 +113,15 @@ test("only a person's key with Admin on every machine restarts the hub", async (
     expect(await restart(refused)).toMatchObject({ code: "forbidden" });
   }
   expect(restarts).toEqual([]);
-  expect(await restart()).toEqual({ leads: 0, next: "The hub restarts now: the connection drops for about a second. Agents carry on." });
+  expect(await restart()).toEqual({ leads: 0, next: "The workspace restarts now: the connection drops for about a second. Agents carry on." });
   expect(restarts).toEqual([SERVICE]);
 });
 
-test("a hub that doesn't run as its service, or whose service manager refuses, says so and marks no lead", async () => {
+test("a workspace that doesn't run as its service, or whose service manager refuses, says so and marks no lead", async () => {
   const t = await withLead();
   switchModel(t.hub);
   Object.assign(restartPorts(t.hub), { service: () => undefined });
-  expect(await t.restart()).toMatchObject({ code: "failed", message: "The hub doesn't run as the service `fleetd init` sets up, so it can't restart itself." });
+  expect(await t.restart()).toMatchObject({ code: "failed", message: "The workspace doesn't run as the service `fleetd init` sets up, so it can't restart itself." });
   Object.assign(restartPorts(t.hub), {
     service: () => SERVICE,
     restart: () => {
@@ -129,12 +129,12 @@ test("a hub that doesn't run as its service, or whose service manager refuses, s
     },
   });
   const refused = await t.restart();
-  expect(refused).toMatchObject({ code: "failed", message: "The hub couldn't restart itself: systemd-run exited with exit status: 1." });
-  expect((refused as ToolError).fix).toContain("fleetd-hub");
+  expect(refused).toMatchObject({ code: "failed", message: "The workspace couldn't restart itself: systemd-run exited with exit status: 1." });
+  expect((refused as ToolError).fix).toBe("Run `fleetd workspace restart` on the workspace's machine.");
   expect(leads(t.hub).records.leadsSwitchDue()).toEqual([]);
 });
 
-test("a lead whose profile changed starts again on it once the hub is back; the hub going down starts nothing", async () => {
+test("a lead whose profile changed starts again on it once the workspace is back; the workspace going down starts nothing", async () => {
   const t = await withLead();
   const before = leads(t.hub).get(PROJECT)!;
   expect(leads(t.hub).profileChanged(PROJECT)).toBe(false);

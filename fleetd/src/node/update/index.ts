@@ -60,7 +60,7 @@ export function placeHere(home: string): Place {
  * build) is refused for good. */
 function target(update: NodeUpdate, p: Place): string {
   const flavour = update.flavour ?? p.flavour;
-  if (flavour !== p.flavour) throw new Failure("install", `the hub asked for fleetd's ${flavour} build, which releases no longer have; this node stays on ${p.flavour}`);
+  if (flavour !== p.flavour) throw new Failure("install", `the workspace asked for fleetd's ${flavour} build, which releases no longer have; this node stays on ${p.flavour}`);
   return p.asset;
 }
 
@@ -105,7 +105,7 @@ const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
 async function sumsOf(update: NodeUpdate, feed: Feed): Promise<Sums> {
   if (update.sha256 !== undefined && update.build !== undefined) {
     if (!Object.values(update.sha256).every((h) => typeof h === "string" && /^[0-9a-f]{64}$/.test(h))) {
-      throw new Failure("download", "the hub sent checksums that aren't SHA-256s");
+      throw new Failure("download", "the workspace sent checksums that aren't SHA-256s");
     }
     return Object.assign(new Map(Object.entries(update.sha256)), { pinned: true as const });
   }
@@ -118,7 +118,7 @@ async function releaseOf(to: string, feed: Feed): Promise<Sums> {
   if (r.cliVersion !== to)
     throw new Failure(
       "download",
-      `the channel's newest build is now ${r.cliVersion ? versionLabel(r.cliVersion) : "none"}, not the hub's ${versionLabel(to)}: update again`,
+      `the channel's newest build is now ${r.cliVersion ? versionLabel(r.cliVersion) : "none"}, not the workspace's ${versionLabel(to)}: update again`,
     );
   return r.sums;
 }
@@ -212,12 +212,12 @@ export type Watch = { answered: string; verdict: string };
 
 function feedOf(update: NodeUpdate): Feed {
   if (update.build !== undefined && update.sha256 !== undefined) {
-    if (!/^(?:\d+\.\d+\.\d+|\d{4}\.\d{1,2}\.\d{1,2}\.\d+)$/.test(update.build)) throw new Failure("download", "the hub named a build this fleetd can't read");
+    if (!/^(?:\d+\.\d+\.\d+|\d{4}\.\d{1,2}\.\d{1,2}\.\d+)$/.test(update.build)) throw new Failure("download", "the workspace named a build this fleetd can't read");
     return buildFeed(update.build);
   }
   // Edge goes out as `nightly`, its name before D203.
   const channel = update.channel === "nightly" || update.channel === "edge" ? "edge" : update.channel === "stable" ? "stable" : undefined;
-  if (!channel) throw new Failure("download", "the hub asked for a channel this fleetd doesn't know");
+  if (!channel) throw new Failure("download", "the workspace asked for a channel this fleetd doesn't know");
   return new HttpFeed(baseUrl(channel));
 }
 

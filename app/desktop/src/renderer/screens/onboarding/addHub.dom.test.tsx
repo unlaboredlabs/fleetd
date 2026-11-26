@@ -103,22 +103,22 @@ const type = (label: string, value: string) => {
 };
 
 it("Add a hub, while connected, opens the pairing form with a name and colour, and stays on it", async () => {
-  click("Add a hub");
+  click("Add a workspace");
   await settle();
   expect(window.location.hash).toBe("#/onboarding?add");
   expect(screen()).toBe("onboarding");
-  expect(host.querySelector("h1")?.textContent).toBe("Add a hub");
+  expect(host.querySelector("h1")?.textContent).toBe("Add a workspace");
   expect(host.textContent).toContain("Pairing code");
   expect(host.querySelector('[role="radiogroup"][aria-label="Colour"]')).not.toBeNull();
   expect(forget).not.toHaveBeenCalled();
 });
 
 it("pairs the new hub under the name and colour picked, keeping the one it has, then lists them", async () => {
-  click("Add a hub");
+  click("Add a workspace");
   await settle();
   type("Name", "  Acme  ");
   act(() => host.querySelector<HTMLButtonElement>('[aria-label="amber"]')?.click());
-  type("Hub address", "http://acme-hub:4790");
+  type("Workspace address", "http://acme-hub:4790");
   type("Pairing code", "ABCD2345");
   click("Connect");
   await settle();
@@ -129,18 +129,18 @@ it("pairs the new hub under the name and colour picked, keeping the one it has, 
 });
 
 it("asks for a name before it pairs: the label is the person's own, never a fixed choice", async () => {
-  click("Add a hub");
+  click("Add a workspace");
   await settle();
-  type("Hub address", "http://acme-hub:4790");
+  type("Workspace address", "http://acme-hub:4790");
   type("Pairing code", "ABCD2345");
   click("Connect");
   await settle();
   expect(redeem).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("Name the hub");
+  expect(host.textContent).toContain("Name the workspace");
 });
 
 it("Back to settings goes back to the hubs", async () => {
-  click("Add a hub");
+  click("Add a workspace");
   await settle();
   click("Back to settings");
   await settle();
@@ -151,10 +151,10 @@ it("Back to settings goes back to the hubs", async () => {
 it("refuses an empty code at once in a plain line, and never leaves the button on Connecting…", async () => {
   // Main's request check throws on an empty code: before, the form waited on it for good.
   redeem.mockImplementationOnce(() => Promise.reject(new Error("pair:redeem: invalid request.")));
-  click("Add a hub");
+  click("Add a workspace");
   await settle();
   type("Name", "Acme");
-  type("Hub address", "https://acme.fleetd.dev");
+  type("Workspace address", "https://acme.fleetd.dev");
   click("Connect");
   await settle();
   expect(redeem).not.toHaveBeenCalled();
@@ -164,10 +164,10 @@ it("refuses an empty code at once in a plain line, and never leaves the button o
 
 it("a request main throws on ends as a plain failure, with the button back on Connect", async () => {
   redeem.mockImplementationOnce(() => Promise.reject(new Error("pair:redeem: invalid request.")));
-  click("Add a hub");
+  click("Add a workspace");
   await settle();
   type("Name", "Acme");
-  type("Hub address", "https://acme.fleetd.dev");
+  type("Workspace address", "https://acme.fleetd.dev");
   type("Pairing code", "ABCD2345");
   click("Connect");
   await settle();

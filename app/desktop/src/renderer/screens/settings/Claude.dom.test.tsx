@@ -29,7 +29,7 @@ const sealedOn = [{ machineId: "devbox", fingerprint: "ab12cd34" }];
 const refused: PersonClaude = {
   person: bob,
   mayUseHubApi: false,
-  runsOn: { kind: "refused", message: "Connect your Claude to start this order.", fix: "Members may not use the hub's API on this hub: connect your subscription in Settings › Connections › Claude." },
+  runsOn: { kind: "refused", message: "Connect your Claude to start this order.", fix: "Members may not use the workspace's API on this workspace: connect your subscription in Settings › Connections › Claude." },
 };
 const connected: PersonClaude = {
   person: bob,
@@ -150,7 +150,7 @@ const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c
 it("asks someone with nothing to run on to connect, seals the pasted token through main, tests it, and never shows it again", async () => {
   await render(answer(refused));
   expect(host.textContent).toContain(CONNECT);
-  expect(host.textContent).toContain("Members may not use the hub's API on this hub");
+  expect(host.textContent).toContain("Members may not use the workspace's API on this workspace");
   // The hub's API isn't theirs to pick: no Runs on row with nothing to choose.
   expect(host.querySelector("[role='radio']")).toBeNull();
   expect(host.querySelector("[data-reveal='claude.choice'], section[aria-label='Runs on']")).toBeNull();

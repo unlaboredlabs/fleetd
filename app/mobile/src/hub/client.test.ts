@@ -86,7 +86,7 @@ describe("HubClient", () => {
     expect(hub.links).toHaveLength(2);
     hub.link.open();
     hub.link.close(4401, "revoked");
-    expect(states().at(-1)).toEqual({ phase: "refused", hub: HUB, message: "The hub refused the key (revoked)." });
+    expect(states().at(-1)).toEqual({ phase: "refused", hub: HUB, message: "The workspace refused the key (revoked)." });
     vi.advanceTimersByTime(60_000);
     expect(hub.links).toHaveLength(2);
   });
@@ -125,7 +125,7 @@ describe("HubClient", () => {
     expect(first.closed).toBe(false);
     vi.advanceTimersByTime(1);
     expect(first.closed).toBe(true);
-    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The hub stopped answering" });
+    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The workspace stopped answering" });
   });
 
   it("asks for a sign of life when a call alone on the link hears nothing back, and sends it again on a fresh link", async () => {
@@ -367,7 +367,7 @@ describe("HubClient", () => {
     client.start();
     hub.ready();
     hub.link.close(1006);
-    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The connection to the hub dropped" });
+    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The connection to the workspace dropped" });
     vi.advanceTimersByTime(backoff(0) * 1.25);
     hub.link.open();
     hub.link.close(1012, "service restart");
@@ -522,7 +522,7 @@ describe("compressed frames", () => {
     const first = hub.ready(["deflate"]);
     hub.link.binary(new Uint8Array([0xff, 0xff, 0xff, 0x00]));
     expect(first.closed).toBe(true);
-    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "A frame from the hub didn't inflate" });
+    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "A frame from the workspace didn't inflate" });
     vi.advanceTimersByTime(backoff(0));
     hub.link.open();
     expect(hub.sentOf("auth")).toEqual([{ t: "auth", key: "key_abc" }]);

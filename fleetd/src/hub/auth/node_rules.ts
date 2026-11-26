@@ -77,22 +77,22 @@ export function codeRefusal(row: { machine_id: string; expires_ms: number; used_
     const machine = row.machine_id;
     const why = `enrollment token is for machine ${machine}, not ${m}`;
     return refusal([
-      [why, `join as ${machine} (--machine-id ${machine}), or on the hub run fleetd pair --worker ${m} for a code for ${m}`],
+      [why, `join as ${machine} (--machine-id ${machine}), or on the workspace's machine run fleetd pair --worker ${m} for a code for ${m}`],
       [why, `join as ${machine} (--machine-id ${machine})`],
       [`the code is for ${machine}`, `--machine-id ${machine}`],
     ]);
   }
-  if (row?.machine_id === NAMELESS) return refusal([[why, "ask the hub for a new join line"]]);
+  if (row?.machine_id === NAMELESS) return refusal([[why, "ask the workspace's admin for a new join line"]]);
   return refusal([
-    [why, `on the hub, run fleetd pair --worker ${m} for a new code`],
-    [why, `fleetd pair --worker ${m} on the hub`],
+    [why, `on the workspace's machine, run fleetd pair --worker ${m} for a new code`],
+    [why, `fleetd pair --worker ${m} on the workspace's machine`],
   ]);
 }
 
 /** A node that asked to enroll as `hosted`, the id of the hosted sandboxes fleetd no longer runs (hosted_gone). */
 export const notHosted = () =>
   refusal([
-    ["hosted was the hub's hosted sandboxes, never a computer's id", "join under a name of its own (--machine-id)"],
+    ["hosted was the workspace's hosted sandboxes, never a computer's id", "join under a name of its own (--machine-id)"],
     ["hosted is no computer's id", "join under a name of its own"],
   ]);
 

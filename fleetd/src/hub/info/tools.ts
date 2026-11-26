@@ -23,7 +23,7 @@ export function register(tools: Registry): void {
     try {
       boxPubKey = boxPublic(hub);
     } catch (error) {
-      console.error("hub_info: the hub's box key:", error);
+      console.error("hub_info: the workspace's box key:", error);
     }
     return {
       admin: allowsEverywhere(caller, "admin"),
@@ -34,8 +34,8 @@ export function register(tools: Registry): void {
       ...(me === undefined ? {} : { me }),
       next:
         items.length === 0
-          ? "Nothing runs: restarting the hub now interrupts nothing."
-          : "Restarting now cuts each busy item off; it carries on by itself once the hub or node is back.",
+          ? "Nothing runs: restarting the workspace now interrupts nothing."
+          : "Restarting now cuts each busy item off; it carries on by itself once the workspace or node is back.",
       people: people(hub).count(),
       protocol: PROTOCOL_VERSION,
       ...(items.length > BUSY_MAX ? { truncated: true } : {}),

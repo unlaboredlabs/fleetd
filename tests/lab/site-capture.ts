@@ -41,7 +41,7 @@ const TAILNET = (() => {
 /** This machine as a reader may see it: its tailnet name and addresses as placeholders, the gh login as "demo". */
 const sanitizeSetup = (text: string) => {
   let out = text;
-  if (TAILNET?.name) out = out.replaceAll(TAILNET.name, "hub.your-tailnet.ts.net");
+  if (TAILNET?.name) out = out.replaceAll(TAILNET.name, "fleetd.your-tailnet.ts.net");
   for (const ip of TAILNET?.ips ?? []) out = out.replaceAll(ip, "<tailnet-ip>");
   out = out.replace(/\b(?!127\.0\.0\.1\b)\d{1,3}(?:\.\d{1,3}){3}\b/gu, "<lan-ip>");
   // How this machine's claude logs in (a token, a gateway, a proxy and where it is set) is the capturing machine's
@@ -176,7 +176,7 @@ function assertPublishable(name: string, text: string) {
     ["hostname", new RegExp(`\\b${host.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "iu")],
     ["fleetd key", /fld_[a-z2-7]{20,}/u],
     ...(GH_USER === undefined ? [] : [["GitHub login", GH_USER] as [string, string]]),
-    ["tailnet name", /\.ts\.net\b(?<!hub\.your-tailnet\.ts\.net)/u],
+    ["tailnet name", /\.ts\.net\b(?<!fleetd\.your-tailnet\.ts\.net)/u],
     ["non-loopback IPv4", /\b(?!127\.0\.0\.1\b)\d{1,3}(\.\d{1,3}){3}\b/u],
   ];
   for (const [what, needle] of leaks) {

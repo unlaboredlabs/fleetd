@@ -309,7 +309,7 @@ function MachineHolds(props: { note: string | null; link: { text: string; provid
 export function MachineCap({ machineId }: { machineId: string }) {
   const slots = useSlots();
   const live = useLive();
-  if (!live || !slots) return <GroupNote>{live ? "Loading…" : "Connect to a hub to see and change this."}</GroupNote>;
+  if (!live || !slots) return <GroupNote>{live ? "Loading…" : "Connect to a workspace to see and change this."}</GroupNote>;
   const m = machineAgents(slots).find((x) => x.machineId === machineId);
   if (m === undefined) return <GroupNote>It hasn&apos;t reported yet.</GroupNote>;
   return <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />;
@@ -363,7 +363,7 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
         <PageHead title="Agents" />
         {!live ? (
           <SettingsSection>
-            <GroupNote>Connect to a hub to see and change this.</GroupNote>
+            <GroupNote>Connect to a workspace to see and change this.</GroupNote>
           </SettingsSection>
         ) : ref === undefined || scope === null ? (
           <NoProject />

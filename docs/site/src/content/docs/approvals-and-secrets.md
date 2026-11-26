@@ -93,7 +93,7 @@ An agent can ask for a variable it needs. The card then says it's for that work 
 
 ## Secrets stay hidden {#masking}
 
-If an agent prints a secret, fleetd replaces it with `***NAME***` before the output leaves the machine. This covers command output, the agent's replies and its messages to the hub.
+If an agent prints a secret, fleetd replaces it with `***NAME***` before the output leaves the machine. This covers command output, the agent's replies and its messages to the workspace.
 
 Only exact matches are caught. Part of a key, or the key in another encoding, can slip through, so keep secrets out of output where you can.
 

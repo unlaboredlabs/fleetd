@@ -27,7 +27,7 @@ export const RUNNER_NAME = "Hosted sandboxes";
  * Why the runner's id takes no join code, no roles and no max of its own (W743), as machine_remove already refuses
  * it: it is the hub's, not a computer, and its provider's limit is how many run at once. `what` ends the sentence.
  */
-export const runnerRefused = (what: string) => `Hosted sandboxes are the hub's own, not a computer of the team's: ${what}`;
+export const runnerRefused = (what: string) => `Hosted sandboxes are the workspace's own, not a computer of the team's: ${what}`;
 
 /**
  * Every provider, in the placement order: the order agents go to the connected ones once a machine's own slots are
@@ -190,7 +190,7 @@ export function computerChoices(o: { providers: readonly SandboxProviderState[];
   const pick = o.pick;
   if (pick && !out.some((c) => c.kind === pick.kind && c.cpu === pick.cpu && c.memGb === pick.memGb)) {
     const why = !isProvider(pick.kind)
-      ? `this hub doesn't know ${pick.kind}`
+      ? `this workspace doesn't know ${pick.kind}`
       : (notOffered(pick.kind, pick, NAMES[pick.kind]) ?? `${NAMES[pick.kind]} aren't connected: an admin connects them in ${settingsPath()} › Machines`);
     out.push({ kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb, label: computerLabel(pick), unavailable: why });
   }

@@ -168,6 +168,6 @@ export default defineGroup({
     moment(base("typical"), "wake-failed", "A cloud bot's computer that fleetd's computers refused; the cloud tries again in 9 s by itself.", (iso) =>
       starting(iso, "box", -10_000, -1_000, { reason: REASON, retryAt: iso(9_000) }),
     ),
-    moment(base("typical"), "wake-stale", "A cloud bot waking for an ask sent 3 s ago, whose hub says its start began 42 min before.", (iso) => starting(iso, "box", -(42 * 60 + 40) * 1000, -3_000), 0.05),
+    moment(base("typical"), "wake-stale", "A cloud bot waking for an ask sent 3 s ago, whose workspace says its start began 42 min before.", (iso) => starting(iso, "box", -(42 * 60 + 40) * 1000, -3_000), 0.05),
   ],
 });

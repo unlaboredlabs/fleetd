@@ -365,7 +365,7 @@ function Failed({ error, retry }: { error: Error; retry: () => void }) {
         )
       }
     >
-      {old ? "This hub is older than the app: update it to see a bot’s activity." : error.message}
+      {old ? "This workspace is older than the app: update it to see a bot’s activity." : error.message}
     </EmptyState>
   );
 }

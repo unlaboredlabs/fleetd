@@ -44,4 +44,4 @@ export const deviceLine = (d: AgentKeyInfo, when: (iso: string) => string): stri
   d.lastUsedAt === undefined ? `Paired ${when(d.createdAt)}` : `Paired ${when(d.createdAt)} · last used ${when(d.lastUsedAt)}`;
 
 /** The sign-out confirm's line: it stops at once. */
-export const SIGN_OUT_LINE = "It stops working on this hub at once. To use it again, pair it again.";
+export const SIGN_OUT_LINE = "It stops working on this workspace at once. To use it again, pair it again.";

@@ -15,9 +15,9 @@ import s from "./signin.module.css";
 
 /** The two ways in, and what each means in a line. */
 export const WAYS = {
-  signIn: { name: "Sign in", line: "fleetd hosts your team. Agents run on fleetd's computers or your own." },
-  own: { name: "Use your own hub", line: "A hub you run yourself. No fleetd account." },
-  mac: { name: "Set up this Mac for agents", line: "For builds and iOS simulators, with a code from your hub." },
+  signIn: { name: "Sign in", line: "fleetd hosts your workspace. Agents run on fleetd's computers or your own." },
+  own: { name: "Use your own workspace", line: "A workspace you run yourself. No fleetd account." },
+  mac: { name: "Set up this Mac for agents", line: "For builds and iOS simulators, with a code from your workspace." },
 } as const;
 
 /** On a Mac: the third way in, for the Mac every bot's agents use (D309). It opens setup's own window in place of
@@ -281,14 +281,14 @@ export function NoTeam({ email, onMake, onLater }: { email: string; onMake: () =
     <Stage id="onboarding.no-team">
       <Bot state="idle" size={64} />
       <Text as="h1" size="xl" strong className={s.title}>
-        No team yet
+        No workspace yet
       </Text>
       <Text as="p" tone="quiet" className={s.lede}>
         {`Make one of your own for ${email}, or ask a teammate to invite this email.`}
       </Text>
       <div className={s.waitActions}>
         <Button variant="primary" size="md" onClick={onMake}>
-          Make a team
+          Make a workspace
         </Button>
         <Button size="md" variant="quiet" onClick={onLater}>
           Not now
@@ -304,7 +304,7 @@ export function Finishing() {
     <Stage id="onboarding.finishing">
       <Bot state="thinking" size={64} />
       <Text as="h1" size="xl" strong className={s.title}>
-        Connecting your teams
+        Connecting your workspaces
       </Text>
     </Stage>
   );

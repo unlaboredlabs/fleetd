@@ -57,7 +57,7 @@ export const BILLING_SAMPLES = {
     credits: { leftCents: 0, capCents: null, capSpentCents: 0, expiring: null },
     usage: { ...month, seconds: 0, cents: 0, bySize: [] },
     held: "none",
-    notice: { message: "This team has no plan and no credits, so fleetd can't start a computer for its bots.", fix: "Pick a plan or buy credits.", action: "buy" },
+    notice: { message: "This workspace has no plan and no credits, so fleetd can't start a computer for its bots.", fix: "Pick a plan or buy credits.", action: "buy" },
   },
   /** The Team plan, renewing, with credits left and $10 of them lapsing within 30 days; two sizes used; a cap. */
   plan: {
@@ -107,7 +107,7 @@ export const BILLING_SAMPLES = {
     plan: null,
     credits: { leftCents: 0, capCents: null, capSpentCents: 0, expiring: null },
     usage: { ...month, seconds: 0, cents: 0, bySize: [] },
-    notice: { message: "fleetd's computers aren't on yet, so there is nothing to buy.", fix: "Bots run on the team's own machines until then." },
+    notice: { message: "fleetd's computers aren't on yet, so there is nothing to buy.", fix: "Bots run on the workspace's own machines until then." },
   },
 } as const;
 

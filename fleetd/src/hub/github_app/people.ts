@@ -75,7 +75,7 @@ function client(apps: GithubApps): { app: GithubApp; secret: string } | undefine
   const sealed = row.sealed_client_secret ?? fail("GitHub sent the App without its client secret: create the App again");
   const secret =
     apps.open(new Uint8Array(sealed)) ??
-    fail("the App's client secret was sealed to another box key: the hub's home changed. Create the App again");
+    fail("the App's client secret was sealed to another box key: the workspace's home changed. Create the App again");
   return { app, secret };
 }
 
@@ -122,7 +122,7 @@ export async function connect(
   redirect: string,
 ): Promise<GithubAccount> {
   const { app, secret } =
-    client(apps) ?? fail(`This hub has no GitHub App yet: an admin creates it in ${settingsPath()} › Setup › GitHub`);
+    client(apps) ?? fail(`This workspace has no GitHub App yet: an admin creates it in ${settingsPath()} › Setup › GitHub`);
   const pair = await tokenCall(apps, {
     client_id: app.clientId,
     client_secret: secret,
@@ -166,7 +166,7 @@ export async function userToken(
       return { token: open(k.access), expiresMs: k.accessExpiresMs };
     }
     const refresh = open(k.refresh);
-    const { app, secret } = client(apps) ?? fail("This hub's GitHub App was removed");
+    const { app, secret } = client(apps) ?? fail("This workspace's GitHub App was removed");
     let pair: Pair;
     try {
       pair = await tokenCall(apps, {

@@ -88,7 +88,7 @@ const connection = (hub: HubState): string => {
     case "retrying":
       return "lost, retrying";
     case "refused":
-      return "the hub refused the key";
+      return "the workspace refused the key";
     case "unpaired":
       return "not paired";
   }
@@ -109,7 +109,7 @@ export const diagnostics = (d: {
   [
     `fleetd ${d.version} (Electron ${d.versions.electron}, Chromium ${d.versions.chrome})`,
     `OS: ${d.os}`,
-    ...(d.hubs.length === 1 ? [`Hub: ${connection(d.hubs[0] ?? { phase: "unpaired" })}`] : d.hubs.map((h, i) => `Hub ${String(i + 1)}: ${connection(h)}`)),
+    ...(d.hubs.length === 1 ? [`Workspace: ${connection(d.hubs[0] ?? { phase: "unpaired" })}`] : d.hubs.map((h, i) => `Workspace ${String(i + 1)}: ${connection(h)}`)),
     `Log: ${d.log.where}`,
     "",
     `The log's last ${String(DIAGNOSTIC_LINES)} lines:`,

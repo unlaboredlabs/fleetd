@@ -20,8 +20,8 @@ function requireAdmin(caller: Caller): void {
   if (allowsEverywhere(caller, "admin")) return;
   throw new ToolError(
     "forbidden",
-    "The hub's setup is for its owners and admins: a key with admin on every machine.",
-    `Open ${settingsPath()} › Setup in the app, or run fleetd init on the hub.`,
+    "The workspace's setup is for its owners and admins: a key with admin on every machine.",
+    `Open ${settingsPath()} › Setup in the app, or run fleetd init on the workspace's machine.`,
   );
 }
 
@@ -83,7 +83,7 @@ export function register(tools: Registry): void {
         try {
           await testAccount(hub, { kind: "hub" }, api.sealedOn);
         } catch (error) {
-          console.info(`setup: the hub's Claude API key wasn't tested: ${(error as Error).message ?? error}`);
+          console.info(`setup: the workspace's Claude API key wasn't tested: ${(error as Error).message ?? error}`);
         }
       }
     }

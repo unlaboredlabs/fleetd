@@ -104,8 +104,8 @@ export function projectAgents(slots: SlotState, project: ProjectRef, hold: Hold 
 export function sourceLine(slots: SlotState, a: ProjectAgents, machineId?: string, hold: Hold = NO_HOLD): string {
   if (a.own) return `Set for this bot. The default is ${a.cap}.`;
   const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
-  if (fleet) return "Follows the default: the hub's fleet cap.";
-  if (hold.provided) return "Follows the default: the team's plan.";
+  if (fleet) return "Follows the default: the workspace's fleet cap.";
+  if (hold.provided) return "Follows the default: the workspace's plan.";
   const provider = providerHolding(machineId, hold);
   return provider !== undefined ? `Follows the default: the limit of ${provider}.` : "Follows the default: its machine's cap.";
 }
@@ -123,8 +123,8 @@ export function machineHolds(a: ProjectAgents, value: number, machineId: string,
   const n = a.machineCap;
   if (hold.provided) {
     return n === 0
-      ? "No agent runs until the team has credits or a plan: an admin adds them in Billing."
-      : `This team's plan runs ${n} agents at once, so this bot runs ${n} until an admin picks a bigger plan in Billing.`;
+      ? "No agent runs until the workspace has credits or a plan: an admin adds them in Billing."
+      : `This workspace's plan runs ${n} agents at once, so this bot runs ${n} until an admin picks a bigger plan in Billing.`;
   }
   const provider = providerHolding(machineId, hold);
   if (provider !== undefined) return `${provider} run at most ${n} agents at once, so this bot runs ${n} until an admin raises their limit.`;
@@ -237,5 +237,5 @@ export const fleetTop = (cap: number): number => Math.max(64, cap);
 export const fleetCapLine = (slots: SlotState): string | null => {
   const sum = (slots.perMachine ?? []).reduce((n, m) => n + m.cap, 0);
   if (slots.fleetCap === undefined || (sum > 0 && slots.fleetCap >= sum)) return null;
-  return `All machines together run at most ${slots.fleetCap} agents: the hub's fleet cap. Change it with fleetd project set --fleet-cap <n>.`;
+  return `All machines together run at most ${slots.fleetCap} agents: the workspace's fleet cap. Change it with fleetd project set --fleet-cap <n>.`;
 };

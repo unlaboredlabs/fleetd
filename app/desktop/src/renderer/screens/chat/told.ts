@@ -78,7 +78,7 @@ function titleFromId(id: string): string {
 export function level(id: string, scope: PromptScope): string {
   if (id === INSTRUCTIONS) return scope === "project" ? "your instructions for this bot" : "your instructions for every bot";
   if (scope === "default") return "fleetd's default";
-  return scope === "global" ? "your hub-wide edit" : "your edit for this bot";
+  return scope === "global" ? "your workspace-wide edit" : "your edit for this bot";
 }
 
 function grouped(rows: ReadonlyArray<ToldRow & { readonly group: string }>): ToldGroup[] {

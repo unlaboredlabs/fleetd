@@ -118,7 +118,7 @@ export function Google() {
       ))}
       <GeminiKeySection teamKey={google.status?.teamKey} onSaved={google.reload} />
       {keyIn.length === 0 ? null : (
-        <ListSection header="Bots with Their Own Key" footer="Their agents on Google run on the GEMINI_API_KEY in the bot's Vault instead of the team's.">
+        <ListSection header="Bots with Their Own Key" footer="Their agents on Google run on the GEMINI_API_KEY in the bot's Vault instead of the workspace's.">
           {keyIn.map((r) => (
             <ListRow key={`${r.machineId}/${r.projectId}`} title={state.projects?.[keyOf(r)]?.title ?? r.projectId} />
           ))}
@@ -164,7 +164,7 @@ function GeminiKeySection({ teamKey, onSaved }: { teamKey: GeminiKey | undefined
   };
   const remove = () =>
     confirmDestructive({
-      title: "Remove the team's Gemini key?",
+      title: "Remove the workspace's Gemini key?",
       message: "Each machine forgets it. Agents on Google run on their bot's own key, else the machine's Google sign-in, from their next start.",
       button: "Remove",
       onConfirm: () => {

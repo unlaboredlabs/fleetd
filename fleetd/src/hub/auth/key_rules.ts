@@ -6,7 +6,7 @@ import { ToolError } from "../../shared/errors.ts";
 import { capped, cleanName, OWNER_FALLBACK, roleCap, roleOf } from "../people/roles.ts";
 import { isoMs } from "./allows.ts";
 
-export const CREATE_KEY_FIX = "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
+export const CREATE_KEY_FIX = "create a key with `fleetd workspace key create --name <name> --role <role> --machines '*'`";
 export const KEY_PREFIX = "fld_";
 /** A key's last-used time is written again only when it is older than this. */
 export const LAST_USED_EVERY_MS = 60_000;
@@ -31,7 +31,7 @@ export const shownPrefix = (key: string) => key.slice(0, KEY_PREFIX.length + 6);
 
 /** `AuthError::KeyNotFound`. */
 export const keyNotFound = (keyId: string) =>
-  new ToolError("not_found", `no agent key ${keyId}; run \`fleetd hub key list\` to see key ids`);
+  new ToolError("not_found", `no agent key ${keyId}; run \`fleetd workspace key list\` to see key ids`);
 
 /** A bearer that isn't an agent key at all. */
 export const notAgentKey = () => new ToolError("invalid", "expected an agent key: `Authorization: Bearer fld_…`", CREATE_KEY_FIX);
@@ -41,7 +41,7 @@ export function keyRefusal(row: { prefix: string; revoked_ms: unknown; person_re
   const forbidden = (message: string) => new ToolError("forbidden", message, CREATE_KEY_FIX);
   if (!row) return forbidden("unknown agent key");
   if (row.revoked_ms !== null) return forbidden(`agent key ${row.prefix} was revoked`);
-  if (row.person_removed) return forbidden(`the person key ${row.prefix} belongs to was removed from the hub`);
+  if (row.person_removed) return forbidden(`the person key ${row.prefix} belongs to was removed from the workspace`);
   return undefined;
 }
 

@@ -83,7 +83,7 @@ tableOfContents:
 
 Every \`fleetd\` command, in one line each. Run \`fleetd <command> --help\` for its options in full.
 
-Exit codes: \`0\` ok, \`1\` failed, \`2\` usage error, \`3\` refused, \`4\` the hub or the machine is unreachable.
+Exit codes: \`0\` ok, \`1\` failed, \`2\` usage error, \`3\` refused, \`4\` the workspace or the machine is unreachable.
 `;
 
 /** The help's layout: a group heading at column 0 ending in `:`, an entry at column 2 (its description may follow
@@ -244,12 +244,12 @@ export function cliPage(help: string = usageText()): string {
       seen.add(id);
     }
     md += `\n## ${mdText(capitalize(short))} {#${group.id}}\n\n`;
-    // "on the hub machine" -> "Run these on the hub machine."
+    // "on the workspace's machine" -> "Run these on the workspace's machine."
     if (aside !== undefined) md += `${mdText(/^on /.test(aside) ? `Run these ${aside}` : capitalize(aside))}.\n\n`;
-    // `hub start` alone leaves a hub the other commands can't use; the docs walk through the order that works.
+    // `workspace start` alone leaves a workspace the other commands can't use; the docs walk through the order that works.
     if (group.id === "running-by-hand") {
       md +=
-        ":::tip\nRun `fleetd init --no-service` before `fleetd hub start`: it writes the setup the other commands read. " +
+        ":::tip\nRun `fleetd init --no-service` before `fleetd workspace start`: it writes the setup the other commands read. " +
         "The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).\n:::\n\n";
     }
     // The help gives forms of one command that share a description one description, after the last: they make one
@@ -302,7 +302,7 @@ const AGENT_TOOLS = "reference/agent-tools.md";
 
 const FRONT = `---
 title: Agent tools
-description: The tools fleetd gives its agents, the Claude Code tools it blocks and the limits the hub enforces.
+description: The tools fleetd gives its agents, the Claude Code tools it blocks and the limits the workspace enforces.
 sidebar: { order: 20 }
 ---
 
@@ -310,7 +310,7 @@ sidebar: { order: 20 }
 
 What fleetd's agents can do, what they can't, and the limits fleetd enforces.
 
-Every agent is a Claude Code session. fleetd adds its own tools to it, which Claude Code shows as \`mcp__{server}__<tool>\`. The hub checks every call, whatever the agent was told.
+Every agent is a Claude Code session. fleetd adds its own tools to it, which Claude Code shows as \`mcp__{server}__<tool>\`. The workspace checks every call, whatever the agent was told.
 `;
 
 /** Each fleetd tool in plain words, by group. tools.json's descriptions are written for the model; these are for the
@@ -548,11 +548,11 @@ function limits(lead: ToolSpec[], task: ToolSpec[]): string {
   const timeout = defs.GatedRunCall?.properties?.timeoutSec?.maximum;
   if (typeof timeout !== "number") throw new Error("agent tools: gated_run's timeoutSec has no maximum");
   const gatedClasses: string[] = defs.GatedClass.enum;
-  let md = "\n## Limits\n\nThe hub enforces these on every call, whatever an agent was told.\n\n";
+  let md = "\n## Limits\n\nThe workspace enforces these on every call, whatever an agent was told.\n\n";
   md += `- Only a lead starts agents (${codeList(new Set(spawners as string[]))}), and agents can't start their own.\n`;
   md += `- A lead has at most ${MAX_OPEN_TASKS} agents open at once, or twice the bot's max agents when that is more.\n`;
   md +=
-    "- How many agents run at once is capped per bot (Max agents in the chat) and per machine (Settings › Hub › " +
+    "- How many agents run at once is capped per bot (Max agents in the chat) and per machine (Settings › Workspace › " +
     `Machines; unset, what the machine fits, at most ${HARD_TOP}). More wait and start by themselves. The lead doesn't count.\n`;
   md +=
     `- A command of class ${orList(gatedClasses.map((c) => `\`${c}\``))} goes through \`gated_run\`: it runs only after you approve it, for at ` +
@@ -666,7 +666,7 @@ Sessions start on top of your own Claude Code setup on that machine.
 - Your allow and deny rules apply, but fleetd's blocks win.
 - Your own subagents (\`~/.claude/agents\`) are listed, but nothing can start them.
 
-To see exactly what a session was told, open the agent in the app and pick **What it was told**. On the hub machine, \`fleetd prompts show --session <machine>/<thread>\` prints it too.
+To see exactly what a session was told, open the agent in the app and pick **What it was told**. On the workspace's machine, \`fleetd prompts show --session <machine>/<thread>\` prints it too.
 `;
 
 // --- Main ------------------------------------------------------------------------------------------------------

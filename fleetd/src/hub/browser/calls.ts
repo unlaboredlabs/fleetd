@@ -77,7 +77,7 @@ type Written =
 
 async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
   const stored = own(hub, caller, call.sessionId);
-  if (call.state === "expired") throw invalid("Only the hub expires a recording.");
+  if (call.state === "expired") throw invalid("Only the workspace expires a recording.");
   const startedMs = Date.parse(call.startedAt);
   if (Number.isNaN(startedMs)) throw invalid("startedAt is not an ISO time.");
   const control = call.control ?? "agent";
@@ -128,7 +128,7 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
   if (written.kind === "final") return { sessionId: next.sessionId, state: written.state };
   if (written.kind === "short") {
     throw invalid(
-      `The hub holds ${written.held} bytes of ${next.sessionId}'s ${written.file}, not ${written.bytes}.`,
+      `The workspace holds ${written.held} bytes of ${next.sessionId}'s ${written.file}, not ${written.bytes}.`,
       "upload the file again from offset 0",
     );
   }
@@ -178,7 +178,7 @@ function part(hub: Hub, caller: LeadCaller, call: BrowserRecordingPartCall) {
   const offset = call.offset;
   if (offset > held) {
     throw invalid(
-      `The hub holds ${held} bytes of ${id}'s ${call.file}; a piece at ${offset} would leave a gap.`,
+      `The workspace holds ${held} bytes of ${id}'s ${call.file}; a piece at ${offset} would leave a gap.`,
       `send the piece at offset ${held}`,
     );
   }
@@ -195,7 +195,7 @@ function part(hub: Hub, caller: LeadCaller, call: BrowserRecordingPartCall) {
     }
   } catch (e) {
     console.error(`browser recording of ${id} not written:`, e);
-    throw new ToolError("failed", "The hub could not write that piece.", "try again shortly");
+    throw new ToolError("failed", "The workspace could not write that piece.", "try again shortly");
   }
   return { sessionId: id, file: call.file, bytes: offset + data.length };
 }

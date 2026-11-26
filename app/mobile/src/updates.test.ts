@@ -101,7 +101,7 @@ describe("updateSection", () => {
   });
 
   it("follows a run in one line: the hub, then the machines", () => {
-    expect(updateSection(input({ ready: "0.9.1", flow: { phase: "starting" } }))).toEqual({ kind: "updating", title: "Updating the hub…", detail: "fleetd 0.9.1", rows: [] });
+    expect(updateSection(input({ ready: "0.9.1", flow: { phase: "starting" } }))).toEqual({ kind: "updating", title: "Updating the workspace…", detail: "fleetd 0.9.1", rows: [] });
     const machines = updateSection(input({ hub: { ...HUB, version: "0.9.1" }, flow: { phase: "following", reconnecting: false, since: NOW }, run: run([part("hub", "devbox", "done"), part("node", "buildbox", "done"), part("node", "devbox", "downloading")]) }));
     expect(machines).toEqual({ kind: "updating", title: "Updating the machines · 1 of 2", detail: "fleetd 0.9.1", rows: [] });
   });

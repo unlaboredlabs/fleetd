@@ -161,7 +161,7 @@ export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => b
   if (joined) {
     return {
       err: {
-        why: `${user} is in group kvm, but fleetd's node started before that and \`sg kvm\` can't give it the group, so it can't open /dev/kvm. Reboot this machine when no agents are running: that stops the node's agents (and, on the hub's own machine, the hub) until it is back.`,
+        why: `${user} is in group kvm, but fleetd's node started before that and \`sg kvm\` can't give it the group, so it can't open /dev/kvm. Reboot this machine when no agents are running: that stops the node's agents (and, on the workspace's own machine, the workspace) until it is back.`,
       },
     };
   }

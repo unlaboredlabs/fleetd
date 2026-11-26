@@ -80,7 +80,7 @@ const mount = async (state: HubState, { me, machines = [], setupLeft = 0 }: { me
           <Marked />
           <Menu>
             <MenuTrigger data-opens="hub-lines">Hub</MenuTrigger>
-            <MenuContent aria-label="Hub lines">
+            <MenuContent aria-label="Workspace lines">
               <HubLines />
             </MenuContent>
           </Menu>
@@ -116,10 +116,10 @@ const open = (): string[] => {
 /** Opens the hub's lines, as the switcher's menu has them under the hub; returns them. */
 const lines = (): string[] => {
   press(host.querySelector<HTMLElement>("[data-opens='hub-lines']"));
-  const found = rows(menuOf("Hub lines"));
+  const found = rows(menuOf("Workspace lines"));
   return found;
 };
-const line = (key: string) => menuOf("Hub lines")?.querySelector<HTMLElement>(`[data-line='${key}']`);
+const line = (key: string) => menuOf("Workspace lines")?.querySelector<HTMLElement>(`[data-line='${key}']`);
 const MENU = ["Settings · Ctrl+,", "Appearance · Match system", "Keyboard shortcuts · Ctrl+/", "Help & docs"];
 
 it("is your picture alone, your name its label, and no mark while all is well", async () => {
@@ -166,11 +166,11 @@ it("has no line under a hub while all is well", async () => {
 it("says a problem in one line with the one thing to do, and never the hub's address or its reason", async () => {
   await mount({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", fix: "Run `fleetd doctor` on devbox", retryAt: 0 });
   expect(lines()).toEqual(["Can't reach devbox · Retry"]);
-  expect(menuOf("Hub lines")?.textContent).not.toMatch(/https?:|4790|listening|doctor/u);
+  expect(menuOf("Workspace lines")?.textContent).not.toMatch(/https?:|4790|listening|doctor/u);
   await mount({ phase: "refused", hub: HUB, message: "This key was revoked" });
   expect(lines()).toEqual(["devbox refused the key · Pair again"]);
   await mount({ phase: "unpaired" });
-  expect(lines()).toEqual(["Not paired with a hub · Pair"]);
+  expect(lines()).toEqual(["Not paired with a workspace · Pair"]);
 });
 
 it("lets only the hub's name give way in a narrow line, whole on hover; what is wrong and its action stay", async () => {
@@ -202,7 +202,7 @@ it("dials again from Retry, and stays open to say how it went", async () => {
   await mount({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0 });
   lines();
   act(() => line("hub")?.click());
-  expect(menuOf("Hub lines")).not.toBeNull();
+  expect(menuOf("Workspace lines")).not.toBeNull();
 });
 
 it("marks the switcher for an admin while a machine is offline, names it under the hub, and opens its page", async () => {
@@ -212,7 +212,7 @@ it("marks the switcher for an admin while a machine is offline, names it under t
   expect(lines()).toEqual(["buildbox is offline · Open"]);
   act(() => line("machines")?.click());
   expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines", machine: "buildbox" });
-  expect(menuOf("Hub lines")).toBeNull();
+  expect(menuOf("Workspace lines")).toBeNull();
 });
 
 it("counts several machines, and opens Machines", async () => {

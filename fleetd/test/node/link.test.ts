@@ -66,7 +66,7 @@ const options = (hub: string, home: string, extra: Partial<Parameters<typeof run
   ...extra,
 });
 
-test("the hello is signed over the hub's nonce and carries the enroll token until the first welcome", async () => {
+test("the hello is signed over the workspace's nonce and carries the enroll token until the first welcome", async () => {
   const home = tempHome();
   const hub = fakeHub();
   const stop = new AbortController();
@@ -132,14 +132,14 @@ test("a challenge shaped as an upgrade proof gets no hello", async () => {
   const why: string[] = [];
   void runNode(options(`http://127.0.0.1:${server.port}`, home.dir, { signal: stop.signal, log: (_l, _m, f) => void (f?.why && why.push(String(f.why))) }));
   await until("the link given up", () => why.length > 0);
-  expect(why[0]).toBe("the hub's challenge is not a nonce");
+  expect(why[0]).toBe("the workspace's challenge is not a nonce");
   expect(heard).toEqual([]);
   stop.abort();
   server.stop(true);
   home.done();
 });
 
-test("the enrolling welcome's machine id reaches onEnrolled: the hub's, else the node's own", async () => {
+test("the enrolling welcome's machine id reaches onEnrolled: the workspace's, else the node's own", async () => {
   for (const [said, heard] of [["devbox-2", "devbox-2"], [undefined, "devbox"]] as const) {
     const home = tempHome();
     const hub = fakeHub(said ? { machineId: said } : {});
@@ -154,17 +154,17 @@ test("the enrolling welcome's machine id reaches onEnrolled: the hub's, else the
   }
 });
 
-test("a refusal (4001, 4002) ends the loop with the hub's reason; retrying wouldn't help", async () => {
+test("a refusal (4001, 4002) ends the loop with the workspace's reason; retrying wouldn't help", async () => {
   const home = tempHome();
   const hub = fakeHub({ refuse: [4001, "unknown key"] });
   const fatal = await runNode(options(hub.url, home.dir));
-  expect(fatal?.message).toBe("hub refused this node: unknown key");
+  expect(fatal?.message).toBe("workspace refused this node: unknown key");
   expect(fatal?.removed).toBe(false);
   hub.server.stop(true);
   home.done();
 });
 
-test("a refusal that says the hub removed this machine is the removal, which stops the node as enrolled", async () => {
+test("a refusal that says the workspace removed this machine is the removal, which stops the node as enrolled", async () => {
   const home = tempHome();
   const hub = fakeHub({ refuse: [4001, "mac-1 was removed from this hub: its node key is revoked"] });
   expect((await runNode(options(hub.url, home.dir)))?.removed).toBe(true);
@@ -172,7 +172,7 @@ test("a refusal that says the hub removed this machine is the removal, which sto
   home.done();
 });
 
-test("frames go compressed only once the hub's welcome lists link_deflate, and hub frames reach their handler", async () => {
+test("frames go compressed only once the workspace's welcome lists link_deflate, and workspace frames reach their handler", async () => {
   const home = tempHome();
   const hub = fakeHub({ deflate: true });
   const stop = new AbortController();
@@ -190,14 +190,14 @@ test("frames go compressed only once the hub's welcome lists link_deflate, and h
   const deflater = new Deflater();
   hub.conns[0]!.ws.send(await deflater.deflate(JSON.stringify({ t: "spans_ack", upto: 7, pad: "y".repeat(200) })));
   hub.conns[0]!.ws.send(JSON.stringify({ t: "spans_ack", upto: 8 }));
-  await until("the hub's frames", () => handled.length === 2);
+  await until("the workspace's frames", () => handled.length === 2);
   expect(handled.map((f) => f.upto)).toEqual([7, 8]);
   stop.abort();
   hub.server.stop(true);
   home.done();
 });
 
-test("a hub that goes quiet is pinged, and given up on when it never answers", async () => {
+test("a workspace that goes quiet is pinged, and given up on when it never answers", async () => {
   const home = tempHome();
   // A hub that welcomes and then never sends a byte, nor answers a ping (Bun answers pings itself, so none is sent).
   const server = Bun.serve({
@@ -237,7 +237,7 @@ test("each heartbeat carries the fields the node's modules fill in", async () =>
   home.done();
 });
 
-test("a capability an area turns on reaches the hub in a new hello; one that didn't change sends none", async () => {
+test("a capability an area turns on reaches the workspace in a new hello; one that didn't change sends none", async () => {
   const home = tempHome();
   const hub = fakeHub();
   const stop = new AbortController();
@@ -295,20 +295,20 @@ test("after a restart close redials are 250 ms apart for a minute; any other clo
   expect(redial.restartUntil).toBeUndefined();
 });
 
-test("the hub's 1012 close reads as a restart: the node redials in 250 ms, with no jitter", async () => {
+test("the workspace's 1012 close reads as a restart: the node redials in 250 ms, with no jitter", async () => {
   const home = tempHome();
   const hub = fakeHub();
   const stop = new AbortController();
   const lost: Record<string, unknown>[] = [];
   let links = 0;
   const log = (_level: string, msg: string, fields?: Record<string, unknown>) => {
-    if (msg === "hub link lost; reconnecting until it is back") lost.push(fields ?? {});
+    if (msg === "workspace link lost; reconnecting until it is back") lost.push(fields ?? {});
   };
   void runNode(options(hub.url, home.dir, { attach: () => (links++, () => {}), log, signal: stop.signal }));
   await until("the welcome", () => links === 1);
-  hub.conns[0]!.ws.close(1012, "hub restarting");
+  hub.conns[0]!.ws.close(1012, "workspace restarting");
   await until("the second link", () => links === 2);
-  expect(lost).toEqual([{ why: "hub closed the link (1012 hub restarting)", retryInMs: 250 }]);
+  expect(lost).toEqual([{ why: "workspace closed the link (1012 workspace restarting)", retryInMs: 250 }]);
   stop.abort();
   hub.server.stop(true);
   home.done();
@@ -387,7 +387,7 @@ function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs:
   const lost: { at: number; why: string }[] = [];
   const links: LinkContext[] = [];
   const log = (_level: string, msg: string, fields?: Record<string, unknown>) => {
-    if (msg === "hub link lost; reconnecting until it is back") lost.push({ at: Date.now(), why: String(fields?.why) });
+    if (msg === "workspace link lost; reconnecting until it is back") lost.push({ at: Date.now(), why: String(fields?.why) });
   };
   void runNode(options(h.url, home, { attach: (l) => (links.push(l), () => {}), handle: (f) => void handled.push(f), log, quiet, signal: stop.signal }));
   const done = () => (stop.abort(), h.stop(), hub.server.stop(true));
@@ -409,7 +409,7 @@ test("a link cut under the node is found dead within the quiet bound, not at the
   n.hop.state.dark = true;
   await until("the loss", () => n.lost.length === 1, 2000);
   expect(n.lost[0]!.at - cut).toBeLessThan(QUIET.bulkMs);
-  expect(n.lost[0]!.why).toBe("nothing from the hub for 0 s, and no answer to a ping");
+  expect(n.lost[0]!.why).toBe("nothing from the workspace for 0 s, and no answer to a ping");
   n.hop.state.dark = false;
   await until("the link back", () => n.links.length === 2, 3000);
   n.done();
@@ -470,7 +470,7 @@ test("a heartbeat that says a big frame comes keeps the longer bound until a fra
   home.done();
 });
 
-test("a hub that doesn't announce its big frames (an older hub or cloud) keeps the heartbeats' bound on its link", async () => {
+test("a workspace that doesn't announce its big frames (an older workspace or cloud) keeps the heartbeats' bound on its link", async () => {
   const home = tempHome();
   const n = cutNode(home.dir, QUIET, false);
   await until("the welcome", () => n.links.length === 1);
@@ -481,7 +481,7 @@ test("a hub that doesn't announce its big frames (an older hub or cloud) keeps t
   await until("the loss", () => n.lost.length === 1, 5000);
   // Timed from the last pong, up to a probe before the cut: far past the 400 ms bound either way.
   expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 2 * QUIET.probeMs);
-  expect(n.lost[0]!.why).toBe("nothing from the hub for 3 s, and no answer to a ping");
+  expect(n.lost[0]!.why).toBe("nothing from the workspace for 3 s, and no answer to a ping");
   n.done();
   home.done();
 });

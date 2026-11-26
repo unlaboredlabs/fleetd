@@ -270,7 +270,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
             </Text>
           ) : stopOffline ? (
             <Text size="xs" tone="quiet">
-              Offline: stop the lead and its agents once the hub is back.
+              Offline: stop the lead and its agents once the workspace is back.
             </Text>
           ) : null}
         </div>

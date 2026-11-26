@@ -56,7 +56,7 @@ describe("a cloud team's first run", () => {
   it("before fleetd's computers are on, or before Billing is read: its own machine alone", () => {
     expect(firstRunSteps(readBilling(BILLING_SAMPLES.off), accounts()).map((s) => [s.id, s.detail])).toEqual([
       ["where", "Your own machine: a Mac or Linux computer, free."],
-      ["claude", "The team's Anthropic API key, or a Claude subscription, for its agents."],
+      ["claude", "The workspace's Anthropic API key, or a Claude subscription, for its agents."],
       ["bot", "Make one, and its chat shows up here."],
     ]);
     expect(computersChoice(readBilling(BILLING_SAMPLES.off))).toBeNull();

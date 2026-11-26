@@ -8,46 +8,46 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 This page is for adding the computers your agents run on and keeping them healthy.
 
 Agents run directly on your own machines, as plain processes of your user, with the machine's tools, files and
-network. On fleetd cloud, a team can also run them on [fleetd's computers](/docs/cloud-machines).
+network. On fleetd cloud, a workspace can also run them on [fleetd's computers](/docs/cloud-machines).
 
-A machine needs Linux (x64) or macOS, and the `claude` CLI. Only the hub's owners and admins add, fix or remove
+A machine needs Linux (x64) or macOS, and the `claude` CLI. Only the workspace's owners and admins add, fix or remove
 machines.
 
 ## The Machines page {#page}
 
-Open **Settings › Hub › Machines**. It has these groups:
+Open **Settings › Workspace › Machines**. It has these groups:
 
 - **Machines**: every machine, with a dot (grey when well, amber when it needs you) and what runs there now, or
   what's wrong. Click a row to open its page.
 - **What runs where**: **Mac machine**, where Mac screens and iOS simulators run, and **Keep screen recordings for**.
-  On a cloud team, **Linux machine** too ([fleetd's computers](/docs/cloud-machines)).
+  On a cloud workspace, **Linux machine** too ([fleetd's computers](/docs/cloud-machines)).
 - **Updates**: whether everything is up to date, with **Update** ([Updating](/docs/updating-and-uninstall)).
 
 On the phone, admins find the same groups under **Settings › Machines**.
 
 ## Add a machine {#app}
 
-1. Open **Settings › Hub › Machines** and click the **+**.
+1. Open **Settings › Workspace › Machines** and click the **+**.
 2. Pick how to reach it:
-   - **This computer**: one click. The app installs fleetd here and joins the hub.
-   - **A machine the hub can reach**: pick it from the hub's SSH hosts or tailnet, read the plan, then **Add**. Each
+   - **This computer**: one click. The app installs fleetd here and joins the workspace.
+   - **A machine the workspace can reach**: pick it from the workspace's SSH hosts or tailnet, read the plan, then **Add**. Each
      step shows as it runs; **Retry** picks up where a failed step stopped.
    - **Any other machine** (a laptop, or one behind NAT): name it, click **Make the line**, and run that line in a
      terminal on the machine. The line works once, for 15 minutes.
    - **A Mac for agents**: see [The agents' Mac](/docs/agents-mac).
 3. The machine shows in the list once it's online.
 
-The new machine must be able to reach the hub's address. A hub that only listens on `127.0.0.1` can't take other
+The new machine must be able to reach the workspace's address. A workspace that only listens on `127.0.0.1` can't take other
 machines: give it a tailnet or LAN address first (`fleetd init --listen <ip>:<port> --url http://<name>:<port>`).
 
 ### From the terminal {#cli}
 
-Run these on the hub.
+Run these on the workspace.
 
 | The machine is | Run |
 |---|---|
 | Reachable over SSH | `fleetd machine add <ssh-host>` |
-| The hub's own computer | `fleetd machine add --local` |
+| The workspace's own computer | `fleetd machine add --local` |
 | Anywhere else | `fleetd pair --worker <name>` |
 
 ### Over SSH {#ssh}
@@ -60,9 +60,9 @@ fleetd machine add builder-1
 The host can be any name in `~/.ssh/config` or on your tailnet. It's safe to run again: it skips steps already done,
 which is also how you repair a machine.
 
-### A machine the hub can't reach {#join}
+### A machine the workspace can't reach {#join}
 
-1. On the hub, run `fleetd pair --worker laptop`. It prints one line.
+1. On the workspace, run `fleetd pair --worker laptop`. It prints one line.
 2. Paste that line into a terminal on the new machine. It installs fleetd and joins.
 
 The code in the line works once, for 15 minutes. `fleetd pair --worker-codes` lists open codes, and
@@ -78,7 +78,7 @@ To log in from the app:
 2. Click **Log in…**, open the sign-in page on any device and sign in.
 3. Paste the code it shows and click **Log in**.
 
-The login stays on that machine; it never reaches the hub or an agent. Or run `claude auth login` on the machine.
+The login stays on that machine; it never reaches the workspace or an agent. Or run `claude auth login` on the machine.
 
 ### Claude Code's version {#claude-version}
 
@@ -90,10 +90,10 @@ Claude Code installed with Homebrew or npm isn't moved: the update tells you the
 
 ## Fix a machine {#checks}
 
-The hub checks each machine every 15 minutes. A machine's page lists only what failed, each with its fix:
+The workspace checks each machine every 15 minutes. A machine's page lists only what failed, each with its fix:
 
 - **Claude**: not installed at the tested version, or not logged in.
-- **Git identity**: commits there don't carry the hub's identity.
+- **Git identity**: commits there don't carry the workspace's identity.
 - **GitHub access**: git couldn't fetch a bot's repo.
 - **Screens**: a kind of screen it could host isn't ready ([Screens](/docs/browser-sessions#settings)).
 
@@ -108,7 +108,7 @@ Click **Remove** on the machine's page, or run:
 fleetd machine remove builder-1
 ```
 
-This revokes its key and erases its bots (their chats, memory, files and tasks). A machine the hub set up also has
+This revokes its key and erases its bots (their chats, memory, files and tasks). A machine the workspace set up also has
 its service stopped and removed.
 
 - `--purge` also deletes fleetd's files on that machine (`~/.fleetd/node`). Your `~/.claude` stays.
@@ -159,7 +159,7 @@ Change the disk limit with `minFreeGb` in [node.json](/docs/config-and-files#nod
 ### When a Claude login hits its limit {#usage-pause}
 
 Agents that hit their login's limit pause, and go on by themselves at the reset. To go on sooner, click **Resume** on
-the bot's status row or in the chat, or run `fleetd usage resume <machine>` on the hub.
+the bot's status row or in the chat, or run `fleetd usage resume <machine>` on the workspace.
 
 ## A fair share for each agent {#fair-share}
 
@@ -178,7 +178,7 @@ Agents on one machine share its CPUs, memory and disk:
 
 ## Keep the services running {#service-manager}
 
-On Linux the hub and node run under your systemd user manager. If that manager stops, nothing restarts it until you
+On Linux the workspace and node run under your systemd user manager. If that manager stops, nothing restarts it until you
 log in again. This one-time root command fixes that (replace `dev` and `1000` with `id -un` and `id -u`):
 
 ```sh
@@ -199,5 +199,5 @@ notification, and another when it's back.
 fleetd doctor
 ```
 
-It checks the hub and every machine, and prints the fix for each problem. See
+It checks the workspace and every machine, and prints the fix for each problem. See
 [Troubleshooting](/docs/troubleshooting).

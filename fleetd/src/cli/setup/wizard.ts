@@ -21,7 +21,7 @@ import { settingsPath } from "../../shared/settings_path.ts";
 
 const AGAIN = "Run fleetd init to continue; it keeps what's done.";
 /** A join that stopped before it enrolled: a plain `fleetd init` would ask what this machine is, as on a new one. */
-const JOIN_AGAIN = "Then run the join command its fix names: a plain fleetd init doesn't keep the hub or the code.";
+const JOIN_AGAIN = "Then run the join command its fix names: a plain fleetd init doesn't keep the workspace or the code.";
 
 export type InitOptions = {
   home: string;
@@ -215,8 +215,8 @@ async function steps(opts: InitOptions, ui: Ui, list: Checklist): Promise<number
       list,
       "What is this machine?",
       [
-        [true, "The hub", "always on; your fleet and the app connect to it"],
-        [false, "A worker for a hub I already have", "joins it with a one-time code"],
+        [true, "The workspace", "always on; your fleet and the app connect to it"],
+        [false, "A worker for a workspace I already have", "joins it with a one-time code"],
       ],
       true,
     );
@@ -281,19 +281,19 @@ export function pastedJoin(line: string): PastedJoin | undefined {
 const needed = (s: string) => (s === "" ? "needed" : undefined);
 
 async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<number> {
-  list.sectionHeader("Join a hub");
+  list.sectionHeader("Join a workspace");
   let pasted: PastedJoin | undefined;
   let hub: string;
   let code: string;
   if (opts.join) [hub, code] = opts.join;
   else {
-    list.note("On the hub, run: fleetd pair --worker <name for this machine>, and paste the line it prints here");
+    list.note("On the workspace, run: fleetd pair --worker <name for this machine>, and paste the line it prints here");
     hub = await ui.input(
       list,
-      "The line it printed, or the hub's address",
+      "The line it printed, or the workspace's address",
       "",
       "curl -fsSL https://fleetd.sh | sh -s -- --join … or http://devbox.tailnet.ts.net:4790",
-      (s) => (pastedJoin(s) || URL.canParse(s) ? undefined : "the line fleetd pair --worker printed, or the hub's URL"),
+      (s) => (pastedJoin(s) || URL.canParse(s) ? undefined : "the line fleetd pair --worker printed, or the workspace's URL"),
     );
     pasted = pastedJoin(hub);
     if (pasted) [hub, code] = [pasted.hub, pasted.code];
@@ -306,12 +306,12 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
     machineId =
       opts.join || !ui.interactive
         ? fallback
-        : await ui.input(list, "This machine's name on the hub", fallback, "", (s) =>
+        : await ui.input(list, "This machine's name in the workspace", fallback, "", (s) =>
             isMachineId(s) ? undefined : "lowercase letters, digits and dashes",
           );
   }
   if (hub.trim() === "" || code.trim() === "") {
-    list.failed("join", "needs the hub's address and a one-time code", "on the hub, run fleetd pair --worker <name>, then the command it prints here");
+    list.failed("join", "needs the workspace's address and a one-time code", "on the workspace's machine, run fleetd pair --worker <name>, then the command it prints here");
     list.outro(list.needsYou(), AGAIN);
     return 1;
   }
@@ -335,7 +335,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
   }
   const said = release();
   if (added === undefined) {
-    failedWithLog(list, machineId, "could not join", said, `a used or expired code: on the hub, fleetd pair --worker ${machineId} prints a new command`);
+    failedWithLog(list, machineId, "could not join", said, `a used or expired code: on the workspace's machine, fleetd pair --worker ${machineId} prints a new command`);
     return workerEnd(list, "", false);
   }
   nodeLine(list, added.machineId, added, `joined ${hub.trim()}`);
@@ -352,7 +352,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
 /** A worker that joined by itself, run again: keeps its enrolment and only checks and repairs what it runs. */
 async function repairWorker(opts: InitOptions, ui: Ui, list: Checklist, joined: Joined): Promise<number> {
   list.sectionHeader("Worker");
-  if (opts.join) list.note("Already enrolled with that hub, so the code is not used (--rejoin enrols again).");
+  if (opts.join) list.note("Already enrolled with that workspace, so the code is not used (--rejoin enrols again).");
   const title = joined.machineId;
   list.start(`Checking ${title}`);
   capture();
@@ -531,7 +531,7 @@ export async function walk(opts: InitOptions, ui: Ui, list: Checklist, client: i
   for (;;) {
     const actions: [string, string, string][] = [];
     if (step.id === "people") actions.push(["invite", "Invite someone now", "a link and a code, for 7 days"]);
-    if (step.id === "claude") actions.push(["key", "Give the hub an API key", "an endpoint and a key, sealed here"]);
+    if (step.id === "claude") actions.push(["key", "Give the workspace an API key", "an endpoint and a key, sealed here"]);
     if (step.test !== undefined || (step.ways ?? []).length > 0) actions.push(["test", "Test it", "run its checks now"]);
     actions.push(["next", step.need?.kind === "optional" && step.status !== "done" ? "Skip" : "Go on", ""]);
     const picked = await ui.select(list, `${step.title}:`, actions, actions[0]![0]);
@@ -564,7 +564,7 @@ export async function openStep(opts: InitOptions, id: string, interactive: boole
   try {
     const all = await steps.list(client);
     if (all === undefined) {
-      list.failed("setup", "this hub has no setup steps yet", "fleetd update, then fleetd init --step again");
+      list.failed("setup", "this workspace has no setup steps yet", "fleetd update, then fleetd init --step again");
       return 1;
     }
     found = all.find((s) => s.id === id);
@@ -574,7 +574,7 @@ export async function openStep(opts: InitOptions, id: string, interactive: boole
     return 4;
   }
   if (found === undefined) {
-    list.failed("setup", `this hub has no step ${id}`, "fleetd init");
+    list.failed("setup", `this workspace has no step ${id}`, "fleetd init");
     return 1;
   }
   try {

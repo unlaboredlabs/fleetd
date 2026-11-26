@@ -745,7 +745,7 @@ export class BrowserBroker {
           { threadId: session.threadId },
         );
       } catch (e) {
-        console.warn(`browser ${session.id}: not reported to the hub: ${(e as Error).message}`);
+        console.warn(`browser ${session.id}: not reported to the workspace: ${(e as Error).message}`);
       }
     });
   }

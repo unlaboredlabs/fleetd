@@ -19,8 +19,8 @@ const NOTES = { machineId: "devbox", projectId: "notes" };
 const ada = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
 const grace = key("operate", { human: true, name: "phone", person: { personId: "p-grace", name: "Grace" } });
 const BILLING = { kind: "repo_facts" as const, exists: true, isGit: true, remote: "https://github.com/acme/billing", defaultBranch: "main", workflowFiles: [] };
-const WHAT = "A new bot on devbox, once you approve. Everyone on this hub can use it. Nothing is made before that.";
-const WHAT_CLONED = "A new bot on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it. Nothing is made before that.";
+const WHAT = "A new bot on devbox, once you approve. Everyone on this workspace can use it. Nothing is made before that.";
+const WHAT_CLONED = "A new bot on devbox, cloned from acme/billing once you approve. Everyone on this workspace can use it. Nothing is made before that.";
 
 /** Notes on devbox with its lead (th-lead) and a task of it (T4, th-task), the wakes its lead gets, and its prompts. */
 async function rig(answer: Answer = () => undefined) {
@@ -298,7 +298,7 @@ test("an approved proposal's clone that fails wakes the lead with why, and no bo
   }
 });
 
-test("a lead whose proposal's clone a hub restart cut off is told at the hub's next start", async () => {
+test("a lead whose proposal's clone a workspace restart cut off is told at the workspace's next start", async () => {
   const k = await rig();
   try {
     k.db.run("INSERT INTO project_setup_clones (add_id, machine_id, project_id, repo, path, proposed) VALUES ('a1', 'devbox', 'notes', 'acme/billing', '/home/me/src/billing', 'Billing')");
@@ -308,7 +308,7 @@ test("a lead whose proposal's clone a hub restart cut off is told at the hub's n
         kind: "line",
         line: "request",
         text:
-          "project_propose: the hub restarted while cloning acme/billing into /home/me/src/billing, so the bot Billing was not created. " +
+          "project_propose: the workspace restarted while cloning acme/billing into /home/me/src/billing, so the bot Billing was not created. " +
           "Tell the person: they can add it with New bot in the app, where a clone that finished on the machine is added as it is.",
       },
     ]);

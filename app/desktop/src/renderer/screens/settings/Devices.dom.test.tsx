@@ -156,13 +156,13 @@ it("pairs a phone by QR, shows the address and code to type and how long it last
   people = { ...people, devices: [...people.devices, device("k3", "iPhone", sam)] };
   const reads = sent("people_list").length;
   await act(async () => {
-    send({ t: "event", event: { seq: 2, at: AT, type: "key.paired", summary: "iPhone paired with the hub", data: { keyId: "k3", deviceName: "iPhone" } } });
+    send({ t: "event", event: { seq: 2, at: AT, type: "key.paired", summary: "iPhone paired with the workspace", data: { keyId: "k3", deviceName: "iPhone" } } });
     await new Promise((r) => setTimeout(r, 300));
   });
   for (let i = 0; i < 3; i++) await settle();
   expect(sent("people_list").length).toBeGreaterThan(reads);
   expect(qr()).toBeNull();
-  expect(panel()?.querySelector("[role='status']")?.textContent).toBe("iPhone paired. It acts as you on this hub now.");
+  expect(panel()?.querySelector("[role='status']")?.textContent).toBe("iPhone paired. It acts as you on this workspace now.");
   expect(rows()).toEqual(["MacBook", "iPhone"]);
   expect(host.querySelector("[role='listitem'][aria-label='iPhone']")?.textContent).toContain("just paired");
   await click(button("Done"));
@@ -174,8 +174,8 @@ it("says a hub only on loopback can't pair a phone, and how to give it an addres
     ok: false,
     error: {
       code: "failed",
-      message: "The hub is only at http://127.0.0.1:4790, which a phone can't reach.",
-      fix: "Give the hub an address your phone reaches, its tailnet or LAN address: on the hub, run `fleetd init --listen <ip>:<port> --url http://<name>:<port>`.",
+      message: "The workspace is only at http://127.0.0.1:4790, which a phone can't reach.",
+      fix: "Give the workspace an address your phone reaches, its tailnet or LAN address: on the workspace, run `fleetd init --listen <ip>:<port> --url http://<name>:<port>`.",
     },
   });
   await render("http://127.0.0.1:4790");
@@ -209,7 +209,7 @@ it("signs out another device once confirmed, never this one", async () => {
 
   // Cancel sends nothing.
   await click(button("Sign out", row("iPhone")));
-  expect(document.body.textContent).toContain("It stops working on this hub at once. To use it again, pair it again.");
+  expect(document.body.textContent).toContain("It stops working on this workspace at once. To use it again, pair it again.");
   await click(button("Cancel", document));
   expect(sent("device_revoke")).toEqual([]);
   expect(rows()).toEqual(["MacBook", "iPhone"]);

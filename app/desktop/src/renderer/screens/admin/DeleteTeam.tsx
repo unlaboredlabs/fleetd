@@ -60,7 +60,7 @@ export function DeleteTeamDialog({ open, onClose }: { open: boolean; onClose: ()
             Cancel
           </Button>
           <Button variant="danger" disabled={busy || !teamTyped(typed)} onClick={() => void remove()}>
-            {busy ? "Deleting…" : "Delete team"}
+            {busy ? "Deleting…" : "Delete workspace"}
           </Button>
         </>
       }
@@ -91,7 +91,7 @@ export function DeleteTeamItem({ className, iconClassName, labelClassName }: { c
         <span className={iconClassName} aria-hidden>
           <Trash2 />
         </span>
-        <span className={labelClassName}>Delete team</span>
+        <span className={labelClassName}>Delete workspace</span>
       </button>
       <DeleteTeamDialog open={open} onClose={() => setOpen(false)} />
     </>

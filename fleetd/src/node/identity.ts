@@ -68,7 +68,7 @@ export class NodeIdentity {
   /** Signature over the hub's challenge nonce's UTF-8 bytes, base64. A nonce shaped as an upgrade proof is refused:
    * a hub can't have the hello sign one for it. */
   sign(nonce: string): string {
-    if (isUpgradeProofMessage(nonce) || isTailnetMessage(nonce)) throw new Error("the hub's challenge is not a nonce");
+    if (isUpgradeProofMessage(nonce) || isTailnetMessage(nonce)) throw new Error("the workspace's challenge is not a nonce");
     return this.#sign(nonce);
   }
   /** Signature over an upgrade proof's message (`makeUpgradeProof`), base64. */

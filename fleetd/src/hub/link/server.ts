@@ -255,7 +255,7 @@ export class Link {
       clearTimeout(timer);
       this.callsDone.delete(done);
     }
-    for (const live of [...this.links.values()]) this.close(live.ws, live.state, CLOSE.RESTART, "hub restarting");
+    for (const live of [...this.links.values()]) this.close(live.ws, live.state, CLOSE.RESTART, "workspace restarting");
   }
 
   /** One lead call being answered, counted until its `end`; undefined once the hub is stopping. */
@@ -533,7 +533,7 @@ export class Link {
       } catch (error) {
         if (error instanceof Unauthorized) throw new Refused(CLOSE.UNAUTHORIZED, error.reason());
         console.error("node link: enroll token check failed:", error);
-        throw new Refused(CLOSE.UNAUTHORIZED, "the hub could not check the enroll token");
+        throw new Refused(CLOSE.UNAUTHORIZED, "the workspace could not check the enroll token");
       }
     }
     let key: string | undefined;
@@ -541,7 +541,7 @@ export class Link {
       key = nodes.nodePubKey(machineId);
     } catch (error) {
       console.error("node link: node key read failed:", error);
-      throw new Refused(CLOSE.UNAUTHORIZED, "the hub could not read the enrolled key");
+      throw new Refused(CLOSE.UNAUTHORIZED, "the workspace could not read the enrolled key");
     }
     if (key === undefined) {
       // A removed machine's node stops as enrolled (src/node/index.ts); any other waits for the hub to know it.
@@ -664,8 +664,8 @@ export class Link {
           id: bad.id,
           error: {
             code: "invalid",
-            message: `the hub could not read this call: ${bad.error}`,
-            fix: "this machine and the hub may run different fleetd versions: carry on without this call and say so in your result",
+            message: `the workspace could not read this call: ${bad.error}`,
+            fix: "this machine and the workspace may run different fleetd versions: carry on without this call and say so in your result",
           },
         });
       }
@@ -724,7 +724,7 @@ export class Link {
             this.write(ws, state, {
               t: "lead_result",
               id: frame.id,
-              error: { code: "failed", message: "fleetd hub is restarting, so this call didn't run", fix: "try it again in a few seconds" },
+              error: { code: "failed", message: "fleetd workspace is restarting, so this call didn't run", fix: "try it again in a few seconds" },
             });
             break;
           }
@@ -1045,8 +1045,8 @@ export class Link {
     } catch (error) {
       console.error("node link: the machine that left wasn't forgotten:", error);
     }
-    this.append("machine.removed", machineId, `${machineId} left the hub: it isn't the agents' Mac any more`);
-    console.info(`node link: ${machineId} left the hub`);
+    this.append("machine.removed", machineId, `${machineId} left the workspace: it isn't the agents' Mac any more`);
+    console.info(`node link: ${machineId} left the workspace`);
   }
 
   /**
@@ -1060,7 +1060,7 @@ export class Link {
     const hubStore = store(this.hub);
     if (hubStore.machineGet(machineId) === undefined) {
       // `fleetd machine remove` ran outside this hub, so no open app has heard yet.
-      this.append("machine.removed", machineId, `${machineId} was removed from the hub`);
+      this.append("machine.removed", machineId, `${machineId} was removed from the workspace`);
       try {
         const rows = hubStore.machineRemove(machineId);
         if (rows > 0) console.info(`node link: a removed machine's rows forgotten again machine_id=${machineId} rows=${rows}`);

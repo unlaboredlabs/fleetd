@@ -299,7 +299,7 @@ export class Prompts {
       throw new PromptError("invalid", "The text is empty; reset the prompt to go back to the shipped one.");
     }
     const file = this.fileOf(e.id, level);
-    if (file === undefined) throw new PromptError("invalid", "This hub keeps no prompt files (an in-memory database).");
+    if (file === undefined) throw new PromptError("invalid", "This workspace keeps no prompt files (an in-memory database).");
     try {
       writeAtomic(file, `---\nbase: ${base ?? refOf(e.id, e.default)}\n---\n${text}`);
     } catch (error) {
@@ -331,7 +331,7 @@ export class Prompts {
   private level(e: RegistryEntry, scope: PromptScope, project?: ProjectRef): ProjectRef | undefined {
     if (scope === "default") throw new PromptError("invalid", "The shipped text cannot change; save a global or project override.");
     if (scope === "global") return undefined;
-    if (!perProject(e)) throw new PromptError("invalid", `${e.id} has one hub-wide text; save it with scope global.`);
+    if (!perProject(e)) throw new PromptError("invalid", `${e.id} has one workspace-wide text; save it with scope global.`);
     if (project === undefined) throw new PromptError("invalid", "A bot override needs projectRef.");
     return project;
   }

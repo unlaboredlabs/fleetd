@@ -68,11 +68,11 @@ export function SetupScreen({ view }: { view: string | null }) {
   const role = useHubRole();
   const steps = useSetupSteps();
   if (!role.administers) {
-    const text = role.pending ? "Loading…" : "Setting up the hub is for its owners and admins.";
+    const text = role.pending ? "Loading…" : "Setting up the workspace is for its owners and admins.";
     return <Note screen="setup.denied" text={text} />;
   }
   if (steps === null) return <Note screen="setup.loading" text="Loading…" />;
-  if ("problem" in steps) return <Note screen="setup.error" text={steps.old ? "This hub is too old for guided setup. Update fleetd on the hub first." : steps.problem} />;
+  if ("problem" in steps) return <Note screen="setup.error" text={steps.old ? "This workspace is too old for guided setup. Update fleetd on the workspace first." : steps.problem} />;
   if (view === "welcome") return <Welcome steps={steps.steps} />;
   if (view === "done") return <Done steps={steps.steps} />;
   return (
@@ -80,7 +80,7 @@ export function SetupScreen({ view }: { view: string | null }) {
       <div className={s.wide}>
         <header className={s.head}>
           <Text as="h1" size="lg" strong>
-            Set up your hub
+            Set up your workspace
           </Text>
           <Text as="p" size="sm" tone="quiet">
             {progressLine(steps.steps)}
@@ -363,7 +363,7 @@ export function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
     <div className={s.screen} data-screen="setup.welcome">
       <div className={s.narrow}>
         <Text as="h1" size="xl" strong>
-          Your hub is running
+          Your workspace is running
         </Text>
         <Text as="p" tone="quiet">
           A few accounts and keys, each checked as you go. Your progress is saved.

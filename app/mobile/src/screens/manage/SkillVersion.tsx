@@ -40,7 +40,7 @@ export function SkillVersion({ navigation, route }: ChatInfoProps<"SkillVersion"
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const r = read.value;
-  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   if (r === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
   if (!r.ok) {
     return (

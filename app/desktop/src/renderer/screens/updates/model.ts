@@ -128,8 +128,8 @@ const GITHUB_FAILING = "GitHub's downloads are failing right now, try again late
 const bad = (p: UpdatePart | undefined): p is UpdatePart => p?.state === "failed" || p?.state === "rolled_back";
 
 /** A machine whose fleetd is from before the hub could update it: the hub's words say the one command to run on it,
- * and Update again would only skip it again. */
-const byHand = (p: UpdatePart | undefined): p is UpdatePart => p?.state === "skipped" && p.message?.includes("too old to update from the hub") === true;
+ * and Update again would only skip it again. Hubs from before the rename to workspace word it "from the hub". */
+const byHand = (p: UpdatePart | undefined): p is UpdatePart => p?.state === "skipped" && /too old to update from the (?:workspace|hub)/u.test(p.message ?? "");
 
 /** Why a part's update didn't come through, by the step it stopped at. Installing and restarting fail for reasons
  * only the hub can name (a local build, a service set up another way), so those are its own words, which say the fix. */
@@ -197,7 +197,7 @@ export const appStatus = (state: UpdatesState): Say | null => {
 const going = (run: UpdateRun, flow: Flow, now: number, timeZone: string | undefined, administers: boolean): Say => {
   const to = run.to === undefined ? {} : { detail: named(run.to) };
   const hub = run.parts.find((p) => p.part === "hub");
-  if (hub !== undefined && GOING.includes(hub.state)) return { kind: "updating", title: "Updating the hub…", ...to };
+  if (hub !== undefined && GOING.includes(hub.state)) return { kind: "updating", title: "Updating the workspace…", ...to };
   const drain = run.now === true ? null : drainOf(run);
   // Never while the hub restarts: only the machines' part of a run can stop. Nor while they wait for their agents,
   // a wait with its own deadline.
@@ -206,7 +206,7 @@ const going = (run: UpdateRun, flow: Flow, now: number, timeZone: string | undef
     return {
       kind: "failed",
       title: "The update stopped",
-      detail: flow.leftOver === true ? "Nothing in the hub drives it any more." : `Nothing has changed for ${String(Math.floor((now - (flow.since ?? now)) / 60_000))} minutes.`,
+      detail: flow.leftOver === true ? "Nothing in the workspace drives it any more." : `Nothing has changed for ${String(Math.floor((now - (flow.since ?? now)) / 60_000))} minutes.`,
       action: { label: "Start over", act: "startOver" },
     };
   }
@@ -244,17 +244,17 @@ export const updateStatus = ({ app, hub, machines = [], run = null, flow = { pha
     return { ...(own ?? { kind: "current", title: "Up to date" }), rows: [] };
   }
   if (flow.phase === "refused") return { kind: "failed", title: "The update didn't start", detail: sentence(flow.message), action: TRY_AGAIN, rows: [] };
-  if (flow.phase === "starting") return { kind: "updating", title: "Updating the hub…", ...(newest === null ? {} : { detail: named(newest) }), rows: [] };
+  if (flow.phase === "starting") return { kind: "updating", title: "Updating the workspace…", ...(newest === null ? {} : { detail: named(newest) }), rows: [] };
   if (live !== null && live.finishedAt === undefined) return { ...going(live, flow, now, timeZone, administers), rows: [] };
   if (flow.phase === "app" && app?.app.kind !== "failed") return { ...appUpdating(app), rows: [] };
-  if (!connected) return { ...(own ?? { kind: "none", title: "Not connected", detail: "Updates show here once the hub answers." }), rows: [] };
+  if (!connected) return { ...(own ?? { kind: "none", title: "Not connected", detail: "Updates show here once the workspace answers." }), rows: [] };
 
   // Up to date, by what the hub says it runs; and for a while after an update came through, when.
   const cameAt = live?.finishedAt !== undefined && !live.parts.some(bad) && live.parts.some((p) => p.state === "done") ? Date.parse(live.finishedAt) : undefined;
   // A hub from before versions says none; one built by hand says 0.0.0.
   const silent = hub.version === undefined;
   const current: Say = !knownVersion(hub.version)
-    ? { kind: "none", title: "Version unknown", detail: silent ? "The hub hasn't said which fleetd it runs." : "The hub runs a local build, which doesn't update itself." }
+    ? { kind: "none", title: "Version unknown", detail: silent ? "The workspace hasn't said which fleetd it runs." : "The workspace runs a local build, which doesn't update itself." }
     : { kind: "current", title: "Up to date", detail: named(hub.version), ...(cameAt !== undefined && now - cameAt < RESULT_SHOWN_MS ? { updatedAt: cameAt } : {}) };
 
   if (!administers) {
@@ -267,7 +267,7 @@ export const updateStatus = ({ app, hub, machines = [], run = null, flow = { pha
   const about = live !== null && (live.to === undefined || !knownVersion(hub.version) || compareVersions(hub.version, live.to) !== 1) ? live : null;
   const hubPart = about?.parts.find((p) => p.part === "hub");
   if (bad(hubPart) && !(about?.to !== undefined && knownVersion(hub.version) && compareVersions(hub.version, about.to) === 0)) {
-    return { kind: "failed", title: "The hub didn't update", detail: whyOf(hubPart), action: TRY_AGAIN, rows: [] };
+    return { kind: "failed", title: "The workspace didn't update", detail: whyOf(hubPart), action: TRY_AGAIN, rows: [] };
   }
 
   // With Update automatically on and a time set, it installs by itself: said so, and Update now only does it sooner.

@@ -18,8 +18,8 @@ function macAdmin(caller: Caller): void {
   if (isHuman(caller) && allowsEverywhere(caller, "admin")) return;
   throw new ToolError(
     "forbidden",
-    "Setting up the agents' Mac is for the hub's owners and admins, from their own device.",
-    "Ask an owner or admin of the hub to open Add machine › A Mac for agents.",
+    "Setting up the agents' Mac is for the workspace's owners and admins, from their own device.",
+    "Ask an owner or admin of the workspace to open Add machine › A Mac for agents.",
   );
 }
 
@@ -30,7 +30,7 @@ export function register(tools: Registry): void {
       throw new ToolError(
         "forbidden",
         "Only a person's own device pairs a phone.",
-        "Open Pair a phone in the fleetd app, or run `fleetd pair` on the hub.",
+        "Open Pair a phone in the fleetd app, or run `fleetd pair` on the workspace's machine.",
       );
     }
     const role = roleEverywhere(caller);
@@ -38,14 +38,14 @@ export function register(tools: Registry): void {
       throw new ToolError(
         "forbidden",
         "This device's key reaches only some machines, and a phone paired from it would reach them all.",
-        "Pair the phone from a device with a key for every machine, or run `fleetd pair` on the hub.",
+        "Pair the phone from a device with a key for every machine, or run `fleetd pair` on the workspace's machine.",
       );
     }
     const hubUrl = await phoneHubUrl(hub, input.hubUrl);
     if (hubUrl === undefined) {
       throw new ToolError(
         "failed",
-        `The hub is only at ${input.hubUrl ?? hub.url()}, which a phone can't reach.`,
+        `The workspace is only at ${input.hubUrl ?? hub.url()}, which a phone can't reach.`,
         phoneLoopbackFix(),
       );
     }
@@ -67,8 +67,8 @@ export function register(tools: Registry): void {
     const next =
       hubUrl !== undefined
         ? "In the fleetd app on the Mac, choose Set up this Mac for agents and type the code. It works once, for 10 " +
-          `minutes; should the app not find the hub, give it ${hubUrl}.`
-        : `The hub is only at a loopback address, which the Mac can't reach. ${loopbackOnlyFix("the Mac", "make a new code here")}`;
+          `minutes; should the app not find the workspace, give it ${hubUrl}.`
+        : `The workspace is only at a loopback address, which the Mac can't reach. ${loopbackOnlyFix("the Mac", "make a new code here")}`;
     return { code: minted.code, expiresAt: minted.expiresAt, ...(hubUrl === undefined ? {} : { hubUrl }), machineId, next };
   });
 

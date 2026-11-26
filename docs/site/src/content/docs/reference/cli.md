@@ -9,7 +9,7 @@ tableOfContents:
 
 Every `fleetd` command, in one line each. Run `fleetd <command> --help` for its options in full.
 
-Exit codes: `0` ok, `1` failed, `2` usage error, `3` refused, `4` the hub or the machine is unreachable.
+Exit codes: `0` ok, `1` failed, `2` usage error, `3` refused, `4` the workspace or the machine is unreachable.
 
 ## Commands {#commands}
 
@@ -31,7 +31,7 @@ fleetd help
 
 ### fleetd update {#update}
 
-Replace this fleetd with the build the rollout has for it, then restart its hub at once and its node once its agents finish the step they're on (10 min at most; `--now` doesn't wait).
+Replace this fleetd with the build the rollout has for it, then restart its workspace at once and its node once its agents finish the step they're on (10 min at most; `--now` doesn't wait).
 
 ```text
 fleetd update [--check] [--speed fast|steady] [--now]
@@ -40,7 +40,7 @@ fleetd update [--check] [--speed fast|steady] [--now]
 
 ## Setting up {#setting-up}
 
-Run these on the hub machine.
+Run these on the workspace's machine.
 
 ### fleetd init {#init}
 
@@ -53,16 +53,16 @@ fleetd init [--yes] [--listen <host:port>] [--url <url>]
 
 ### fleetd init --join {#init-join}
 
-Make this machine a worker of that hub, without SSH from the hub.
+Make this machine a worker of that workspace, without SSH from the workspace's machine.
 
 ```text
-fleetd init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
-    [--claude-config-dir <dir>] [--mac] [--no-service]
+fleetd init --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
+    [--rejoin] [--claude-config-dir <dir>] [--mac] [--no-service]
 ```
 
 ### fleetd init --step {#init-step}
 
-Open one of the hub's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later.
+Open one of the workspace's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later.
 
 ```text
 fleetd init --step <address|machines|claude|github|onepassword|people|mac>
@@ -70,7 +70,7 @@ fleetd init --step <address|machines|claude|github|onepassword|people|mac>
 
 ### fleetd doctor {#doctor}
 
-Run every setup check on the hub now: the setup steps first, then each other problem with its fix.
+Run every setup check on the workspace now.
 
 ```text
 fleetd doctor
@@ -90,13 +90,13 @@ Set up a machine that runs agents, over SSH (`--local`: this machine).
 
 ```text
 fleetd machine add <ssh-host> | --local [--machine-id <id>] [--dry-run] [--no-service]
-    [--hub-url <url>] [--ssh-config <file>]
+    [--workspace-url <url>] [--ssh-config <file>]
     [--claude-config-dir <dir>]
 ```
 
 ### fleetd machine remove {#machine-remove}
 
-Stop and remove the node's service on the machine, revoke its key on the hub and forget its rows there (run again, it clears what an older remove left).
+Stop and remove the node's service on the machine, revoke its key on the workspace and forget its rows there (run again, it clears what an older remove left).
 
 ```text
 fleetd machine remove <id> [--purge] [--force]
@@ -107,7 +107,7 @@ fleetd machine remove <id> [--purge] [--force]
 The most agents the machine runs at once (admin key), up to the fleet cap, in place of what it is measured to fit.
 
 ```text
-fleetd machine set <id> --max-agents <n>|auto [--hub <url>]
+fleetd machine set <id> --max-agents <n>|auto [--workspace <url>]
 ```
 
 ### fleetd machine set --roles {#machine-set-roles}
@@ -115,12 +115,12 @@ fleetd machine set <id> --max-agents <n>|auto [--hub <url>]
 What the machine is for (admin key): agents, sessions (screens: browsers and devices) or both, and the most screens it hosts at once (1 to 64; auto: what it fits).
 
 ```text
-fleetd machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--hub <url>]
+fleetd machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--workspace <url>]
 ```
 
 ### fleetd pair {#pair}
 
-Print a one-time code (15 min) that pairs the fleetd app with this hub, and a QR of its link for the phone app to scan (`--no-qr` leaves it out).
+Print a one-time code (15 min) that pairs the fleetd app with this workspace, and a QR of its link for the phone app to scan (`--no-qr` leaves it out).
 
 ```text
 fleetd pair [--name <device>] [--role <read|operate|admin>] [--no-qr]
@@ -128,7 +128,7 @@ fleetd pair [--name <device>] [--role <read|operate|admin>] [--no-qr]
 
 ### fleetd pair --worker {#pair-worker}
 
-Print the one command that makes another machine a worker of this hub, with a one-time code (15 min).
+Print the one command that makes another machine a worker of this workspace, with a one-time code (15 min).
 
 ```text
 fleetd pair --worker <machine-id>
@@ -152,7 +152,7 @@ fleetd pair --worker-revoke <id>
 
 ### fleetd invite {#invite}
 
-Invite someone to this hub: prints a link and a code (single use, 7 days) that pair their app as a device of a new person, a member unless `--role`.
+Invite someone to this workspace: prints a link and a code (single use, 7 days) that pair their app as a device of a new person, a member unless `--role`.
 
 ```text
 fleetd invite --name <name> [--role <member|admin|owner>]
@@ -175,7 +175,7 @@ fleetd invite revoke <inviteId>
 
 ### fleetd people {#people}
 
-The hub's people, with their role and devices.
+The workspace's people, with their role and devices.
 
 ```text
 fleetd people
@@ -189,7 +189,7 @@ fleetd people role <personId> <owner|admin|member>
 
 ### fleetd people remove {#people-remove}
 
-Signs out all their devices; one device: `fleetd hub key revoke` \<keyId\>.
+Signs out all their devices; one device: `fleetd workspace key revoke` \<keyId\>.
 
 ```text
 fleetd people remove <personId>
@@ -197,7 +197,7 @@ fleetd people remove <personId>
 
 ### fleetd github-app {#github-app}
 
-The hub's own GitHub App: where it is installed and its last test.
+The workspace's own GitHub App: where it is installed and its last test.
 
 ```text
 fleetd github-app
@@ -221,18 +221,18 @@ fleetd github-app test
 
 ### fleetd github-app remove {#github-app-remove}
 
-Forget it; the hub's gh goes back to this machine's own login.
+Forget it; the workspace's gh goes back to this machine's own login.
 
 ```text
 fleetd github-app remove
 ```
 
 
-## Moving a hub {#moving-a-hub}
+## Moving a workspace {#moving-a-workspace}
 
 ### fleetd export {#export}
 
-Write this hub's data to one file (default fleetd-export-\<time\>.tar here), beside the running hub.
+Write this workspace's data to one file (default fleetd-export-\<time\>.tar here), beside the running workspace.
 
 ```text
 fleetd export [--out <file>] [--no-secrets] [--passphrase-file <file|->]
@@ -240,7 +240,7 @@ fleetd export [--out <file>] [--no-secrets] [--passphrase-file <file|->]
 
 ### fleetd import {#import}
 
-Load an export into this hub, which must be fresh (no bots yet) and stopped.
+Load an export into this workspace, which must be fresh (no bots yet) and stopped.
 
 ```text
 fleetd import <file> [--no-secrets] [--passphrase-file <file|->]
@@ -255,7 +255,7 @@ Add a bot: a checkout or a plain folder on a machine (this one by default), or a
 
 ```text
 fleetd project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
-    [--use-existing] [--yes] [--hub <url>]
+    [--use-existing] [--yes] [--workspace <url>]
 ```
 
 ### fleetd project add --new {#project-add-new}
@@ -263,13 +263,13 @@ fleetd project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <d
 Start a new, empty bot: the machine makes its folder (`~/fleetd/projects/<name>` by default, or `--dest`; one that holds files is refused).
 
 ```text
-fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--hub <url>]
+fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--workspace <url>]
 ```
 
 ### fleetd project list {#project-list}
 
 ```text
-fleetd project list [--archived] [--machine <id>] [--hub <url>]
+fleetd project list [--archived] [--machine <id>] [--workspace <url>]
 ```
 
 ### fleetd project archive {#project-archive}
@@ -277,7 +277,7 @@ fleetd project list [--archived] [--machine <id>] [--hub <url>]
 Its lead stops and doesn't start again; its chat, memory and folder stay.
 
 ```text
-fleetd project archive <machine>/<bot> [--hub <url>]
+fleetd project archive <machine>/<bot> [--workspace <url>]
 ```
 
 ### fleetd project unarchive {#project-unarchive}
@@ -285,7 +285,7 @@ fleetd project archive <machine>/<bot> [--hub <url>]
 Bring it back: its lead starts with your next message.
 
 ```text
-fleetd project unarchive <machine>/<bot> [--hub <url>]
+fleetd project unarchive <machine>/<bot> [--workspace <url>]
 ```
 
 ### fleetd project stop {#project-stop}
@@ -293,7 +293,7 @@ fleetd project unarchive <machine>/<bot> [--hub <url>]
 Stop its lead's turn and its agents, as you.
 
 ```text
-fleetd project stop <machine>/<bot> --key-file <human key> [--yes] [--hub <url>]
+fleetd project stop <machine>/<bot> --key-file <human key> [--yes] [--workspace <url>]
 ```
 
 ### fleetd project remove {#project-remove}
@@ -301,13 +301,13 @@ fleetd project stop <machine>/<bot> --key-file <human key> [--yes] [--hub <url>]
 Stop its agents and erase it: its chat, memory, skills, approvals, orders, automations and sign-ins.
 
 ```text
-fleetd project remove <machine>/<bot> [--yes] [--hub <url>]
+fleetd project remove <machine>/<bot> [--yes] [--workspace <url>]
 ```
 
 ### fleetd project repo list {#project-repo-list}
 
 ```text
-fleetd project repo list <machine>/<bot> [--hub <url>]
+fleetd project repo list <machine>/<bot> [--workspace <url>]
 ```
 
 ### fleetd project repo add {#project-repo-add}
@@ -316,7 +316,7 @@ Add a repo to the bot: a checkout on its machine, or a GitHub repo cloned there,
 
 ```text
 fleetd project repo add <machine>/<bot> <path|github-url> [--name <n>] [--dest <dir>]
-    [--use-existing | --copy] [--hub <url>]
+    [--use-existing | --copy] [--workspace <url>]
 ```
 
 ### fleetd project repo remove {#project-repo-remove}
@@ -324,7 +324,7 @@ fleetd project repo add <machine>/<bot> <path|github-url> [--name <n>] [--dest <
 Take the repo out of the bot and end its agents.
 
 ```text
-fleetd project repo remove <machine>/<bot> <name> [--yes] [--hub <url>]
+fleetd project repo remove <machine>/<bot> <name> [--yes] [--workspace <url>]
 ```
 
 ### fleetd project set {#project-set}
@@ -332,16 +332,16 @@ fleetd project repo remove <machine>/<bot> <name> [--yes] [--hub <url>]
 The most agents the bot runs at once (its lead not counted), or the fleet's cap on running agents (admin key).
 
 ```text
-fleetd project set <machine>/<bot> --max-agents <n>|default [--pause-extras] [--hub <url>]
-fleetd project set --fleet-cap <n> [--hub <url>]
+fleetd project set <machine>/<bot> --max-agents <n>|default [--pause-extras] [--workspace <url>]
+fleetd project set --fleet-cap <n> [--workspace <url>]
 ```
 
 ### fleetd project set --profiles {#project-set-profiles}
 
-The task profiles its lead may run agents on besides the hub's default, which every bot allows.
+The task profiles its lead may run agents on besides the workspace's default, which every bot allows.
 
 ```text
-fleetd project set <machine>/<bot> --profiles <name>,...|none [--hub <url>]
+fleetd project set <machine>/<bot> --profiles <name>,...|none [--workspace <url>]
 ```
 
 ### fleetd project set --merges {#project-set-merges}
@@ -349,7 +349,7 @@ fleetd project set <machine>/<bot> --profiles <name>,...|none [--hub <url>]
 Who merges its PRs: you (the train reviews them and keeps them up to date, merges only those its merges-itself rules allow, and the lead says when each other one is ready) or fleetd (the train merges each one once it is reviewed and green).
 
 ```text
-fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key> [--hub <url>]
+fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key> [--workspace <url>]
 ```
 
 ### fleetd project set --merge-mode {#project-set-merge-mode}
@@ -357,15 +357,15 @@ fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key> [-
 How the train merges its PRs: test (ready PRs merge in batches whose combined tree passed CI) or verify (each PR merges on its own green CI, up to 4 side by side, and a red main is bisected and reverted).
 
 ```text
-fleetd project set <machine>/<bot> --merge-mode test|verify --key-file <human key> [--hub <url>]
+fleetd project set <machine>/<bot> --merge-mode test|verify --key-file <human key> [--workspace <url>]
 ```
 
 ### fleetd project profiles {#project-profiles}
 
-The hub's task profiles: model, effort, fast mode and note, and which the bot allows.
+The workspace's task profiles: model, effort, fast mode and note, and which the bot allows.
 
 ```text
-fleetd project profiles [<machine>/<bot>] [--hub <url>]
+fleetd project profiles [<machine>/<bot>] [--workspace <url>]
 ```
 
 ### fleetd project profile {#project-profile}
@@ -375,68 +375,84 @@ Create or change a task profile (owner or admin), or delete one.
 ```text
 fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
     [--fast on|off] [--note <text>] [--rename <new>] [--default] [--lead]
-    [--delete] --key-file <human key> [--hub <url>]
+    [--delete] --key-file <human key> [--workspace <url>]
 ```
 
 
 ## Running by hand {#running-by-hand}
 
 :::tip
-Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup the other commands read. The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).
+Run `fleetd init --no-service` before `fleetd workspace start`: it writes the setup the other commands read. The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).
 :::
 
-### fleetd hub start {#hub-start}
+### fleetd workspace start {#workspace-start}
 
-Run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h).
+Run the workspace (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h).
 
 ```text
-fleetd hub start [--home <dir>] [--listen <host:port>]
+fleetd workspace start [--home <dir>] [--listen <host:port>]
 ```
 
-### fleetd hub key create {#hub-key-create}
+### fleetd workspace stop {#workspace-stop}
+
+Stop this machine's workspace service (systemd or launchd), as before `fleetd import`.
+
+```text
+fleetd workspace stop
+```
+
+### fleetd workspace restart {#workspace-restart}
+
+Restart this machine's workspace service, or start it when stopped.
+
+```text
+fleetd workspace restart
+```
+
+### fleetd workspace key create {#workspace-key-create}
 
 Create an agent key for the MCP endpoint.
 
 ```text
-fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>]
+fleetd workspace key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>]
 ```
 
-### fleetd hub key create --agent {#hub-key-create-agent}
+### fleetd workspace key create --agent {#workspace-key-create-agent}
 
 A named agent's key, to write in a bot's chat (`fleetd chat --key-file`).
 
 ```text
-fleetd hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>]
+fleetd workspace key create --agent <name> [--machines <'*'|id,id>] [--out <file>]
 ```
 
-### fleetd hub key create --human {#hub-key-create-human}
+### fleetd workspace key create --human {#workspace-key-create-human}
 
 A key for a person's device (the desktop app).
 
 ```text
-fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>]
+fleetd workspace key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>]
 ```
 
-### fleetd hub key list {#hub-key-list}
+### fleetd workspace key list {#workspace-key-list}
 
 ```text
-fleetd hub key list
+fleetd workspace key list
 ```
 
-### fleetd hub key revoke {#hub-key-revoke}
+### fleetd workspace key revoke {#workspace-key-revoke}
 
-Takes effect at once, also on a running hub.
+Takes effect at once, also on a running workspace.
 
 ```text
-fleetd hub key revoke <keyId>
+fleetd workspace key revoke <keyId>
 ```
 
 ### fleetd node join {#node-join}
 
-Enroll this machine with the hub, then keep its link up (node home default `~/.fleetd/node`).
+Enroll this machine with the workspace, then keep its link up (node home default `~/.fleetd/node`).
 
 ```text
-fleetd node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
+fleetd node join --workspace <url> (--token <token> | --token-file <file|->) --machine <id>
     [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
 ```
 
@@ -466,7 +482,7 @@ fleetd node grants [--ask accessibility|screen_recording|screen_capture] [--wait
 
 ### fleetd node leave {#node-leave}
 
-Stop being the agents' Mac: stops and removes the node's service, has the hub remove this machine when it answers, and deletes the node's key and settings.
+Stop being the agents' Mac: stops and removes the node's service, has the workspace remove this machine when it answers, and deletes the node's key and settings.
 
 ```text
 fleetd node leave [--home <dir>]
@@ -521,7 +537,7 @@ fleetd instructions show|edit [--project <machine>/<bot>]
 
 ### fleetd push-relay {#push-relay}
 
-Forward hubs' sealed phone notifications to APNs and FCM with your own credentials.
+Forward workspaces' sealed phone notifications to APNs and FCM with your own credentials.
 
 ```text
 fleetd push-relay [--listen 127.0.0.1:4795]
@@ -529,10 +545,10 @@ fleetd push-relay [--listen 127.0.0.1:4795]
 
 ### fleetd push-relay set {#push-relay-set}
 
-Hubs send phone notifications through https://push.fleetd.sh, the relay for the published app, without a key.
+Workspaces send phone notifications through https://push.fleetd.sh, the relay for the published app, without a key.
 
 ```text
-fleetd push-relay set <url|off> [--relay-key-file <path>] [--hub <url> --key-file <path>]
+fleetd push-relay set <url|off> [--relay-key-file <path>] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd time {#time}
@@ -540,7 +556,7 @@ fleetd push-relay set <url|off> [--relay-key-file <path>] [--hub <url> --key-fil
 Where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings.
 
 ```text
-fleetd time [<order>|<bot>] [--since 7d] [--json] [--hub <url> --key-file <path>]
+fleetd time [<order>|<bot>] [--since 7d] [--json] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd metrics {#metrics}
@@ -548,7 +564,7 @@ fleetd time [<order>|<bot>] [--since 7d] [--json] [--hub <url> --key-file <path>
 What the factory turned out: PRs merged per day by route, time from order to merged, your minutes per merged PR and the share through fleetd, over the last `--days` calendar days (1-400, today included) in this machine's zone.
 
 ```text
-fleetd metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path>]
+fleetd metrics [--project <p>] [--days 30] [--json] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd status {#status}
@@ -556,7 +572,7 @@ fleetd metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <pat
 One row per bot, as the app's Status screen shows it.
 
 ```text
-fleetd status [<bot>] [--watch] [--json] [--hub <url> --key-file <path>]
+fleetd status [<bot>] [--watch] [--json] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd usage {#usage}
@@ -564,7 +580,7 @@ fleetd status [<bot>] [--watch] [--json] [--hub <url> --key-file <path>]
 Each machine's Claude usage pause: open or not, why, until when, and how much is parked.
 
 ```text
-fleetd usage [<machine>] [--json] [--hub <url> --key-file <path>]
+fleetd usage [<machine>] [--json] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd usage resume {#usage-resume}
@@ -572,7 +588,7 @@ fleetd usage [<machine>] [--json] [--hub <url> --key-file <path>]
 Lift the machine's usage pause now and send every parked agent "continue", like Resume in the app.
 
 ```text
-fleetd usage resume <machine> [--json] [--hub <url> --key-file <path>]
+fleetd usage resume <machine> [--json] [--workspace <url> --key-file <path>]
 ```
 
 ### fleetd steer {#steer}
@@ -580,7 +596,7 @@ fleetd usage resume <machine> [--json] [--hub <url> --key-file <path>]
 Steer one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns.
 
 ```text
-fleetd steer T<n> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
+fleetd steer T<n> "<text>" [--now] [--wait] --key-file <human key> [--workspace <url>]
 ```
 
 ### fleetd steer withdraw {#steer-withdraw}
@@ -588,7 +604,7 @@ fleetd steer T<n> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
 Take back a steer the agent has not taken in yet.
 
 ```text
-fleetd steer withdraw S<n> --key-file <human key> [--hub <url>]
+fleetd steer withdraw S<n> --key-file <human key> [--workspace <url>]
 ```
 
 ### fleetd steers {#steers}
@@ -596,7 +612,7 @@ fleetd steer withdraw S<n> --key-file <human key> [--hub <url>]
 An order's (or one agent's) recent steers and their receipts.
 
 ```text
-fleetd steers <W|T> --key-file <human key> [--hub <url>]
+fleetd steers <W|T> --key-file <human key> [--workspace <url>]
 ```
 
 ### fleetd chat {#chat}
@@ -604,7 +620,7 @@ fleetd steers <W|T> --key-file <human key> [--hub <url>]
 Write to a bot's lead, as the app does: it starts the lead's next turn, or lands at its next step while it works.
 
 ```text
-fleetd chat <machine>/<bot> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url>]
+fleetd chat <machine>/<bot> "<text>" [--now] [--wait | --follow] --key-file <key> [--workspace <url>]
 ```
 
 ### fleetd chat history {#chat-history}
@@ -612,7 +628,7 @@ fleetd chat <machine>/<bot> "<text>" [--now] [--wait | --follow] --key-file <key
 The bot's chat: who wrote each message, when, and what.
 
 ```text
-fleetd chat history <bot> [--page <n>] --key-file <key> [--hub <url>]
+fleetd chat history <bot> [--page <n>] --key-file <key> [--workspace <url>]
 ```
 
 ### fleetd work {#work}
@@ -620,7 +636,7 @@ fleetd chat history <bot> [--page <n>] --key-file <key> [--hub <url>]
 What is in flight on this checkout's repo and base.
 
 ```text
-fleetd work [list] --key-file <key> [--hub <url>]
+fleetd work [list] --key-file <key> [--workspace <url>]
 ```
 
 ### fleetd work claim {#work-claim}
@@ -629,7 +645,7 @@ Check the intent against the work in flight and claim it, with the repo, branch,
 
 ```text
 fleetd work claim "<intent>" [--issue <key>]... [--paths <a,b>] [--anyway]
-    [--not-duplicate-of <ids> --why "<reason>"] --key-file <key> [--hub <url>]
+    [--not-duplicate-of <ids> --why "<reason>"] --key-file <key> [--workspace <url>]
 ```
 
 ### fleetd work done {#work-done}
@@ -637,7 +653,7 @@ fleetd work claim "<intent>" [--issue <key>]... [--paths <a,b>] [--anyway]
 End your claim as landed (by default the one on this branch).
 
 ```text
-fleetd work done [C<n>] [--landing <sha>] --key-file <key> [--hub <url>]
+fleetd work done [C<n>] [--landing <sha>] --key-file <key> [--workspace <url>]
 ```
 
 ### fleetd work drop {#work-drop}
@@ -645,12 +661,12 @@ fleetd work done [C<n>] [--landing <sha>] --key-file <key> [--hub <url>]
 End your claim as dropped (by default the one on this branch).
 
 ```text
-fleetd work drop [C<n>] --key-file <key> [--hub <url>]
+fleetd work drop [C<n>] --key-file <key> [--workspace <url>]
 ```
 
 ### fleetd vault key {#vault-key}
 
-Move the vault's root key: a file beside the hub (the default), this machine's keychain, or a file locked with a passphrase (read from stdin; the vault then stays locked after each restart until an owner or admin unlocks it in the app).
+Move the vault's root key: a file beside the workspace (the default), this machine's keychain, or a file locked with a passphrase (read from stdin; the vault then stays locked after each restart until an owner or admin unlocks it in the app).
 
 ```text
 fleetd vault key --store <file|keyring|passphrase>
@@ -658,7 +674,7 @@ fleetd vault key --store <file|keyring|passphrase>
 
 ### fleetd vault recovery-code {#vault-recovery-code}
 
-Print the vault key's recovery code, to keep somewhere other than the hub.
+Print the vault key's recovery code, to keep somewhere other than the workspace.
 
 ```text
 fleetd vault recovery-code

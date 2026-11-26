@@ -80,7 +80,7 @@ export class Skills {
   }
 
   private root(): string {
-    if (this.dir === undefined) throw new ToolError("failed", "This hub has no home to keep skills in.");
+    if (this.dir === undefined) throw new ToolError("failed", "This workspace has no home to keep skills in.");
     return this.dir;
   }
 

@@ -240,7 +240,7 @@ test("the hub's version picks its build and says when edge moved on", async () =
     const out = await r.sh(`sh "$INSTALLER" --join http://hub:4790 --code c --version ${hub}`);
     expect(out.code, out.stderr).toBe(0);
     expect(r.fleetdArgs()).toEqual(["init", "--join", "http://hub:4790", "--code", "c"]);
-    expect(out.stdout.includes("your hub runs an older edge build"), out.stdout).toBe(says);
+    expect(out.stdout.includes("your workspace runs an older edge build"), out.stdout).toBe(says);
     if (says) {
       expect(out.stdout).toContain("press Update in the app on your main machine");
       expect(out.stdout).not.toContain("mismatch");

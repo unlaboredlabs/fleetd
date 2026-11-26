@@ -48,9 +48,9 @@ function composerSends(f: Fixture): void {
 
   const sent = (seq: number, text: string): JsonObject => msg(seq, "human", text, 0, { clientRequestId: `qa-${seq}`, delivery: "queued" });
   f.fail("chat_send", { text: CHAT_SENDS.refused }, { code: "forbidden", message: "This key can read the fleet but can’t send to its leads." });
-  f.fail("chat_send", { text: CHAT_SENDS.cutOff }, { code: "disconnected", message: "The app disconnected from the hub." });
-  f.fail("chat_send", { text: CHAT_SENDS.unanswered }, { code: "timeout", message: "The hub didn’t answer chat_send within 15 s." });
-  f.fail("chat_send", { text: CHAT_SENDS.offline }, { code: "offline", message: "Not connected to the hub." });
+  f.fail("chat_send", { text: CHAT_SENDS.cutOff }, { code: "disconnected", message: "The app disconnected from the workspace." });
+  f.fail("chat_send", { text: CHAT_SENDS.unanswered }, { code: "timeout", message: "The workspace didn’t answer chat_send within 15 s." });
+  f.fail("chat_send", { text: CHAT_SENDS.offline }, { code: "offline", message: "Not connected to the workspace." });
   f.answer("chat_send", { text: CHAT_SENDS.waiting }, { message: sent(6, CHAT_SENDS.waiting), leadWaiting: "devbox is offline; it starts when devbox is back." });
   f.answer("attachment_put", undefined, { attachmentId: "F1", bytes: 68, sha256: "0".repeat(64) });
   // Still on its way when the shot is taken; the screen doesn't wait for it.

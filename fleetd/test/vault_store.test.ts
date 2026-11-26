@@ -27,7 +27,7 @@ async function reveal(caller: typeof k.ownerDevice, itemId: string, fields: stri
 const LOGIN = { username: "ada@example.test", password: "planted-pw-1x9z" };
 const CARD = { number: "4242 4242 4242 4242", month: "4", year: "31", cvc: "123", name: "Ada" };
 
-test("a team login: metadata worked out by the hub, the value only through a sealed reveal", async () => {
+test("a team login: metadata worked out by the workspace, the value only through a sealed reveal", async () => {
   const item = await save(k.ownerDevice, { kind: "login", label: "Shop", sites: ["www.shop.example"], sealed: k.sealToHub(LOGIN) });
   expect(item.scope).toBe("hub");
   expect(item.meta).toEqual({ sites: ["www.shop.example"], fields: ["username", "password"], source: { kind: "typed" } });
@@ -65,7 +65,7 @@ test("team items: anyone adds one; its creator or an admin shows, changes or del
 test("an older app adding a person's own or hub-level item, or a bot's login, is refused saying to update; its reads work", async () => {
   for (const scope of ["person", "hub", "project"]) {
     const e = await refusal(save(k.memberDevice, { kind: "login", scope, ...PROJECT, label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) }));
-    expect([e.code, e.reason, e.message]).toEqual(["invalid", "vault_update_app", "This app is older than the hub: update it to add vault items."]);
+    expect([e.code, e.reason, e.message]).toEqual(["invalid", "vault_update_app", "This app is older than the workspace: update it to add vault items."]);
   }
   const e = await refusal(save(k.memberDevice, { kind: "env", scope: "person", envName: "TOKEN", sealed: k.sealToHub({ value: "x" }) }));
   expect(e.reason).toBe("vault_update_app");

@@ -22,7 +22,7 @@ export function ArtifactVersions({ navigation, route }: ChatInfoProps<"ArtifactV
   const read = useRead(() => (p === undefined ? Promise.resolve(undefined) : readArtifact(session, p, name)), [session, p?.machineId, p?.projectId, name]);
   useArtifactsChanged(session, p, read.reload);
   const r = read.value;
-  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   if (r === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
   const versions = r.ok ? r.value.versions : [];
   const newest = versions[0]?.version;

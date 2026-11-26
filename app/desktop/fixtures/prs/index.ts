@@ -590,7 +590,7 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "prs-loading", "The PR list and every PR still on their way from the hub.");
+      const f = Fixture.from(base("typical"), "prs-loading", "The PR list and every PR still on their way from the workspace.");
       answerAll(f, specs(f));
       for (const a of f.answers("pr_list")) f.answer("pr_list", a.input, a.output, 600_000);
       for (const a of f.answers("pr_get")) f.answer("pr_get", a.input, a.output, 600_000);
@@ -607,7 +607,7 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "prs-rate-limited", "GitHub's rate limit is reached: the hub answers with what GitHub said last, and says so.");
+      const f = Fixture.from(base("typical"), "prs-rate-limited", "GitHub's rate limit is reached: the workspace answers with what GitHub said last, and says so.");
       answerAll(f, specs(f), { githubError: "GitHub's rate limit is reached; fleetd asks again in a minute.", kept: true });
       return f;
     })(),
@@ -619,7 +619,7 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "prs-heavy", "A PR of 240 files, one of them a 3,000-line rewrite, paged as the hub pages them.");
+      const f = Fixture.from(base("typical"), "prs-heavy", "A PR of 240 files, one of them a 3,000-line rewrite, paged as the workspace pages them.");
       answerAll(f, [heavySpec(f), ...specs(f)]);
       return f;
     })(),

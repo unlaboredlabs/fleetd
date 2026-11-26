@@ -150,8 +150,8 @@ export class GithubApps {
     try {
       return loadOrCreateBoxKey(this.hub.config.home);
     } catch (error) {
-      console.error("hub box key:", error);
-      return fail("the hub can't read its box key: check the hub's home directory");
+      console.error("workspace box key:", error);
+      return fail("the workspace can't read its box key: check the workspace's home directory");
     }
   }
 
@@ -244,7 +244,7 @@ export class GithubApps {
     if (!kept) return undefined;
     const pem =
       this.open(kept.sealed) ??
-      fail("the App's key was sealed to another box key: the hub's home changed. Create the App again");
+      fail("the App's key was sealed to another box key: the workspace's home changed. Create the App again");
     return { app: kept.app, pem };
   }
 

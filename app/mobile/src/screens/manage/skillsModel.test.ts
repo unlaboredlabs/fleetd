@@ -46,7 +46,7 @@ describe("the Skills list", () => {
 
   it("falls back to where an installed one came from", () => {
     expect(rowLine(skill("a", { install }), clock, undefined)).toBe("From acme/skills");
-    expect(rowLine(skill("a", { origin: "global" }), clock, undefined)).toBe("Hub-wide");
+    expect(rowLine(skill("a", { origin: "global" }), clock, undefined)).toBe("Workspace-wide");
     expect(rowLine(skill("a"), clock, undefined)).toBeUndefined();
   });
 
@@ -86,7 +86,7 @@ describe("a skill's view", () => {
     expect(sourceLine(skill("a"), "Nova", 4)).toBe("Made by Nova · 4 versions");
     expect(sourceLine(skill("a"), "Nova", 1)).toBe("Made by Nova");
     expect(sourceLine(skill("a", { install }), "Nova", 0)).toBe("Installed from acme/skills");
-    expect(sourceLine(skill("a", { origin: "global" }), "Nova", 2)).toBe("Hub-wide · 2 versions");
+    expect(sourceLine(skill("a", { origin: "global" }), "Nova", 2)).toBe("Workspace-wide · 2 versions");
     expect(sourceLine(skill("a", { origin: "repo_agents", path: ".agents/skills/a/SKILL.md" }), "Nova", 0)).toBe(".agents/skills/a/SKILL.md");
   });
 });

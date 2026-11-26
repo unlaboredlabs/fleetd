@@ -40,7 +40,7 @@ export type Screens = (machineId: MachineId, threadId: ThreadId, sessionId: stri
 
 export const leadBy = (r: ProjectRef) => `lead:${r.machineId}/${r.projectId}`;
 
-const failedHandling = () => new ToolError("failed", "the hub failed while handling this call", "try again shortly");
+const failedHandling = () => new ToolError("failed", "the workspace failed while handling this call", "try again shortly");
 
 /** How long the answer to a call with its own `callId` is kept for a repeat: well past the CLI's RESEND_MS plus a
  * box guest's wait for its next link. */
@@ -53,7 +53,7 @@ const unknownRepeat = (id: string): LeadResultFrame => ({
   id,
   error: new ToolError(
     "machine_offline",
-    "this call was cut before its answer, and the hub can't tell whether it ran; the call may or may not have gone through",
+    "this call was cut before its answer, and the workspace can't tell whether it ran; the call may or may not have gone through",
     "try again shortly",
   ).toJSON(),
 });
@@ -224,7 +224,7 @@ export class LeadCalls {
     if (!handler) {
       throw new ToolError(
         "forbidden",
-        "this hub does not take lead-side calls yet",
+        "this workspace does not take lead-side calls yet",
         "carry on without this call and say so in your result",
       );
     }

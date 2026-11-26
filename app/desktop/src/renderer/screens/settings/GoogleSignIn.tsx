@@ -179,7 +179,7 @@ export function AntigravityRow({
         ) : sign.step === "signed" ? (
           `Signed in · ${sign.plan}`
         ) : !live && waiting ? (
-          "Not connected to the hub."
+          "Not connected to the workspace."
         ) : sign.step === "starting" ? (
           // Words while it starts, never a bare disabled button: the machine may start a computer or install agy first.
           <span role="status">{STARTING}</span>
@@ -322,7 +322,7 @@ export function GeminiKeyRow({ status }: { status: AntigravityStatusOutput | und
   return (
     <SettingsRow
       title="Gemini API key"
-      hint="The team's key, from Google AI Studio: agents on Google run on it unless their bot has a key or an endpoint of its own. It is sealed to each machine and never shown again; agents on Google get it in their environment, masked in what they report, and it goes to no endpoint but Google's or the one saved here."
+      hint="The workspace's key, from Google AI Studio: agents on Google run on it unless their bot has a key or an endpoint of its own. It is sealed to each machine and never shown again; agents on Google get it in their environment, masked in what they report, and it goes to no endpoint but Google's or the one saved here."
       line={key === undefined ? null : `${sealedLine(key.sealedOn)}${key.endpoint === undefined ? "" : ` Through ${key.endpoint}.`}`}
       data={{ "data-row": "gemini-key" }}
       control={
@@ -369,7 +369,7 @@ export function GeminiKeyRow({ status }: { status: AntigravityStatusOutput | und
       <Problem text={problem} />
       {removing ? (
         <ConfirmRemove
-          title="Remove the team's Gemini key?"
+          title="Remove the workspace's Gemini key?"
           description="Each machine forgets it. Agents on Google run on their bot's own key, else the machine's Google sign-in, from their next start."
           action="Remove"
           onRemove={() => hubCall("gemini_key_remove", {}).then(() => refetch(["antigravity_status"]))}

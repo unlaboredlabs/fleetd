@@ -48,7 +48,7 @@ const DEFAULT_BRANCH_PREFIX = "fleetd/";
 /** The most open orders, and tasks of each, `writers` reads: far past any project's real count. */
 const WRITERS_MAX = 1_000;
 
-const notPorted = (what: string) => new Error(`${what} isn't running on this hub`);
+const notPorted = (what: string) => new Error(`${what} isn't running on this workspace`);
 
 /** A task as the train reads it. */
 export function taskView(task: Task): TaskView {

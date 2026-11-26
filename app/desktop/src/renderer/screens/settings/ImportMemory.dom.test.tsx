@@ -142,7 +142,7 @@ const status = () => document.querySelector('section[data-part="import-memory"] 
 
 it("says who reads it as a team on a fleetd cloud team, never a hub", async () => {
   await mount(undefined, undefined, true);
-  expect(host.textContent).toContain("Everyone on this team can read what it writes.");
+  expect(host.textContent).toContain("Everyone on this workspace can read what it writes.");
   expect(host.textContent).not.toContain("hub");
 });
 
@@ -151,7 +151,7 @@ it("shows the two steps with the hub's prompt, and copies it whole", async () =>
   const text = host.textContent;
   expect(text).toContain("1. Copy this prompt into a chat with your other AI assistant");
   expect(text).toContain("2. Paste the answer below to add it to your memory");
-  expect(text).toContain("Everyone on this hub can read what it writes.");
+  expect(text).toContain("Everyone on this workspace can read what it writes.");
   expect(text).toContain("Export everything you have stored about me in memory.");
   await act(async () => {
     button("Copy prompt").click();
@@ -241,7 +241,7 @@ it("never says your memory already has it when nothing fit, or only secrets were
 });
 
 it("offers New bot on a hub with no bot, since the import runs in one", async () => {
-  await mount(undefined, { code: "invalid", reason: NO_PROJECT, message: "This hub has no bot to run the import in.", fix: "Add a bot first, then import again." });
+  await mount(undefined, { code: "invalid", reason: NO_PROJECT, message: "This workspace has no bot to run the import in.", fix: "Add a bot first, then import again." });
   const box = paste("[2024-03-02] - Keep answers short.");
   await act(async () => {
     button("Add to Memory").click();

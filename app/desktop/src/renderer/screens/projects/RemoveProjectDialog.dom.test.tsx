@@ -64,7 +64,7 @@ it("a bot on a removed machine is only forgotten in fleetd", async () => {
     deleting: { unsaved: [{ path: "/home/dev/.fleetd/node/worktrees/fleetd/t1" }] },
   });
   expect(dialog()?.textContent).toContain("Forget fleetd?");
-  expect(dialog()?.textContent).toContain("worker is no longer in this hub, so no machine holds its files");
+  expect(dialog()?.textContent).toContain("worker is no longer in this workspace, so no machine holds its files");
   expect(dialog()?.textContent).not.toContain("uncommitted");
   expect(dialog()?.querySelector("input")).toBeNull();
   await act(async () => {

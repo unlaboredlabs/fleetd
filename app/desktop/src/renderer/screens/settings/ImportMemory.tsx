@@ -8,7 +8,7 @@ import type { MemoryImportOutput } from "../../../shared/contracts";
 import { Button, copyText, Text, Textarea } from "../../ui";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useHub, useToolQuery } from "../../src/data/react";
+import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { openAddProject } from "../projects/store";
 import { SettingsRow, SettingsSection } from "./parts";
@@ -50,8 +50,6 @@ export function importSummary(out: MemoryImportOutput): string {
 
 export function ImportMemory() {
   const live = useLive();
-  // A fleetd cloud team is a team to the person, never a hub.
-  const team = useHub().cloud === true;
   const read = useToolQuery("memory_import", {}, { enabled: live });
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -138,7 +136,7 @@ export function ImportMemory() {
             {busy ? "Adding to Memory…" : "Add to Memory"}
           </Button>
           <Text size="xs" tone="quiet">
-            {busy ? "Reading it on your Claude; this can take a minute." : `Everyone on this ${team ? "team" : "hub"} can read what it writes.`}
+            {busy ? "Reading it on your Claude; this can take a minute." : `Everyone on this workspace can read what it writes.`}
           </Text>
         </div>
         <div role="status">

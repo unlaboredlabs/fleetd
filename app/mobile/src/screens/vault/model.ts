@@ -239,7 +239,7 @@ export const offWhy = (item: Pick<VaultItemSummary, "canReveal" | "canEdit">): {
 });
 
 /** The line under the set-aside section: why its items are there, and what to do with them. */
-export const SET_ASIDE_WHY = "Yours from before the team vault. Only you see them and nothing uses them until you move them.";
+export const SET_ASIDE_WHY = "Yours from before the workspace vault. Only you see them and nothing uses them until you move them.";
 
 /**
  * The title a row shows: a variable by its name, everything else by its label. A `request_secret` sink's item has an

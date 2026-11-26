@@ -89,21 +89,21 @@ function show(apps: GithubApps) {
   if (app) describe(app);
   else {
     println(
-      `This hub has no GitHub App yet: \`fleetd github-app create\`, or ${settingsPath()} › Setup › GitHub in the app.\nUntil then the hub's gh uses this machine's own login.`,
+      `This workspace has no GitHub App yet: \`fleetd github-app create\`, or ${settingsPath()} › Setup › GitHub in the app.\nUntil then the workspace's gh uses this machine's own login.`,
     );
   }
 }
 
 async function test(apps: GithubApps): Promise<number> {
   const app = await apps.test();
-  if (!app) throw new Error("this hub has no GitHub App yet: `fleetd github-app create`");
+  if (!app) throw new Error("this workspace has no GitHub App yet: `fleetd github-app create`");
   describe(app);
   return app.lastTest?.ok === true ? 0 : 1;
 }
 
 async function remove(apps: GithubApps): Promise<number> {
   const app = await apps.remove();
-  if (!app) throw new Error("this hub has no GitHub App");
+  if (!app) throw new Error("this workspace has no GitHub App");
   println(`Forgot ${app.name}. GitHub keeps it until you delete it there: ${app.settingsUrl}/advanced`);
   return 0;
 }
@@ -112,7 +112,7 @@ const escape = (t: string) => t.replaceAll("&", "&amp;").replaceAll('"', "&quot;
 
 /** The page the browser opens first: it posts the manifest to GitHub at once, with a button in case scripts are off. */
 export function postPage(postTo: string, state: string, manifestText: string): string {
-  return `<!doctype html><meta charset="utf-8"><title>fleetd</title><body style="font:14px/1.5 system-ui,sans-serif;color:#444;margin:3rem"><form id="f" method="post" action="${escape(postTo)}?state=${escape(state)}"><input type="hidden" name="manifest" value="${escape(manifestText)}"><p>Taking you to GitHub to create the hub's App…</p><button>Continue to GitHub</button></form><script>document.getElementById('f').submit()</script></body>`;
+  return `<!doctype html><meta charset="utf-8"><title>fleetd</title><body style="font:14px/1.5 system-ui,sans-serif;color:#444;margin:3rem"><form id="f" method="post" action="${escape(postTo)}?state=${escape(state)}"><input type="hidden" name="manifest" value="${escape(manifestText)}"><p>Taking you to GitHub to create the workspace's App…</p><button>Continue to GitHub</button></form><script>document.getElementById('f').submit()</script></body>`;
 }
 
 /** The page the browser lands on after GitHub. */
@@ -150,7 +150,7 @@ async function create(apps: GithubApps, home: string, org: string | undefined, g
         if (taken) return landing("Already done", "Go back to the terminal.");
         taken = true;
         resolveCode(c);
-        return landing("The App is created", "fleetd keeps its keys on the hub. You can close this tab and go back to the terminal.");
+        return landing("The App is created", "fleetd keeps its keys in the workspace. You can close this tab and go back to the terminal.");
       },
     });
   } catch (error) {
@@ -174,7 +174,7 @@ async function create(apps: GithubApps, home: string, org: string | undefined, g
   server.stop(true);
   if (got === undefined) throw new Error("GitHub didn't send the App back within 15 minutes; run it again");
   const app = await apps.create(got);
-  println(`✓ The hub has its GitHub App: ${app.name} (${app.htmlUrl})`);
+  println(`✓ The workspace has its GitHub App: ${app.name} (${app.htmlUrl})`);
   println(`Next: install it on the repositories fleetd works on, ${installLink(app)}\nthen run \`fleetd github-app test\`.`);
   return 0;
 }

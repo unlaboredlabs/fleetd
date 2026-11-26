@@ -426,7 +426,7 @@ describe("Settings → Bots", () => {
         computer: boat,
         computers: [
           { kind: "boat", cpu: 2, memGb: 4, label: "fleetd's computers · 2 vCPU / 4 GB" },
-          { ...boat, label: "fleetd's computers · 4 vCPU / 8 GB", unavailable: "fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines" },
+          { ...boat, label: "fleetd's computers · 4 vCPU / 8 GB", unavailable: "fleetd's computers aren't connected: an admin connects them in Settings › Workspace › Machines" },
         ],
       },
     ];
@@ -436,7 +436,7 @@ describe("Settings → Bots", () => {
     expect(row.dataset.computer).toBe("boat:4:8");
     expect(row.querySelector('[role="combobox"]')?.textContent).toContain("fleetd's computers · 4 vCPU / 8 GB");
     // Its agents wait for it, and the row says why; no small/medium/large anywhere.
-    expect(row.textContent).toContain("Its agents wait: fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines.");
+    expect(row.textContent).toContain("Its agents wait: fleetd's computers aren't connected: an admin connects them in Settings › Workspace › Machines.");
     expect(row.textContent).not.toMatch(/small|medium|large/i);
   });
 
@@ -694,7 +694,7 @@ describe("Settings → Bots", () => {
 
   it("deletes a bot whose machine was removed: it is only forgotten in fleetd", async () => {
     const { worktrees: _, ...gone } = settings;
-    answers = [{ ...gone, worktreesUnknown: "devbox was removed from this hub." }];
+    answers = [{ ...gone, worktreesUnknown: "devbox was removed from this workspace." }];
     await render();
     // The hub's snapshot no longer lists devbox, only its project.
     const left = snapshotWith([]);
@@ -703,7 +703,7 @@ describe("Settings → Bots", () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(button("Delete bot…").disabled).toBe(false);
-    expect(document.body.textContent).toContain("devbox was removed from this hub, so no machine holds its files");
+    expect(document.body.textContent).toContain("devbox was removed from this workspace, so no machine holds its files");
     expect(document.body.textContent).not.toContain("offline");
     await click(button("Delete bot…"));
     await settle();

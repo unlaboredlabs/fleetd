@@ -168,7 +168,7 @@ describe("Settings › Accounts › GitHub", () => {
   it("says when the hub has no App", async () => {
     hasApp = false;
     await render();
-    expect(document.body.textContent).toContain("This hub has no GitHub App yet");
+    expect(document.body.textContent).toContain("This workspace has no GitHub App yet");
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Connect GitHub")).toBe(false);
   });
 
@@ -177,6 +177,6 @@ describe("Settings › Accounts › GitHub", () => {
     cloud = true;
     await render();
     expect(document.body.textContent).toContain("GitHub isn't set up on this service.");
-    expect(document.body.textContent).not.toContain("This hub has no GitHub App yet");
+    expect(document.body.textContent).not.toContain("This workspace has no GitHub App yet");
   });
 });

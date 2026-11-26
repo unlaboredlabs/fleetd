@@ -82,7 +82,7 @@ const LONG_AGO = 13 * 60_000;
 it("reads the hub's version from its ready, without a request of its own", async () => {
   await connect("0.2.0");
   await act(() => linked({ devbox: LONG_AGO }));
-  expect(banner()).toContain("devbox runs an older fleetd than the hub");
+  expect(banner()).toContain("devbox runs an older fleetd than the workspace");
   expect(probe).not.toHaveBeenCalled();
 });
 
@@ -90,7 +90,7 @@ it("asks an older hub, whose ready names no version, on /healthz", async () => {
   await connect();
   await act(() => linked({ devbox: LONG_AGO }));
   expect(probe).toHaveBeenCalledWith("http://devbox:4790");
-  expect(banner()).toContain("devbox runs an older fleetd than the hub");
+  expect(banner()).toContain("devbox runs an older fleetd than the workspace");
 });
 
 it("says nothing while the hub's update of a machine may still be on its way", async () => {
@@ -105,7 +105,7 @@ it("says nothing while the hub's update of a machine may still be on its way", a
 it("clears as soon as the machine's node links again on the hub's build", async () => {
   await connect("0.2.0");
   await act(() => linked({ devbox: LONG_AGO }));
-  expect(banner()).toContain("devbox runs an older fleetd than the hub");
+  expect(banner()).toContain("devbox runs an older fleetd than the workspace");
   await act(async () => {
     send({ t: "event", event: { seq: 2, at: new Date().toISOString(), type: "machine.linked", machineId: "devbox", summary: "devbox's node linked again, on fleetd 0.2.0", data: { nodeVersion: "0.2.0" } } });
     await new Promise((r) => setTimeout(r, 0));
@@ -178,14 +178,14 @@ it("says at once why an attempt failed, within the first seconds too", () => {
       send({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 0 } });
     });
     act(() => {
-      send({ t: "state", state: { phase: "retrying", hub: HUB, reason: "The hub refused the connection", retryAt: Date.now() + 1_000 } });
+      send({ t: "state", state: { phase: "retrying", hub: HUB, reason: "The workspace refused the connection", retryAt: Date.now() + 1_000 } });
     });
-    expect(reconnecting()).toContain("The hub refused the connection.");
+    expect(reconnecting()).toContain("The workspace refused the connection.");
     // The next attempt keeps the reason on screen rather than going quiet again.
     act(() => {
       send({ t: "state", state: { phase: "connecting", hub: HUB, attempt: 1 } });
     });
-    expect(reconnecting()).toContain("The hub refused the connection.");
+    expect(reconnecting()).toContain("The workspace refused the connection.");
   } finally {
     vi.useRealTimers();
   }

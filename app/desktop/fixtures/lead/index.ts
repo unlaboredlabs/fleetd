@@ -253,7 +253,7 @@ const WORKTREES_KEPT: JsonObject = {
     ["Authors can read their PR's review findings", "2 unpushed commits", "1444af18-99a9-4cb7-c656-e1e382fc7d66"],
     ["Try it: tailnet port proxy with per-device check", "1 unpushed commit", "4e6cadda-3201-453a-6711-d57f0f0eee82"],
     ["Fix: worker join one-liner prompts again", "1 unpushed commit", "39237c80-2ac3-4401-eef2-61588a348b43"],
-    ["Try it: the hub starts, tracks and ends previews", "9 unpushed commits", "e2d0818a-d1ff-4d9c-e20b-1df7e2fbbb46"],
+    ["Try it: the workspace starts, tracks and ends previews", "9 unpushed commits", "e2d0818a-d1ff-4d9c-e20b-1df7e2fbbb46"],
   ].map(([title, unsaved, task]: string[]) => ({
     title: title ?? "",
     unsaved: unsaved ?? "",

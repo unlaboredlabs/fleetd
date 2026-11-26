@@ -93,16 +93,16 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "decisions-loading", "The decisions still on their way from the hub.");
+      const f = Fixture.from(base("typical"), "decisions-loading", "The decisions still on their way from the workspace.");
       answerAll(f, specs());
       for (const a of f.answers("decisions_list")) f.answer("decisions_list", a.input, a.output, 600_000);
       // The answer never comes in a shot: shoot without waiting for it.
       return f.settleAt(0);
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "decisions-error", "The hub fails to read the decisions.");
+      const f = Fixture.from(base("typical"), "decisions-error", "The workspace fails to read the decisions.");
       f.drop("decisions_list");
-      f.fail("decisions_list", { projectRef: { ...firstProject(f) } }, { code: "failed", message: "The hub failed to answer that request." });
+      f.fail("decisions_list", { projectRef: { ...firstProject(f) } }, { code: "failed", message: "The workspace failed to answer that request." });
       return f;
     })(),
   ],

@@ -1,7 +1,16 @@
-// Sections that moved when the docs were rebuilt (W846). A redirect in site/vercel.json can't see a link's #section,
-// but the browser keeps it: /docs/projects#max-agents lands on /docs/bots#max-agents. On a page here, a #section that
-// no longer exists on it is sent on to where that section lives now.
+// Sections that moved when the docs were rebuilt (W846), or whose ids said hub before the hub became the workspace. A
+// redirect in site/vercel.json can't see a link's #section, but the browser keeps it: /docs/projects#max-agents lands
+// on /docs/bots#max-agents. On a page here, a #section that no longer exists on it is sent on to where it lives now.
 export const OLD_ANCHORS = {
+  "/docs/reference/cli": {
+    "moving-a-hub": "/docs/reference/cli#moving-a-workspace",
+    "hub-start": "/docs/reference/cli#workspace-start",
+    "hub-key-create": "/docs/reference/cli#workspace-key-create",
+    "hub-key-create-agent": "/docs/reference/cli#workspace-key-create-agent",
+    "hub-key-create-human": "/docs/reference/cli#workspace-key-create-human",
+    "hub-key-list": "/docs/reference/cli#workspace-key-list",
+    "hub-key-revoke": "/docs/reference/cli#workspace-key-revoke",
+  },
   "/docs/bots": {
     "max-agents": "/docs/models#max-agents",
     models: "/docs/models#profiles",
@@ -48,8 +57,20 @@ export const OLD_ANCHORS = {
     workstream: "/docs/glossary#order",
     "human-key": "/docs/mcp-clients#human-key",
     "agent-key": "/docs/mcp-clients#human-key",
+    hub: "/docs/glossary#workspace",
   },
-  "/docs/troubleshooting": { "slow-start": "/docs/troubleshooting#stuck" },
+  "/docs/troubleshooting": {
+    hub: "/docs/troubleshooting#workspace",
+    "slow-start": "/docs/troubleshooting#stuck",
+    "the-hub-doesnt-answer": "/docs/troubleshooting#the-workspace-doesnt-answer",
+    "the-hubs-address-isnt-https": "/docs/troubleshooting#the-workspaces-address-isnt-https",
+  },
+  "/docs/browser-sessions": { hub: "/docs/browser-sessions#workspace" },
+  "/docs/web-app": { "delete-team": "/docs/web-app#delete-workspace" },
+  "/docs/desktop-app": { hub: "/docs/desktop-app#workspace" },
+  "/docs/people": { "hub-key": "/docs/people#workspace-key" },
+  "/docs/phone-notifications": { hub: "/docs/phone-notifications#workspace" },
+  "/docs/skills": { "hub-wide": "/docs/skills#workspace-wide" },
 };
 
 /** The inline script every page carries: once the page is read, it looks up its own path in the map above. */

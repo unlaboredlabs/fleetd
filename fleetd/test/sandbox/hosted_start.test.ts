@@ -142,7 +142,7 @@ async function node(probe: (url: string) => Promise<void>) {
 }
 
 const PLAIN =
-  "a sandbox at fleetd's computers couldn't reach the hub's Claude account at 10.0.0.5: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections";
+  "a sandbox at fleetd's computers couldn't reach the workspace's Claude account at 10.0.0.5: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections";
 
 test("a lead whose box can't reach Claude tries once more after a while, then fails as `sandbox` in plain words", async () => {
   HOSTED_RETRY.ms = 200;

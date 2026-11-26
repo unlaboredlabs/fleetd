@@ -11,12 +11,12 @@ all you need.
 1. Open the bot's settings, then **Instructions & memory**.
 2. Write your instructions, such as "Use pnpm, never npm" or "Every UI change needs a screenshot".
 
-For every bot at once, an owner or admin uses **Settings › Hub › Bot defaults › Instructions**.
+For every bot at once, an owner or admin uses **Settings › Workspace › Bot defaults › Instructions**.
 
-Instructions go to the lead and to every agent the bot starts: hub-wide ones first, then the bot's. Keep them short,
+Instructions go to the lead and to every agent the bot starts: workspace-wide ones first, then the bot's. Keep them short,
 around 500 characters. Every agent reads them.
 
-From the hub machine:
+From the workspace machine:
 
 ```sh
 fleetd instructions edit                        # every bot
@@ -35,10 +35,10 @@ first message and which prompts it got.
 2. Open a prompt, edit it and press **Save**.
 3. To undo your edit, press **Reset to the built-in**.
 
-Edits for every bot live under **Settings › Hub › Bot defaults › Instructions**, for owners and admins. A bot's own
-edit wins over the hub-wide one.
+Edits for every bot live under **Settings › Workspace › Bot defaults › Instructions**, for owners and admins. A bot's own
+edit wins over the workspace-wide one.
 
-From the hub machine:
+From the workspace machine:
 
 ```sh
 fleetd prompts list

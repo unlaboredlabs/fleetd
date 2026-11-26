@@ -405,7 +405,7 @@ export class Watchers {
     for (const row of rows) {
       const run = JSON.parse(row.data) as AutomationRun;
       if (row.thread_id === null) {
-        if (now - row.at_ms > START_LOST_MS) this.end(run, "failed", { why: "The hub stopped before its look started." });
+        if (now - row.at_ms > START_LOST_MS) this.end(run, "failed", { why: "The workspace stopped before its look started." });
         continue;
       }
       const thread = { machineId: row.machine, threadId: row.thread_id };

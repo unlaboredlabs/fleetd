@@ -337,7 +337,7 @@ describe("your sections in the sidebar", () => {
     await choose("Work");
     await settle();
     expect(lines()).toEqual(["[Bots]", "new", "docs", "garden", "web", "old", "[Work]", "api"]);
-    expect(document.body.textContent).toContain("This hub doesn’t keep sections yet. Update it to use them.");
+    expect(document.body.textContent).toContain("This workspace doesn’t keep sections yet. Update it to use them.");
     expect(document.body.textContent).not.toContain("unknown tool");
   });
 });

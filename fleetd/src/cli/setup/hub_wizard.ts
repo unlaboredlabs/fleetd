@@ -190,7 +190,7 @@ async function reachability(
     addrs.push([`${ip}:${port}`, url]);
   }
   list.stopSpinner();
-  const picked = await ui.select(list, "Where should the hub listen?", choices, 0);
+  const picked = await ui.select(list, "Where should the workspace listen?", choices, 0);
   const [listen, found] = addrs[picked]!;
   const url = opts.url ?? found;
   list.done("reachable at", url);
@@ -231,7 +231,7 @@ export function hubClaudeAccount(home: string): string | undefined {
   }
   try {
     const setup = new ClaudeAccountStore(db).setup();
-    if (setup.hubApi !== undefined) return "the hub's API key";
+    if (setup.hubApi !== undefined) return "the workspace's API key";
     return setup.owner !== undefined && setup.subscriptions.has(setup.owner) ? "the owner's subscription" : undefined;
   } catch {
     return undefined;
@@ -285,7 +285,7 @@ async function hubClaude(ui: Ui, list: Checklist, account: string | undefined): 
         list.done("claude", `${detail.split(",")[0]}; agents sign in with ${account}, so it needs no login here`);
         return true;
       }
-      if (setup.version !== undefined && !logged && (await ui.offerToRun(list, "claude isn't logged in. Log in now? (No: give the hub an API key at the end instead)"))) {
+      if (setup.version !== undefined && !logged && (await ui.offerToRun(list, "claude isn't logged in. Log in now? (No: give the workspace an API key at the end instead)"))) {
         logged = true;
         attached(list, binary, ["auth", "login"]);
         continue;
@@ -295,7 +295,7 @@ async function hubClaude(ui: Ui, list: Checklist, account: string | undefined): 
         list.failed("claude", why.replace(/^claude /, ""), fix);
       } else {
         // Not a failure of its own: the Claude step at the end is where it's required, with every way to do it.
-        list.skipped("claude", `${detail}: log in with claude auth login, or give the hub an API key in the Claude step at the end`);
+        list.skipped("claude", `${detail}: log in with claude auth login, or give the workspace an API key in the Claude step at the end`);
       }
       return true;
     }
@@ -337,8 +337,8 @@ async function ghCheck(ui: Ui, list: Checklist): Promise<boolean> {
     }
     list.failed(
       "gh",
-      "not logged in; the merge train and PR checks need it until the hub has its GitHub App",
-      "gh auth login, or the hub's GitHub App: fleetd init --step github",
+      "not logged in; the merge train and PR checks need it until the workspace has its GitHub App",
+      "gh auth login, or the workspace's GitHub App: fleetd init --step github",
     );
     return false;
   }
@@ -517,7 +517,7 @@ async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: s
     return undefined;
   }
   if (!(await hubHasTool(opts.home, "project_add"))) {
-    list.skipped(title, "this hub can't add bots yet; after fleetd update, run fleetd init again");
+    list.skipped(title, "this workspace can't add bots yet; after fleetd update, run fleetd init again");
     return undefined;
   }
   if (!ui.interactive) {
@@ -585,7 +585,7 @@ async function app(opts: InitOptions, ui: Ui, list: Checklist, summary: Summary)
     }
   } catch {}
   let want: boolean;
-  if (devices.length === 0) want = await ui.confirm(list, "Pair the fleetd app with this hub?", true);
+  if (devices.length === 0) want = await ui.confirm(list, "Pair the fleetd app with this workspace?", true);
   else {
     list.done("app", `paired: ${devices.join(", ")}`);
     summary.pairing = `paired: ${devices.join(", ")}`;
@@ -677,7 +677,7 @@ function finish(list: Checklist, summary: Summary, paired: boolean) {
     return;
   }
   const lines: string[] = [];
-  if (summary.hub) lines.push(`hub       ${summary.hub}`);
+  if (summary.hub) lines.push(`workspace ${summary.hub}`);
   if (summary.workers.length > 0) lines.push(`workers   ${summary.workers.join(", ")}`);
   if (summary.project) lines.push(`bot       ${summary.project}`);
   if (summary.pairing) lines.push(`app       ${summary.pairing}`);
@@ -707,8 +707,8 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
   const claudeHere = await hubClaude(ui, list, account);
   const ghOk = await ghCheck(ui, list);
   const identity = await commitIdentity(opts, ui, list, ghOk);
-  list.sectionHeader("Hub");
-  list.start("Starting the hub");
+  list.sectionHeader("Workspace");
+  list.start("Starting the workspace");
   let hubUp = false;
   try {
     const how = await installHub(
@@ -717,18 +717,18 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
     );
     if (how.startsWith("not started")) {
       list.todo(
-        "hub",
+        "workspace",
         "not started (--no-service)",
-        "start the hub, then run fleetd init again",
-        `fleetd hub start --home ${q(opts.home)} --listen ${listen}`,
+        "start the workspace, then run fleetd init again",
+        `fleetd workspace start --home ${q(opts.home)} --listen ${listen}`,
       );
     } else {
-      list.done("hub", how.replace(" and answers at ", " · "));
+      list.done("workspace", how.replace(" and answers at ", " · "));
       hubUp = true;
     }
   } catch (f) {
     if (!isFailure(f)) throw f;
-    list.failed("hub", f.message, f.fix);
+    list.failed("workspace", f.message, f.fix);
   }
   let added: string[] = [];
   let idle: string[] = [];
@@ -741,9 +741,9 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
     const project = await firstProject(opts, ui, list, local, ghOk);
     if (project !== undefined) summary.project = project;
   } else {
-    list.skipped("workers", "need the hub running");
+    list.skipped("workers", "need the workspace running");
     list.sectionHeader("Bot");
-    list.skipped("project", "needs the hub running");
+    list.skipped("project", "needs the workspace running");
   }
   list.sectionHeader("App & setup");
   const paired = await app(opts, ui, list, summary);

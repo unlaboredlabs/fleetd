@@ -88,7 +88,7 @@ export function SetupPage({ me }: { me: Person | undefined }) {
           }
         >
           {problem !== null ? (
-            <Text tone={problem.old ? "quiet" : "danger"}>{problem.old ? "This hub is too old for guided setup. Update fleetd on the hub first." : problem.problem}</Text>
+            <Text tone={problem.old ? "quiet" : "danger"}>{problem.old ? "This workspace is too old for guided setup. Update fleetd on the workspace first." : problem.problem}</Text>
           ) : null}
         </PageHead>
         {required === 0 ? null : <Notice tone="warning">{`${String(required)} required before agents can run.`}</Notice>}

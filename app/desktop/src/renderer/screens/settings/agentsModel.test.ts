@@ -87,14 +87,14 @@ describe("machines", () => {
     const note = machineHolds(a, 64, "devbox", hold);
     expect(note).toBe("fleetd's computers run at most 20 agents at once, so this bot runs 20 until an admin raises their limit.");
     expect(note).not.toContain("devbox");
-    expect(holdsLink(a, "devbox", hold)).toEqual({ text: "the limit of fleetd's computers (20) in Hub › Machines", provider: true });
+    expect(holdsLink(a, "devbox", hold)).toEqual({ text: "the limit of fleetd's computers (20) in Workspace › Machines", provider: true });
     expect(sourceLine(ten, { ...a, own: false }, "devbox", hold)).toBe("Follows the default: the limit of fleetd's computers.");
     // Automatic: devbox's 10, then boat.dev's 20.
     const auto = holdOf(undefined, boat);
     const b = projectAgents(ten, storefront, auto);
     expect(b.machineCap).toBe(30);
     expect(machineHolds(b, 64, "devbox", auto)).toBe("devbox runs at most 10 agents at once, then fleetd's computers 20, so this bot runs 30 until an admin raises one of them.");
-    expect(holdsLink(b, "devbox", auto)).toEqual({ text: "devbox's max in Hub › Machines", provider: false });
+    expect(holdsLink(b, "devbox", auto)).toEqual({ text: "devbox's max in Workspace › Machines", provider: false });
     // A Linux machine kept to the team's own: the machine alone.
     expect(holdOf(undefined, { ...boat, linux: "ours_only" })).toEqual({ spill: [] });
     expect(projectAgents(ten, storefront, holdOf(undefined, { ...boat, linux: "ours_only" })).machineCap).toBe(10);
@@ -106,7 +106,7 @@ describe("machines", () => {
     const hold = holdOf(undefined, { providers: [{ provider: "boat", connected: true, limit: 20 }] });
     const a = projectAgents(runner, hosted, hold);
     expect(machineHolds(a, 30, "hosted", hold)).toBe("fleetd's computers run at most 20 agents at once, so this bot runs 20 until an admin raises their limit.");
-    expect(holdsLink(a, "hosted", hold)).toEqual({ text: "the limit of fleetd's computers (20) in Hub › Machines", provider: true });
+    expect(holdsLink(a, "hosted", hold)).toEqual({ text: "the limit of fleetd's computers (20) in Workspace › Machines", provider: true });
     expect(sourceLine(runner, { ...a, own: false }, "hosted", hold)).toBe("Follows the default: the limit of fleetd's computers.");
     // On fleetd's computers (a cloud team after the switch, where the hub has no sandbox_get), the team's plan holds it:
     // no provider named, and the way to more is Billing.
@@ -114,14 +114,14 @@ describe("machines", () => {
     const plan = providedHold(planned);
     const p = projectAgents(planned, hosted, plan);
     expect(p.machineCap).toBe(3);
-    expect(machineHolds(p, 30, "hosted", plan)).toBe("This team's plan runs 3 agents at once, so this bot runs 3 until an admin picks a bigger plan in Billing.");
+    expect(machineHolds(p, 30, "hosted", plan)).toBe("This workspace's plan runs 3 agents at once, so this bot runs 3 until an admin picks a bigger plan in Billing.");
     expect(holdsLink(p, "hosted", plan)).toEqual({ text: "Plans in Billing", provider: true, billing: true });
-    expect(sourceLine(planned, { ...p, own: false }, "hosted", plan)).toBe("Follows the default: the team's plan.");
+    expect(sourceLine(planned, { ...p, own: false }, "hosted", plan)).toBe("Follows the default: the workspace's plan.");
     // With no credits and no plan the board has no hosted limit: nothing runs, and Billing says why.
     const none = providedHold(runner);
-    expect(machineHolds(projectAgents(runner, hosted, none), 1, "hosted", none)).toBe("No agent runs until the team has credits or a plan: an admin adds them in Billing.");
+    expect(machineHolds(projectAgents(runner, hosted, none), 1, "hosted", none)).toBe("No agent runs until the workspace has credits or a plan: an admin adds them in Billing.");
     // A computer with no provider keeps its own words.
-    expect(holdsLink(projectAgents(fleet, storefront), "devbox")).toEqual({ text: "devbox's max in Hub › Machines", provider: false });
+    expect(holdsLink(projectAgents(fleet, storefront), "devbox")).toEqual({ text: "devbox's max in Workspace › Machines", provider: false });
     expect(sourceLine(fleet, { ...projectAgents(fleet, storefront), own: false }, "devbox")).toBe("Follows the default: its machine's cap.");
   });
 
@@ -197,7 +197,7 @@ describe("max agents", () => {
     expect(sourceLine(hub, own)).toBe("Set for this bot. The default is 12.");
     const follows = projectAgents(hub, billing);
     expect(follows).toMatchObject({ max: 12, own: false });
-    expect(sourceLine(hub, follows)).toBe("Follows the default: the hub's fleet cap.");
+    expect(sourceLine(hub, follows)).toBe("Follows the default: the workspace's fleet cap.");
     // The fleet raised to 20 on a machine that runs 16: the default is the machine's, and storefront keeps its 12.
     const raised: SlotState = {
       ...hub,
@@ -257,7 +257,7 @@ describe("max agents", () => {
     };
     expect(fleetCapLine(two)).toBeNull();
     expect(fleetCapLine({ ...two, fleetCap: 20 })).toBeNull();
-    expect(fleetCapLine({ ...two, cap: 10, fleetCap: 10 })).toBe("All machines together run at most 10 agents: the hub's fleet cap. Change it with fleetd project set --fleet-cap <n>.");
+    expect(fleetCapLine({ ...two, cap: 10, fleetCap: 10 })).toBe("All machines together run at most 10 agents: the workspace's fleet cap. Change it with fleetd project set --fleet-cap <n>.");
   });
 
   it("lets the sliders reach well past today's cap, and any cap set higher", () => {

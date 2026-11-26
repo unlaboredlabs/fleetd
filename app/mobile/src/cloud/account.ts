@@ -238,7 +238,7 @@ const exchange = async (ports: SignInPorts, body: AccountsSignInInput | Accounts
   if (answer === null) return { ok: false, failure: UNREADABLE };
   if (answer.teams.length === 0 && answer.invitations.length === 0) {
     void endSession(ports.fetch, ports.config, answer.sessionId);
-    return { ok: false, failure: { code: "", message: "No team of this account could be connected." } };
+    return { ok: false, failure: { code: "", message: "No workspace of this account could be connected." } };
   }
   return { ok: true, answer };
 };
@@ -252,7 +252,7 @@ export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonl
   for (const team of answer.teams) teams.push(await pairTeam(ports, team, !madeTeam(team, false)));
   if (make && answer.make !== undefined) {
     const made = await call(ports, ACCOUNTS_TEAM_PATH, { make: answer.make });
-    teams.push(made.ok ? await pairTeam(ports, made.team, !madeTeam(made.team, false)) : { name: "Your team", ok: false, failure: made.failure });
+    teams.push(made.ok ? await pairTeam(ports, made.team, !madeTeam(made.team, false)) : { name: "Your workspace", ok: false, failure: made.failure });
   }
   for (const at of join) {
     const invitation = answer.invitations[at];
@@ -263,8 +263,8 @@ export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonl
   if (!teams.some((t) => t.ok)) {
     void endSession(ports.fetch, ports.config, answer.sessionId);
     const first = teams[0];
-    if (first === undefined) return failed("none_joined", "You didn't join a team, so you aren't signed in.", "Sign in again when you want to join it.");
-    return first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
+    if (first === undefined) return failed("none_joined", "You didn't join a workspace, so you aren't signed in.", "Sign in again when you want to join it.");
+    return first.ok ? failed("", "No workspace of this account could be connected.") : { ok: false, failure: first.failure };
   }
   // The team picked on the sign-in page, by its hub's address: the app shows it first.
   const pick = answer.picked === undefined ? undefined : answer.teams.find((t) => t.id === answer.picked);

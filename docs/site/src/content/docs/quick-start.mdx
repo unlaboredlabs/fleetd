@@ -1,6 +1,6 @@
 ---
 title: Quick start
-description: Set up a hub, open a bot in the desktop app and give its lead your first request.
+description: Set up a workspace, open a bot in the desktop app and give its lead your first request.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -13,7 +13,7 @@ You need a Mac (macOS 13 or newer) or a Linux x64 machine that stays on, and a G
 
 1. **Install fleetd and run the wizard.**
 
-   On the machine that will run the hub:
+   On the machine that will run the workspace:
 
    ```sh
    curl -fsSL https://fleetd.sh | sh
@@ -22,8 +22,8 @@ You need a Mac (macOS 13 or newer) or a Linux x64 machine that stays on, and a G
    The wizard, `fleetd init`, starts by itself. On a machine with the desktop app it offers to go on in the app
    instead. Press Enter to take each default. It sets up:
 
-   - where the hub listens: your tailnet, your network, or this machine only;
-   - the hub as a background service;
+   - where the workspace listens: your tailnet, your network, or this machine only;
+   - the workspace as a background service;
    - which machines run agents (this one can);
    - your first bot, from a repo;
    - a pairing code for the app.
@@ -33,7 +33,7 @@ You need a Mac (macOS 13 or newer) or a Linux x64 machine that stays on, and a G
    ```text
    ◇  fleetd is ready ─────────────────────────────────────╮
    │                                                       │
-   │  hub       http://hub.your-tailnet.ts.net:4790        │
+   │  workspace http://fleetd.your-tailnet.ts.net:4790     │
    │  workers   homeserver                                 │
    │  bot       ~/src/hello on homeserver                  │
    │  app       code K4QW-7RNP                             │
@@ -44,13 +44,13 @@ You need a Mac (macOS 13 or newer) or a Linux x64 machine that stays on, and a G
 
 2. **Open the desktop app.**
 
-   On the hub's machine, the app pairs by itself. On another computer, install with `--no-init` and open the app:
+   On the workspace's machine, the app pairs by itself. On another computer, install with `--no-init` and open the app:
 
    ```sh
    curl -fsSL https://fleetd.sh | sh -s -- --no-init
    ```
 
-   Enter the hub's address and the pairing code. A code works once, for 15 minutes; `fleetd pair` on the hub prints a
+   Enter the workspace's address and the pairing code. A code works once, for 15 minutes; `fleetd pair` on the workspace prints a
    new one.
 
 3. **Finish setup.**
@@ -77,12 +77,12 @@ You need a Mac (macOS 13 or newer) or a Linux x64 machine that stays on, and a G
 
 ## Setup steps {#setup-steps}
 
-The same steps are in the terminal (`fleetd init --step <id>`) and in the app (Settings › Hub › Setup). Each shows
+The same steps are in the terminal (`fleetd init --step <id>`) and in the app (Settings › Workspace › Setup). Each shows
 what to paste and where, then a **Test** button. `fleetd doctor` lists the ones still open.
 
 | Step | Id | Needed |
 |---|---|---|
-| Where the hub listens | `address` | Yes |
+| Where the workspace listens | `address` | Yes |
 | Where agents run | `machines` | Yes |
 | Claude | `claude` | Yes |
 | GitHub | `github` | Before the first pull request |
@@ -90,8 +90,8 @@ what to paste and where, then a **Test** button. `fleetd doctor` lists the ones 
 | Invite people | `people` | Optional |
 | A Mac for agents | `mac` | Optional |
 
-- **Claude**: the hub's API key, your Claude subscription, or each machine's own `claude auth login`.
-- **GitHub**: create the hub's GitHub App with one button, then install it on your repos. Each person then connects
+- **Claude**: the workspace's API key, your Claude subscription, or each machine's own `claude auth login`.
+- **GitHub**: create the workspace's GitHub App with one button, then install it on your repos. Each person then connects
   their own GitHub in Settings › Accounts › GitHub, so their pull requests open as them.
 
 ## Without the app {#headless}
@@ -101,7 +101,7 @@ On a machine with no screen, you can chat from the terminal:
 1. Create a key for yourself, in a file only you can read:
 
    ```sh
-   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
+   (umask 077; fleetd workspace key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
 2. Find your bot's name:

@@ -113,7 +113,7 @@ export function mayUse(db: Database, r: ProjectRef): void {
   if (isProject(db, r, false)) return;
   throw new ToolError(
     "forbidden",
-    "This bot is archived, or the hub doesn't have it: its lead works with no other bot.",
+    "This bot is archived, or the workspace doesn't have it: its lead works with no other bot.",
     "Bring it back from the app first.",
   );
 }
@@ -124,7 +124,7 @@ function target(hub: Hub, from: ProjectRef, name: string): ProjectSummary {
   const byId = all.filter((p) => p.projectId === name);
   const found = byId.length > 0 ? byId : all.filter((p) => p.title.trim().toLowerCase() === name.trim().toLowerCase());
   if (found.length === 0) {
-    throw new ToolError("not_found", `No bot ${name} on this hub.`, "Call factory_status to see the bots, and name one by its title.");
+    throw new ToolError("not_found", `No bot ${name} on this workspace.`, "Call factory_status to see the bots, and name one by its title.");
   }
   if (found.length > 1) throw new ToolError("invalid", `${found.length} bots are called ${name}.`, "Name it by its bot id, from factory_status.");
   const p = found[0] as ProjectSummary;
@@ -328,7 +328,7 @@ export function factoryStatus(hub: Hub, from: ProjectRef, call: FactoryStatusCal
   }
   const next =
     projects.length === 0
-      ? "No other bot on this hub yet."
+      ? "No other bot on this workspace yet."
       : only
         ? "Write to its lead with project_message; what it needs the person for is in its own chat."
         : "factory_status with project reads one. Write to a bot's lead with project_message.";

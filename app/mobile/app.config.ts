@@ -106,7 +106,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
       // Arbitrary loads alone: NSAllowsLocalNetworking, NSAllowsArbitraryLoadsForMedia or
       // NSAllowsArbitraryLoadsInWebContent would make iOS ignore it, and an exception domain overrides it for its hosts.
       NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
-      NSLocalNetworkUsageDescription: "fleetd connects to your hub on your network.",
+      NSLocalNetworkUsageDescription: "fleetd connects to your workspace on your network.",
       ITSAppUsesNonExemptEncryption: false,
     },
     // What the app sends that fleetd cloud keeps, for the App Store's privacy report; App Store Connect's App Privacy
@@ -144,9 +144,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     // The mark on a plain ground, white or black as the phone is.
     ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 112, backgroundColor: "#ffffff", dark: { image: "./assets/splash-icon.png", backgroundColor: "#000000" } }],
     // Scans the hub's pairing QR code (D232); no recording, so no microphone.
-    ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it, and takes photos you send in a chat.", microphonePermission: false, recordAudioAndroid: false }],
+    ["expo-camera", { cameraPermission: "fleetd scans the QR code your workspace shows, to pair this phone with it, and takes photos you send in a chat.", microphonePermission: false, recordAudioAndroid: false }],
     // Photos and files sent in a chat go to your hub (attachment_put). No microphone: no video with sound.
-    ["expo-image-picker", { photosPermission: "fleetd sends the photos you pick to a chat on your hub.", cameraPermission: "fleetd takes photos you send in a chat.", microphonePermission: false }],
+    ["expo-image-picker", { photosPermission: "fleetd sends the photos you pick to a chat in your workspace.", cameraPermission: "fleetd takes photos you send in a chat.", microphonePermission: false }],
     // The share extension before the notification one: plugins edit the Xcode project last to first, so the share
     // extension's product joins the embedding phase the notification extension made.
     // The vault's values show and copy only after Face ID (or the phone's passcode).

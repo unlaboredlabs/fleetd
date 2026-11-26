@@ -304,7 +304,7 @@ const open = async (hash: string) => {
 describe.each([
   ["desktop", "desktop"],
   ["web", "web"],
-])("switching hubs in the %s app", (_, shell) => {
+])("switching workspaces in the %s app", (_, shell) => {
   const fleetd = window.fleetd as { shell?: string };
   beforeEach(() => {
     Object.assign(fleetd, { shell });
@@ -335,7 +335,7 @@ describe.each([
     const { swipe, lift, done } = swiping();
     try {
       for (const go of [
-        () => act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Personal']")?.click()),
+        () => act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Workspaces'] button[aria-label='Personal']")?.click()),
         () => act(() => void runCommand("hub.next")),
         () => void swipe([[-4, 0], [-60, 0], [-60, 0], [-60, 0], [-60, 0]]),
       ]) {
@@ -769,7 +769,7 @@ it("says which hub a new bot goes to with several hubs, the hub on screen first,
   await act(() => import("../projects/AddProjectScreen"));
   await settle();
   await settle();
-  const picker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Hub']");
+  const picker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Workspace']");
   expect(picker()?.textContent).toContain("Acme");
   act(() => root.unmount());
   root = createRoot(host);
@@ -834,7 +834,7 @@ const pickAcme = async (acme: HubFrame) => {
   return { before, removed };
 };
 
-const hubPicker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Hub']");
+const hubPicker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Workspace']");
 const dialog = () => document.querySelector<HTMLElement>("[data-screen='projects.add']");
 const nameField = () => document.querySelector<HTMLInputElement>("input[aria-label='Name']");
 const type = async (label: string, text: string) => {
@@ -1071,7 +1071,7 @@ const inPlace = () => {
   expect(list?.parentElement?.hasAttribute("data-moving")).toBe(false);
   expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
 };
-const marks = () => [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Hubs'] button")].map((b) => (b.getAttribute("aria-current") === null ? b.getAttribute("aria-label") : `[${b.getAttribute("aria-label") ?? ""}]`));
+const marks = () => [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Workspaces'] button")].map((b) => (b.getAttribute("aria-current") === null ? b.getAttribute("aria-label") : `[${b.getAttribute("aria-label") ?? ""}]`));
 const twoHubs = async () => {
   await mount([
     { id: "hub", label: "Personal" },
@@ -1579,7 +1579,7 @@ describe.each([
 ])("a swipe whose events reach the page late and bunched, as a slow machine hands them over, %s", (_, mac) => {
   // On a Mac it switches one hub. With only the deltas, 300 ms between two of a touch's events are a pause like any
   // other, and the pieces between them are no swipe of their own: it springs back. Never two hubs, either way.
-  it(mac ? "switches one hub" : "never switches two hubs", async () => {
+  it(mac ? "switches one workspace" : "never switches two workspaces", async () => {
     const fleetd = window.fleetd as { shell?: string; platform: string };
     if (mac) Object.assign(fleetd, { shell: "desktop", platform: "darwin" });
     await threeHubs();
@@ -1611,7 +1611,7 @@ it("switches on a swipe whose events come unevenly late, as a busy Mac hands the
   await threeHubs();
   const { lift, done } = swiping();
   try {
-    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Workspaces'] button[aria-label='Acme']")?.click());
     lift();
     let t = 0;
     for (const [at, dx, dy, cancelable] of JITTERY_MAC_SWIPE) {
@@ -1698,7 +1698,7 @@ it("switches from the marks at the foot and from ⇧⌘[ / ⇧⌘], and the mark
   await twoHubs();
   const { lift, done } = swiping();
   try {
-    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Workspaces'] button[aria-label='Acme']")?.click());
     lift();
     expect(bots("storefront", "billing")).toEqual(["billing"]);
     expect(marks()).toEqual(["Personal", "[Acme]"]);
@@ -1724,9 +1724,9 @@ it("switches from the marks at the foot and from ⇧⌘[ / ⇧⌘], and the mark
     lift();
     expect(marks()).toEqual(["Personal", "[Acme]"]);
     inPlace();
-    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Personal']")?.click());
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Workspaces'] button[aria-label='Personal']")?.click());
     act(() => void vi.advanceTimersByTime(100));
-    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Workspaces'] button[aria-label='Acme']")?.click());
     lift();
     expect(marks()).toEqual(["Personal", "[Acme]"]);
     inPlace();

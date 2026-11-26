@@ -479,7 +479,7 @@ export function failInterrupted(log: EventLog, at: string): number {
       path: d.path,
       problem: problem(
         "clone_failed",
-        `the hub restarted while cloning ${d.repo ?? d.path}`,
+        `the workspace restarted while cloning ${d.repo ?? d.path}`,
         "Add it again; a clone that finished on the machine is offered for reuse",
       ),
     });

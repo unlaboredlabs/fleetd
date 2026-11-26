@@ -1,6 +1,6 @@
 ---
 title: Agent tools
-description: The tools fleetd gives its agents, the Claude Code tools it blocks and the limits the hub enforces.
+description: The tools fleetd gives its agents, the Claude Code tools it blocks and the limits the workspace enforces.
 sidebar: { order: 20 }
 ---
 
@@ -8,7 +8,7 @@ sidebar: { order: 20 }
 
 What fleetd's agents can do, what they can't, and the limits fleetd enforces.
 
-Every agent is a Claude Code session. fleetd adds its own tools to it, which Claude Code shows as `mcp__fleetd__<tool>`. The hub checks every call, whatever the agent was told.
+Every agent is a Claude Code session. fleetd adds its own tools to it, which Claude Code shows as `mcp__fleetd__<tool>`. The workspace checks every call, whatever the agent was told.
 
 ## Who gets which tools
 
@@ -109,11 +109,11 @@ Each tool below says when only one of them gets it.
 
 ## Limits
 
-The hub enforces these on every call, whatever an agent was told.
+The workspace enforces these on every call, whatever an agent was told.
 
 - Only a lead starts agents (`spawn_agent`), and agents can't start their own.
 - A lead has at most 32 agents open at once, or twice the bot's max agents when that is more.
-- How many agents run at once is capped per bot (Max agents in the chat) and per machine (Settings › Hub › Machines; unset, what the machine fits, at most 64). More wait and start by themselves. The lead doesn't count.
+- How many agents run at once is capped per bot (Max agents in the chat) and per machine (Settings › Workspace › Machines; unset, what the machine fits, at most 64). More wait and start by themselves. The lead doesn't count.
 - A command of class `irreversible`, `money` or `credential` goes through `gated_run`: it runs only after you approve it, for at most 4 hours.
 
 These limits cover calls to fleetd, not the agent's own shell, which can do what your OS user can. See [What an agent can reach](/docs/security#agent-reach).
@@ -165,7 +165,7 @@ A lead runs in Claude Code's `manual` permission mode, with no sandbox ([how lea
 - `Write`: A lead that does its own work writes what the person can; a lead with repos has no Write.
 - `WebSearch`: A search sends only its query, to the search provider.
 - `Skill`: Loads a skill's instructions; runs nothing.
-- `mcp__fleetd`: fleetd's own tools. The hub checks every call.
+- `mcp__fleetd`: fleetd's own tools. The workspace checks every call.
 - `Bash(agent-device *)`: Phone screens work for a lead as for any agent. A final Send or Pay is the person's, through request_takeover.
 
 These go through the bot's approval mode first:
@@ -207,4 +207,4 @@ Sessions start on top of your own Claude Code setup on that machine.
 - Your allow and deny rules apply, but fleetd's blocks win.
 - Your own subagents (`~/.claude/agents`) are listed, but nothing can start them.
 
-To see exactly what a session was told, open the agent in the app and pick **What it was told**. On the hub machine, `fleetd prompts show --session <machine>/<thread>` prints it too.
+To see exactly what a session was told, open the agent in the app and pick **What it was told**. On the workspace's machine, `fleetd prompts show --session <machine>/<thread>` prints it too.

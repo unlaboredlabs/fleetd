@@ -127,7 +127,7 @@ function LeftoverProjects() {
   return (
     <SettingsSection
       title="Left from removed machines"
-      hint="These bots' machines are no longer in this hub, so no machine holds their files. Removing one forgets it in fleetd."
+      hint="These bots' machines are no longer in this workspace, so no machine holds their files. Removing one forgets it in fleetd."
     >
       <SettingsList label="Bots left from removed machines">
         {projects.map((p) => (

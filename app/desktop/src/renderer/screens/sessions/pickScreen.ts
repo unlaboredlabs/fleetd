@@ -151,7 +151,7 @@ const sentence = (s: string): string => {
 export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): OffReason | null => {
   if (canOpen(machines, kind, home)) return null;
   const joined = machines.filter((m) => onHome(m, kind, home));
-  if (joined.length === 0) return { why: "No machine has joined this hub yet.", short: "No machine", fix: "add" };
+  if (joined.length === 0) return { why: "No machine has joined this workspace yet.", short: "No machine", fix: "add" };
   const mine = joined.filter((m) => offers(m, kind));
   if (mine.length === 0) return { why: NEEDS[kind], short: APPLE.has(kind) ? "Needs a Mac" : "No machine for it", fix: "add" };
   const hosting = mine.filter((m) => m.roles.includes("sessions"));
@@ -183,8 +183,8 @@ export const adminNames = (people: readonly { readonly name: string; readonly ro
 
 /** Who a member asks, by name: up to two of the hub's admins, else "a hub admin". */
 export const adminWho = (admins: readonly string[]): string => {
-  if (admins.length === 0) return "a hub admin";
-  if (admins.length === 1) return admins[0] ?? "a hub admin";
+  if (admins.length === 0) return "a workspace admin";
+  if (admins.length === 1) return admins[0] ?? "a workspace admin";
   if (admins.length === 2) return `${admins[0] ?? ""} or ${admins[1] ?? ""}`;
   return `${admins.slice(0, 2).join(", ")} or another admin`;
 };

@@ -371,7 +371,7 @@ export async function step(
     key = openKey(hub, sendableKey.key);
     if (key === undefined) {
       follow.warnOnce(
-        "the push relay's key can't be opened with this hub's box key: set it again with " +
+        "the push relay's key can't be opened with this workspace's box key: set it again with " +
           "`fleetd push-relay set <url> --relay-key-file <path>`",
         hub.clock.now(),
       );

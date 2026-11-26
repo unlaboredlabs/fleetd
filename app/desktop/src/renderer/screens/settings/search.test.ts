@@ -20,7 +20,7 @@ describe("settings search", () => {
 
   it("finds an option by the words people use for it", () => {
     expect(labels("dark")).toEqual(["Appearance"]);
-    expect(labels("disconnect")).toEqual(["Hub"]);
+    expect(labels("disconnect")).toEqual(["Workspace"]);
   });
 
   it("finds the built-in prompts as one page, never one result per prompt", () => {
@@ -102,7 +102,7 @@ describe("settings search", () => {
     const keys = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.key);
     expect(keys("mcp")).toEqual(["connections"]);
     expect(keys("claude").filter((k) => k.startsWith("claude"))).toEqual(["claude"]);
-    expect(keys("hub api key", true)[0]).toBe("admin.claude");
+    expect(keys("workspace api key", true)[0]).toBe("admin.claude");
     expect(keys("api key", true)).not.toContain("admin.claude.key");
     expect(keys("global mcp", true)).toEqual(["connections"]);
     expect(keys("tailscale", true)).toEqual(["connections.tailscale"]);
@@ -119,36 +119,36 @@ describe("settings search", () => {
       const o = searchSettings(q, optionsFor(true, true))[0];
       return o === undefined ? null : [o.key, o.tab, pagePath(o.tab)];
     };
-    expect(first("your devices")).toEqual(["devices", "hubs", "Hubs & devices"]);
-    expect(first("pair a phone")).toEqual(["devices.pair", "hubs", "Hubs & devices"]);
-    expect(first("hubs")).toEqual(["hubs", "hubs", "Hubs & devices"]);
-    expect(first("updates")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
-    expect(first("update automatically")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
+    expect(first("your devices")).toEqual(["devices", "hubs", "Workspaces & devices"]);
+    expect(first("pair a phone")).toEqual(["devices.pair", "hubs", "Workspaces & devices"]);
+    expect(first("hubs")).toEqual(["hubs", "hubs", "Workspaces & devices"]);
+    expect(first("updates")).toEqual(["hub.updates", "hub.machines", "Workspace › Machines"]);
+    expect(first("update automatically")).toEqual(["hub.updates", "hub.machines", "Workspace › Machines"]);
     // The task profiles, Every project › Agents' once, are under each provider now; the default and the lead's stay.
-    expect(first("profiles")).toEqual(["hub.profiles", "hub.providers", "Hub › Providers"]);
-    expect(first("add profile")).toEqual(["hub.profiles", "hub.providers", "Hub › Providers"]);
+    expect(first("profiles")).toEqual(["hub.profiles", "hub.providers", "Workspace › Providers"]);
+    expect(first("add profile")).toEqual(["hub.profiles", "hub.providers", "Workspace › Providers"]);
     expect(first("default profile")).toEqual(["hub.default-profile", "hub.agents", "Bot defaults › Agents"]);
     expect(first("lead runs on")).toEqual(["hub.lead", "hub.agents", "Bot defaults › Agents"]);
     // The page by its name in the sidebar.
     expect(first("bot defaults")).toEqual(["hub.agents", "hub.agents", "Bot defaults › Agents"]);
     expect(first("tools & skills")).toEqual(["hub.tools", "hub.agents", "Bot defaults › Agents"]);
-    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.agents", "Bot defaults › Agents"]);
+    expect(first("workspace-wide skills")).toEqual(["hub.skills", "hub.agents", "Bot defaults › Agents"]);
     expect(first("instructions for every bot")).toEqual(["hub.instructions", "hub.instructions", "Bot defaults › Instructions"]);
     // The hub's vault for every project is the team vault now (D492): its old name finds the Vault page.
     expect(first("vault for every bot")).toEqual(["vault", "vault", "Vault"]);
-    expect(first("team card")).toEqual(["vault", "vault", "Vault"]);
+    expect(first("workspace card")).toEqual(["vault", "vault", "Vault"]);
     expect(first("bot variables")).toEqual(["project-vault", "project-vault", "Bot › Vault"]);
     expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Bot defaults › Vault"]);
     // Hub accounts is a part of Hub › Setup: its name finds the accounts there, and each of its options its account.
-    expect(first("hub accounts")).toEqual(["hub.accounts", "hub.setup", "Hub › Setup"]);
+    expect(first("workspace accounts")).toEqual(["hub.accounts", "hub.setup", "Workspace › Setup"]);
     expect(first("connections")?.[0]).toBe("connections");
-    expect(first("hub claude api key")).toEqual(["admin.claude", "hub.setup", "Hub › Setup"]);
-    expect(first("members may use the hub's key")).toEqual(["admin.claude.members", "hub.setup", "Hub › Setup"]);
-    expect(first("github app")).toEqual(["admin.github", "hub.setup", "Hub › Setup"]);
-    expect(first("installation")).toEqual(["admin.github", "hub.setup", "Hub › Setup"]);
+    expect(first("workspace claude api key")).toEqual(["admin.claude", "hub.setup", "Workspace › Setup"]);
+    expect(first("members may use the workspace's key")).toEqual(["admin.claude.members", "hub.setup", "Workspace › Setup"]);
+    expect(first("github app")).toEqual(["admin.github", "hub.setup", "Workspace › Setup"]);
+    expect(first("installation")).toEqual(["admin.github", "hub.setup", "Workspace › Setup"]);
     expect(searchSettings("setup", optionsFor(true, true)).map((o) => o.key)).toContain("hub.setup");
-    expect(first("guided setup")).toEqual(["hub.setup", "hub.setup", "Hub › Setup"]);
-    expect(first("fleetd init")).toEqual(["hub.setup", "hub.setup", "Hub › Setup"]);
+    expect(first("guided setup")).toEqual(["hub.setup", "hub.setup", "Workspace › Setup"]);
+    expect(first("fleetd init")).toEqual(["hub.setup", "hub.setup", "Workspace › Setup"]);
   });
 
   it("finds Version only where General shows it: not in the web app on fleetd cloud, which updates itself", () => {

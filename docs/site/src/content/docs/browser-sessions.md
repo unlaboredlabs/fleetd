@@ -118,14 +118,14 @@ Each screen keeps:
 
 Bot secrets are masked in the log and page captures. The video can't be masked: whatever showed is in it.
 
-## Recordings on the hub {#hub}
+## Recordings on the workspace {#workspace}
 
-The hub keeps recordings for 30 days, and up to 20 GB per bot, oldest deleted first. Change the days with **Keep
-screen recordings for** in **Settings › Hub › Machines**.
+The workspace keeps recordings for 30 days, and up to 20 GB per bot, oldest deleted first. Change the days with **Keep
+screen recordings for** in **Settings › Workspace › Machines**.
 
 ## Screens in Settings {#settings}
 
-A machine's page in **Settings › Hub › Machines** has a **Screens** part:
+A machine's page in **Settings › Workspace › Machines** has a **Screens** part:
 
 - **At once**: how many screens it hosts at the same time (Auto or a number).
 - A line for each kind that needs setup, with the command that fixes it.

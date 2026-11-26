@@ -39,7 +39,7 @@ export function Profiles({ route }: ChatInfoProps<"Profiles">) {
       style={{ backgroundColor: t.grouped }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={read.reload} tintColor={t.secondary} />}
     >
-      <ListSection footer="Its lead may run agents on the checked profiles, and is told each one's note to pick by. The hub's default is always allowed; running agents keep theirs.">
+      <ListSection footer="Its lead may run agents on the checked profiles, and is told each one's note to pick by. The workspace's default is always allowed; running agents keep theirs.">
         {view === undefined ? (
           <ListRow title={read.value?.ok === false ? "Couldn't read the profiles" : "Reading…"} />
         ) : (

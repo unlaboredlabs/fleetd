@@ -1,25 +1,25 @@
 ---
 title: GitHub
-description: Give the hub its own GitHub App, then connect your GitHub account so agents open PRs as you.
+description: Give the workspace its own GitHub App, then connect your GitHub account so agents open PRs as you.
 ---
 
-This page sets up GitHub: the hub's own GitHub App, and your own GitHub account.
+This page sets up GitHub: the workspace's own GitHub App, and your own GitHub account.
 
-The App is what the merge train works as. Your account is what agents open PRs as. fleetd has no shared App: each hub
+The App is what the merge train works as. Your account is what agents open PRs as. fleetd has no shared App: each workspace
 makes its own, and its keys stay with you.
 
 ## Create the App {#create}
 
-An owner or admin does this once, in **Settings › Hub › Setup › GitHub**.
+An owner or admin does this once, in **Settings › Workspace › Setup › GitHub**.
 
 1. Pick where the App lives: your account, or an organization you administer.
-2. Check its name. It defaults to "fleetd on" and the hub's name. If GitHub says it's taken, pick another on
+2. Check its name. It defaults to "fleetd on" and the workspace's name. If GitHub says it's taken, pick another on
    GitHub's form.
 3. Press **Create GitHub App**. GitHub's form opens, filled in. Press **Create GitHub App** there too.
 
-GitHub sends you back to fleetd. The hub fetches the App's keys from GitHub and seals them. Nobody sees them.
+GitHub sends you back to fleetd. The workspace fetches the App's keys from GitHub and seals them. Nobody sees them.
 
-With no desktop app, run this on the hub machine instead:
+With no desktop app, run this on the workspace machine instead:
 
 ```sh
 fleetd github-app create              # on your account
@@ -32,14 +32,14 @@ fleetd github-app create --org acme   # in an organization
 2. Pick all repositories, or the ones fleetd works on.
 3. Press **Test**. It checks the App can reach each one.
 
-Add repositories later with **Install on more repositories**. The hub sees new ones within 10 minutes.
+Add repositories later with **Install on more repositories**. The workspace sees new ones within 10 minutes.
 
 ## Connect your own account {#connect}
 
 1. Open **Settings › Accounts › GitHub**.
 2. Press **Connect GitHub** and allow the App on GitHub's page.
 
-Your PRs now open as you. The hub keeps your token sealed and renews it. If GitHub stops taking it, the same row shows
+Your PRs now open as you. The workspace keeps your token sealed and renews it. If GitHub stops taking it, the same row shows
 **Connect again**.
 
 ## Who agents act as {#who}
@@ -69,11 +69,11 @@ login.
 | Checks | read | Read CI results |
 | Metadata | read | Read the repository |
 
-The App has no webhooks. The hub checks GitHub about once a minute.
+The App has no webhooks. The workspace checks GitHub about once a minute.
 
 ## Remove it {#remove}
 
-Press **Remove** in **Settings › Hub › Setup › GitHub**, or run `fleetd github-app remove`. The hub forgets the App
+Press **Remove** in **Settings › Workspace › Setup › GitHub**, or run `fleetd github-app remove`. The workspace forgets the App
 and everyone's connection to it, and goes back to the machine's `gh` login.
 
 GitHub keeps the App itself. Delete it in the App's settings on GitHub.

@@ -78,7 +78,7 @@ test("a steer nobody acknowledged closes on the sweep; another device can't with
   clock.ms += RECEIPT_GRACE_MS;
   expect(sweep(hub)).toBe(1);
   const last = events(hub).page(0).events.at(-1);
-  expect(last).toMatchObject({ type: "steer.failed", data: { reason: "lab-a's node lost it before the agent took it in: it restarted, or is older than this hub" } });
+  expect(last).toMatchObject({ type: "steer.failed", data: { reason: "lab-a's node lost it before the agent took it in: it restarted, or is older than this workspace" } });
   done();
 });
 

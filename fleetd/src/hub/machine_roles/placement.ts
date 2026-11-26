@@ -123,7 +123,7 @@ export function place(origin: string, host: SessionHost, runners: Runner[], remo
     throw new ToolError(
       "failed",
       `Every machine that can host ${noun} session is full: ${each.join(", ")}.`,
-      `end a session you no longer need, or try again later; a hub admin can raise a machine's session cap in ${settingsPath()} › Machines`,
+      `end a session you no longer need, or try again later; a workspace admin can raise a machine's session cap in ${settingsPath()} › Machines`,
     );
   }
   if (ables.length > 0) {
@@ -137,7 +137,7 @@ export function place(origin: string, host: SessionHost, runners: Runner[], remo
   throw new ToolError(
     "failed",
     `No machine can host ${noun} session: none has the sessions role and ${noun} ready.`,
-    `do without it and say so in your result: a hub admin can turn sessions on for a machine that can host it in ${settingsPath()} › Machines (fleetd machine set <id> --roles agents,sessions)`,
+    `do without it and say so in your result: a workspace admin can turn sessions on for a machine that can host it in ${settingsPath()} › Machines (fleetd machine set <id> --roles agents,sessions)`,
   );
 }
 
@@ -150,7 +150,7 @@ export function hereOnly(origin: string, host: SessionHost, own: Runner | undefi
     return new ToolError(
       "failed",
       `${name} hosts no sessions: its role is agents only, and a session runs on its agent's own machine.`,
-      `do without it and say so in your result: a hub admin can turn sessions on for ${name} in ${settings}`,
+      `do without it and say so in your result: a workspace admin can turn sessions on for ${name} in ${settings}`,
     );
   }
   if (own && able(own, host, origin)) {
@@ -161,7 +161,7 @@ export function hereOnly(origin: string, host: SessionHost, own: Runner | undefi
     return new ToolError(
       "failed",
       message,
-      `end a session you no longer need, or try again later; a hub admin can raise ${name}'s session cap in ${settingsPath()} › Machines`,
+      `end a session you no longer need, or try again later; a workspace admin can raise ${name}'s session cap in ${settingsPath()} › Machines`,
     );
   }
   const why = own?.hosts?.find((h) => h.host === host)?.detail ?? "it hasn't said what it can host";

@@ -133,7 +133,7 @@ export function Vault() {
       setProblem(`Couldn't move ${titleOf(item)}: ${vaultErrorWords(r.error) ?? errorWords(r.error)}`);
     });
   };
-  const moveWord = (item: VaultItemSummary) => (item.kind === "env" ? "Add to a Bot…" : "Move to Team Vault");
+  const moveWord = (item: VaultItemSummary) => (item.kind === "env" ? "Add to a Bot…" : "Move to Workspace Vault");
   const setAsideActions = (item: VaultItemSummary) => {
     haptics.tap();
     if (Platform.OS === "ios") {
@@ -169,7 +169,7 @@ export function Vault() {
         ) : items.length === 0 ? (
           <EmptyState
             icon="lock"
-            title={project === undefined ? "Team Vault" : "No Variables Yet"}
+            title={project === undefined ? "Workspace Vault" : "No Variables Yet"}
             body={project === undefined ? "Logins, cards and addresses every bot's agents use without seeing them." : `Variables ${project.title}'s agents get when they start.`}
             {...(live ? { action: project === undefined ? { label: "Add Login", onPress: () => add("login") } : { label: "Add Variable", onPress: () => add("env") } } : {})}
           />

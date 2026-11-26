@@ -28,11 +28,6 @@ A prompt that runs on a schedule, a date, a webhook or Run now, and gives the le
 
 One chat with one lead, plus a folder that holds zero or more git repos. See [Bots](/docs/bots).
 
-## Hub {#hub}
-
-The server that keeps every bot, chat and setting. You run it yourself, or fleetd cloud runs it for you. See
-[How fleetd works](/docs/how-fleetd-works).
-
 ## Lead {#lead}
 
 The agent you chat with in a bot. It plans the work, starts other agents and reports back. See
@@ -53,7 +48,7 @@ One piece of work you asked a lead for, such as "add dark mode". The lead opens 
 
 ## Pairing code {#pairing-code}
 
-A one-time code, such as `K4QW-7RNP`, that connects an app or a new machine to a hub. See
+A one-time code, such as `K4QW-7RNP`, that connects an app or a new machine to a workspace. See
 [People & invites](/docs/people).
 
 ## Screen {#screen}
@@ -73,3 +68,8 @@ To write to a lead or agent while it works, such as "skip the docs page". See [S
 
 fleetd's store of logins, cards, addresses and variables that agents fill in without seeing them. See
 [Vault](/docs/vault).
+
+## Workspace {#workspace}
+
+The server that keeps every bot, chat and setting. You run it yourself, or fleetd cloud runs it for you. See
+[How fleetd works](/docs/how-fleetd-works).

@@ -2114,7 +2114,7 @@
    "lead": true,
    "worker": true,
    "browser": false,
-   "description": "The vault items your session may use: the team vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.",
+   "description": "The vault items your session may use: the workspace vault's logins (label, sites, fields present), addresses and cards (label only), and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.",
    "inputSchema": {
     "properties": {
      "kind": {
@@ -2152,7 +2152,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Search the person's 1Password for logins, cards and addresses to import into fleetd's team vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.",
+   "description": "Search the person's 1Password for logins, cards and addresses to import into fleetd's workspace vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.",
    "inputSchema": {
     "properties": {
      "kinds": {
@@ -2194,7 +2194,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Propose importing 1Password items into fleetd's team vault: refs from vault_import_search, why one line. The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, any bot's agents fill them from the vault.",
+   "description": "Propose importing 1Password items into fleetd's workspace vault: refs from vault_import_search, why one line. The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, any bot's agents fill them from the vault.",
    "inputSchema": {
     "properties": {
      "refs": {

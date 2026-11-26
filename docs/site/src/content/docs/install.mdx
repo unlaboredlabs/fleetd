@@ -15,8 +15,8 @@ In a terminal, it then starts the setup wizard, `fleetd init`. Go on with the [Q
 
 - **macOS 13 or newer, or Linux x64.** On an older Mac the installer stops and changes nothing.
 - **`claude`** on each machine that runs agents. `fleetd init` checks for it and prints the install command.
-- **`git`** on the hub's machine.
-- **GitHub**: the hub's own GitHub App, which you create in setup, or `gh` logged in on the hub.
+- **`git`** on the workspace's machine.
+- **GitHub**: the workspace's own GitHub App, which you create in setup, or `gh` logged in on the workspace.
 
 You don't need `sudo`.
 
@@ -56,7 +56,7 @@ curl -fsSL https://fleetd.sh | sh -s -- --no-init
 - `--no-init`: install, but don't start the setup wizard.
 - `--no-app`: install the CLI only.
 - `--app`: install the desktop app on Linux even with no display.
-- `--join <url> --code <code>`: join a hub as a machine instead of running the wizard. `fleetd pair --worker` prints
+- `--join <url> --code <code>`: join a workspace as a machine instead of running the wizard. `fleetd pair --worker` prints
   this line for you. See [Machines](/docs/machines#join).
 - `--mac`: with `--join`, join as [the agents' Mac](/docs/agents-mac).
 - `--uninstall`: stop and remove fleetd's services on this machine, then the CLI and the app. See
@@ -64,7 +64,7 @@ curl -fsSL https://fleetd.sh | sh -s -- --no-init
 
 ## Builds
 
-You install the newest build: a new one comes after each change to fleetd that passes its tests. From then on your hub
+You install the newest build: a new one comes after each change to fleetd that passes its tests. From then on your workspace
 takes builds in stages, at the [update speed](/docs/releases#speed) you pick. See [Builds & rollout](/docs/releases).
 
 ## Build from source {#from-source}
@@ -81,7 +81,7 @@ bun run compile
 The CLI is `fleetd/dist/fleetd`; copy it to `~/.local/bin/fleetd`. To build the desktop app, see
 [CONTRIBUTING](https://github.com/unlaboredlabs/fleetd/blob/main/docs/CONTRIBUTING.md).
 
-## A second hub on one machine {#second-fleet}
+## A second workspace on one machine {#second-fleet}
 
-To try fleetd next to a hub you already run on the same machine, don't run the wizard. Follow
-[Run a second hub on one machine](/docs/config-and-files#second-fleet) instead.
+To try fleetd next to a workspace you already run on the same machine, don't run the wizard. Follow
+[Run a second workspace on one machine](/docs/config-and-files#second-fleet) instead.

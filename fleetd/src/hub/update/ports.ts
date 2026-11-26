@@ -193,7 +193,7 @@ export function updateSummary(update: HubUpdateData): string {
   const to = update.to !== undefined ? versionLabel(update.to) : "the newest build";
   switch (update.state) {
     case "updating": {
-      if (update.hub === "restarting") return `Updating fleetd to ${to}: the hub restarts`;
+      if (update.hub === "restarting") return `Updating fleetd to ${to}: the workspace restarts`;
       const restarting = update.machines.filter((m) => m.state === "restarting").length;
       if (restarting === 0) return `Updating fleetd to ${to}`;
       return restarting === 1 ? `Updating fleetd to ${to}: 1 machine restarts` : `Updating fleetd to ${to}: ${restarting} machines restart`;

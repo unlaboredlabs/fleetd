@@ -80,7 +80,7 @@ export function refusal(hub: Hub, r: ProjectRef, order: string): string | undefi
   try {
     w = workstreamGet(hub.db.conn, order);
   } catch (e) {
-    return `The hub could not read ${order}: ${(e as Error).message}.`;
+    return `The workspace could not read ${order}: ${(e as Error).message}.`;
   }
   if (!w || w.projectRef.machineId !== r.machineId || w.projectRef.projectId !== r.projectId) return `The bot has no order ${order}.`;
   if (w.state !== "open") return `${order} is closed: its agents are done.`;
@@ -97,7 +97,7 @@ export function refusal(hub: Hub, r: ProjectRef, order: string): string | undefi
 export async function saved(hub: Hub, s: OrderEnvSaved, at: string): Promise<string | undefined> {
   const r = { machineId: s.project.machineId, projectId: s.project.projectId };
   if (!MACHINE_ID.test(r.machineId) || r.projectId === "" || !ORDER_ID.test(s.orderId) || !ENV_NAME.test(s.name)) {
-    return `${s.name} for ${s.orderId} is not a variable the hub can record`;
+    return `${s.name} for ${s.orderId} is not a variable the workspace can record`;
   }
   const row = { name: s.name, fingerprint: s.fingerprint, bytes: s.bytes, requestId: s.requestId, updatedAt: at };
   try {
@@ -108,9 +108,9 @@ export async function saved(hub: Hub, s: OrderEnvSaved, at: string): Promise<str
     const m = r.machineId;
     try {
       await orderEnvDrop(hub, m, r.projectId, s.orderId, [s.name, s.fingerprint]);
-      return `The hub could not record ${s.name} for ${s.orderId}, so ${m}'s node dropped it again: ${(e as Error).message}`;
+      return `The workspace could not record ${s.name} for ${s.orderId}, so ${m}'s node dropped it again: ${(e as Error).message}`;
     } catch (drop) {
-      return `The hub could not record ${s.name} for ${s.orderId} (${(e as Error).message}), and ${m}'s node could not drop it: ${(drop as Error).message}`;
+      return `The workspace could not record ${s.name} for ${s.orderId} (${(e as Error).message}), and ${m}'s node could not drop it: ${(drop as Error).message}`;
     }
   }
 }

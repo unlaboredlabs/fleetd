@@ -56,7 +56,7 @@ export function ConnectionBanner() {
   return (
     <div className={s.banner} data-tone="quiet" role="status" data-banner="nodes-behind">
       <Prose
-        text={`${listed(behind)} ${one ? "runs" : "run"} an older fleetd than the hub. Run \`fleetd update\` on ${one ? "it" : "each"} so new work can reach ${one ? "it" : "them"}.`}
+        text={`${listed(behind)} ${one ? "runs" : "run"} an older fleetd than the workspace. Run \`fleetd update\` on ${one ? "it" : "each"} so new work can reach ${one ? "it" : "them"}.`}
       />
     </div>
   );
