@@ -74,7 +74,9 @@ export class Checklist {
     }[item.state];
     let text = item.detail === "" ? `${mark}  ${bold(item.title)}` : `${mark}  ${bold(item.title)} ${item.detail}`;
     if (item.fix !== undefined) {
-      text += this.rich ? `\n${dim(BAR)}  ${dim("Fix:")} ${bold(item.fix)}` : `. Fix: ${bold(item.fix)}`;
+      // A detail that already ends a sentence ("Starting…", "done.") takes no second stop.
+      const stop = /[.…!?:]$/u.test(item.detail) ? " " : ". ";
+      text += this.rich ? `\n${dim(BAR)}  ${dim("Fix:")} ${bold(item.fix)}` : `${stop}Fix: ${bold(item.fix)}`;
     }
     return text;
   }
