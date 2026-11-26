@@ -117,6 +117,12 @@ function Where({ computers, onBilling }: { computers: ComputersChoice | null; on
       clearTimeout(timer);
     };
   }, [session]);
+  // A machine that joins reaches the phone with a fresh snapshot (an event names only machines it knows): read one
+  // every few seconds while the step waits, so it ticks as the computer connects. A new workspace's is small.
+  useEffect(() => {
+    const timer = setInterval(() => session.refresh(), 5_000);
+    return () => clearInterval(timer);
+  }, [session]);
   const tailnet = useRead(() => session.call("tailnet_get", {}), [session]);
   const ts = tailnet.value?.ok === true ? (tailnet.value.output as TailnetState) : undefined;
   // The person signs in on Tailscale's page: its state is read again until it isn't waiting on them.
