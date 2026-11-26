@@ -1,5 +1,4 @@
 // Running commands locally and on a machine over SSH, each with its stdin given up front.
-import { terminal } from "../tty.ts";
 import { q } from "./units.ts";
 
 export type SshTarget = {
@@ -26,14 +25,9 @@ export function runSsh(t: SshTarget, command: string, stdin?: Uint8Array): Promi
   return runLocal("ssh", [...configArgs(t), "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", t.host, "--", `sh -c ${q(command)}`], stdin);
 }
 
-/** Runs `command` with this terminal attached (a login flow), on the machine or here: its own device, never /dev/tty. */
-export function runAttached(t: SshTarget, command: string): boolean {
-  const argv = t.local ? ["/bin/sh", "-c", command] : ["ssh", ...configArgs(t), "-t", t.host, "--", `sh -c ${q(command)}`];
-  try {
-    return Bun.spawnSync(argv, { stdio: [terminal(), "inherit", "inherit"] }).exitCode === 0;
-  } catch {
-    return false;
-  }
+/** How to run `command` on a terminal (a login flow), on the machine or here; never asks for an SSH password. */
+export function attachedArgv(t: SshTarget, command: string): string[] {
+  return t.local ? ["/bin/sh", "-c", command] : ["ssh", ...configArgs(t), "-o", "BatchMode=yes", "-t", t.host, "--", `sh -c ${q(command)}`];
 }
 
 export async function runLocal(file: string, args: string[], stdin?: Uint8Array): Promise<RunResult> {

@@ -32,6 +32,7 @@ import { capture, currentExe, probeListen, release } from "./shared.ts";
 import { runLocal } from "./ssh.ts";
 import { isFailure } from "./steps.ts";
 import { q } from "./units.ts";
+import { claudeLogin, hasDisplay } from "./claude_login.ts";
 import { failedWithLog, type InitOptions, nodeLine, notes, splitFix, type Ui, walk, workerClaude } from "./wizard.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 
@@ -100,9 +101,6 @@ const tildeOf = (path: string) => {
   const home = homeDir();
   return path.startsWith(`${home}/`) ? `~/${path.slice(home.length + 1)}` : path === home ? "~/" : path;
 };
-
-/** A desktop session the app could open in: always on macOS, an X or Wayland display on Linux. */
-const hasDisplay = () => process.platform === "darwin" || Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 
 /** Whether the desktop app is installed here, and how to open (or install) it. */
 function appHint(): [boolean, string] {
@@ -287,7 +285,7 @@ async function hubClaude(ui: Ui, list: Checklist, account: string | undefined): 
       }
       if (setup.version !== undefined && !logged && (await ui.offerToRun(list, "claude isn't logged in. Log in now? (No: give the workspace an API key at the end instead)"))) {
         logged = true;
-        attached(list, binary, ["auth", "login"]);
+        await claudeLogin(ui, list, [binary, "auth", "login"], true);
         continue;
       }
       if (setup.version === undefined && setup.problem !== undefined) {

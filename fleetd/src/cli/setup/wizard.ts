@@ -10,12 +10,13 @@ import { type GitIdentity, isMachineId, parseGitIdentity, type SetupState } from
 import { localHostName, machineIdFromHost } from "../project.ts";
 import * as tty from "../tty.ts";
 import { Checklist } from "./checklist.ts";
+import { claudeLogin } from "./claude_login.ts";
 import { asOwner, claudeKey } from "./connect_steps.ts";
 import { type Added, Stop, join as joinHubAs, localArgs } from "./machine.ts";
 import { setupRows } from "../../node/agents_mac/rows.ts";
 import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
-import { runAttached, runSsh } from "./ssh.ts";
+import { attachedArgv, runSsh } from "./ssh.ts";
 import { q } from "./units.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 
@@ -78,6 +79,10 @@ export class Ui {
       });
       return answer.trim();
     });
+  }
+  /** A line typed at the terminal, trimmed; undefined when the input ends (Ctrl-D) or nobody is at the terminal. */
+  line(list: Checklist, prompt: string, hint: string): Promise<string | undefined> {
+    return this.ask<string | undefined>(list, undefined, async () => (await tty.ask(prompt, hint))?.trim());
   }
   /** A secret typed with no echo; empty when nobody is at the terminal. */
   secret(list: Checklist, prompt: string): Promise<string> {
@@ -481,8 +486,7 @@ export async function workerClaude(ui: Ui, list: Checklist, added: Added, accoun
       return;
     }
     offered = true;
-    list.stopSpinner();
-    runAttached(added.target, login);
+    await claudeLogin(ui, list, attachedArgv(added.target, login), added.target.local);
     const out = await runSsh(added.target, loginStatusCommand(added.layout, added.claude, added.claudeConfigDir));
     try {
       loggedIn = JSON.parse(out.stdout.trim())?.loggedIn === true;
