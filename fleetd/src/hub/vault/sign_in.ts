@@ -7,7 +7,7 @@
 //   it filled, "Save to Vault" keeps the login in the team vault for that site, as the person's, through saveItem (its
 //   audit row and event), so the next sign-in there fills with no ask.
 // - settled, a task's form tells the task at once; a lead's wakes it as any request does.
-import type { HumanRequest, ProjectRef } from "../../shared/contracts.ts";
+import type { HumanRequest, ProjectRef, SignInField } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
@@ -16,7 +16,6 @@ import { approvals } from "../approvals/index.ts";
 import { requestOutcome } from "../approvals/outcome.ts";
 import type { SignInBy, SignInRelay } from "../approvals/ports.ts";
 import {
-  codeOnly,
   fieldsOf,
   loginSpec,
   loginTarget,
@@ -91,13 +90,17 @@ export function openSignIn(hub: Hub, caller: LeadCaller, call: LeadCall): Record
   return { requestId: opened.requestId, state: opened.state };
 }
 
-/** Whether browser session `sessionId` was given a login for `domain` already: a vault fill of its username or
- * password there, or a sign-in form the person filled for it. */
-function loginGivenIn(hub: Hub, r: ProjectRef, sessionId: string, domain: string): boolean {
-  if (vault(hub).audit.loginHostsIn(sessionId).some((host) => onSite(host, domain))) return true;
-  return approvals(hub)
-    .list({ projectRef: r, states: ["stored"], limit: 100 })
-    .some((q) => q.secureInput?.signIn !== undefined && q.secureInput.sessionId === sessionId && q.secureInput.site.domain === domain && !codeOnly(q.secureInput.signIn.fields));
+/** The login fields browser session `sessionId` was given for `domain` already: filled from the vault there, or from a
+ * sign-in form the person filled for it (the fields its page showed). */
+function loginGivenIn(hub: Hub, r: ProjectRef, sessionId: string, domain: string): Set<SignInField> {
+  const given = new Set<SignInField>();
+  for (const f of vault(hub).audit.loginFillsIn(sessionId)) if (onSite(f.site, domain)) given.add(f.field as SignInField);
+  for (const q of approvals(hub).list({ projectRef: r, states: ["stored"], limit: 100 })) {
+    const input = q.secureInput;
+    if (input?.signIn === undefined || input.sessionId !== sessionId || input.site.domain !== domain) continue;
+    for (const f of input.signIn.fields) if (f !== "otp") given.add(f);
+  }
+  return given;
 }
 
 /** The person's device, as `secret_submit` checked it: operate on the sink's and the project's machines, there only. */

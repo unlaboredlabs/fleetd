@@ -115,6 +115,23 @@ test("a login the site refused: asked again in that browser, the person gets the
   expect((await open({ username: "#email", password: "#pw" }, S2)).requestId).toMatch(/^Q\d+$/);
 });
 
+test("a two-page sign-in (the username, then the password) fills both from the vault, from a form's Save as well", async () => {
+  // From the vault: the username page, then the password page, in a fresh browser.
+  const first = await open({ username: "#email", password: "#pw" });
+  await submit(first.requestId!, { username: USER, password: PASSWORD });
+  const id = logins()[0]!.itemId;
+  expect((await open({ username: "#email" }, S2)).vault?.itemId).toBe(id);
+  await leadCalls(k.hub).handler("vault_fill")!(lead, { op: "vault_fill", sessionId: S2, item: id, field: "username", page: "https://shop.example/login" } as never);
+  expect((await open({ password: "#pw" }, S2)).vault?.itemId).toBe(id);
+});
+
+test("a two-page sign-in through the form: the username's form saves the login, and the password page fills from it", async () => {
+  const user = await open({ username: "#email" });
+  await submit(user.requestId!, { username: USER, password: PASSWORD });
+  expect(delivered.at(-1)!.plain).toEqual({ username: USER, password: PASSWORD });
+  expect((await open({ password: "#pw" })).vault?.itemId).toBe(logins()[0]!.itemId);
+});
+
 test("a code the site asks for after the password: its own form, filled, never kept", async () => {
   const login = await open({ username: "#email", password: "#pw" });
   await submit(login.requestId!, { username: USER, password: PASSWORD });
@@ -185,9 +202,10 @@ test("the rules: fields in fill order, labels, the box's checks, the vault hit a
   expect(fieldsOf({ otp: "#c", username: "#u" })).toEqual(["username", "otp"]);
   expect(signInLabel(SITE, ["otp"])).toBe("Code for Shop");
   expect(signInLabel(SITE, ["username", "otp"])).toBe("Sign in to Shop");
-  expect(vaultTried(["password"], true)).toBe(true);
-  expect(vaultTried(["otp"], true)).toBe(false);
-  expect(vaultTried(["username", "password"], false)).toBe(false);
+  expect(vaultTried(["password"], new Set(["password"]))).toBe(true);
+  expect(vaultTried(["password"], new Set(["username"]))).toBe(false);
+  expect(vaultTried(["otp"], new Set(["username", "password"]))).toBe(false);
+  expect(vaultTried(["username", "password"], new Set())).toBe(false);
   expect(signInValues({ username: "a", password: "", otp: null }, ["username"])).toEqual({ username: "a" });
   expect(() => signInValues({ password: 7 }, ["password"])).toThrow("isn't text");
   expect(() => signInValues("x", ["password"])).toThrow("JSON object");

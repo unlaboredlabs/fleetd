@@ -125,19 +125,19 @@ export class VaultAudit {
     );
   }
 
-  /** Refusals one browser session drew in the last ten minutes. */
-  /** The page hosts a vault login's username or password was filled on in browser session `sessionId`. */
-  loginHostsIn(sessionId: string): string[] {
+  /** Each vault login's username or password filled in browser session `sessionId`: the page's host and the field. */
+  loginFillsIn(sessionId: string): { site: string; field: string }[] {
     return this.db
-      .query<{ site: string }, [string]>(
-        `SELECT DISTINCT json_extract(data, '$.site') AS site FROM vault_audit WHERE action = 'fill' AND outcome IN ('pending', 'ok')
-           AND json_extract(data, '$.sessionId') = ? AND json_extract(data, '$.fields[0]') IN ('username', 'password')`,
+      .query<{ site: unknown; field: unknown }, [string]>(
+        `SELECT DISTINCT json_extract(data, '$.site') AS site, json_extract(data, '$.fields[0]') AS field FROM vault_audit
+           WHERE action = 'fill' AND outcome IN ('pending', 'ok') AND json_extract(data, '$.sessionId') = ?
+           AND json_extract(data, '$.fields[0]') IN ('username', 'password')`,
       )
       .all(sessionId)
-      .map((x) => x.site)
-      .filter((s) => typeof s === "string");
+      .filter((x): x is { site: string; field: string } => typeof x.site === "string" && typeof x.field === "string");
   }
 
+  /** Refusals one browser session drew in the last ten minutes. */
   refusalsIn(sessionId: string, now: number): number {
     return (
       this.db
