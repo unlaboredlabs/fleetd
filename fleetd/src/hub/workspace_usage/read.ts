@@ -153,7 +153,8 @@ export async function read(q: Read, i: Inputs): Promise<WorkspaceUsageOutput> {
       [since, prevSince, until],
     ),
     q<Rows["perDay"][number]>(
-      `SELECT kind, at_ms AS at FROM usage_facts WHERE at_ms >= ?1 AND at_ms < ?2 AND kind IN ('order', 'failed', 'stopped')`,
+      // `+kind`: the time index, never the key on kind, which would read every order there ever was.
+      `SELECT kind, at_ms AS at FROM usage_facts WHERE at_ms >= ?1 AND at_ms < ?2 AND +kind IN ('order', 'failed', 'stopped')`,
       [since, until],
     ),
     q<Rows["merges"][number]>(
@@ -180,7 +181,7 @@ export async function read(q: Read, i: Inputs): Promise<WorkspaceUsageOutput> {
     ),
     q<Rows["now"][number]>(
       `SELECT (SELECT COUNT(*) FROM tasks WHERE state = 'queued') AS queued, (SELECT COUNT(*) FROM tasks WHERE state = 'running') AS running,
-         (SELECT COUNT(*) FROM requests WHERE state = 'open') AS waiting`,
+         (SELECT COUNT(*) FROM requests WHERE state IN ('open', 'approved') AND state = 'open') AS waiting`,
       [],
     ),
   ]);

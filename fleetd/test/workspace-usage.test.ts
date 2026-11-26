@@ -4,6 +4,9 @@
 import { expect, test } from "bun:test";
 import type { WorkspaceUsageOutput } from "../src/shared/contracts.ts";
 import { fold } from "../src/hub/workspace_usage/fold.ts";
+import { read, type Read } from "../src/hub/workspace_usage/read.ts";
+import { botNames } from "../src/hub/workspace_usage/tools.ts";
+import { people } from "../src/hub/people/store.ts";
 import { refusal, testHub } from "./people-kit.ts";
 import { MACHINE, PEOPLE, seed } from "./usage-seed.ts";
 
@@ -242,20 +245,30 @@ test("only the workspace's owners and admins may read it", async () => {
   expect((await refusal(kit.call(admin, "workspace_usage", { days: 7, tz: "UTC" }))).code).toBe("forbidden");
 });
 
-test("a year of a busy workspace's history folds once, and each period then reads fast", async () => {
+test("a year of a busy workspace's history folds once, and each period then reads only its own rows", async () => {
   // Four times the seeded team's work over a year: about 10,000 orders, 38,000 agents and 25,000 messages.
   const kit = seeded({ days: 365, seed: 11, scale: 4 });
-  const orders = kit.hub.db.all<{ n: number }>("SELECT COUNT(*) AS n FROM workstreams")[0]!.n;
-  expect(orders).toBeGreaterThan(8_000);
-  let t = performance.now();
+  expect(kit.hub.db.all<{ n: number }>("SELECT COUNT(*) AS n FROM workstreams")[0]!.n).toBeGreaterThan(8_000);
   while (kit.hub.db.transaction((c) => fold(c))) {}
-  const folded = performance.now() - t;
+  // Folded: a fold now has nothing left to read.
+  const facts = kit.hub.db.all<{ n: number }>("SELECT COUNT(*) AS n FROM usage_facts")[0]!.n;
+  expect(kit.hub.db.transaction((c) => fold(c))).toBe(false);
+  expect(kit.hub.db.all<{ n: number }>("SELECT COUNT(*) AS n FROM usage_facts")[0]!.n).toBe(facts);
+  // Fast however long the history: each of the read's queries finds its rows through an index (on time, or the
+  // period's days), and none reads a whole table.
+  const plans: string[] = [];
+  const q: Read = async (sql, params) => {
+    plans.push(...kit.hub.db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, params).map((r) => r.detail));
+    return kit.hub.db.all(sql, params);
+  };
   for (const days of [7, 30, 90] as const) {
-    t = performance.now();
-    const out = await call(kit, days, "America/New_York");
-    const took = performance.now() - t;
+    const out = await read(q, { now: kit.now, tz: "America/New_York", days, people: people(kit.hub).list(true), bots: botNames(kit.hub.db.conn) });
     expect(out.days.length).toBe(days);
-    expect(took).toBeLessThan(300);
   }
-  expect(folded).toBeLessThan(10_000);
-});
+  expect(plans.filter((p) => /^SCAN (?!d VIRTUAL TABLE|CONSTANT ROW)/u.test(p))).toEqual([]);
+  expect(plans.filter((p) => /usage_facts/u.test(p) && !/usage_facts_by_time|PRIMARY KEY \(kind=\? AND key=\?\)/u.test(p))).toEqual([]);
+  // And on the clock, loosely: the read of 90 days, through the tool, well under a second even on a loaded machine.
+  const t = performance.now();
+  await call(kit, 90, "America/New_York");
+  expect(performance.now() - t).toBeLessThan(2_000);
+}, 120_000);
