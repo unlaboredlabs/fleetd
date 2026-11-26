@@ -145,7 +145,7 @@ describe("one list", () => {
   });
 
   it("numbers the pins first while ⌘ is held, each in its dot's place before its name, then the list on from them", () => {
-    const want = { word: "approve" as const, count: 1, label: "A command to approve", waiting: { kind: "approve" as const, count: 1 } };
+    const want = { word: "approve" as const, count: 1, waiting: { kind: "approve" as const, count: 1 } };
     mount([{ ...ADA, pinned: true, want }, { ...HOME, pinned: true }, STOREFRONT], true);
     const pins = [...host.querySelectorAll<HTMLElement>("[class*=pinCell]")];
     expect(pins.map((c) => [c.querySelector("[class*=jump]")?.textContent, c.querySelector("[class*=pinTitle]")?.textContent])).toEqual([
@@ -233,7 +233,7 @@ describe("one list", () => {
   });
 
   it("says in its line what a chat wants of you, with no dot, and marks a new message with the dot alone", () => {
-    const want = { word: "approve" as const, count: 2, label: "2 commands to approve", waiting: { kind: "approve" as const, count: 2, what: "Run the stock migration" } };
+    const want = { word: "approve" as const, count: 2, waiting: { kind: "approve" as const, count: 2, what: "Run the stock migration" } };
     mount([
       { ...ADA, want, line: "Ship it?", say: { lead: "2 to approve:", text: "Run the stock migration", tone: "want" } },
       { ...HOME, unread: true },

@@ -14,8 +14,6 @@ export interface Want {
   readonly word: WantWord | undefined;
   /** How many of that kind wait: secrets or approvals; 1 otherwise. */
   readonly count: number;
-  /** The row's tooltip and accessible name for the mark. */
-  readonly label: string;
   /** What waits, for the row's line (shared/rowLine.ts). */
   readonly waiting: Waiting;
 }
@@ -81,8 +79,6 @@ export interface MarksIn {
   readonly sections?: ReadonlyArray<{ readonly id: string; readonly chats: ReadonlyArray<ProjectKey> }> | undefined;
 }
 
-const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
-
 /** The most pressing reason first: a secret or an approval blocks a run now; a reply, then a block outside the work. */
 const wantOf = ({ key, needsYou }: ProjectRow, marks: MarksIn): Want | undefined => {
   // A teammate's card shows in the chat, but marks only their sidebar.
@@ -94,25 +90,20 @@ const wantOf = ({ key, needsYou }: ProjectRow, marks: MarksIn): Want | undefined
   if (secrets.length > 0) {
     // A sign-in form says its site; any other secret what it is for.
     const signIn = secrets.every((r) => r.secureInput?.signIn !== undefined);
-    return {
-      word: "secret",
-      count: secrets.length,
-      label: `The lead needs ${plural(secrets.length, "secret", "secrets")} from you`,
-      waiting: { kind: signIn ? "signIn" : "secret", count: secrets.length, what: what(secrets) },
-    };
+    return { word: "secret", count: secrets.length, waiting: { kind: signIn ? "signIn" : "secret", count: secrets.length, what: what(secrets) } };
   }
   if (approvals.length > 0) {
-    return { word: "approve", count: approvals.length, label: `${plural(approvals.length, "command", "commands")} to approve`, waiting: { kind: "approve", count: approvals.length, what: what(approvals) } };
+    return { word: "approve", count: approvals.length, waiting: { kind: "approve", count: approvals.length, what: what(approvals) } };
   }
   if (needsYou) {
     return marks.requests === undefined
-      ? { word: undefined, count: 1, label: "The lead is waiting on you", waiting: { kind: "unknown", count: 1 } }
-      : { word: "reply", count: 1, label: "The lead is waiting for your reply", waiting: { kind: "reply", count: 1 } };
+      ? { word: undefined, count: 1, waiting: { kind: "unknown", count: 1 } }
+      : { word: "reply", count: 1, waiting: { kind: "reply", count: 1 } };
   }
   if (marks.blocked?.has(key) === true) {
     const why = marks.blocked.get(key);
     const said = why === undefined || why === "" ? undefined : why;
-    return { word: "blocked", count: 1, label: said === undefined ? "Blocked" : `Blocked: ${said}`, waiting: { kind: "blocked", count: 1, what: said } };
+    return { word: "blocked", count: 1, waiting: { kind: "blocked", count: 1, what: said } };
   }
   return undefined;
 };

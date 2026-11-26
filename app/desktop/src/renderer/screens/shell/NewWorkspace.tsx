@@ -5,20 +5,13 @@
 // this address) are shown as written, with what to do.
 import { useState } from "react";
 import { Button, Dialog, Field, Input, Text } from "../../ui";
-import type { HubView } from "../../src/data/hubs";
 import { useHubSet } from "../../src/data/react";
 import { startScreen } from "../start/kept";
 import { navigate, setRouteHubs } from "./navigation";
 import { showHub } from "./sidebarLayout";
+import { WORKSPACE_NAME_MAX } from "./workspaceAsk";
 
-/** As the cloud takes a name: 60 at most. */
-export const WORKSPACE_NAME_MAX = 60;
-
-/** The workspace New workspace is asked on: the one on show when it is a cloud one of the account's, else the first. */
-export const askedOn = (hubs: ReadonlyArray<Pick<HubView, "id" | "cloud" | "codePaired">>, shown: string): string | null => {
-  const ours = hubs.filter((h) => h.cloud === true && h.codePaired !== true);
-  return (ours.find((h) => h.id === shown) ?? ours[0])?.id ?? null;
-};
+export { askedOn, WORKSPACE_NAME_MAX } from "./workspaceAsk";
 
 export function NewWorkspaceDialog({ from, open, onClose }: { from: string; open: boolean; onClose: () => void }) {
   const [name, setName] = useState("");

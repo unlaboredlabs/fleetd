@@ -22,7 +22,7 @@ describe("sidebar bots", () => {
     expect(toSidebar([row("api", { needsYou: true, working: true, running: 3 })])).toEqual([
       {
         ...row("api", { needsYou: true, working: true, running: 3 }),
-        want: { word: undefined, count: 1, label: "The lead is waiting on you", waiting: { kind: "unknown", count: 1 } },
+        want: { word: undefined, count: 1, waiting: { kind: "unknown", count: 1 } },
         unread: false,
         warning: undefined,
         line: "",
@@ -132,13 +132,13 @@ describe("sidebar bots", () => {
       ]),
     };
     const rows = [row("api", { needsYou: true }), row("billing", { needsYou: true }), row("cart", { needsYou: true }), row("docs"), row("search")];
-    const wants = toSidebar(rows, marks)?.map((p) => [p.project.title, p.want?.word, p.want?.count, p.want?.label]);
+    const wants = toSidebar(rows, marks)?.map((p) => [p.project.title, p.want?.word, p.want?.count, p.say]);
     expect(wants).toEqual([
-      ["api", "approve", 2, "2 commands to approve"],
-      ["billing", "secret", 1, "The lead needs 1 secret from you"],
-      ["cart", "reply", 1, "The lead is waiting for your reply"],
-      ["docs", "blocked", 1, "Blocked: devbox is offline"],
-      ["search", undefined, undefined, undefined],
+      ["api", "approve", 2, { text: "2 commands to approve", tone: "want" }],
+      ["billing", "secret", 1, { text: "A secret to enter", tone: "want" }],
+      ["cart", "reply", 1, { text: "Waiting for your reply", tone: "want" }],
+      ["docs", "blocked", 1, { lead: "Blocked:", text: "devbox is offline", tone: "want" }],
+      ["search", undefined, undefined, { text: "No messages yet" }],
     ]);
   });
 

@@ -18,7 +18,7 @@
 // the times on the first nine rows, which ⌘1..9 open. A row's right-click menu opens it or its settings, pins or unpins
 // it, renames it, copies its path, archives it (Undo in the toast) or deletes it (from its settings, which list its
 // worktrees and ask for its name first). An archived project is in none (the ⋯'s Archived bots, Settings › Projects,
-// brings it back). The ⋯ orders the list (newest first, by name, or the ones that want you first) and makes its rows
+// brings it back). The ⋯ orders the list (the ones that want you first, then newest first; or by name) and makes its rows
 // compact (sidebarLayout.ts), kept on this computer.
 //
 // The chats in none of your sections come first (under a quiet Bots label once you have sections), then your sections
@@ -33,13 +33,13 @@
 import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search, Server } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import type { HubView } from "../../src/data/hubs";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
+import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, preloadable, preloadWhenIdle, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { lineWords } from "../../../shared/rowLine";
@@ -61,9 +61,14 @@ import { foldKey, openHub, setListView, shownRows, SORTS, sortRows, toggleFold, 
 import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
 import { useCloud } from "../onboarding/cloud";
-import { askedOn, NewWorkspaceDialog } from "./NewWorkspace";
+import { askedOn } from "./workspaceAsk";
 import { PlaceIcons, useHubsMark, You } from "./You";
 import s from "./sidebar.module.css";
+
+/** New workspace's dialog, loaded on use (it is never in the first chat's load), or once the app is idle on the web. */
+const NewWorkspaceDialog = preloadable(() => import("./NewWorkspace").then((m) => m.NewWorkspaceDialog));
+if (onWeb()) preloadWhenIdle(NewWorkspaceDialog);
+else NewWorkspaceDialog.preload().catch(() => undefined);
 
 /** A chat's picture in its row: big enough to read its face, the row a 46 px rounded box around it. */
 const AVATAR = 32;
@@ -189,6 +194,8 @@ function HubSwitcher({ hub: id }: { hub: string }) {
   const rows = useHubRows();
   const cloud = useCloud().state.available || onWeb();
   const [making, setMaking] = useState(false);
+  // The dialog mounts once first asked for, and stays, so it closes as it opened.
+  const [asked, setAsked] = useState(false);
   // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
   // without opening.
   const off = useHubsMark();
@@ -223,7 +230,7 @@ function HubSwitcher({ hub: id }: { hub: string }) {
           ))}
           <MenuSeparator />
           {cloud ? (
-            <MenuItem icon={<Plus aria-hidden />} data-opens="workspace.new" onSelect={() => (from === null ? connect() : setMaking(true))}>
+            <MenuItem icon={<Plus aria-hidden />} data-opens="workspace.new" onSelect={() => (from === null ? connect() : (setAsked(true), setMaking(true)))}>
               New workspace…
             </MenuItem>
           ) : null}
@@ -234,7 +241,11 @@ function HubSwitcher({ hub: id }: { hub: string }) {
           )}
         </MenuContent>
       </Menu>
-      {from === null ? null : <NewWorkspaceDialog from={from} open={making} onClose={() => setMaking(false)} />}
+      {from === null || !asked ? null : (
+        <Suspense fallback={null}>
+          <NewWorkspaceDialog from={from} open={making} onClose={() => setMaking(false)} />
+        </Suspense>
+      )}
     </>
   );
 }
