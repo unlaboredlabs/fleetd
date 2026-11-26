@@ -307,7 +307,8 @@ export function ChatList(props: {
   // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls. A link
   // (a notification's, or Show) opens the chat at a message instead, and keeps that message in view the same way:
   // through rows measuring and the window resizing, until the reader scrolls. Keyed by the message, not its index,
-  // so older pages loading above it don't pin it again.
+  // so older pages loading above it don't pin it again. A send pins the end again: your message and the lead's answer
+  // land after the scroll to it, and the end isn't followed for a reader who had scrolled up.
   const openKey = openAt === undefined ? undefined : rows[openAt]?.key;
   const openIndex = useRef(openAt);
   const rowsNow = useRef(rows);
@@ -362,7 +363,7 @@ export function ChatList(props: {
       el.removeEventListener("pointerdown", release);
       el.removeEventListener("keydown", release);
     };
-  }, [openKey, openSeq, openPart]);
+  }, [openKey, openSeq, openPart, sent]);
 
   // An older page keeps the place. TanStack keeps the row at the scroll offset where it was, but at the very top that
   // row is the top line, or the day's line under it, both still first once the page lands below them: the view would
@@ -465,14 +466,6 @@ export function ChatList(props: {
     if (!v || !el || was === undefined || inset === undefined || was === inset) return;
     if (el.scrollHeight - (inset - was) - el.scrollTop - el.clientHeight <= v.options.scrollEndThreshold) v.scrollToOffset(el.scrollHeight - el.clientHeight);
   }, [inset]);
-
-  useEffect(() => {
-    const v = virtualizer.current;
-    if (sent === undefined || sent === 0 || !v) return;
-    v.scrollToIndex(rows.length - 1, { align: "end" });
-    // Once per send.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sent]);
 
   // A cloud bot waking: the bot in the reply's place after the rows, until its reply is whole.
   const last = rows.at(-1);
