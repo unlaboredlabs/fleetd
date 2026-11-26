@@ -30,3 +30,6 @@ export const deleteAccount = async (hub: Pick<KeptHub, "hub" | "key" | "hubName"
   const workspaces = (got.value as { workspaces?: unknown } | null)?.workspaces;
   return { ok: true, value: Array.isArray(workspaces) ? workspaces.filter((w): w is string => typeof w === "string") : [] };
 };
+
+/** fleetd.sh's policy page as the app opens it: the policy alone, no site header, pricing or sign-up (site/legal.js). */
+export const inAppPage = (url: string): string => `${url}?app=1`;

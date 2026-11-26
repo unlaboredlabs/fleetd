@@ -127,3 +127,9 @@ p,h1,h2,table,blockquote{margin:0}
 @media (prefers-reduced-motion:no-preference){
   .nav a,a,.theme{transition:color .14s var(--snap),text-decoration-color .14s var(--snap)}
 }
+
+/* Opened from the phone app (?app=1, legal.js): the policy alone, without the site's header and footer. */
+.app .top,
+.app .foot {
+  display: none;
+}

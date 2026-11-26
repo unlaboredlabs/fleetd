@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentRef } from "rea
 import { Alert, AppState, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { blockedLine, deleteAccountLines, emailMatches, LEGAL_PAGES } from "../accountDelete";
+import { blockedLine, deleteAccountLines, emailMatches, inAppPage, LEGAL_PAGES } from "../accountDelete";
 import { signInAsking, type AfterSignInAsk, type HeldAccount, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
 import { builtCloudConfig, type CloudConfig } from "../cloud/config";
 import { DEVICE } from "../device";
@@ -207,7 +207,7 @@ function Legal() {
   const open = (id: "terms" | "privacy", label: string) => {
     const page = LEGAL_PAGES.find((p) => p.id === id);
     return (
-      <Text style={[type.footnote, { color: t.secondary }]} accessibilityRole="link" accessibilityLabel={page?.title} onPress={() => page !== undefined && void Linking.openURL(page.url)} suppressHighlighting={false}>
+      <Text style={[type.footnote, { color: t.secondary }]} accessibilityRole="link" accessibilityLabel={page?.title} onPress={() => page !== undefined && void Linking.openURL(inAppPage(page.url))} suppressHighlighting={false}>
         {label}
       </Text>
     );

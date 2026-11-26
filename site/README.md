@@ -98,7 +98,10 @@ the hero changes.
 
 The legal pages, `terms.html`, `privacy.html`, `refunds.html` and `imprint.html` (`/terms`, `/privacy`, `/refunds`,
 `/imprint`), and `support.html` (`/support`, the App Store's Support URL) share `legal.css`: pricing's header and footer,
-then the text set plain like the docs, beside a list of the five. Every page's footer links them. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
+then the text set plain like the docs, beside a list of the five. Every page's footer links them. Opened from the phone app
+with `?app=1`, a page shows the policy alone: no site header or footer, the five linking each other with the flag kept,
+and every other link of the site as plain text (`legal.js`), so App Review finds no way to pricing or sign-up from
+inside the app. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
 their word, and move a page's Effective date when its text changes.
 
 `security.html`, `subprocessors.html` and `dpa.html` (`/security`, `/subprocessors`, `/dpa`) are drafts for the person's

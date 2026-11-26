@@ -1,7 +1,7 @@
 // Delete Account on the phone against a stand-in for a cloud workspace's address: which workspace is asked, the preview
 // read first, the call with the phone's key and the email typed, and the cloud's refusal in its own words.
 import { describe, expect, it } from "vitest";
-import { accountPreview, askedOn, deleteAccount } from "./accountDelete";
+import { accountPreview, askedOn, deleteAccount, inAppPage, LEGAL_PAGES } from "./accountDelete";
 import type { KeptHub } from "./cloud/account";
 
 const HUB = { hub: "https://acme.fleetd.dev/", key: "fk_phone_key", hubName: "acme" };
@@ -43,5 +43,13 @@ describe("Delete Account on the phone", () => {
   it("says plainly when the preview isn't one it reads", async () => {
     const fetch = (): Promise<Response> => Promise.resolve(new Response(JSON.stringify({ email: "x" }), { status: 200 }));
     expect(await accountPreview(HUB, fetch)).toEqual({ ok: false, failure: { message: "acme answered in a way this app doesn't read.", fix: "Update fleetd, then try again." } });
+  });
+});
+
+// The policy pages carried the site's header, so App Review could tap Pricing › Sign up from inside the app (W890):
+// the app opens them as the policy alone (site/legal.js).
+describe("fleetd.sh's policies from the app", () => {
+  it("open as the policy alone", () => {
+    expect(LEGAL_PAGES.map((p) => inAppPage(p.url))).toEqual(["https://fleetd.sh/privacy?app=1", "https://fleetd.sh/terms?app=1", "https://fleetd.sh/support?app=1"]);
   });
 });

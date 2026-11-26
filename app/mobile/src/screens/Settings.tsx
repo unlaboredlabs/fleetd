@@ -37,7 +37,7 @@ import { machinesShown } from "../machines";
 import { billingShown, readTeamBilling, type BillingState } from "../billing";
 import { claudeShown } from "../claude";
 import { deleteTeam, deleteTeamShown, disconnectShown } from "../team";
-import { LEGAL_PAGES } from "../accountDelete";
+import { inAppPage, LEGAL_PAGES } from "../accountDelete";
 import { DEVICE } from "../device";
 
 /** Settings' words for fleetd.sh's pages, in iOS's title case. */
@@ -237,7 +237,7 @@ export function Settings() {
           <ListRow
             key={page.id}
             title={LEGAL_TITLES[page.id]}
-            onPress={() => void Linking.openURL(page.url)}
+            onPress={() => void Linking.openURL(inAppPage(page.url))}
             accessory={<Icon name="external" size={14} color={t.tertiary} />}
             chevron={false}
           />
