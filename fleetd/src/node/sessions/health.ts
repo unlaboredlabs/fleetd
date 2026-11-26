@@ -6,7 +6,9 @@
 // refused key from a good one: it reports the same "logged in" 0.4 s after Claude refused it (the Nov 26 sweep's
 // machine showed Idle with a bad key). So only a run that completes clears the mark, or a probe of a login that changed
 // since the refusal (its `key`: the login's variables, its credentials file, its keychain entry, the account the
-// workspace sealed to the node). A probe that started before the failure says nothing about it. A usable runner is probed once, at start. While it is unusable the node re-probes
+// workspace sealed to the node). The node also tries the login itself on the endpoint's free model list, a minute after
+// the refusal and then every few minutes, and clears the mark when that passes (`runCompleted`): a refusal that was a
+// blip on Claude's side heals by itself. A probe that started before the failure says nothing about it. A usable runner is probed once, at start. While it is unusable the node re-probes
 // every RECHECK_AFTER_MS and pushes each change, so the hub's cached state, and with it its launch gate, flips back
 // within seconds of the fix.
 import type { RunnerInfo } from "./types.ts";
@@ -56,7 +58,12 @@ export class Health {
     this.#authFailed = { at: now, message: message.split("\n")[0] ?? message, ...(key === undefined ? {} : { key }) };
   }
 
-  /** A run completed, so the login works. */
+  /** Whether a run's refusal of the login stands. */
+  refused(): boolean {
+    return this.#authFailed !== undefined;
+  }
+
+  /** A run completed, or the login passed the node's own check: the login works. */
   runCompleted(): void {
     this.#authFailed = undefined;
   }

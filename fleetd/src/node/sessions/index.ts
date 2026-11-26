@@ -44,7 +44,7 @@ import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
 import { inspect, projectsRoot, scan } from "../repos/index.ts";
-import { accountSecrets, accountSettingsEnv, envFor, geminiVars, held, putOn } from "../actions/accounts.ts";
+import { accountSecrets, accountSettingsEnv, envFor, geminiVars, held, putOn, tryAccountApi } from "../actions/accounts.ts";
 import { privateByName } from "../place/endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
@@ -204,7 +204,12 @@ export type SessionConfig = {
   /** How long a node that starts waits for the hub's subscription before it wakes the agents whose Monitors were lost
    * in its restart: HELD_WAKE_MS. */
   heldWakeMs?: number;
+  /** When a login Claude refused is tried again on the endpoint's free model list: first, then every: AUTH_CHECK_MS. */
+  authCheckMs?: [first: number, every: number];
 };
+
+/** A refused login is tried again a minute after the refusal, then every three minutes, until it passes. */
+export const AUTH_CHECK_MS: [number, number] = [60_000, 180_000];
 
 /** What a node retry sends, with `--resume`, so claude picks the turn back up. */
 export const RETRY_MESSAGE = "Continue where you left off.";
@@ -438,6 +443,8 @@ export class SessionService {
   readonly #health = new Health();
   #probing: Promise<unknown> = Promise.resolve();
   #prober: ReturnType<typeof setTimeout> | undefined;
+  /** The next try of a login Claude refused (`#checkLogin`). */
+  #loginCheck: ReturnType<typeof setTimeout> | undefined;
   #itemsPruner: ReturnType<typeof setTimeout> | undefined;
   /** Sessions whose Monitors were lost in the restart before this node, woken at the hub's subscription. */
   #held: string[] = [];
@@ -2044,6 +2051,7 @@ export class SessionService {
     this.#retries.delete(runId);
     if (typeof outcome === "object" && "Failed" in outcome && outcome.Failed.class === "auth") {
       this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now(), this.#loginKey()));
+      this.#scheduleLoginCheck(true);
       // Claude refused the sign-in it was started with: this claude goes, so the next turn's start reads the session's
       // account again (one reconnected meanwhile), as an idle one goes.
       live.closing = true;
@@ -2694,6 +2702,53 @@ export class SessionService {
     return this.#health.info() ?? info;
   }
 
+  /** Tries a refused login again after AUTH_CHECK_MS (`first`: the first wait), while the refusal stands. */
+  #scheduleLoginCheck(first: boolean): void {
+    clearTimeout(this.#loginCheck);
+    this.#loginCheck = undefined;
+    if (this.#stopping || !this.#health.refused()) return;
+    const [firstMs, everyMs] = this.config.authCheckMs ?? AUTH_CHECK_MS;
+    this.#loginCheck = setTimeout(() => void this.#checkLogin(), first ? firstMs : everyMs);
+  }
+
+  /** The login a refused run ran on, tried on the endpoint's free model list (no model runs): the refusal clears when it
+   * answers. One it refuses, one that doesn't answer, or a login the node can't read (a Mac keychain) is tried again
+   * later; a changed login clears it at the next probe meanwhile. */
+  async #checkLogin(): Promise<void> {
+    this.#loginCheck = undefined;
+    if (!this.#health.refused()) return;
+    const env = this.#loginEnv();
+    if (env !== undefined) {
+      try {
+        await tryAccountApi(env);
+        console.log(`${nowIso()} INFO the refused Claude login works again`);
+        this.#healthChanged((h) => h.runCompleted());
+        return;
+      } catch {}
+    }
+    this.#scheduleLoginCheck(false);
+  }
+
+  /** The variables of the login the node's sessions start on: its own (claude.env, the environment), else the account
+   * the workspace sealed to it, else claude's own sign-in in its credentials file. Undefined when there is none to read. */
+  #loginEnv(): Env | undefined {
+    const env = runnerEnv(this.config);
+    if (LOGIN_VARS.some((k) => env[k])) return env;
+    const account = held(this.home);
+    if (account) {
+      try {
+        putOn(env, envFor(this.home, account).vars);
+        return env;
+      } catch {}
+    }
+    try {
+      const signedIn = JSON.parse(readFileSync(join(claude.configDir(env), ".credentials.json"), "utf8")) as { claudeAiOauth?: { accessToken?: unknown } };
+      const token = signedIn.claudeAiOauth?.accessToken;
+      if (typeof token === "string" && token !== "") return { ...env, CLAUDE_CODE_OAUTH_TOKEN: token };
+    } catch {}
+    return undefined;
+  }
+
   /** `claude.env` when it sets the machine's Claude key or token, as `~/…`: a refused key is replaced there. */
   #loginFile(): string | undefined {
     try {
@@ -2820,6 +2875,7 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
+    clearTimeout(this.#loginCheck);
     for (const wait of this.#retryWaits.values()) clearTimeout(wait.timer);
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
@@ -2843,6 +2899,7 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
+    clearTimeout(this.#loginCheck);
     for (const wait of this.#retryWaits.values()) clearTimeout(wait.timer);
     for (const id of [...this.#live.keys()]) {
       const dir = hostDir(this.home, id);

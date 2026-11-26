@@ -297,7 +297,8 @@ export async function tryAccountApi(env: Env, fetcher: Fetcher = fetch): Promise
   else if (env[OAUTH_TOKEN_ENV]) {
     headers.authorization = `Bearer ${env[OAUTH_TOKEN_ENV]}`;
     headers["anthropic-beta"] = "oauth-2025-04-20";
-  } else throw new Error("the account holds no key or token");
+  } else if (env.ANTHROPIC_AUTH_TOKEN) headers.authorization = `Bearer ${env.ANTHROPIC_AUTH_TOKEN}`;
+  else throw new Error("the account holds no key or token");
   let response: Response;
   try {
     response = await fetcher(`${base}/v1/models?limit=1`, { headers, signal: AbortSignal.timeout(TRY_TIMEOUT_MS) });

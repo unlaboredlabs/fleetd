@@ -10,7 +10,7 @@
 // answer is written, as a check already done does: the turn ends with its notice untold, and 500 ms later claude runs
 // a turn of its own for it (run `woke-<run>`), unless it was shut down first. With ANTHROPIC_BASE_URL set (claude.env),
 // each turn first asks that endpoint, as claude asks the API: a 529 fails the turn Overloaded, as claude does once its
-// own retries give up; Sends meanwhile queue behind it. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
+// own retries give up, and a 401 fails it as a refused key; Sends meanwhile queue behind it. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
 // of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
 import { appendFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -53,6 +53,8 @@ const viaApi = async (run: string, text: string) => {
   waiting = undefined;
   if (answered?.status === 529)
     emit({ RunEnded: { run_id: run, outcome: { Failed: { class: "overloaded", message: "API Error: Repeated 529 Overloaded errors", apiStatus: 529, retries: 0 } }, usage: null } });
+  else if (answered?.status === 401)
+    emit({ RunEnded: { run_id: run, outcome: { Failed: { class: "auth", message: "Invalid API key · Fix external API key", apiStatus: 401, retries: 0 } }, usage: null } });
   else answer(run, text);
   const next = queued.shift();
   if (next) {
