@@ -76,7 +76,7 @@ p,h1,h2,table,blockquote{margin:0}
 .doc .facts li>span:first-child{color:var(--grey)}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;margin-top:clamp(24px,3vw,40px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
-.foot nav{display:flex;align-items:center;gap:20px}
+.foot nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
 .foot .fine{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
 .foot a{text-decoration:none}
 .foot a:hover,.foot a[aria-current]{color:var(--ink)}
