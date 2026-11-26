@@ -1,7 +1,10 @@
 # fleetd.sh
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
-fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
+fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first, and `/download/mac` (the hero's Download for Mac) redirects to the Mac app's disk image on the edge release (`.github/release/macos-dmg.sh`), or to that release's page (the app's .zip) while there's none yet (`api/download-mac.mjs`, a Vercel function the rewrite sends it to). Every
+answer carries a Content-Security-Policy (`vercel.json`'s `/(.*)` headers): scripts and styles from the site itself
+(inline ones too), clips and posters from media.unlabored.net, pricing's plans from accounts.fleetd.dev, Pagefind's
+WebAssembly; a page that loads from anywhere else needs that origin added there. `home.html` is the landing page: a hero
 with the bot beside the headline and the install line, then the desktop and phone apps on a MacBook Pro and an iPhone Duo, what fleetd is (two lines set big and a paragraph), then four
 short sections, each with its own clip or still of the app (`showcase-*`), and two last ones in words: the models
 agents run on, and self-hosted or fleetd cloud, linking to `pricing.html` (`/pricing`). The header's Sign in and Sign up
@@ -89,11 +92,16 @@ their own); it shows at the missing address, so its links and assets are absolut
 (home, pricing, the legal pages and support) and the docs' own sitemap. `favicon.ico` and `apple-touch-icon.png` come from `npm run icons` in
 `app/mobile`, with `icon.svg`. `card.jpg` is the link card (og:image) of home, pricing and the docs: the page's own hero
 at 1200x630 and 2x, shot in Chrome from `node .github/docs-serve.mjs` with the header's nav, the stage, the facts
-line and everything under the hero hidden, once the bot has its first colour. Shoot it again when the hero changes.
+line and everything under the hero hidden and the hero 75 px lower, once the bot has its first colour: Pebble in blue
+(the hero's plan starts there), never a later step, whose body may be another (a kitty, a bunny). Shoot it again when
+the hero changes.
 
 The legal pages, `terms.html`, `privacy.html`, `refunds.html` and `imprint.html` (`/terms`, `/privacy`, `/refunds`,
 `/imprint`), and `support.html` (`/support`, the App Store's Support URL) share `legal.css`: pricing's header and footer,
-then the text set plain like the docs, beside a list of the five. Every page's footer links them. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
+then the text set plain like the docs, beside a list of the five. Every page's footer links them. Opened from the phone app
+with `?app=1`, a page shows the policy alone: no site header or footer, the five linking each other with the flag kept,
+and every other link of the site as plain text (`legal.js`), so App Review finds no way to pricing or sign-up from
+inside the app. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
 their word, and move a page's Effective date when its text changes.
 
 `security.html`, `subprocessors.html` and `dpa.html` (`/security`, `/subprocessors`, `/dpa`) are drafts for the person's

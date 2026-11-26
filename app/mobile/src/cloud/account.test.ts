@@ -92,6 +92,17 @@ describe("in several teams", () => {
   });
 });
 
+describe("a workspace's name", () => {
+  // As its people named it, not its address's slug that /pair answers (sweep-5): the Mac sweep's, the phone's too.
+  it("is its title, not its address", async () => {
+    await fake.team("sweep-5", ["ada@example.com"]);
+    fake.titles.set("sweep-5", "Launch Sweep");
+    const out = await signInAsking(ports("ada@example.com"), answering());
+    if (!out.ok) throw new Error("not signed in");
+    expect(afterSignIn([], out.teams).hubs.map((h) => h.hubName)).toEqual(["Launch Sweep"]);
+  });
+});
+
 describe("No team yet", () => {
   it("someone invited who passes on it: Make a Team makes one of their own and keeps it", async () => {
     await fake.team("acme", ["eve@other.example"]);

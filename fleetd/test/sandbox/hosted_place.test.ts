@@ -208,12 +208,12 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   const { home, cwd, env } = await setup();
   const cfg = join(tmp, "cfg-tailnet");
   mkdirSync(cfg, { recursive: true });
-  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://100.104.249.49:8317" } }));
+  writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://100.101.102.103:8317" } }));
   const checked: string[] = [];
   let reaches = true;
   hostedProbe.probe = async (_box, url) => {
     checked.push(url);
-    if (!reaches) throw new Error("the box can't reach Claude at 100.104.249.49:8317: curl: (28) Connection timed out");
+    if (!reaches) throw new Error("the box can't reach Claude at 100.101.102.103:8317: curl: (28) Connection timed out");
   };
   const start = (id: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({
@@ -226,7 +226,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
       env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: marker(id) },
     });
   const link = await start("s-tail");
-  expect(checked).toEqual(["http://100.104.249.49:8317"]);
+  expect(checked).toEqual(["http://100.101.102.103:8317"]);
   expect(Object.keys(readRecord(join(home, "hosts", "s-tail"))!)).not.toContain("relays");
   expect(JSON.stringify(await next(link))).toContain("m1");
   await placeAt(join(home, "hosts", "s-tail")).stop(join(home, "hosts", "s-tail"));
@@ -240,7 +240,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   );
   expect(failure).toBeInstanceOf(BoxNotReady);
   const refused = failure!.message;
-  expect(refused).toContain("a sandbox at fleetd's computers couldn't reach the workspace's Claude account at 100.104.249.49");
+  expect(refused).toContain("a sandbox at fleetd's computers couldn't reach the workspace's Claude account at 100.101.102.103");
   expect(refused).not.toContain("settings.json");
   expect(refused).not.toContain("curl");
   expect(refused).toContain("Connect Tailscale in Connections");
@@ -333,7 +333,7 @@ test("a box checks the Claude account's endpoint, not the gateway on the machine
   writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://localhost:8317", ANTHROPIC_AUTH_TOKEN: "machine-gateway-token" } }));
   // The session's settings overlay, as the node writes it for a session on the hub's API key (sessions #spec).
   const overlay = join(tmp, "overlay-account.json");
-  writeFileSync(overlay, settingsOverlay(accountSettingsEnv([["ANTHROPIC_API_KEY", "hub-key-0123"], ["ANTHROPIC_BASE_URL", "http://100.104.249.49:8317"]]), {}, "haiku", [], false, false, "true"));
+  writeFileSync(overlay, settingsOverlay(accountSettingsEnv([["ANTHROPIC_API_KEY", "hub-key-0123"], ["ANTHROPIC_BASE_URL", "http://100.101.102.103:8317"]]), {}, "haiku", [], false, false, "true"));
   const checked: string[] = [];
   hostedProbe.probe = async (_box, url) => void checked.push(url);
   try {
@@ -345,9 +345,9 @@ test("a box checks the Claude account's endpoint, not the gateway on the machine
       program: "claude",
       args: ["-p", "--settings", overlay],
       cwd,
-      env: { ...env, ANTHROPIC_API_KEY: "hub-key-0123", ANTHROPIC_BASE_URL: "http://100.104.249.49:8317", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: marker(id) },
+      env: { ...env, ANTHROPIC_API_KEY: "hub-key-0123", ANTHROPIC_BASE_URL: "http://100.101.102.103:8317", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: marker(id) },
     });
-    expect(checked).toEqual(["http://100.104.249.49:8317"]);
+    expect(checked).toEqual(["http://100.101.102.103:8317"]);
     expect(JSON.stringify(await next(link))).toContain("m1");
     await placeAt(join(home, "hosts", id)).stop(join(home, "hosts", id));
   } finally {

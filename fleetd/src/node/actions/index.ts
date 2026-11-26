@@ -1,6 +1,6 @@
 // `node_action` frames from the hub: the doctor's probe of the commit identity and the service manager,
 // the hold ahead of an update, Claude Code's install and its login from the app. Each always answers, in plain words.
-import { readManager } from "../../update/service.ts";
+import { readManager, runsAsRoot } from "../../update/service.ts";
 import { exec, headUtf16, type Env } from "../util.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../runner/host.ts";
 import { ALREADY, bringTo, type Claude } from "../runner/install.ts";
@@ -16,10 +16,12 @@ async function gitConfigEmail(): Promise<string | undefined> {
 }
 
 /** The email commits made here carry: the node unit's GIT_AUTHOR_* / GIT_COMMITTER_* win over git's global config.
- * And whether systemd starts the node's service manager again by itself (cli/setup/units.ts readManager). */
+ * And whether systemd starts the node's service manager again by itself (cli/setup/units.ts readManager), and whether
+ * the node runs as root (hub/doctor/checks.ts asRoot). */
 export async function probeHost(): Promise<NonNullable<NodeActionResult["probe"]>> {
   const m = readManager();
-  const manager = m === undefined ? {} : { manager: m };
+  const root = runsAsRoot();
+  const manager = { ...(m === undefined ? {} : { manager: m }), ...(root === undefined ? {} : { root }) };
   const fromEnv = (process.env.GIT_AUTHOR_EMAIL ?? process.env.GIT_COMMITTER_EMAIL)?.trim();
   if (fromEnv) return { gitEmail: headUtf16(fromEnv, 320), gitEmailFrom: "env", ...manager };
   const email = await gitConfigEmail();

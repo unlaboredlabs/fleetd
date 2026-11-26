@@ -759,6 +759,12 @@ export class Session {
     void this.#register();
   }
 
+  /** Registers for notifications again, once they were allowed after the hub went live (NotifyAsk, Settings). */
+  registerPush(): void {
+    if (this.#state.hub.phase === "live") void this.#register();
+    else this.#registered = false;
+  }
+
   async #register(token?: string): Promise<void> {
     if (this.#push === undefined) return;
     const r = await registerDevice(this.#client, this.#push, token);

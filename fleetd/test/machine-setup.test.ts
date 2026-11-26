@@ -48,6 +48,7 @@ let t: ReturnType<typeof testHub>;
 let tools: Registry;
 let ran: Ran[];
 let fail: string | undefined;
+let noSystemd: boolean;
 let logins: (string | undefined)[];
 let statusAsked: string[];
 let otherOs: boolean;
@@ -60,6 +61,7 @@ const admin = caller("admin", true);
 const machine: Runner = {
   async run(target, command, stdin) {
     ran.push({ host: target.host, command, ...(stdin === undefined ? {} : { stdin: new TextDecoder().decode(stdin) }) });
+    if (noSystemd && command.includes("systemctl --user enable")) return { code: 127, stdout: "", stderr: "sh: 1: systemctl: not found" };
     if (fail !== undefined && command.includes(fail)) {
       return { code: 1, stdout: "", stderr: "mkdir: cannot create directory: Permission denied" };
     }
@@ -140,6 +142,7 @@ beforeEach(() => {
   registerAll(tools);
   ran = [];
   fail = undefined;
+  noSystemd = false;
   logins = [];
   statusAsked = [];
   otherOs = false;
@@ -225,6 +228,18 @@ test("a failed step shows its output and the fix", async () => {
   expect(failed[0]!.output).toContain("Permission denied");
   expect(failed[0]!.output).not.toStartWith("step 1");
   expect(events(t.hub).page(0, ["machine_add.step"]).events.at(-1)!.summary).toBe("Couldn't add builder-1");
+});
+
+// A machine with no systemd user service manager (a container, WSL without systemd) enrolls, then can't start the
+// node's service: the fix is --no-service and the node by hand, not a new code (W890).
+test("a machine without systemd is told to add itself with --no-service and run its node", async () => {
+  noSystemd = true;
+  const run = await finished((await call("machine_add", { host: "builder-1" })).run.runId);
+  expect(run.state).toBe("failed");
+  expect(run.message).toContain("failed (exit 127):");
+  expect(run.fix).toStartWith("this machine has no systemd user service to run its node");
+  expect(run.fix).toContain("fleetd machine add builder-1 --no-service, then start the node with ");
+  expect(run.fix).toContain(" node run --home ");
 });
 
 test("a run going for a machine refuses a second add, and a removal without force", async () => {

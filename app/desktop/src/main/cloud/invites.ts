@@ -71,6 +71,23 @@ export const call = async (fetch: Fetch, team: KeyedTeam, method: "GET" | "POST"
 
 export const odd = (team: KeyedTeam) => failure("", `${team.name} answered in a way this app doesn't read.`, "Update fleetd, then try again.");
 
+/** GET on the team's own address with any person's key: the team as its people see it (fleetd-cloud's accounts README). */
+const TEAM_INFO_PATH = "/accounts/v1/team";
+const TeamInfo = z.object({ name: z.string() });
+
+/** The team's name now, as its people see it (a rename on the web or another device); null when it can't be read. */
+export const teamName = async (fetch: Fetch, team: KeyedTeam): Promise<string | null> => {
+  const answer = await call(fetch, team, "GET", TEAM_INFO_PATH);
+  const info = answer.ok ? TeamInfo.safeParse(answer.body) : null;
+  return info?.success === true ? info.data.name : null;
+};
+
+/** The team renamed for its people (an owner's or admin's key): what it's called everywhere, not only in this app. */
+export const renameTeam = async (fetch: Fetch, team: KeyedTeam, name: string): Promise<{ ok: true } | { ok: false; message: string }> => {
+  const answer = await call(fetch, team, "POST", TEAM_INFO_PATH, { name });
+  return answer.ok ? { ok: true } : { ok: false, message: `${answer.failure.message} ${answer.failure.fix ?? ""}`.trim() };
+};
+
 export const listInvites = async (fetch: Fetch, team: KeyedTeam): Promise<InvitesOutcome> => {
   const answer = await call(fetch, team, "GET", ACCOUNTS_INVITES_PATH);
   if (!answer.ok) return { ok: false, failure: answer.failure };

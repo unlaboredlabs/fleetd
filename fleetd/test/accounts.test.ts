@@ -196,6 +196,32 @@ test("only admins set the workspace's API, and its key reaches the nodes sealed,
   expect(hub.db.all("SELECT * FROM claude_accounts")).toEqual([]);
 });
 
+// S3 of the Nov 26 sweep: "Save and test" kept an invalid key and showed "Invalid API key · Fix external API key".
+test("a workspace key Claude refuses is never saved, and a Test says so in plain words", async () => {
+  const { hub, link, call, ann } = setup();
+  link.caps.add("claude_key_trial");
+  const node = link.answer;
+  link.answer = (m, c) =>
+    c.op === "claude_account_test" && c.trial !== undefined
+      ? { kind: "claude_account_tested", ok: false, refused: true, error: "https://api.anthropic.com refused it (HTTP 401): invalid x-api-key" }
+      : node(m, c);
+  await expect(call(ann, "claude_hub_api_set", { sealed: [{ machineId: "lab", sealed: SEALED }] })).rejects.toMatchObject({
+    code: "invalid",
+    message: "Claude refused this key: it isn't a valid API key.",
+  });
+  // Tried on the machine, kept nowhere.
+  expect(link.calls).toEqual([["lab", { op: "claude_account_test", account: { kind: "hub" }, trial: { sealed: SEALED } }]]);
+  expect(hub.db.all("SELECT * FROM claude_accounts")).toEqual([]);
+  // A key it takes is saved; one whose endpoint can't say (no answer, no model list) is saved as before.
+  link.answer = (m, c) => (c.op === "claude_account_test" && c.trial !== undefined ? { kind: "claude_account_tested", ok: false, error: "no answer" } : node(m, c));
+  await call(ann, "claude_hub_api_set", { sealed: [{ machineId: "lab", sealed: SEALED }] });
+  expect(link.calls.at(-1)).toEqual(["lab", { op: "claude_account_secret", account: { kind: "hub" }, set: { sealed: SEALED } }]);
+  // A key that stops working later: its Test says so plainly, not in Claude Code's words.
+  link.answer = (m, c) => (c.op === "claude_account_test" ? { kind: "claude_account_tested", ok: false, error: "Invalid API key · Fix external API key" } : node(m, c));
+  const tested = await call(ann, "claude_account_test", { account: "hub_api" });
+  expect((tested.test as { error?: string }).error).toBe("Claude refused this key: it isn't a valid API key.");
+});
+
 test("only admins set the team's Gemini key: it reaches the nodes that can keep it sealed, and is no Claude subscription", async () => {
   const { hub, link, call, ann, bob } = setup();
   await expect(call(bob, "gemini_key_set", { sealed: [{ machineId: "lab", sealed: SEALED }] })).rejects.toMatchObject({ code: "forbidden" });

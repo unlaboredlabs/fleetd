@@ -12,7 +12,7 @@ import type {
   OnePasswordTest,
 } from "../../shared/contracts.ts";
 import { keepManagerCommand } from "../../update/service.ts";
-import type { MacHealth, NodeDisk, NodeLoad, NodeManager, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
+import type { MacHealth, NodeDisk, NodeLoad, NodeManager, NodeProbe, NodeRoot, ScreenHealth } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
 import { doctorAlert, fetchFailedText, fixLabel, start } from "./base.ts";
 import { addCommand, type HubSetup, type MachineSetup, restartCommand } from "./config.ts";
@@ -341,6 +341,8 @@ export function runnerFix(machineId: string, info: RunnerInfo): DoctorFix | unde
   const login = info.login === "logged_out" ? guide.loginFix(info.proxy !== undefined) : undefined;
   if (!install && login === undefined) return undefined;
   if (install && login === undefined) return manual(`${install[0]} on ${machineId}`, install[1]);
+  // A key set in a file (claude.env) is fixed there: `claude auth login` wouldn't replace it.
+  if (!install && info.loginFile !== undefined) return manual(`On ${machineId}, replace the ${name} key in ${info.loginFile}`);
   if (!install) {
     // Behind a proxy the proxy holds the login: nothing to paste.
     return info.proxy !== undefined
@@ -353,7 +355,8 @@ export function runnerFix(machineId: string, info: RunnerInfo): DoctorFix | unde
 /** The node's link to the hub; what it runs is checked by the runner checks. */
 export function machineOnline(machine: MachineView, setup: MachineSetup | undefined, runner?: RunnerInfo): DoctorCheck {
   const id = machine.machineId;
-  const restart = () => manual(`Restart the fleetd node on ${id}`, restartCommand("node", setup));
+  const restart = () =>
+    manual(setup?.runByHand === undefined ? `Restart the fleetd node on ${id}` : `Start the fleetd node on ${id}: it runs without a service`, restartCommand("node", setup));
   if (machine.status === "offline") {
     return machineEntry(id, "online", "fail", `${id} is offline (last seen ${machine.lastSeenAt}).`, restart());
   }
@@ -366,7 +369,9 @@ export function machineOnline(machine: MachineView, setup: MachineSetup | undefi
     // The cause decides the fix: a runner problem is fixed on the runner, and only a node with no runner cause
     // gets the restart.
     const fix = (runner && runnerFix(id, runner)) ?? (embedded !== undefined ? manual(`On ${id}`, embedded) : restart());
-    return machineEntry(id, "online", "warn", `${id} is degraded: ${trimDots(cause)}.`, fix);
+    // "Starting…" ends a sentence already.
+    const said = trimDots(cause);
+    return machineEntry(id, "online", "warn", `${id} is degraded: ${said}${said.endsWith("…") ? "" : "."}`, fix);
   }
   return machineEntry(id, "online", "ok", `${id} is online.`);
 }
@@ -379,7 +384,9 @@ export function runnerChecks(machineId: string, info: RunnerInfo): DoctorCheck[]
   // Sessions use the machine's own runner setup, so the fix is the login the user would do for their own.
   const setup = guide.setup(info);
   const loginFix = () =>
-    info.proxy !== undefined
+    info.loginFile !== undefined
+      ? manual(`On ${machineId}, replace the ${name} key in ${info.loginFile}`)
+      : info.proxy !== undefined
       ? manual(`On ${machineId}, ${guide.loginFix(true)} (${name} goes through ${info.proxy})`)
       : manual(`Log ${name} in on ${machineId}`, guide.loginFix(false));
   let version: DoctorCheck;
@@ -638,7 +645,7 @@ export function commitIdentity(machineId: string, read: ProbeRead, config: HubSe
 /** `service_manager`: whether systemd starts the user's service manager, and the hub or node in it, again by itself
  * (cli/setup/units.ts). `scope` "hub" for the hub's own, else the machine's id; `what` the service it runs. Undefined
  * where there is nothing to tell: off Linux, outside a systemd user unit, a node too old to say. */
-export function serviceManager(scope: string, what: "hub" | "node", manager: NodeManager | undefined): DoctorCheck | undefined {
+export function serviceManager(scope: string, what: "workspace" | "node", manager: NodeManager | undefined): DoctorCheck | undefined {
   if (manager === undefined) return undefined;
   const { user, uid } = manager;
   const entry = (status: DoctorStatus, message: string, fix?: DoctorFix) =>
@@ -655,6 +662,22 @@ export function serviceManager(scope: string, what: "hub" | "node", manager: Nod
         fix,
       )
     : entry("warn", `Linger is off for ${user}: the ${what} stops when ${user} logs out, and starts again only at their next login.`, fix);
+}
+
+/** What root runs to set fleetd up again as a user of its own, as the installer offers on Linux as root
+ * (site/install.sh as_root); linger only where systemd runs the user's services. */
+export const ownUserCommand = (systemd: boolean) =>
+  `useradd -m -s /bin/bash fleetd && ${systemd ? "loginctl enable-linger fleetd && " : ""}su - fleetd -c 'curl -fsSL https://fleetd.sh | sh'`;
+
+/** `as_root`: the workspace or a node runs as root, where Claude Code won't run agents (it refuses to skip its
+ * permission prompts as root), so every agent fails. `scope` "hub" for the workspace's own, else the machine's id.
+ * Undefined where it doesn't: fleetd's own computers say they are a sandbox (IS_SANDBOX), and an older node can't say. */
+export function asRoot(scope: string, root: NodeRoot | undefined): DoctorCheck | undefined {
+  if (root === undefined) return undefined;
+  const [what, where] = scope === "hub" ? ["The workspace", "the workspace's machine"] : [`${scope}'s node`, scope];
+  const message = `${what} runs as root, and Claude Code won't run agents as root: every agent fails to start.`;
+  const fix = manual(`As root on ${where}, make a user for fleetd and set fleetd up again as it`, ownUserCommand(root.systemd));
+  return scope === "hub" ? hubEntry("as_root", "fail", message, fix) : machineEntry(scope, "as_root", "fail", message, fix);
 }
 
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;

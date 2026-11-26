@@ -36,7 +36,7 @@
 <meta property="og:image" content="https://fleetd.sh/card.jpg">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
-<meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” and the install line, curl -fsSL https://fleetd.sh | sh.">
+<meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” with Download for Mac and the install line, curl -fsSL https://fleetd.sh | sh.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -188,7 +188,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 }
 @media (max-width:640px){
   .nav{gap:14px}
-  .nav .gh,.nav .in{display:none}
+  .nav .gh{display:none}
   .plans{grid-template-columns:minmax(0,1fr);border-bottom:0}
   .plan,.plan+.plan{padding:18px 0 20px;border-left:0;border-bottom:1px solid var(--rule)}
   .plan ul{display:flex;flex-direction:column}
@@ -301,7 +301,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
           <tr><th scope="row">8 CPU, 16 GB</th><td class="num">$0.24</td></tr>
         </tbody>
       </table>
-      <p style="margin-top:12px" id="per-note">Metered to the millisecond, only while a computer is running.</p>
+      <p style="margin-top:12px" id="per-note">Billed by the second, only while a computer is running, with nothing rounded up.</p>
     </div>
     <div>
       <h3>Credits</h3>
@@ -454,7 +454,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 
   const renderSizes = () => {
     document.getElementById("per-h").textContent = { second: "Per second", hour: "Per hour", month: "Per month" }[per];
-    document.getElementById("per-note").textContent = "Metered to the millisecond, only while a computer is running." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
+    document.getElementById("per-note").textContent = "Billed by the second, only while a computer is running, with nothing rounded up." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
     document.querySelectorAll("[data-per]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.per === per)));
     document.getElementById("sizes").replaceChildren(...model.sizes.map((s) => {
       const tr = document.createElement("tr");

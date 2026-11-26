@@ -12,7 +12,7 @@
 // and retries wait less. One screen at a
 // time can be watched (browser_watch, sent again on each ready, as the desktop's main does): its frames come as
 // `browser_frame`s, and a person's touches on a screen they took over go as `browser_input`.
-import { leadLaneId, type BrowserFrame, type BrowserInput, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
+import { leadLaneId, refusedWords, type BrowserFrame, type BrowserInput, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
 import { MAX_FPS, type Navigation } from "../screen";
 import { DEFLATE_FEATURE, FrameInflater } from "./inflate";
 
@@ -421,7 +421,7 @@ export class HubClient {
         }
         if (this.#connection !== connection) return;
         this.#connection = null;
-        if (code === CLOSE_UNAUTHORIZED) this.#refuse(`The workspace refused the key${reason === "" ? "" : ` (${reason})`}.`);
+        if (code === CLOSE_UNAUTHORIZED) this.#refuse(refusedWords(reason));
         // The old link ended while a fresh one was on its way: that one is the link now.
         else if (this.#spare !== null) this.#adoptSpare();
         else if (CLOSE_RESTART.has(code) && this.#ready) {

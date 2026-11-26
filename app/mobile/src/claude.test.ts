@@ -31,24 +31,24 @@ describe("the phone's Claude row", () => {
   it("takes one line as a key, and an http or https endpoint; Anthropic's own as prefilled is kept as none", () => {
     expect(keyOf(' "sk-ant-api03-x"\n')).toBe("sk-ant-api03-x");
     expect(keyOf("two words")).toBeNull();
-    expect(endpointOk("http://100.104.249.49:8317")).toBe(true);
-    expect(endpointOk("100.104.249.49:8317")).toBe(false);
+    expect(endpointOk("http://100.101.102.103:8317")).toBe(true);
+    expect(endpointOk("100.101.102.103:8317")).toBe(false);
     expect(endpointShown(undefined)).toBe("https://api.anthropic.com");
     expect(endpointToSave("https://api.anthropic.com")).toBeUndefined();
-    expect(endpointToSave("http://100.104.249.49:8317/")).toBe("http://100.104.249.49:8317");
+    expect(endpointToSave("http://100.101.102.103:8317/")).toBe("http://100.101.102.103:8317");
   });
 
   it("says so beside a tailnet endpoint while Tailscale isn't connected", () => {
-    expect(tailnetLine("http://100.104.249.49:8317", false)).toBe("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
-    expect(tailnetLine("http://100.104.249.49:8317", true)).toBeNull();
+    expect(tailnetLine("http://100.101.102.103:8317", false)).toBe("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
+    expect(tailnetLine("http://100.101.102.103:8317", true)).toBeNull();
     expect(tailnetLine("https://api.anthropic.com", false)).toBeNull();
   });
 
   it("says where the key is and through what", () => {
     expect(keyWords(undefined)).toEqual({ value: "Not Set" });
-    expect(keyWords({ sealedOn: [{ machineId: "devbox", fingerprint: "ab" }, { machineId: "hosted", fingerprint: "ab" }], updatedAt: "2026-11-19T00:00:00Z", endpoint: "http://100.104.249.49:8317" })).toEqual({
+    expect(keyWords({ sealedOn: [{ machineId: "devbox", fingerprint: "ab" }, { machineId: "hosted", fingerprint: "ab" }], updatedAt: "2026-11-19T00:00:00Z", endpoint: "http://100.101.102.103:8317" })).toEqual({
       value: "Set",
-      footer: "Sealed on devbox, hosted sandboxes. Through http://100.104.249.49:8317.",
+      footer: "Sealed on devbox, hosted sandboxes. Through http://100.101.102.103:8317.",
     });
     expect(keyWords({ sealedOn: [], updatedAt: "2026-11-19T00:00:00Z", lastTest: { at: "2026-11-19T00:00:00Z", machineId: "devbox", ok: false } }).value).toBe("Failed");
   });

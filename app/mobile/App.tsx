@@ -28,12 +28,14 @@ import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cach
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
 import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
-import { cloudDomain, type PairFailure } from "./src/desktop";
+import { cloudDomain, WORKSPACE_DELETED, type PairFailure } from "./src/desktop";
 import { deviceName } from "./src/hub/deviceName";
 import { accountPreview, askedOn, deleteAccount } from "./src/accountDelete";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, HubStoreContext, SessionContext, type ChatsParams, type HubContextValue, type HubStore, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
+import { NotifyAsk } from "./src/screens/NotifyAsk";
+import { DEVICE } from "./src/device";
 import { pinStoreFor, sectionStoreFor } from "./src/prefsStore";
 import { sameHub } from "./src/devices";
 import { chatAt, type Route } from "./src/push";
@@ -194,7 +196,7 @@ export default function App() {
       if (paired !== null) setOpened(shortcut);
       return handled();
     }
-    const step = pairLinkStep(link, "outside", paired?.hubName ?? null, cloud === null ? null : cloudDomain(cloud.accountsUrl));
+    const step = pairLinkStep(link, "outside", paired?.hubName ?? null, cloud === null ? null : cloudDomain(cloud.accountsUrl), DEVICE);
     if (step.t === "ignore") return handled();
     if (step.t === "paired") {
       Alert.alert(step.title, step.message);
@@ -243,7 +245,7 @@ export default function App() {
             hubs={hubs}
             account={account}
             onForget={forget}
-            onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch workspaces", "This phone couldn't write its keychain. Try again."))}
+            onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch workspaces", `This ${DEVICE} couldn't write its keychain. Try again.`))}
             onMade={(h) => show(h, [...hubs.filter((k) => k.hub !== h.hub), h])}
             onSignedIn={signedIn}
             onSignedOut={signedOut}
@@ -418,13 +420,13 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       void session.signOut().then((r) => {
         if (r.ok) return onForget();
         leaving.current = false;
-        Alert.alert("The workspace didn't sign this phone out", `${r.error.message} Forget the workspace here anyway? Then sign the phone out under Settings › You in the desktop app.`, [
+        Alert.alert(`The workspace didn't sign this ${DEVICE} out`, `${r.error.message} Forget the workspace here anyway? Then sign the ${DEVICE} out under Settings › You in the desktop app.`, [
           { text: "Cancel", style: "cancel" },
           { text: "Forget anyway", style: "destructive", onPress: () => onForget() },
         ]);
       });
     const disconnect = () =>
-      confirm(`Disconnect from ${paired.hubName}?`, "This phone signs out of the workspace and stops getting its notifications. Pairing again takes a new code.", "Disconnect", () => {
+      confirm(`Disconnect from ${paired.hubName}?`, `This ${DEVICE} signs out of the workspace and stops getting its notifications. Pairing again takes a new code.`, "Disconnect", () => {
         leaving.current = true;
         signOut();
       });
@@ -451,7 +453,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       await session.leave().catch(() => undefined);
       return onMade(made.hub).then(
         () => null,
-        (): PairFailure => ({ code: "", message: "Your workspace is made, but this phone couldn't keep its key in its keychain.", fix: "Sign in again to open it." }),
+        (): PairFailure => ({ code: "", message: `Your workspace is made, but this ${DEVICE} couldn't keep its key in its keychain.`, fix: "Sign in again to open it." }),
       );
     };
     const teams = hubs.filter((h) => h.cloud === true);
@@ -460,7 +462,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       new Promise<void>((resolve) =>
         confirm(
           "Sign Out of fleetd?",
-          `This phone drops its key on ${names === "" ? "your fleetd workspaces" : names} and stops getting their notifications. Agents keep running, and workspaces you run yourself stay as they are.`,
+          `This ${DEVICE} drops its key on ${names === "" ? "your fleetd workspaces" : names} and stops getting their notifications. Agents keep running, and workspaces you run yourself stay as they are.`,
           "Sign Out",
           () => {
             if (paired.cloud === true) leaving.current = true;
@@ -476,7 +478,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
             )
               .then(async (out) => {
                 await onSignedOut(out.hubs);
-                if (out.kept.length > 0) Alert.alert("Some workspaces weren't reached", `${out.kept.join(", ")} couldn't be reached, so this phone stays in its Devices until someone signs it out there.`);
+                if (out.kept.length > 0) Alert.alert("Some workspaces weren't reached", `${out.kept.join(", ")} couldn't be reached, so this ${DEVICE} stays in its Devices until someone signs it out there.`);
               })
               .finally(resolve);
           },
@@ -484,7 +486,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
         ),
       );
     // Deleted, the cloud revoked every key of the account already: its workspaces only leave this phone, as at sign-out.
-    const noWorkspace = { message: "None of your fleetd workspaces is on this phone.", fix: "Sign in again, then delete the account." };
+    const noWorkspace = { message: `None of your fleetd workspaces is on this ${DEVICE}.`, fix: "Sign in again, then delete the account." };
     const previewCloudAccount: HubContextValue["previewCloudAccount"] = () => {
       const on = askedOn(paired, hubs);
       return on === null ? Promise.resolve({ ok: false, failure: noWorkspace }) : accountPreview(on);
@@ -517,17 +519,29 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
   useEffect(() => {
     if (refused === undefined || leaving.current) return;
+    // Its workspace was deleted (fleetd cloud's final close): nothing to pair again. It leaves this phone, which then
+    // shows the next workspace kept, or the first screen with that line (iPhone sweep S1: "Connecting…" forever).
+    if (refused === WORKSPACE_DELETED) {
+      leaving.current = true;
+      haptics.warning();
+      if (hubs.some((h) => h.hub !== paired.hub)) Alert.alert(`${paired.hubName} Was Deleted`, "It's no longer on fleetd, so it left this phone.");
+      onForget(WORKSPACE_DELETED);
+      return;
+    }
     haptics.warning();
-    Alert.alert("Pair This Phone Again", refused, [
+    Alert.alert(DEVICE === "iPad" ? "Pair This iPad Again" : "Pair This Phone Again", refused, [
       { text: "Not Now", style: "cancel" },
-      { text: "Pair Again", onPress: () => onForget("This phone's key was refused: pair it again.") },
+      { text: "Pair Again", onPress: () => onForget(`This ${DEVICE}'s key was refused: pair it again.`) },
     ]);
-  }, [refused, onForget]);
+  }, [refused, onForget, hubs, paired]);
 
   return (
     <SessionContext.Provider value={session}>
       <HubContext.Provider value={value}>
-        <HubStoreContext.Provider value={store}>{screens}</HubStoreContext.Provider>
+        <HubStoreContext.Provider value={store}>
+          {screens}
+          <NotifyAsk />
+        </HubStoreContext.Provider>
       </HubContext.Provider>
     </SessionContext.Provider>
   );

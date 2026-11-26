@@ -445,7 +445,8 @@ export class CloudAccount {
     // The key this one replaces leaves the team too, not only this app: a failed revoke doesn't stop the sign-in.
     const held = this.#ports.heldAt(origin);
     if (held !== null) await revokeOwnKey(held).catch(() => false);
-    const connected = this.#ports.connect(origin, paired.paired.key, cleanLabel(paired.paired.hubName) ?? name, invited);
+    // The account's name for it, as the person called it; /pair's names it after its address (a slug like sweep-5).
+    const connected = this.#ports.connect(origin, paired.paired.key, cleanLabel(team.name) ?? cleanLabel(paired.paired.hubName) ?? name, invited);
     return connected.ok
       ? { origin, outcome: { name, ok: true } }
       : { origin: null, outcome: { name, ok: false, failure: { code: "", message: `Got a key for ${name}, but it couldn't be kept: ${connected.message}`, fix: "Sign in again." } } };

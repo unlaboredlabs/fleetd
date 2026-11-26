@@ -171,6 +171,8 @@ test("a degraded machine gets the one fix for its cause", () => {
   expect(command).toBeUndefined();
   expect(label).toContain("log in with your proxy");
   expect(label).toContain("8317");
+  // A key set in claude.env is replaced there: `claude auth login` wouldn't touch it (S1 of the Nov 26 sweep).
+  expect(fix({ ...runner(ok, "logged_out"), loginFile: "~/.fleetd/claude.env" })).toEqual(["On mac, replace the claude key in ~/.fleetd/claude.env", undefined]);
   // A version outside the tested range is never the cause.
   expect(fix(runner("2.0.1", "logged_out"))[1]).toBe("claude auth login");
   expect(fix(runner(undefined, "unknown"))[1]).toBe("curl -fsSL https://claude.ai/install.sh | bash");
@@ -191,6 +193,15 @@ test("a degraded machine gets the one fix for its cause", () => {
     "mac is offline (last seen 2026-11-08T09:00:00.000Z).",
     "launchctl kickstart -k gui/501/sh.fleetd.node",
   ]);
+  // Set up with --no-service, where there is no systemd: the command that starts its node, never systemctl.
+  const byHand = { sshHost: "", local: true, platform: "linux" as const, uid: 0, runByHand: "/root/.fleetd/bin/fleetd node run --home /root/.fleetd/node" };
+  const stopped = c.machineOnline({ machineId: "box", status: "offline", lastSeenAt: "2026-11-08T09:00:00.000Z" }, byHand);
+  expect([stopped.fix?.label, stopped.fix?.command]).toEqual([
+    "Start the fleetd node on box: it runs without a service",
+    "/root/.fleetd/bin/fleetd node run --home /root/.fleetd/node",
+  ]);
+  // "Starting…" ends its sentence already.
+  expect(c.machineOnline({ ...degraded, degradedReason: "Starting…" }, undefined).message).toBe("mac is degraded: Starting…");
 });
 
 const sealed = (machineId: string): ClaudeSealedOn => ({ machineId, fingerprint: "0123abcd" }) as ClaudeSealedOn;

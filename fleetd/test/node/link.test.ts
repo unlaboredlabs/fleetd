@@ -1,7 +1,10 @@
 // The node's hub link against a hub of the test's own (Bun.serve): challenge, signed hello, welcome; frames both ways,
 // compressed once both sides list link_deflate; a refusal that ends the loop; a dropped link dialled again.
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createPublicKey, verify } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { deletedLine, enrolled, markRemoved } from "../../src/node/index.ts";
 import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
 import { BULK_BYTES, BULK_DEAD_MS, compresses, QUIET_DEAD_MS, QUIET_PROBE_MS, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
@@ -169,6 +172,29 @@ test("a refusal that says the workspace removed this machine is the removal, whi
   const hub = fakeHub({ refuse: [4001, "mac-1 was removed from this hub: its node key is revoked"] });
   expect((await runNode(options(hub.url, home.dir)))?.removed).toBe(true);
   hub.server.stop(true);
+  home.done();
+});
+
+// S10: after Delete account, a joined machine's node dialed the deleted workspace again and again.
+test("a refusal that says the workspace was deleted stops the node as enrolled, as a removal does", async () => {
+  const home = tempHome();
+  const hub = fakeHub({ refuse: [4001, "This workspace was deleted."] });
+  const fatal = await runNode(options(hub.url, home.dir));
+  expect(fatal?.deleted).toBe(true);
+  expect(fatal?.removed).toBe(false);
+  hub.server.stop(true);
+  // Marked so: at its next start the node dials nothing and says what to do instead.
+  writeFileSync(join(home.dir, "node.json"), JSON.stringify({ hub: "https://sam.fleetd.dev", machineId: "devbox", name: "devbox", enrolled: true }));
+  expect(markRemoved(home.dir, true)).toBe(true);
+  const said: string[] = [];
+  const write = spyOn(process.stderr, "write").mockImplementation((chunk) => (said.push(String(chunk)), true));
+  try {
+    expect(await enrolled(home.dir, false)).toBe(1);
+  } finally {
+    write.mockRestore();
+  }
+  expect(said.join("")).toBe(`fleetd: ${deletedLine("https://sam.fleetd.dev")}\n`);
+  expect(deletedLine("https://sam.fleetd.dev")).toContain("fleetd uninstall");
   home.done();
 });
 

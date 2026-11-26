@@ -19,6 +19,8 @@
   };
   window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
   apply();
+  // Opened from the phone app (?app=1): the policy alone, no way to the site's pricing or sign-up (legal.js).
+  if(/[?&]app=1(&|$)/.test(location.search))root.classList.add("app");
 })();
 </script>
 <title>Support · fleetd</title>
@@ -34,6 +36,7 @@
 <link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/legal.css">
+<script src="/legal.js" defer></script>
 </head>
 <body>
 

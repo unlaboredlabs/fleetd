@@ -202,7 +202,8 @@ export type SessionCall =
   | { op: "gemini_key"; set?: ClaudeSecretSet }
   /** The account's secret sealed to `to`, another machine's box key: how the hub's runner gets it (hub/claude_accounts). */
   | { op: "claude_account_reseal"; account: ClaudeAccount; to: BoxPublicKey }
-  | { op: "claude_account_test"; account: ClaudeAccount }
+  /** `trial`: a sealed key (with its endpoint) tried on its own, kept nowhere, rather than the account the node holds. */
+  | { op: "claude_account_test"; account: ClaudeAccount; trial?: ClaudeSecretSet }
   | { op: "onepassword_token"; personId: PersonId; sealed?: SealedSecret }
   | { op: "onepassword_test"; personId: PersonId }
   | { op: "onepassword_cards"; personId: PersonId; projectId?: ProjectId }
@@ -340,6 +341,9 @@ export type RunnerInfo = {
   configDir?: string;
   selfUpdate?: boolean;
   accountOverrides?: string[];
+  /** The file the machine's own Claude key comes from (`~/.fleetd/claude.env`), when one sets it: a refused key is
+   * fixed there, not with `claude auth login`. */
+  loginFile?: string;
 };
 
 export type BaseErrorKind = "offline" | "auth" | "no_access" | "no_ssh" | "no_default_branch" | "no_remote" | "failed";
@@ -399,7 +403,8 @@ export type SessionOutput =
   | { kind: "claude_account_saved"; fingerprint?: SecretFingerprint }
   | { kind: "gemini_key_saved"; fingerprint?: SecretFingerprint }
   | { kind: "claude_account_resealed"; sealed?: SealedSecret }
-  | { kind: "claude_account_tested"; ok: boolean; error?: string }
+  /** `refused`: the endpoint refused the key itself (HTTP 401 or 403), not just failed to answer. */
+  | { kind: "claude_account_tested"; ok: boolean; error?: string; refused?: boolean }
   | { kind: "onepassword_saved"; fingerprint?: SecretFingerprint }
   | { kind: "onepassword_tested"; vaults?: string[]; error?: string }
   | { kind: "onepassword_carded"; cards?: OnePasswordCard[]; error?: string }
@@ -592,7 +597,8 @@ export type ItemKind =
   | { type: "permission"; requestId: string; toolName: string; summary: string; decision?: PermissionDecision }
   | { type: "compaction"; trigger: string; preTokens?: number; postTokens?: number }
   | { type: "api_retry"; attempt: number; maxRetries: number; errorStatus?: number; error: string; retryDelayMs?: number }
-  | { type: "node_retry"; attempt: number; of: number; delayMs: number; reason: RunFailure }
+  /** `retryAt`: when the retry goes, unless a message to the session sends it sooner; absent from older nodes. */
+  | { type: "node_retry"; attempt: number; of: number; delayMs: number; retryAt?: Timestamp; reason: RunFailure }
   /**
    * A hosted session's start while its computer comes up, in plain words (node/place/hosted_steps.ts), and what the apps
    * draw it from: its step, when the whole start began, and a failed try's plain reason and when it goes again.

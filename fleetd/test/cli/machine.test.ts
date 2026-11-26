@@ -111,7 +111,15 @@ test("add plans from the probe, mints the enroll code, records the machine and c
   expect(added.runByHand).toContain("GIT_AUTHOR_NAME=Dev");
   expect(ran.find((x) => x.command.includes("node join"))?.stdin).toMatch(/^fle_[a-z2-7]{52}\n$/);
   const setup = JSON.parse(readFileSync(join(hubHome, "setup.json"), "utf8"));
-  expect(setup.machines["builder-1"]).toEqual({ sshHost: "dev@builder-1", platform: "linux", home: "/home/dev", configHome: "/home/dev/.config", uid: 1000 });
+  // With --no-service it has no unit: the doctor's fix for its node is this command, never systemctl.
+  expect(setup.machines["builder-1"]).toEqual({
+    sshHost: "dev@builder-1",
+    platform: "linux",
+    home: "/home/dev",
+    configHome: "/home/dev/.config",
+    uid: 1000,
+    runByHand: added.runByHand,
+  });
 });
 
 /** The same machine as a Mac on Apple silicon, which a Linux hub's own build doesn't run on. */

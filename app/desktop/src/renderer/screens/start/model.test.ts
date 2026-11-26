@@ -1,7 +1,7 @@
 // Get started's model: which step is open and how many are left, for both paths; GitHub's way back; a last push and a
 // teammate's bot in words; a machine whose claude is logged out.
 import { describe, expect, it } from "vitest";
-import { botOf, claudeLoggedOut, claudeStepOf, currentStep, stepDone, githubReturnOf, projectLine, pushedWords, stepsLeft, stepsOf, withoutGithubReturn } from "./model";
+import { botOf, claudeLoggedOut, claudeStepOf, currentStep, lineWithIdentity, stepDone, githubReturnOf, projectLine, pushedWords, stepsLeft, stepsOf, withoutGithubReturn } from "./model";
 import { SAMPLES } from "./samples";
 
 const NOW = Date.parse("2026-11-18T12:00:00Z");
@@ -39,7 +39,10 @@ describe("steps", () => {
     expect(stepsLeft(SAMPLES.computer)).toBe(4);
     expect(stepsLeft(SAMPLES["claude-key"])).toBe(3);
     expect(stepsLeft(SAMPLES.github)).toBe(2);
-    expect(stepsLeft(SAMPLES["project-skipped"])).toBe(1);
+    // S8: a skipped GitHub is still left, so Finish setting up stays to come back to it.
+    expect(stepsLeft(SAMPLES["project-skipped"])).toBe(2);
+    expect(stepsLeft({ ...SAMPLES["project-skipped"], project: { at: "made", name: "notes-api" } })).toBe(1);
+    expect(stepsLeft({ ...SAMPLES.teammate, github: { at: "skipped" } })).toBe(1);
     expect(
       stepsLeft({
         ...SAMPLES.project,
@@ -135,14 +138,43 @@ describe("the Claude step", () => {
   });
 
   it("is done once Claude reaches the agents: the hub's key, a subscription the leads run on, a computer's own login", () => {
-    expect(claudeStepOf({ ...facts, hubKey: true, leadsRunOn: "account" })).toEqual({ at: "done", what: "API key" });
+    expect(claudeStepOf({ ...facts, hubKey: "works", leadsRunOn: "account" })).toEqual({ at: "done", what: "API key" });
     expect(claudeStepOf({ ...facts, leadsRunOn: "account" })).toEqual({ at: "done", what: "Claude subscription" });
     expect(claudeStepOf({ ...facts, ready: "devbox", computer: { at: "ready", machine: "devbox" } })).toEqual({ at: "done", what: "devbox" });
+  });
+
+  // S1: a made-up key was saved and ticked "API key"; the first message then met Claude's refusal.
+  it("ticks the hub's key only once its Test worked: open while it runs, and on Claude's words when it was refused", () => {
+    const refused = { failed: "Claude refused this key: it isn't a valid API key." };
+    expect(claudeStepOf({ ...facts, hubKey: "testing", leadsRunOn: "account" })).toEqual({ at: "account", provider: "fleetd's computers", key: { busy: true, testing: true } });
+    expect(claudeStepOf({ ...facts, hubKey: refused, leadsRunOn: "account" })).toEqual({ at: "account", provider: "fleetd's computers", key: { error: refused.failed } });
+    // A computer logged out: its login, opened on the key that didn't work.
+    const login = { at: "login", machine: "devbox", login: "start" } as const;
+    expect(claudeStepOf({ ...facts, hubKey: refused, computer: { at: "ready", machine: "devbox" }, login })).toEqual({ ...login, key: { error: refused.failed } });
+    // A computer logged in: the hub's key reaches it first, so the key is what's left.
+    expect(claudeStepOf({ ...facts, hubKey: refused, ready: "devbox", computer: { at: "ready", machine: "devbox" } })).toEqual({ at: "key", machine: "devbox", key: { error: refused.failed } });
+    // Saved again: busy on the new one, not the old one's words.
+    expect(claudeStepOf({ ...facts, hubKey: refused, key: { busy: true } })).toEqual({ at: "account", provider: "fleetd's computers", key: { busy: true } });
+    expect(stepsLeft({ ...SAMPLES["claude-key"], claude: claudeStepOf({ ...facts, hubKey: refused }) })).toBe(3);
   });
 
   it("asks a logged-out computer to log in, and waits while nothing runs agents", () => {
     const login = { at: "login", machine: "devbox", login: "start" } as const;
     expect(claudeStepOf({ ...facts, computer: { at: "ready", machine: "devbox" }, login })).toBe(login);
     expect(claudeStepOf({ ...facts, computer: { at: "line", line: null } })).toEqual({ at: "wait" });
+  });
+});
+
+// S3: with no commit identity a cloud machine's agent committed as "fleetd T1 <noreply@anthropic.com>".
+describe("the join line's commit identity", () => {
+  const line = "curl -fsSL https://fleetd.sh | sh -s -- --join https://sam.fleetd.dev --code 7QK4";
+  it("carries the person's name and GitHub noreply address once GitHub is connected, and nothing before", () => {
+    expect(lineWithIdentity(line, undefined, "Sam Rivers")).toBe(line);
+    expect(lineWithIdentity(line, { login: "sam-dev", userId: 7 }, "Sam Rivers")).toBe(`${line} --git-identity 'Sam Rivers <7+sam-dev@users.noreply.github.com>'`);
+    // No name, or one that would break the shell's quotes: the login, the quotes out.
+    expect(lineWithIdentity(line, { login: "sam-dev", userId: 7 }, undefined)).toBe(`${line} --git-identity 'sam-dev <7+sam-dev@users.noreply.github.com>'`);
+    expect(lineWithIdentity(line, { login: "sam-dev", userId: 7 }, "Sam 'O' Rivers")).toBe(`${line} --git-identity 'Sam O Rivers <7+sam-dev@users.noreply.github.com>'`);
+    const given = `${line} --git-identity 'A <a@b.c>'`;
+    expect(lineWithIdentity(given, { login: "sam-dev", userId: 7 }, "Sam")).toBe(given);
   });
 });

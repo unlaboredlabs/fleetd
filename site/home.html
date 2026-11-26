@@ -43,7 +43,7 @@
 <meta property="og:image" content="https://fleetd.sh/card.jpg">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
-<meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” and the install line, curl -fsSL https://fleetd.sh | sh.">
+<meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” with Download for Mac and the install line, curl -fsSL https://fleetd.sh | sh.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -123,7 +123,7 @@ p,h1,h2,figure{margin:0}
 .nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
 .nav a{text-decoration:none}
 .nav a:hover{color:var(--ink)}
-/* Sign up: the one filled control on the page, ink on paper. */
+/* Sign up: filled, ink on paper, as the hero's Download for Mac. */
 .nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
 .nav .up:hover{color:var(--paper);opacity:.88}
 
@@ -136,15 +136,22 @@ p,h1,h2,figure{margin:0}
 .pb canvas{position:absolute;left:-25%;top:-25%;width:150%;height:150%;pointer-events:none}
 #hero-bot{width:var(--av);height:var(--av);transform-origin:50% 92%}
 h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2vw,76px);text-wrap:balance;max-width:12em}
-.install{margin-top:clamp(28px,3.2vw,44px);max-width:31em}
+.install{margin-top:clamp(28px,3.2vw,44px);max-width:38em}
+/* Two ways in, side by side as one row (stacked once it doesn't fit): the Mac app's download, then the install command. */
+.get{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+/* Download for Mac: ink on paper like Sign up, the height of the command's well. */
+.dl{display:inline-flex;align-items:center;flex:none;height:42px;padding:0 18px;border-radius:12px;background:var(--ink);color:var(--paper);font-size:15px;font-weight:500;letter-spacing:-.005em;text-decoration:none;white-space:nowrap}
+.dl:hover{opacity:.88}
 /* The install command: one quiet surface sized to it, the prompt dim and left out of a selection, a small copy icon
    inside on the right that turns into a check once copied. */
 .cmd{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 5px 5px 16px;border-radius:12px;background:var(--well);box-shadow:inset 0 0 0 1px var(--well-ring),var(--well-lift);transition:box-shadow .14s var(--snap)}
 .cmd:hover,.cmd:focus-within{box-shadow:inset 0 0 0 1px var(--well-ring-on),var(--well-lift)}
-.cmd code{min-width:0;font:400 14px/1.5 var(--mono);font-variant-ligatures:none;letter-spacing:-.005em;color:var(--ink);white-space:nowrap;overflow-x:auto;scrollbar-width:none;padding:4px 0}
+/* Where the line doesn't fit (a phone), it breaks before "| sh", each half whole, rather than hiding its end. */
+.cmd code{display:flex;min-width:0;font:400 14px/1.5 var(--mono);font-variant-ligatures:none;letter-spacing:-.005em;color:var(--ink);overflow-x:auto;scrollbar-width:none;padding:4px 0}
 .cmd code::-webkit-scrollbar{display:none}
 .cmd .ps{color:var(--faint);margin-right:.6em;user-select:none;-webkit-user-select:none}
 .cmd .line{user-select:all;-webkit-user-select:all}
+.cmd .line>span{white-space:nowrap}
 .copy{position:relative;flex:none;display:grid;place-items:center;width:32px;height:32px;margin-left:8px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--faint);cursor:pointer;transition:color .14s var(--snap),background-color .14s var(--snap)}
 .copy:hover{color:var(--ink);background:var(--well-hover)}
 .copy:active{background:var(--well-press)}
@@ -371,7 +378,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   .ways>div+div{padding-top:18px;border-top:1px solid var(--rule)}
   .lockup{grid-template-columns:minmax(0,1fr);--av:112px;gap:20px;padding-left:0}
   .nav{gap:14px}
-  .nav .gh,.nav .in{display:none}
+  .nav .gh{display:none}
   .phil p{line-height:1.35}
   .cmd code{font-size:13px}
   .shot{border-radius:5px}
@@ -381,6 +388,10 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 /* The narrowest phones: Docs stays in the footer and under the install line. */
 @media (max-width:400px){
   .nav .docs{display:none}
+  .cmd .ps{display:none}
+}
+@media (max-width:360px){
+  .cmd code{font-size:12px}
 }
 @media (prefers-reduced-motion:no-preference){
   .nav a,a,.theme{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
@@ -408,8 +419,11 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
     <div>
       <h1 id="h">Software factories, reinvented as fast as the models improve.</h1>
       <div class="install">
-        <div class="cmd"><code><span class="ps" aria-hidden="true">$</span><span class="line" id="cmd">curl -fsSL https://fleetd.sh | sh</span></code><button class="copy" type="button" data-copy="cmd" aria-label="Copy the install command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.2a1.7 1.7 0 0 0-1.7 1.7V9c0 .6.3 1.2.8 1.5"/></svg><svg class="i-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></button><span class="sr" role="status" id="copied"></span></div>
-        <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a> · <a href="/pricing">Pricing</a></p>
+        <div class="get">
+        <a class="dl" href="/download/mac">Download for Mac</a>
+        <div class="cmd"><code><span class="ps" aria-hidden="true">$</span><span class="line" id="cmd"><span>curl -fsSL https://fleetd.sh</span> <span>| sh</span></span></code><button class="copy" type="button" data-copy="cmd" aria-label="Copy the install command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.2a1.7 1.7 0 0 0-1.7 1.7V9c0 .6.3 1.2.8 1.5"/></svg><svg class="i-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></button><span class="sr" role="status" id="copied"></span></div>
+        </div>
+        <p class="facts">The command installs the CLI too, on macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a> · <a href="/pricing">Pricing</a></p>
       </div>
     </div>
   </div>

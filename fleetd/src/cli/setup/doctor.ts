@@ -195,7 +195,7 @@ export function show(list: Checklist, checks: any[], idle: string[]): Tally {
     const extra = optionalExtra(check.id);
     if (extra !== undefined) {
       optionalOff++;
-      const fix = check.fix?.command ?? check.fix?.label;
+      const fix = steps.fixWords(check.fix);
       const message = String(check.message).replace(/\.+$/, "");
       // This hub's nodes say what it is and that it's optional; an older node's words don't.
       const said = /optional/i.test(message) ? message : `${extra} are optional: ${message}`;
@@ -208,7 +208,9 @@ export function show(list: Checklist, checks: any[], idle: string[]): Tally {
     let fix: string | undefined =
       check.fix === undefined || check.fix === null
         ? undefined
-        : (check.fix.command ?? (check.fix.kind === "auto" ? "fleetd doctor --fix" : check.fix.label));
+        : check.fix.command === undefined && check.fix.kind === "auto"
+          ? "fleetd doctor --fix"
+          : steps.fixWords(check.fix);
     if (state === "failed" && fix === undefined) fix = "fleetd doctor again once the cause is gone";
     if (fix !== undefined && list.hasFix(fix)) continue;
     const title = check.machineId ?? "workspace";

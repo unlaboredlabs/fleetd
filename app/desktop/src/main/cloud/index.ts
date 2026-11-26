@@ -20,7 +20,8 @@ import { openBilling, readTeamBilling, setBillingCap, setBillingLimit, setBillin
 import { openSigninDomain, readTeamSignin, setTeamSignin } from "./signin";
 import { connectComputer } from "./connect";
 import { installGithub } from "./github";
-import { deleteTeam, listInvites, makeWorkspace, odd, revokeInvite, sendInvite, type KeyedTeam, accountPreview, deleteAccount } from "./invites";
+import { deleteTeam, listInvites, makeWorkspace, odd, revokeInvite, sendInvite, renameTeam, teamName, type KeyedTeam, accountPreview, deleteAccount } from "./invites";
+import { cleanLabel } from "../../shared/hubs";
 
 export interface Cloud {
   state(): CloudState;
@@ -40,6 +41,11 @@ export interface Cloud {
   deleteTeam(hub: HubId, name: string): Promise<DeleteTeamOutcome>;
   /** A new empty workspace of the person's own, asked on `from` (one of their cloud workspaces), connected here. */
   newWorkspace(from: HubId, name: string): Promise<NewWorkspaceOutcome>;
+  /**
+   * A workspace's new name, sent to the cloud first when it is one of the account's (its name comes from there and is
+   * read again: refreshNames); a self-hosted one is only renamed in this app.
+   */
+  rename(hub: HubId, label: string): Promise<{ ok: true } | { ok: false; message: string }>;
   /** What deleting the person's cloud account would take, read before asking. */
   accountPreview(): Promise<AccountPreviewOutcome>;
   /** The person deletes their cloud account for good, `email` theirs typed again; on success the app forgets its workspaces. */
@@ -82,6 +88,10 @@ const save = (dir: string, account: SavedAccount | null): void => {
   }
 };
 
+/** When the cloud workspaces' names are read again (refreshNames): soon after start, then every few minutes. */
+const NAMES_FIRST_MS = 5_000;
+const NAMES_EVERY_MS = 5 * 60_000;
+
 const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "desktop app";
 
 export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, local: boolean, open: (url: string) => Promise<void>): Cloud => {
@@ -108,6 +118,26 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     call: (tool, input) => service.call({ tool, input: input as never }),
     refused: () => service.state().phase === "refused",
   });
+  /**
+   * Each cloud workspace named as the cloud names it now: a rename on the web or on another device reaches the
+   * switcher, the sidebar and Settings here. Read once the app has started, again every few minutes and after a
+   * sign-in; a workspace that can't be read keeps its name.
+   */
+  const refreshNames = async (): Promise<void> => {
+    await Promise.all(
+      hubs.cloudHubs().map(async (h) => {
+        const t = team(h.id);
+        const name = t === null ? null : cleanLabel((await teamName(fetch, t)) ?? "");
+        if (name === null || name === h.label) return;
+        const color = hubs.list().find((e) => e.id === h.id)?.color ?? null;
+        hubs.update(h.id, { label: name, color });
+      }),
+    );
+  };
+  if (config !== null) {
+    setTimeout(() => void refreshNames().catch(() => undefined), NAMES_FIRST_MS).unref();
+    setInterval(() => void refreshNames().catch(() => undefined), NAMES_EVERY_MS).unref();
+  }
   const account = new CloudAccount({
     config,
     local,
@@ -126,8 +156,16 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
   });
   return {
     state: () => ({ ...account.state(), domain: config === null ? null : cloudDomain(config.accountsUrl) }),
-    signIn: (move) => account.signIn(move === true),
-    finish: (join, make) => account.finish(join, make),
+    signIn: async (move) => {
+      const out = await account.signIn(move === true);
+      void refreshNames().catch(() => undefined);
+      return out;
+    },
+    finish: async (join, make) => {
+      const out = await account.finish(join, make);
+      void refreshNames().catch(() => undefined);
+      return out;
+    },
     notMe: () => account.notMe(),
     cancel: () => account.cancel(),
     reopen: () => account.reopen(),
@@ -147,6 +185,13 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
       const service = hubs.get(id);
       if (service === undefined) return { ok: false, message: "That workspace was removed from this app." };
       return connectComputer((tool, input) => service.call({ tool, input }), realTerminalDeps());
+    },
+    rename: async (id, label) => {
+      const h = hubs.cloudHubs().find((c) => c.id === id);
+      const t = h === undefined ? null : team(id);
+      const name = cleanLabel(label);
+      if (t === null || name === null || name === h?.label) return { ok: true };
+      return renameTeam(fetch, t, name);
     },
     invites: async (id) => {
       const t = team(id);

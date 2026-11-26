@@ -38,7 +38,7 @@ function part(title: string, note: string | undefined, links: SetupLink[], value
 
 const way = (label: string | undefined, checks: string[]): SetupWay => ({ checks, ...(label === undefined ? {} : { label }) });
 
-/** The host's first label, which names this hub at each provider: `fleetd on devbox`. */
+/** The host's first label, which names this workspace at each provider: `fleetd on devbox`. */
 export function hostOf(hub: string): string {
   const scheme = hub.indexOf("://");
   const rest = scheme < 0 ? hub : hub.slice(scheme + 3);
@@ -46,9 +46,9 @@ export function hostOf(hub: string): string {
   const colon = authority.lastIndexOf(":");
   let host = colon >= 0 && /^[0-9]*$/.test(authority.slice(colon + 1)) ? authority.slice(0, colon) : authority;
   host = host.replace(/^\[+|\]+$/g, "");
-  // An address names no machine: say "hub".
-  if (host === "" || isIP(host) !== 0) return "hub";
-  return host.split(".")[0] ?? "hub";
+  // An address names no machine: say "workspace".
+  if (host === "" || isIP(host) !== 0) return "workspace";
+  return host.split(".")[0] ?? "workspace";
 }
 
 /** cli/setup/units.rs `q`: a value quoted for the shell when it needs it. */
@@ -119,7 +119,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
       ],
       test: "Reach the workspace at its address",
-      ways: [way(undefined, ["hub/reachable", "hub/https", "hub/service_manager"])],
+      ways: [way(undefined, ["hub/reachable", "hub/https", "hub/service_manager", "hub/as_root"])],
     }),
     // Where agents run (D594): a computer of the team's, directly on it.
     step("machines", "hub", "Where agents run", "A computer of yours: agents run on it directly.", { kind: "required" }, {
@@ -148,7 +148,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       ],
       place: "machines",
       test: "Read each computer's checks",
-      ways: [way(undefined, ["*/online", "*/service_manager"])],
+      ways: [way(undefined, ["*/online", "*/service_manager", "*/as_root"])],
     }),
     // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
     step("claude", "accounts", "Claude", "Agents think with Claude: the workspace's API key, your subscription, or each machine's login.", { kind: "required" }, {

@@ -1,7 +1,7 @@
 // The owner's Delete Team on the phone against a stand-in for a cloud team's address: who sees it, the call with the
 // phone's key and the name typed, and the team's refusal in its own words.
 import { describe, expect, it } from "vitest";
-import { deleteTeam, deleteTeamShown } from "./team";
+import { deleteTeam, deleteTeamShown, disconnectShown } from "./team";
 
 const HUB = { hub: "https://acme.fleetd.dev/", key: "fk_phone_key", hubName: "acme" };
 
@@ -11,6 +11,13 @@ describe("Delete Team on the phone", () => {
     expect(deleteTeamShown({ cloud: true }, "admin")).toBe(false);
     expect(deleteTeamShown({ cloud: true }, undefined)).toBe(false);
     expect(deleteTeamShown({}, "owner")).toBe(false);
+  });
+
+  it("keeps Disconnect only where it does something Sign Out doesn't", () => {
+    expect(disconnectShown({ cloud: true }, true)).toBe(false);
+    expect(disconnectShown({ cloud: true }, false)).toBe(true);
+    expect(disconnectShown({}, true)).toBe(true);
+    expect(disconnectShown({}, false)).toBe(true);
   });
 
   it("sends the name typed with the phone's key, and says the team's refusal as it is", async () => {

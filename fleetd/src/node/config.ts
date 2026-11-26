@@ -26,6 +26,8 @@ export type NodeConfig = {
   enrolled: boolean;
   /** The hub removed this machine: the node isn't enrolled any more, and waits until it joins again. */
   removed?: boolean;
+  /** The workspace itself was deleted (S10): removed as above, and its words say so. */
+  deleted?: boolean;
   browser?: Record<string, unknown>;
   device?: Record<string, unknown>;
   ios?: Record<string, unknown>;

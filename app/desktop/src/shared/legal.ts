@@ -13,6 +13,16 @@ export const LEGAL_PAGES = [
 
 export type LegalPage = (typeof LEGAL_PAGES)[number];
 
+/**
+ * What paying agrees to, under Billing: Stripe's own pages link its terms, not fleetd's, so Billing does (the money
+ * sweep's, W890).
+ */
+export const BILLING_TERMS = [
+  { id: "terms", title: "Terms of service", url: "https://fleetd.sh/terms" },
+  { id: "privacy", title: "Privacy policy", url: "https://fleetd.sh/privacy" },
+  { id: "refunds", title: "Refunds", url: "https://fleetd.sh/refunds" },
+] as const;
+
 /** A workspace that goes with the account. */
 export interface DeletedWorkspace {
   readonly name: string;

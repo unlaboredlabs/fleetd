@@ -40,13 +40,29 @@ const unreachable = (host: string, cause: string): Loss => ({
     : "Check the workspace's machine is on and awake, and that this computer is on a network that can reach it.",
 });
 
+/**
+ * A fleetd cloud workspace: no machine, address, port or `fleetd doctor` of the person's own to check. Only a restart,
+ * or the workspace closing the link with its own words, is said as for any workspace.
+ */
+const CLOUD: Loss = {
+  reason: "Can't reach fleetd's cloud",
+  fix: "Check this computer's internet connection. If it's working, see status.fleetd.dev for fleetd's own status. The app reconnects by itself.",
+};
+const forCloud = (loss: Loss): Loss => (/^The workspace (is restarting|closed the connection)/u.test(loss.reason) ? loss : CLOUD);
+
 const TLS = /^(CERT_|ERR_TLS_|ERR_SSL_|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|UNABLE_TO_(GET|VERIFY)_|EPROTO$)/u;
 
 /**
  * From the socket error, or the close code when there was none. `wasOpen`: the link had connected first. `known`: the
- * app was connected to this hub a moment ago, so its address is right: no fix sends the person to check it.
+ * app was connected to this hub a moment ago, so its address is right: no fix sends the person to check it. `cloud`: a
+ * fleetd cloud workspace (forCloud).
  */
-export const explainLoss = (hub: string, code: number, reason: string, error: SocketError | undefined, wasOpen: boolean, known = false): Loss => {
+export const explainLoss = (hub: string, code: number, reason: string, error: SocketError | undefined, wasOpen: boolean, known = false, cloud = false): Loss => {
+  const loss = lossOf(hub, code, reason, error, wasOpen, known);
+  return cloud ? forCloud(loss) : loss;
+};
+
+const lossOf = (hub: string, code: number, reason: string, error: SocketError | undefined, wasOpen: boolean, known: boolean): Loss => {
   const host = hubHost(hub);
   const errCode = error?.code ?? "";
   switch (errCode) {
@@ -129,7 +145,10 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
  * had gone through, so something did answer at the address; `known` as explainLoss's. Only a hub never connected to,
  * or failing a long while, that answered and still never finished is said to be maybe the wrong service or too old.
  */
-export const explainAbandon = (hub: string, why: "not-ready" | "silent", opened = true, known = false): Loss => {
+export const explainAbandon = (hub: string, why: "not-ready" | "silent", opened = true, known = false, cloud = false): Loss =>
+  cloud ? CLOUD : abandonOf(hub, why, opened, known);
+
+const abandonOf = (hub: string, why: "not-ready" | "silent", opened: boolean, known: boolean): Loss => {
   const host = hubHost(hub);
   if (why === "silent") {
     return {

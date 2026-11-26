@@ -1,6 +1,7 @@
-// A lead whose last turn Claude refused for its sign-in (`signed_out` in ./cut_off.ts) carries on by itself once a
-// Claude account is connected again (Settings › Accounts › Claude, or the hub's API key): a wake, once per
-// reconnect, to each lead whose thread's newest end is that refusal. Nothing else wakes it, so a sign-in that stays
+// A lead whose last turn Claude refused for its sign-in (`signed_out` in ./cut_off.ts) carries on by itself once its
+// Claude account changes (Settings › Accounts › Claude, or the workspace's API key, saved or removed, which leaves the
+// owner's subscription or the machine's own login): a wake, once per change, to each lead whose thread's newest end is
+// that refusal. Nothing else wakes it, so a sign-in that stays
 // broken never loops.
 import type { Hub } from "../api/hub.ts";
 import { end, SIGNED_IN_LINE } from "./cut_off.ts";
@@ -17,7 +18,7 @@ export function signedOut(hub: Hub, lead: StoredLead): boolean {
   return false;
 }
 
-/** A Claude account was connected again: every lead it refused carries on. */
+/** A Claude account was connected again, or one removed: every lead refused for its sign-in carries on. */
 export function signedInAgain(hub: Hub): void {
   const area = leads(hub);
   for (const lead of area.records.leadsList()) {

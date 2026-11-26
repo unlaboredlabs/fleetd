@@ -190,6 +190,13 @@
   margin: 0;
   padding: var(--space-1) var(--space-2);
 }
+/* GitHub not connected, for an owner or admin of a cloud team: the line and its Connect GitHub on one row. */
+.connectLine {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 
 /* Adding a repo: its field, then what the hub found that fits. */
 .adding {

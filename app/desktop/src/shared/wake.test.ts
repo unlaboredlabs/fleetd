@@ -171,6 +171,26 @@ describe("a cloud bot waking", () => {
   });
 });
 
+// S9: the machine went offline mid-turn, and the bot's typing dots kept moving for two minutes beside "thinking".
+describe("a bot whose machine is offline", () => {
+  test("mid-turn, says so and that the lead carries on, no dots; with nothing running, that it can't start", () => {
+    const working = some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" }, offline: true });
+    expect(working).toEqual({ phase: "held", reason: "Its machine is offline. The lead carries on when it’s back." });
+    expect(wakeDots(working)).toBe(false);
+    // Status's reason, when it has one, said the lead's way: never "can't start" for a lead that had started.
+    const blocked = { blocked: heldWords({ blocked: "factory-a is offline" }), blockedWhy: "factory-a is offline" };
+    expect(some({ working: true, cold: true, waiting: true, asked: T, offline: true, ...blocked })).toEqual({ phase: "held", reason: "factory-a is offline. The lead carries on when it’s back." });
+    // Nothing running yet: it can't start.
+    expect(some({ waiting: true, asked: T, offline: true, ...blocked })).toEqual({ phase: "held", reason: "The lead can’t start now: factory-a is offline." });
+    expect(some({ waiting: true, asked: T, offline: true })).toEqual({ phase: "held", reason: "Machine offline." });
+    // Back online: the lead's own state again.
+    expect(some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" } })).toEqual({ phase: "thinking" });
+    // Asleep, or nothing of yours to answer: nothing new.
+    expect(wakeOf(at({ asleep: true, offline: true }))).toEqual({ phase: "asleep" });
+    expect(wakeOf(at({ working: true, offline: true }))).toBeUndefined();
+  });
+});
+
 // W852: "all done?" sat beside a dot grid with no sign the bot had started.
 describe("the bot in the reply's place on every turn", () => {
   const human = (ms: number) => ({ author: "human", state: "final", createdAt: iso(ms) });
@@ -316,6 +336,17 @@ describe("Claude not serving the lead's turn", () => {
     // Claude answers: the lead writes, and the line goes with the retries.
     expect(some({ working: true, waiting: true, asked, activity: { kind: "writing" }, activitySince: T + 70_000 })).toEqual({ phase: "writing" });
     expect(wakeWords(some({ working: true, waiting: true, asked, activity: { kind: "thinking" }, activitySince: T }), T + 60_000)).toBeUndefined();
+  });
+
+  // B1 of the Nov 26 sweep (F1763): "Claude is overloaded, retrying…" for 17 minutes, never saying when.
+  test("while the node waits to try again, the line says when, in the person's time; never a time already past", () => {
+    const activity: Activity = { kind: "retrying", attempt: 2, of: 30, reason: "overloaded", retryAt: iso(64_000) };
+    const w = some({ working: true, waiting: true, asked, activity, activitySince: T + 1_000 });
+    expect(w).toEqual({ phase: "working", retry: { reason: "overloaded", since: T + 1_000, at: T + 64_000 } });
+    expect(wakeWords(w, T + 30_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying at 10:01" });
+    expect(wakeWords(w, T + 30_000, "Europe/Berlin")).toEqual({ words: "Claude is overloaded, retrying at 11:01" });
+    // The try is on its way: no time behind the clock.
+    expect(wakeWords(w, T + 64_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying…" });
   });
 
   test("a hub that doesn't say since when: the dots, as before", () => {

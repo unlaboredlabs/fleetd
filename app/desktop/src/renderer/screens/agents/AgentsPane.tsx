@@ -15,7 +15,7 @@ import { selectLiveAgents, selectNotLive, selectProjects, type LiveAgent } from 
 import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, IdChip, ROLE_WORD, Text, Tooltip, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
 import { ActivityLine, useSteadyLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
-import { describe, isFinal } from "../live/words";
+import { describe, isFinal, onOfflineMachine } from "../live/words";
 import { useNow } from "../live/clock";
 import { FoldLine, GroupLabel, ListNote, PanelEmpty, useFold } from "../panel/folds";
 import { FEATURE, useScreenWaits, useSessions } from "../sessions/hub";
@@ -320,12 +320,13 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
 /** The row itself: a link under its hover, which takes the menu's props and ref as any element would. */
 function AgentRow({ agent, ...rest }: { agent: LiveAgent } & ComponentProps<"a">) {
   const { row } = agent;
-  const line = useSteadyLine(describe(row));
+  const offline = useData((d) => onOfflineMachine(row, (m) => d.machines[m]?.status));
+  const line = useSteadyLine(describe(row, offline));
   const fresh = useArrived(`agents:${agent.project}`, agent.id);
   return (
     <Tooltip content={agentDetail(row, ROLE_WORD[row.role])} side="left">
       <a {...rest} className={cx(s.row, fresh && s.arrive, row.status === "waiting" && s.waiting)} data-state={row.status} data-role={row.role}>
-        <StateDot status={row.status} thinking={line.thinking} seed={agent.id} />
+        <StateDot status={row.status} thinking={line.thinking} still={offline} seed={agent.id} />
         <span className={s.task}>
           <Truncate size="sm" expand="none">
             {row.title}

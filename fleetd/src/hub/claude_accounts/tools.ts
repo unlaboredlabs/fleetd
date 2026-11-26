@@ -20,6 +20,8 @@ import { accountRemoved, activePeople, administrator, me as person, refOf } from
 import { signedInAgain } from "../leads/signed_in.ts";
 import { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 import { spread } from "./spread.ts";
+import { CAP_CLAUDE_KEY_TRIAL } from "../../shared/node_link.ts";
+import { KEY_REFUSED, KEY_REFUSED_FIX, plainRefusal } from "./refusal.ts";
 
 export { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 
@@ -57,6 +59,8 @@ export function register(tools: Registry): void {
     if (seals.length === 0 && !before) {
       throw new ToolError("invalid", "The workspace has no API key to keep.", "Paste the key: the app seals it to each machine.");
     }
+    // A key Claude refuses is never saved: no machine gets it, and the one before it stays (S3 of the Nov 26 sweep).
+    if (seals.length > 0 && (await keyRefused(hub, seals, endpoint))) throw new ToolError("invalid", KEY_REFUSED, KEY_REFUSED_FIX);
     const [held, problems] = await relay(hub, { kind: "hub" }, seals, endpoint, before?.sealedOn ?? []);
     if (held.length === 0) throw noneTook(problems);
     // A new key or endpoint was never tried.
@@ -85,6 +89,9 @@ export function register(tools: Registry): void {
     if (before) {
       s.removeHubApi();
       await forget(hub, { kind: "hub" }, before.sealedOn.map((x) => x.machineId));
+      // A lead Claude refused on the key carries on with what it runs on now (the owner's subscription, the machine's
+      // own login), as on a key saved; once, so one that is refused again waits for the next change.
+      signedInAgain(hub);
     }
     return {
       ok: true,
@@ -129,6 +136,7 @@ export function register(tools: Registry): void {
       s.removeSubscription(p.personId);
       await forget(hub, { kind: "person", personId: p.personId }, before.sealedOn.map((x) => x.machineId));
       accountRemoved(hub, refOf(p), "Claude subscription");
+      signedInAgain(hub);
     }
     return { me: s.setup().person(p), next: STARTED_NEXT };
   });
@@ -188,7 +196,7 @@ export async function testAccount(hub: Hub, account: ClaudeAccount, held: Claude
   const [out, override] = await Promise.all([sessionCall(hub, machineId, { op: "claude_account_test", account }), overriding(hub, machineId)]);
   // The machine's own claude settings replace the account there: a Test that worked tried them, not the account.
   const ok = out.ok === true && override === undefined;
-  const said = [typeof out.error === "string" ? out.error : undefined, override].filter((x) => x !== undefined).join(" ") || undefined;
+  const said = [typeof out.error === "string" ? plainRefusal(out.error) : undefined, override].filter((x) => x !== undefined).join(" ") || undefined;
   const tried: ClaudeTest = { at: isoMs(hub.clock.now()), machineId, ok, ...(!ok && said !== undefined ? { error: said } : {}) };
   // Recorded on the account as it is now; one replaced or removed meanwhile keeps its own.
   if (account.kind === "hub") {
@@ -199,6 +207,24 @@ export async function testAccount(hub: Hub, account: ClaudeAccount, held: Claude
     if (sub) s.putSubscription(account.personId, { ...sub, lastTest: tried });
   }
   return tried;
+}
+
+export { KEY_REFUSED, KEY_REFUSED_FIX, plainRefusal } from "./refusal.ts";
+
+/**
+ * Whether the endpoint refuses the key in `seals` (401 or 403), tried once on the first machine that can try a key it
+ * doesn't keep. Anything else (no such machine, no answer, a gateway with no model list) is no refusal: the key is
+ * saved as before, and its Test says more.
+ */
+async function keyRefused(hub: Hub, seals: ClaudeSeal[], endpoint: string | undefined): Promise<boolean> {
+  const seal = seals.find((x) => readyOk(hub, x.machineId) && nodeCan(hub, x.machineId, CAP_CLAUDE_KEY_TRIAL));
+  if (!seal) return false;
+  try {
+    const out = await sessionCall(hub, seal.machineId, { op: "claude_account_test", account: { kind: "hub" }, trial: { sealed: seal.sealed, ...(endpoint !== undefined ? { endpoint } : {}) } });
+    return out.refused === true;
+  } catch {
+    return false;
+  }
 }
 
 /** What claude_account_override warns of on the machine, with its fix; none when its settings override nothing or its

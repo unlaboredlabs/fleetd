@@ -359,6 +359,8 @@ export type Activity = {
   kind: "retrying";
   of: number;
   reason: string;
+  /** When the node's own retry goes, when it is waiting for one: the chat says when. */
+  retryAt?: Timestamp;
 } | {
   /** A hosted agent's computer starting: "Starting its computer", "Cloning the repo", "Running setup". */
   kind: "starting";

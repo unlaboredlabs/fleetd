@@ -372,7 +372,8 @@ const pairTeam = async (ports: WorkspacePorts, team: AccountsTeam, invited: bool
         : { code: paired.failure.code, message: `${name} refused this phone's code.`, fix: "Sign in again for a new code." };
     return { name, ok: false, failure };
   }
-  const hubName = paired.paired.hubName === "" ? name : paired.paired.hubName;
+  // The account's name for it, as its people named it; /pair's names it after its address (a slug like sweep-5).
+  const hubName = name.trim() === "" ? paired.paired.hubName : name;
   return { name, ok: true, hub: { ...paired.paired, hubName, cloud: true, ...(invited ? { invited: true as const } : {}) } };
 };
 

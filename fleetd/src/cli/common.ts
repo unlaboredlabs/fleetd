@@ -234,6 +234,8 @@ export type MachineRecord = {
   home: string;
   configHome: string;
   uid: number;
+  /** The command that starts its node, for one set up with --no-service: it has no service to restart. */
+  runByHand?: string;
 };
 
 export type SetupState = {
@@ -284,6 +286,7 @@ export function writeSetup(home: string, state: SetupState) {
       home: m.home,
       configHome: m.configHome,
       uid: m.uid,
+      ...(m.runByHand === undefined ? {} : { runByHand: m.runByHand }),
     };
   }
   const ordered = {

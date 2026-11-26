@@ -94,13 +94,42 @@ test("the doctor's service_manager check: ok, the command while it's missing, no
     "If dev's service manager (systemd --user) stops, nothing starts it again until dev logs in: the node stays down, and every agent with it.",
   ]);
   expect([node.fix?.label, node.fix?.command, node.fix?.on]).toEqual(["As an admin on devbox, once", DEVBOX, "machine"]);
-  const hub = c.serviceManager("hub", "hub", { ...m, linger: false })!;
+  const hub = c.serviceManager("hub", "workspace", { ...m, linger: false })!;
   expect([hub.id, hub.status, hub.fix?.command, hub.fix?.on]).toEqual(["hub/service_manager", "warn", LINGER_OFF, "hub"]);
-  expect(hub.message).toBe("Linger is off for dev: the hub stops when dev logs out, and starts again only at their next login.");
+  expect(hub.message).toBe("Linger is off for dev: the workspace stops when dev logs out, and starts again only at their next login.");
   const ok = c.serviceManager("devbox", "node", { ...m, restarts: true })!;
   expect([ok.status, ok.fix]).toEqual(["ok", undefined]);
   expect(c.serviceManager("devbox", "node", undefined)).toBeUndefined();
   // The setup steps read them: the hub's under where it listens, each machine's under where agents run.
   expect(matchesCheck("*/service_manager", node.id)).toBe(true);
   expect(matchesCheck("hub/service_manager", hub.id)).toBe(true);
+});
+
+// Claude Code won't run agents as root: on a VPS logged in as root every agent failed with no earlier word (D759). The
+// doctor fails with the installer's own fix, and says nothing on fleetd's own computers (IS_SANDBOX) or from an older
+// node that doesn't say.
+test("the doctor's as_root check: fails with the installer's fix, nothing where it doesn't run as root", () => {
+  const node = c.asRoot("vps", { systemd: true })!;
+  expect([node.id, node.status, node.message]).toEqual([
+    "vps/as_root",
+    "fail",
+    "vps's node runs as root, and Claude Code won't run agents as root: every agent fails to start.",
+  ]);
+  expect([node.fix?.label, node.fix?.command, node.fix?.on]).toEqual([
+    "As root on vps, make a user for fleetd and set fleetd up again as it",
+    "useradd -m -s /bin/bash fleetd && loginctl enable-linger fleetd && su - fleetd -c 'curl -fsSL https://fleetd.sh | sh'",
+    "machine",
+  ]);
+  const hub = c.asRoot("hub", { systemd: false })!;
+  expect([hub.id, hub.status, hub.fix?.command, hub.fix?.on]).toEqual([
+    "hub/as_root",
+    "fail",
+    "useradd -m -s /bin/bash fleetd && su - fleetd -c 'curl -fsSL https://fleetd.sh | sh'",
+    "hub",
+  ]);
+  expect(hub.message).toStartWith("The workspace runs as root");
+  expect(c.asRoot("vps", undefined)).toBeUndefined();
+  // The setup steps read them: the workspace's under its address, each machine's under where agents run.
+  expect(matchesCheck("*/as_root", node.id)).toBe(true);
+  expect(matchesCheck("hub/as_root", hub.id)).toBe(true);
 });

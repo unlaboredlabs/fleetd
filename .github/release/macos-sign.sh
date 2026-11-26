@@ -15,8 +15,8 @@
 #   macos-sign.sh sign <binary>...    bare binaries (the CLI); the app is signed by electron-builder, with this
 #                                     job's keychain. MACOS_ENTITLEMENTS: a plist of entitlements to sign them with
 #   macos-sign.sh verify <path>...    checks a signature: Team ID, hardened runtime, team-based requirement
-#   macos-sign.sh notarize <zip>      submits and waits: 0 Accepted, 3 still in progress, else fails with Apple's log
-#   macos-sign.sh staple <app>        staples the accepted ticket onto the app and validates it, else fails
+#   macos-sign.sh notarize <zip|dmg>  submits and waits: 0 Accepted, 3 still in progress, else fails with Apple's log
+#   macos-sign.sh staple <app|dmg>    staples the accepted ticket onto it and validates it, else fails
 #   macos-sign.sh validate <app>      0 when the app's stapled ticket validates, else 1 (no ::error::)
 #   macos-sign.sh cleanup             deletes the keychain and any decoded key material (run it with always())
 #

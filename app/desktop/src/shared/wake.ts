@@ -12,7 +12,7 @@
 // Pure, so both apps draw the same states (app/mobile through its src/desktop.ts).
 import type { BotState } from "./bot";
 import type { Activity, StartStep } from "./contracts";
-import { startsAgain } from "./startsAgain";
+import { clockAt, startsAgain } from "./startsAgain";
 
 export type Wake =
   /** Its computer sleeps, and nothing runs: the next message starts it. */
@@ -25,8 +25,9 @@ export type Wake =
   /** Started, its lead thinks, or works before it writes. */
   | { readonly phase: "thinking" }
   /** At work; `retry`: Claude isn't serving its calls, and its claude has retried since then (hub epoch ms), why in
-   * the tracker's words ("overloaded", a status, an error). */
-  | { readonly phase: "working"; readonly retry?: { readonly reason: string; readonly since: number } }
+   * the tracker's words ("overloaded", a status, an error), and when the node tries again (`at`, hub epoch ms) while it
+   * waits to. */
+  | { readonly phase: "working"; readonly retry?: { readonly reason: string; readonly since: number; readonly at?: number } }
   /** Its first words stream: the bot stays in the reply's place until the reply is whole. */
   | { readonly phase: "writing" }
   /** Your message is in and the lead hasn't started on it yet: since when you sent it (hub epoch ms; undefined: just now). */
@@ -68,7 +69,14 @@ export interface WakeIn {
   readonly blocked?: string | undefined;
   /** That message came longer than START_STALE_MS ago on the hub's clock: a lead that hasn't started on it never will. */
   readonly stale?: boolean | undefined;
+  /** The bot's machine is offline: nothing runs there until it is back, whatever the lead's last state said. */
+  readonly offline?: boolean | undefined;
+  /** Status's blocked reason as it reads, before `heldWords` (`blocked` is that): a lead mid-turn says it its own way. */
+  readonly blockedWhy?: string | undefined;
 }
+
+/** The bot's words while its machine is offline and the hub gave no reason of its own. */
+export const MACHINE_OFFLINE_LINE = "Machine offline.";
 
 /** Past this, a start is slow: its word says so, with the time so far. */
 export const SLOW_MS = 30_000;
@@ -114,11 +122,18 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   const waiting = i.waiting === true && !ended;
   // The hub said your message hasn't reached the lead: whatever it works on, it isn't this.
   if (waiting && i.held !== undefined) return { phase: "held", reason: i.held };
+  // Its machine went offline: the lead's last state ("working") is stale, so no dots that keep moving (S9). Mid-turn,
+  // the lead carries on once it is back, so it never says it can't start; with nothing running, it can't.
+  if (i.offline === true && !i.asleep && i.working && (waiting || i.cold)) return { phase: "held", reason: carriesOnWords(i.blockedWhy) };
+  if (i.offline === true && !i.asleep && waiting) return { phase: "held", reason: i.blocked ?? MACHINE_OFFLINE_LINE };
   if (i.working) {
     // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
     if (!i.cold && !waiting) return undefined;
     if (i.writing || a?.kind === "writing") return { phase: "writing" };
-    if (a?.kind === "retrying") return { phase: "working", ...(i.activitySince === undefined ? {} : { retry: { reason: a.reason, since: i.activitySince } }) };
+    if (a?.kind === "retrying") {
+      const at = ms(a.retryAt);
+      return { phase: "working", ...(i.activitySince === undefined ? {} : { retry: { reason: a.reason, since: i.activitySince, ...(at === undefined ? {} : { at }) } }) };
+    }
     return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
   }
   if (waiting) {
@@ -162,9 +177,12 @@ export const wakePose = (w: Wake, stirred: boolean): BotState => {
   }
 };
 
-/** Claude's retries in one plain line, by why: overloaded, rate-limited, or not answering. */
-export const retryWords = (reason: string): string =>
-  reason === "overloaded" ? "Claude is overloaded, retrying…" : reason === "429" ? "Claude is busy (rate-limited), retrying…" : "Claude isn’t answering, retrying…";
+/** Claude's retries in one plain line, by why: overloaded, rate-limited, or not answering; with when the next try goes
+ * (`at`, in `timeZone`) while one waits for it, never a "retrying…" with no end. */
+export const retryWords = (reason: string, at?: number, timeZone?: string): string => {
+  const why = reason === "overloaded" ? "Claude is overloaded" : reason === "429" ? "Claude is busy (rate-limited)" : "Claude isn’t answering";
+  return at === undefined ? `${why}, retrying…` : `${why}, retrying at ${clockAt(at, timeZone)}`;
+};
 
 /** The word beside the bot (`nowMs` on the hub's clock): the step while its computer starts, "Still waking up" past
  * SLOW_MS (with `count`, the time so far), the reason after a failed try or while something holds the lead, that it
@@ -189,7 +207,9 @@ export const wakeWords = (w: Wake, nowMs: number, timeZone?: string): { readonly
     case "received":
       return w.since !== undefined && nowMs - w.since >= START_SLOW_MS ? { words: "Waiting for the lead to start", count: waited(nowMs - w.since) } : undefined;
     case "working":
-      return w.retry !== undefined && nowMs - w.retry.since >= RETRY_SAID_MS ? { words: retryWords(w.retry.reason) } : undefined;
+      if (w.retry === undefined || nowMs - w.retry.since < RETRY_SAID_MS) return undefined;
+      // A try time already past: the try is on its way, and the words don't name a time behind the clock.
+      return { words: retryWords(w.retry.reason, w.retry.at !== undefined && w.retry.at > nowMs ? w.retry.at : undefined, timeZone) };
     default:
       return undefined;
   }
@@ -294,6 +314,13 @@ export const endedAt = (leadIdleAt: string | undefined, seen: number | undefined
 
 /** What holds the lead up, in one short line: the hub's word on why it doesn't have your message (its first sentence),
  * or why the bot is blocked (its machine offline, its usage paused). Undefined when there is none. */
+/** A lead whose machine went offline mid-turn, in one line: why (Status's reason), and that it carries on. */
+export const carriesOnWords = (why: string | undefined): string => {
+  const reason = why?.trim().replace(/[.\s]+$/u, "") ?? "";
+  // Its words as they come: they start with the machine's name ("factory-a is offline"), never capitalised.
+  return `${reason === "" ? "Its machine is offline" : reason}. The lead carries on when it’s back.`;
+};
+
 export const heldWords = (why: { readonly leadWaiting?: string | undefined; readonly blocked?: string | undefined }): string | undefined => {
   if (why.leadWaiting !== undefined) {
     const said = why.leadWaiting.trim();

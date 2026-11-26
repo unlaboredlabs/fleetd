@@ -17,7 +17,7 @@ const cold = new ColdTurns();
  * shows nothing.
  */
 export const wakeIn = (
-  s: Pick<State, "chatStates" | "leadActivity"> & Partial<Pick<State, "chats" | "sends" | "turnEnded" | "skewMs" | "hub" | "blocked" | "leadActivitySince">>,
+  s: Pick<State, "chatStates" | "leadActivity"> & Partial<Pick<State, "chats" | "sends" | "turnEnded" | "skewMs" | "hub" | "blocked" | "leadActivitySince" | "machines">>,
   key: Key,
   writing = false,
   nowMs = Date.now(),
@@ -50,7 +50,10 @@ export const wakeIn = (
     idleKnown: chat?.leadIdleAt !== undefined,
     held: heldWords({ leadWaiting }),
     blocked: heldWords({ blocked: s.blocked?.[key] }),
+    blockedWhy: s.blocked?.[key],
     stale,
+    // Its machine offline: "Machine offline" in one line, not dots that keep moving (S9).
+    offline: s.machines?.some((m) => m.machineId === key.slice(0, key.indexOf("/")) && m.status === "offline") === true,
   });
 };
 

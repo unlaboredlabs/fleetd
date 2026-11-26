@@ -46,7 +46,7 @@ ui_init() {
   barw=24
   [ "$rich" = 1 ] || return 0
   sleep 0.1 2>/dev/null || tick=1
-  cols="$(stty size </dev/tty 2>/dev/null | cut -d' ' -f2)"
+  cols="$( (stty size </dev/tty) 2>/dev/null | cut -d' ' -f2)"
   case "$cols" in "" | *[!0-9]*) cols=80 ;; esac
   # The bar's line is 56 columns beside it; a narrower terminal gets a shorter bar, or none, rather than a wrapped line.
   barw=$((cols - 58))
@@ -524,14 +524,27 @@ units() {
 }
 
 # running [<what>]: the processes run from fleetd's CLI (<what> one of its commands, as session-host), "<pid> <command
-# line>" a line. A binary an earlier uninstall deleted under a running node still shows its path.
+# line>" a line. On Linux by what /proc says each runs, so one started as fleetd from PATH counts too, and so does a
+# binary an earlier uninstall deleted under a running node; elsewhere (macOS) by ps's command line, which names the
+# CLI as it was started. can_look: whether this machine lets it look at all.
 running() {
-  { ps -eo pid=,args= 2>/dev/null || ps -o pid=,args=; } | awk -v exe="$bin_dir/fleetd" -v what="${1:-}" '
-    { pid = $1; sub(/^[ \t]*[0-9]+[ \t]+/, "") }
-    index($0, exe) == 1 && (substr($0, length(exe) + 1, 1) == " " || length($0) == length(exe)) {
-      if (what == "" || $2 == what) print pid " " $0
-    }'
+  if [ -d /proc/self ]; then
+    # Every process's binary in one ls, not a readlink each: a thousand processes took over ten seconds a look.
+    # shellcheck disable=SC2012 # ls -l of /proc's links is the one-process way to read them all
+    ls -l /proc/[0-9]*/exe 2>/dev/null | awk -v exe="$bin_dir/fleetd" '
+      { at = index($0, " -> "); if (at == 0) next; to = substr($0, at + 4)
+        if (to != exe && to != exe " (deleted)") next
+        link = substr($0, 1, at - 1); sub(/\/exe$/, "", link); sub(/^.*\/proc\//, "", link); print link }' |
+      while IFS= read -r pid; do
+        printf '%s %s\n' "$pid" "$(tr '\000' ' ' 2>/dev/null <"/proc/$pid/cmdline")"
+      done
+  else
+    { ps -eo pid=,args= 2>/dev/null || ps -o pid=,args= 2>/dev/null; } | awk -v exe="$bin_dir/fleetd" -v link="$HOME/.local/bin/fleetd" '
+      { line = $0; sub(/^[ \t]*/, "", line); pid = line; sub(/[ \t].*$/, "", pid); sub(/^[0-9]+[ \t]+/, "", line) }
+      $2 == exe || $2 == link { print pid " " line }'
+  fi | awk -v what="${1:-}" '{ sub(/[ \t]+$/, "") } what == "" || $3 == what'
 }
+can_look() { [ -d /proc/self ] || ps -o pid= >/dev/null 2>&1; }
 
 user_ctl() { XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" systemctl --user "$@"; }
 
@@ -605,6 +618,18 @@ uninstall() {
     *) die "fleetd uninstall stopped, so nothing else was removed
 Fix what it said, then run the uninstall again." ;;
   esac
+  # What runs from the CLI with no service left is a fleetd started by hand (fleetd workspace start, fleetd node run,
+  # as init prints without systemd): it stops too, as its service would have.
+  if [ -z "$(units)" ] && [ -n "$(running)" ]; then
+    running | while IFS= read -r p; do say "stopping pid ${p%% *}, which you started yourself: ${p#* }"; done
+    # shellcheck disable=SC2046 # one pid a word
+    kill $(running | cut -d' ' -f1) 2>/dev/null || true
+    i=0
+    while [ -n "$(running)" ] && [ "$i" -lt 10 ]; do
+      sleep 1
+      i=$((i + 1))
+    done
+  fi
   left="$({
     units | sed 's/^/service: /'
     running | sed 's/^\([0-9]*\) \(.*\)$/running: pid \1, \2/'
@@ -612,7 +637,7 @@ Fix what it said, then run the uninstall again." ;;
   if [ -n "$left" ]; then
     die "fleetd still runs here, so its CLI stays for now
 ${left}
-Stop what runs (kill <pid> for a fleetd you started yourself), then run the uninstall again."
+Stop what runs (kill -9 <pid> for one that didn't stop), then run the uninstall again."
   fi
   rm -rf "$bin_dir"
   link="$HOME/.local/bin/fleetd"
@@ -621,7 +646,12 @@ Stop what runs (kill <pid> for a fleetd you started yourself), then run the unin
   # fleetd.desktop is the GPUI app's menu entry.
   rm -rf "$HOME/Applications/fleetd.app" "$app_dir" "$apps_dir/fleetd.desktop" "$apps_dir/fleetd-desktop.desktop"
   rmdir "$app_dir_parent" "$HOME/.fleetd" 2>/dev/null || true
-  done_step Remove "the fleetd CLI and app; no fleetd service or process is left"
+  if can_look; then
+    done_step Remove "the fleetd CLI and app; no fleetd service or process is left"
+  else
+    done_step Remove "the fleetd CLI and app; no fleetd service is left"
+    warn "this machine has neither ps nor /proc, so a fleetd you started yourself may still run: stop it yourself"
+  fi
   kept=""
   [ ! -d "$HOME/.fleetd" ] || kept="$(tilde "$HOME/.fleetd")"
   for d in "${XDG_CONFIG_HOME:-$HOME/.config}/fleetd" "$HOME/Library/Application Support/fleetd"; do
@@ -662,7 +692,91 @@ join_hub() {
   fi
 }
 
+# shq <word>: <word> in single quotes, as sh reads it back.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# as_root: on Linux as root, fleetd's agents can't run (Claude Code won't skip its permission prompts as root), so
+# fleetd goes to a user of its own (D759): with a terminal, asked (yes by default), the user fleetd is made, linger
+# turned on for it with systemd, and this installer run again as fleetd, with the same options; without one, nothing
+# is changed and the commands are printed. Not on fleetd's own computers (IS_SANDBOX), which claude trusts as root.
+as_root() {
+  [ "$os" = linux ] && [ "$(id -u)" = 0 ] && [ -z "${IS_SANDBOX:-}" ] || return 0
+  shell=/bin/sh
+  [ ! -x /bin/bash ] || shell=/bin/bash
+  linger=""
+  [ ! -d /run/systemd/system ] || linger="loginctl enable-linger fleetd && "
+  line="curl -fsSL https://fleetd.sh | sh${args:+ -s --${args}}"
+  steps="useradd -m -s $shell fleetd && ${linger}su - fleetd -c $(shq "$line")"
+  if ! [ -t 2 ] || ! (: </dev/tty) 2>/dev/null; then
+    die "fleetd doesn't install for root: Claude Code won't run agents as root, so every agent would fail
+Make a user for fleetd and install it as that user. As root:
+  ${steps}
+Nothing was changed."
+  fi
+  say "Claude Code won't run agents as root, so fleetd runs as a user of its own"
+  printf '%s  %s ' "$(paint 36 "?")" "Make the user fleetd and install fleetd as it? [Y/n]" >&2
+  answer=""
+  IFS= read -r answer </dev/tty || true
+  case "$answer" in
+    "" | [Yy] | [Yy][Ee][Ss]) ;;
+    *) die "not installed: fleetd doesn't install for root
+To install it as a user of its own later, as root:
+  ${steps}" ;;
+  esac
+  if id fleetd >/dev/null 2>&1; then
+    done_step User "fleetd, already on this machine"
+  else
+    if command -v useradd >/dev/null 2>&1; then
+      useradd -m -s "$shell" fleetd || die "could not make the user fleetd (useradd failed)"
+    else
+      adduser -D -s "$shell" fleetd || die "could not make the user fleetd (adduser failed)"
+    fi
+    done_step User "made fleetd, with its home in $(eval "printf '%s' ~fleetd")"
+  fi
+  # Linger runs fleetd's services when nobody is logged in; the drop-in starts fleetd's service manager again when it
+  # stops, as `fleetd init` asks an admin to (update/service.ts keepManagerScript).
+  if [ -n "$linger" ]; then
+    # The drop-in's first line says fleetd turned linger on, for `fleetd uninstall` to turn it off; one there already
+    # stays as it is.
+    dropin="/etc/systemd/system/user@$(id -u fleetd).service.d"
+    mark=""
+    [ -f /var/lib/systemd/linger/fleetd ] || mark='# fleetd turned linger on\n'
+    # shellcheck disable=SC2059 # the mark is part of the format
+    if loginctl enable-linger fleetd && mkdir -p "$dropin" &&
+      { [ -f "$dropin/fleetd.conf" ] || printf "${mark}[Service]\nRestart=always\nRestartSec=5\n" >"$dropin/fleetd.conf"; } &&
+      systemctl daemon-reload; then
+      done_step Linger "fleetd's services run when nobody is logged in"
+    else
+      warn "could not turn linger on for fleetd: fleetd init says how"
+    fi
+  fi
+  # The same installer, from its file when it was run from one, else from fleetd.sh, where fleetd can read it.
+  if [ -f "$0" ] && grep -q '^# fleetd installer' "$0" 2>/dev/null; then
+    cp "$0" "$tmp/install.sh"
+  else
+    get -o "$tmp/install.sh" https://fleetd.sh || die "could not download https://fleetd.sh to install as fleetd
+Check this machine's connection, then run: su - fleetd -c $(shq "$line")"
+  fi
+  chmod 711 "$tmp"
+  chmod 644 "$tmp/install.sh"
+  envs=""
+  for v in FLEETD_CHANNEL FLEETD_BASE_URL NO_COLOR; do
+    eval "val=\${$v:-}"
+    [ -z "$val" ] || envs="${envs}${v}=$(shq "$val") "
+  done
+  say "installing as the user fleetd from here; later, su - fleetd runs its fleetd commands"
+  footer "Continuing as fleetd"
+  # su -c runs the command in a session of its own, with no terminal for fleetd init: --pty gives it one.
+  pty=""
+  ! su --help 2>&1 | grep -q -- --pty || pty="--pty"
+  rc=0
+  su ${pty} - fleetd -c "${envs}sh $(shq "$tmp/install.sh")${args}" || rc=$?
+  exit "$rc"
+}
+
 main() {
+  args=""
+  for a in "$@"; do args="${args} $(shq "$a")"; done
   ui_init
   want_app=auto
   do_uninstall=0
@@ -779,6 +893,7 @@ Install it with this machine's package manager (sudo apt install curl, say), the
   # half written (a dropped network, Ctrl-C): a finished step has renamed its .new into place already.
   trap '[ -z "$job" ] || kill "$job" 2>/dev/null; rm -rf "$tmp" "${bin_dir}/.fleetd.new" "${HOME}/Applications/.fleetd.app.new" "${app_dir}.new"; unlive; [ "$rich" = 0 ] || printf "\033[?25h"' EXIT
   trap 'exit 1' INT TERM
+  as_root
   # release.json first: it names the channel's build and pins its assets (fetch). A release without one has SHA256SUMS.
   if ! spin Release "looking for the $channel release" lists; then
     # Until the first edge build is out, the nightly release has the newest; from then on it is a copy of edge.

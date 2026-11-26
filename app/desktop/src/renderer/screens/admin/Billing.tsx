@@ -41,6 +41,7 @@ import {
   withoutBillingReturn,
 } from "../../../shared/billing";
 import type { BillingOpen } from "../../../shared/cloud";
+import { BILLING_TERMS } from "../../../shared/legal";
 import type { PairFailure } from "../../../shared/pairing";
 import { Button, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text, toast } from "../../ui";
 import { useHub } from "../../src/data/react";
@@ -212,6 +213,22 @@ function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: numbe
       <Usage state={state} nowMs={nowMs} />
       <Cap state={state} field={capField} can={state.canBuy} />
       <LimitsSection state={state} />
+      <Text as="p" size="sm" tone="quiet" className={b.legal} data-billing-terms="">
+        {BILLING_TERMS.map((page, i) => (
+          <span key={page.id}>
+            {i === 0 ? null : " · "}
+            <a
+              href={page.url}
+              onClick={(e) => {
+                e.preventDefault();
+                void window.fleetd.openExternal(page.url);
+              }}
+            >
+              {page.title}
+            </a>
+          </span>
+        ))}
+      </Text>
     </>
   );
 }

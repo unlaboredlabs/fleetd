@@ -43,6 +43,7 @@ const SPEC = {
     new: "str",
     "git-init": "bool",
     archived: "bool",
+    ids: "bool",
   },
   positionals: true,
 } as const;
@@ -258,11 +259,15 @@ async function list(client: McpClient, v: Parsed) {
   const shown = projects.filter((p) => archived || p.archivedAt === undefined);
   if (projects.length === 0) println("No bots yet: fleetd project add <path|github-url>");
   else if (shown.length === 0) println("Every bot is archived: fleetd project list --archived shows them");
+  // `<machine>/<title>`, what every project command takes; the id only with --ids, or where two bots on one machine
+  // share the title and only the id tells them apart.
+  const ids = v.flag("ids");
   for (const p of shown) {
     const arch = p.archivedAt !== undefined ? "  (archived)" : "";
-    println(
-      `${s(p, "/machineId")}/${s(p, "/projectId")}  ${s(p, "/title")}  ${tilde(s(p, "/workspaceRoot"))}${arch}`,
-    );
+    const [machine, title] = [s(p, "/machineId"), s(p, "/title")];
+    const twin = projects.filter((o) => s(o, "/machineId") === machine && s(o, "/title") === title).length > 1;
+    const name = ids || twin ? `${machine}/${s(p, "/projectId")}  ${title}` : `${machine}/${title}`;
+    println(`${name}  ${tilde(s(p, "/workspaceRoot"))}${arch}`);
   }
 }
 
@@ -306,7 +311,7 @@ async function findTarget(client: McpClient, target: string | undefined): Promis
   const byTitle = projects.filter((p) => s(p, "/title") === which);
   const found = projects.find((p) => s(p, "/projectId") === which) ?? (byTitle.length === 1 ? byTitle[0] : undefined);
   if (found === undefined) {
-    throw new Stop(3, `no single bot '${which}' on ${machine}`, `fleetd project list --machine ${machine} shows their ids`);
+    throw new Stop(3, `no single bot '${which}' on ${machine}`, `fleetd project list --machine ${machine} --ids shows their ids`);
   }
   return [machine, found];
 }

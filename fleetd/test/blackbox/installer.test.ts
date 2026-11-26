@@ -3,7 +3,7 @@
 // outside a throwaway HOME. It needs no fleetd build: the join line is the CLI's own (src/cli/pair.ts).
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { joinLine } from "../../src/cli/pair.ts";
 import { tempHome } from "../helpers.ts";
@@ -483,20 +483,53 @@ test("uninstall leaves another fleet's unit alone and still finishes", async () 
   expect(existsSync(join(r.home, ".fleetd/bin"))).toBe(false);
 });
 
-test("uninstall names a fleetd process still running, and leaves it to the person", async () => {
+/** A process run from fleetd's CLI at `exe`, as /proc (Linux) and ps (macOS) see one: a copy of sh put there, running
+ * `script` (a loop a TERM stops, by default), with `exe <args>` as its command line; then the stub is put back in its
+ * place, as an update swaps it. */
+async function fromCli(exe: string, args: string, script = "while :; do sleep 1; done") {
+  const stub = readFileSync(exe);
+  rmSync(exe);
+  copyFileSync(Bun.which("sh")!, exe);
+  const proc = Bun.spawn([exe, "-c", script], { argv0: `${exe} ${args}`, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  await Bun.sleep(200);
+  writeFileSync(`${exe}.new`, stub, { mode: 0o755 });
+  renameSync(`${exe}.new`, exe);
+  return proc;
+}
+
+// Without systemd the person starts the workspace by hand, as init prints. The installer said "✓ no fleetd service or
+// process is left" (ps: not found) and deleted the CLI while it ran on: it now stops it, as its service would have.
+test("uninstall stops a fleetd started by hand, and says so", async () => {
   const r = release();
   const m = setUp(r, true);
   const exe = join(r.home, ".fleetd/bin/fleetd");
-  // A hub started by hand, as ps shows it: the CLI's path, then its arguments.
-  const own = Bun.spawn(["sleep", "30"], { argv0: `${exe} hub start`, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  const own = await fromCli(exe, "workspace start");
   try {
-    await Bun.sleep(200);
     const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
-    expect(out.code, out.stdout).toBe(1);
-    expect(out.stderr).toContain(`running: pid ${own.pid}, ${exe} hub start 30`);
-    expect(existsSync(exe)).toBe(true);
+    expect(out.code, out.stderr).toBe(0);
+    expect(out.stdout).toContain(`stopping pid ${own.pid}, which you started yourself`);
+    expect(await Promise.race([own.exited.then(() => "stopped"), Bun.sleep(5000).then(() => "running")])).toBe("stopped");
+    expect(out.stdout).toContain("no fleetd service or process is left");
+    expect(existsSync(exe)).toBe(false);
   } finally {
     own.kill();
+  }
+});
+
+// One that doesn't stop is named, and the CLI stays: never a ✓ while it runs.
+test("uninstall names a fleetd that won't stop, and keeps the CLI", async () => {
+  const r = release();
+  const m = setUp(r, true);
+  const exe = join(r.home, ".fleetd/bin/fleetd");
+  const own = await fromCli(exe, "workspace start", "trap '' TERM; while :; do sleep 1; done");
+  try {
+    const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+    expect(out.code, out.stdout).toBe(1);
+    expect(out.stderr).toContain(`running: pid ${own.pid}, ${exe} workspace start`);
+    expect(out.stdout).not.toContain("no fleetd service or process is left");
+    expect(existsSync(exe)).toBe(true);
+  } finally {
+    own.kill("SIGKILL");
   }
 });
 
@@ -506,9 +539,8 @@ test("with its CLI gone, uninstall stops what an older uninstall left running", 
   const r = release();
   const m = setUp(r, true);
   const exe = join(r.home, ".fleetd/bin/fleetd");
-  // An agent's session host, as ps shows it, which a TERM stops.
-  const host = Bun.spawn(["sleep", "30"], { argv0: `${exe} session-host x`, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-  await Bun.sleep(200);
+  // An agent's session host, which a TERM stops.
+  const host = await fromCli(exe, "session-host x");
   rmSync(exe);
   try {
     // A CLI that can't run here is the same as none.
@@ -523,6 +555,35 @@ test("with its CLI gone, uninstall stops what an older uninstall left running", 
   } finally {
     host.kill();
   }
+});
+
+/** `id` that says root (uid 0), for an installer run that isn't. */
+function asRoot(r: ReturnType<typeof release>) {
+  const stand = join(r.dir, "root-id");
+  mkdirSync(stand, { recursive: true });
+  script(join(stand, "id"), `if [ "$1" = -u ] && [ "$#" = 1 ]; then echo 0; else exec ${Bun.which("id")} "$@"; fi\n`);
+  return `PATH=${stand}:$PATH`;
+}
+
+// Claude Code won't run agents as root, and every agent failed on a VPS logged in as root (D759). Without a terminal
+// the installer stops before it downloads anything, with the commands that install fleetd as a user of its own.
+test.skipIf(process.platform !== "linux")("as root without a terminal it stops before anything is downloaded, with the commands", async () => {
+  const r = release();
+  const out = await r.sh(`${asRoot(r)} sh "$INSTALLER" --no-init </dev/null`);
+  expect(out.code, out.stdout).toBe(1);
+  expect(out.stderr).toContain("fleetd doesn't install for root: Claude Code won't run agents as root");
+  expect(out.stderr).toMatch(/useradd -m -s \/bin\/\w+ fleetd && /);
+  expect(out.stderr).toContain(`su - fleetd -c 'curl -fsSL https://fleetd.sh | sh -s -- '\\''--no-init'\\'''`);
+  expect(out.stderr).toContain("Nothing was changed.");
+  expect(existsSync(join(r.home, ".fleetd"))).toBe(false);
+});
+
+// fleetd's own computers run as root and tell claude they are a sandbox: there it installs as it always did.
+test.skipIf(process.platform !== "linux")("as root in a sandbox (IS_SANDBOX) it installs", async () => {
+  const r = release();
+  const out = await r.sh(`${asRoot(r)} IS_SANDBOX=1 sh "$INSTALLER" --no-init </dev/null`);
+  expect(out.code, out.stderr).toBe(0);
+  expect(existsSync(join(r.home, ".fleetd/bin/fleetd"))).toBe(true);
 });
 
 // FLEETD_CHANNEL=stable got a 404 and "check this machine's connection": no stable release exists (D701), and it

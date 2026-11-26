@@ -25,8 +25,22 @@ export interface Line {
 const say = (words: string, tone: Tone = "quiet"): Line => ({ words, tone, thinking: false });
 const doing = (words: string, machine: string): Line => ({ words, machine, tone: "loud", thinking: false });
 
-/** What a lane is doing now, in literal present tense. With nothing specific to say, it says no more than the status. */
-export const describe = (lane: AgentLane): Line => {
+/**
+ * Whether a lane at work runs on a machine that is offline now (`status`: the machine's, as the snapshot has it): its
+ * last word ("thinking") is stale until the machine is back. A lane in a hosted sandbox has no machine of its own here.
+ */
+export const onOfflineMachine = (lane: AgentLane, status: (machineId: string) => string | undefined): boolean =>
+  isWorking(lane.status) && lane.sandbox === undefined && lane.threadRef !== undefined && status(lane.threadRef.machineId) === "offline";
+
+/** What a working lane says while its machine is offline, in place of its last word. */
+export const MACHINE_OFFLINE = "Machine offline";
+
+/**
+ * What a lane is doing now, in literal present tense. With nothing specific to say, it says no more than the status.
+ * `offline`: its machine is (onOfflineMachine), so a lane at work says so, not "thinking" (S9).
+ */
+export const describe = (lane: AgentLane, offline = false): Line => {
+  if (offline && isWorking(lane.status)) return say(MACHINE_OFFLINE);
   const reason = lane.statusReason?.trim() ? lane.statusReason : undefined;
   switch (lane.status) {
     case "queued":

@@ -270,7 +270,7 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
       </div>
       {state.askHub ? (
         <Field label="Workspace address" description="Shown under the code on your main machine.">
-          <Input ref={hubField} value={state.hub} placeholder="http://devbox:4790" mono autoComplete="off" disabled={state.busy} onChange={(e) => dispatch({ type: "hub", value: e.target.value })} />
+          <Input ref={hubField} value={state.hub} placeholder="https://workspace.example.com" mono autoComplete="off" disabled={state.busy} onChange={(e) => dispatch({ type: "hub", value: e.target.value })} />
         </Field>
       ) : null}
       {state.failure === undefined ? null : <Failure failure={state.failure} />}

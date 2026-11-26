@@ -34,6 +34,8 @@ export interface Found {
 export interface Problem {
   readonly message: string;
   readonly fix?: string;
+  /** GitHub's repos weren't listed: an owner or admin of a cloud team connects GitHub right there. */
+  readonly github?: true;
 }
 
 export interface Discovery {
@@ -84,7 +86,7 @@ export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) 
     });
   }
   const gh = out.github;
-  if (gh.problem) problems.push(problem(gh.problem));
+  if (gh.problem) problems.push({ ...problem(gh.problem), github: true });
   for (const c of gh.repos) {
     const checkouts = c.checkouts.filter((k) => home(k.machineId));
     const withProject = checkouts.find((k) => k.projectId !== undefined);

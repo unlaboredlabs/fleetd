@@ -155,6 +155,15 @@ describe("signing in to fleetd cloud", () => {
     expect(new Set(hubs.map((h) => h.key)).size).toBe(2);
   });
 
+  // The workspace's name as its people gave it, not its address's slug that /pair answers (sweep-5), the Mac sweep's.
+  it("a workspace is named by its title, not by its address", async () => {
+    await fake.team("sweep-5", ["sam@acme.example"]);
+    fake.titles.set("sweep-5", "Launch Sweep");
+    const { account, hubs } = setup(fake);
+    await signInAll(account);
+    expect(hubs.map((h) => h.label)).toEqual(["Launch Sweep"]);
+  });
+
   it("a team whose code is refused is named; the others still connect", async () => {
     await fake.team("acme", ["sam@acme.example"]);
     await fake.team("old", ["sam@acme.example"], { refusePairing: true });

@@ -34,7 +34,8 @@
           "checks": [
             "hub/reachable",
             "hub/https",
-            "hub/service_manager"
+            "hub/service_manager",
+            "hub/as_root"
           ]
         }
       ],
@@ -81,7 +82,8 @@
         {
           "checks": [
             "*/online",
-            "*/service_manager"
+            "*/service_manager",
+            "*/as_root"
           ]
         }
       ],

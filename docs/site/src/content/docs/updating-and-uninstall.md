@@ -82,8 +82,9 @@ It runs `fleetd uninstall` first, which stops and removes everything fleetd runs
 - the root drop-in setup wrote so the services keep running, and linger if fleetd turned it on. Without sudo it
   prints the one command to run as root.
 
-Then it checks that no fleetd service or process is left, and only then removes the CLI and the app. If something
-still runs, it names it with its pid and keeps the CLI, so you can stop it and run the uninstall again.
+Then it checks that no fleetd service or process is left, and only then removes the CLI and the app. A workspace or
+node you started yourself (on a machine without systemd) is stopped too. If something still runs, it names it with its
+pid and keeps the CLI, so you can stop it and run the uninstall again.
 
 Your data in `~/.fleetd` stays; delete it yourself if you want it gone.
 

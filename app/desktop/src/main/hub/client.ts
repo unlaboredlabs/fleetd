@@ -13,7 +13,7 @@
 // doesn't answer in WAKE_PROBE_MS, as a plain unlock leaves a healthy link: an attempt that went out before the tailnet was
 // back would otherwise hold the next one off for all of READY_TIMEOUT_MS, though a fresh dial gets through at once.
 import type { BrowserInput } from "../../shared/contracts";
-import { MAX_CALL_INPUT_BYTES, WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
+import { MAX_CALL_INPUT_BYTES, refusedWords, WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
 import {
   appUrl,
@@ -98,6 +98,8 @@ export interface HubClientOptions {
   /** The window that shows a live screen decodes H.264 (WebCodecs): the watch asks a hub that sends it
    * (`h264_frames`). */
   readonly video?: boolean;
+  /** A fleetd cloud workspace: a lost link is said without a machine or address of the person's own (explain.ts). */
+  readonly cloud?: boolean;
 }
 
 interface Pending {
@@ -278,7 +280,7 @@ export class HubClient implements HubSource {
         this.#checkTimer = setTimeout(() => judge(true), PONG_WAIT_MS - QUIET_PONG_MS);
         return;
       }
-      this.#abandon(explainAbandon(this.#options.hub, "silent"));
+      this.#abandon(explainAbandon(this.#options.hub, "silent", true, false, this.#options.cloud === true));
     };
     this.#checkTimer = setTimeout(() => judge(false), QUIET_PONG_MS);
     this.#connection?.ping();
@@ -504,7 +506,7 @@ export class HubClient implements HubSource {
     const deadline = this.#waking(this.#dialAt) ? Math.min(Math.max(WAKE_READY_TIMEOUT_MS, 3 * this.#handshakeMs), READY_TIMEOUT_MS) : READY_TIMEOUT_MS;
     this.#readyTimer = setTimeout(() => {
       this.#readyTimer = null;
-      this.#abandon(explainAbandon(this.#options.hub, "not-ready", opened, this.#known()));
+      this.#abandon(explainAbandon(this.#options.hub, "not-ready", opened, this.#known(), this.#options.cloud === true));
     }, deadline);
   }
 
@@ -526,7 +528,7 @@ export class HubClient implements HubSource {
       if (this.#pongTimer !== null) clearTimeout(this.#pongTimer);
       this.#pongTimer = setTimeout(() => {
         this.#pongTimer = null;
-        if (this.#heardAt < pingAt) this.#abandon(explainAbandon(this.#options.hub, "silent"));
+        if (this.#heardAt < pingAt) this.#abandon(explainAbandon(this.#options.hub, "silent", true, false, this.#options.cloud === true));
       }, PONG_WAIT_MS);
     }, PING_EVERY_MS);
   }
@@ -679,14 +681,14 @@ export class HubClient implements HubSource {
 
   #onClose(code: number, reason: string, error: SocketError | undefined, opened: boolean): void {
     if (code === CLOSE_UNAUTHORIZED) {
-      this.#refuse(`The workspace refused the key${reason === "" ? "" : ` (${reason})`}.`);
+      this.#refuse(refusedWords(reason));
       return;
     }
     if (opened && (code === CLOSE_RESTART || code === CLOSE_GOING_AWAY)) {
       this.#restarting ??= Date.now();
       this.#updatingTo ??= updatingTo(reason);
     }
-    this.#lost(explainLoss(this.#options.hub, code, reason, error, opened, this.#known()));
+    this.#lost(explainLoss(this.#options.hub, code, reason, error, opened, this.#known(), this.#options.cloud === true));
   }
 
   #lost({ reason, fix }: Loss): void {

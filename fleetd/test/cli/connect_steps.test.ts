@@ -48,8 +48,8 @@ test("the key is sealed to each machine's box key, the agents' Mac never; a past
   expect(keyOf(' "sk-ant-api03-x"\n')).toBe("sk-ant-api03-x");
   expect(keyOf("two words")).toBeUndefined();
   expect(keyOf("")).toBeUndefined();
-  expect(endpointProblem("http://100.104.249.49:8317")).toBeUndefined();
-  expect(endpointProblem("100.104.249.49:8317")).toBe("an http:// or https:// URL");
+  expect(endpointProblem("http://100.101.102.103:8317")).toBeUndefined();
+  expect(endpointProblem("100.101.102.103:8317")).toBe("an http:// or https:// URL");
 });
 
 test("Anthropic's own endpoint, as prefilled, is saved as none", async () => {
@@ -91,7 +91,7 @@ test("the save speaks for the workspace's owner, as only a person who administer
   const fleet = new Fleet("connect-steps");
   try {
     await fleet.startHub();
-    const set = (c: McpClient) => callFor(c, "claude_hub_api_set", { sealed: [], endpoint: "http://100.104.249.49:8317" }, 30_000);
+    const set = (c: McpClient) => callFor(c, "claude_hub_api_set", { sealed: [], endpoint: "http://100.101.102.103:8317" }, 30_000);
     // The CLI's own key is an agent's: the hub refuses it this.
     await expect(set(await connect(fleet.hubHome))).rejects.toMatchObject({ message: expect.stringContaining("owners and admins") });
     // As the owner, the hub takes the call: it has no key yet to keep under a new endpoint, so it says that instead.

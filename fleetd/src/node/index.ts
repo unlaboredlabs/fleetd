@@ -78,7 +78,7 @@ export const CAPABILITIES = [
   CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.COMPUTER_IMAGE, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.ANTIGRAVITY_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD, CAP.UPDATE_BUILD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
-  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.GEMINI_KEY, CAP.ONEPASSWORD,
+  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.CLAUDE_KEY_TRIAL, CAP.GEMINI_KEY, CAP.ONEPASSWORD,
   CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT, CAP.LAUNCH_AHEAD, CAP.REJOIN, CAP.MCP_TAILNET,
 ];
 
@@ -309,17 +309,21 @@ export async function join_(args: JoinArgs): Promise<number> {
 
 /** The hub removed this machine: node.json says so and isn't enrolled any more, so nothing dials the hub as that
  * machine again until it joins with a new code. False when it can't be written (the node exits as refused). */
-export function markRemoved(home: string): boolean {
+export function markRemoved(home: string, deleted = false): boolean {
   try {
     const config = readConfig(home);
     if (config === undefined) return false;
-    writeConfig(home, { ...config, enrolled: false, removed: true });
+    writeConfig(home, { ...config, enrolled: false, removed: true, ...(deleted ? { deleted: true } : {}) });
     return true;
   } catch (error) {
     console.warn(`cannot mark the node removed in its config: ${String(error)}`);
     return false;
   }
 }
+
+/** What a node whose workspace was deleted says, at the refusal and at each start after it. */
+export const deletedLine = (hub: string) =>
+  `${hub} was deleted, so fleetd stopped on this machine. Remove fleetd here with fleetd uninstall, or join another workspace with a new code (fleetd init --join).`;
 
 /** Keeps the link up for a node that has joined. */
 export async function run(args: { home?: string }): Promise<number> {
@@ -350,9 +354,12 @@ export async function enrolled(home: string, retry: boolean, signal?: AbortSigna
       try {
         const config = readConfig(home);
         if (config?.enrolled) return config;
-        removed = config?.removed === true;
-        error = config?.removed
-          ? `${config.machineId} was removed from ${config.hub}, so this node stays stopped. To work for it again, join with a new code (fleetd init --join, or Set up this Mac in the app); to take fleetd off this machine, run fleetd uninstall`
+        // Removed, or its workspace deleted: said once, never tried again (a new join brings it back).
+        removed = config?.removed === true || config?.deleted === true;
+        error = config?.deleted
+          ? deletedLine(config.hub)
+          : config?.removed
+            ? `${config.machineId} was removed from ${config.hub}, so this node stays stopped. To work for it again, join with a new code (fleetd init --join, or Set up this Mac in the app); to take fleetd off this machine, run fleetd uninstall`
           : `this node has not joined a workspace (no enrolled config in ${home}): run fleetd node join first`;
       } catch {
         error = `node config in ${home} is unreadable`;
@@ -705,6 +712,11 @@ export async function startNode(
         // The agents' Mac its hub holds no key for is the same: only a new code joins it again, and until then it
         // waits rather than dial and be refused every few seconds.
         if ((refused.removed || (mac !== undefined && refused.unknown)) && markRemoved(home)) return resolveDone(0);
+        // Its workspace was deleted: nothing is there to dial again, so the node stops for good, and says what to do.
+        if (refused.deleted && markRemoved(home, true)) {
+          process.stderr.write(`fleetd: ${deletedLine(config.hub)}\n`);
+          return resolveDone(0);
+        }
         resolveDone(1);
       } else resolveDone(0);
     },

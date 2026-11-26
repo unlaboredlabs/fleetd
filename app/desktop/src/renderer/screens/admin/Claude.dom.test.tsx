@@ -386,7 +386,7 @@ it("prefills Anthropic's endpoint, kept as none, and says beside a tailnet endpo
   expect(endpoint?.value).toBe("https://api.anthropic.com");
   expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
   // The human's own: a gateway on the tailnet.
-  await type("Endpoint", "http://100.104.249.49:8317");
+  await type("Endpoint", "http://100.101.102.103:8317");
   expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
   await click(button("Connect Tailscale"));
   expect(sent("tailnet_connect")).toEqual([{}]);

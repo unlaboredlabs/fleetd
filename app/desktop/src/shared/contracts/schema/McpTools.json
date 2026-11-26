@@ -277,6 +277,10 @@
             "reason": {
               "maxLength": 80,
               "type": "string"
+            },
+            "retryAt": {
+              "$ref": "#/$defs/Timestamp",
+              "description": "When the node's own retry goes, when it is waiting for one: the chat says when."
             }
           },
           "required": [

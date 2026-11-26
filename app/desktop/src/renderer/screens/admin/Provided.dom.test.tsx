@@ -259,7 +259,21 @@ it("says why nothing runs while fleetd's computers are held, in Billing's words 
   // No plan and no credits: the service's own words and fix.
   billing = read(BILLING_SAMPLES.none);
   await render();
-  expect(section()?.textContent).toContain("This workspace has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
+  expect(section()?.textContent).toContain("Bots on your own machines are free: this workspace has no plan and no credits for fleetd's computers. To run bots on fleetd's computers, pick a plan or buy credits.");
+});
+
+// The red line stayed after credits arrived, until a restart (W890): the workspace's limits stay at none until it sends
+// new ones, while Billing, read each time the app comes back, already says nothing holds them.
+it("says nothing is held once Billing says so, though the workspace's limits haven't caught up", async () => {
+  snap.slots = { ...snap.slots, hosted: [{ provider: "boat", limit: 0, running: 0 }] };
+  sandbox = provided("boat", 0, 0);
+  const b = readBilling(BILLING_SAMPLES.plan);
+  if (b === null) throw new Error("sample doesn't read");
+  billing = b;
+  await render();
+  expect(section()).not.toBeNull();
+  expect(section()?.textContent).not.toContain("Nothing runs on fleetd's computers");
+  expect(section()?.querySelector("[data-provided-at-once]")).toBeNull();
 });
 
 it("on a cloud that doesn't answer the pick yet, still says agents run on fleetd's computers", async () => {

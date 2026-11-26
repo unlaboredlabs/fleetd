@@ -181,6 +181,11 @@ export class FixtureCloud implements Cloud {
     return Promise.resolve({ ok: true });
   }
 
+  // A fixture's names are the app's own.
+  rename(): Promise<{ ok: true }> {
+    return Promise.resolve({ ok: true });
+  }
+
   // A fixture's team stays: the shot shows the sheet's refusal or its press, never the app without it.
   deleteTeam(_hub: string, name: string): Promise<DeleteTeamOutcome> {
     if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));

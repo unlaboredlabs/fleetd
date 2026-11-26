@@ -487,7 +487,9 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
         const reason = status === "degraded" ? (dataField(event, "degradedReason") ?? machine.degradedReason) : undefined;
         const cause = status !== "degraded" ? undefined : event.type === "machine.degraded" ? dataField(event, "degradedCause") : machine.degradedCause;
         const why = { ...(reason === undefined ? {} : { degradedReason: reason }), ...(cause === "claude_login" ? { degradedCause: "claude_login" as const } : {}) };
-        next = { ...next, machines: { ...next.machines, [id]: { ...rest, status, nodeVersion, ...why } } };
+        // Offline since its last heartbeat, which the event says (S5 of the Nov 26 sweep), not when this app read it.
+        const lastSeenAt = (event.type === "machine.offline" ? dataField(event, "lastSeenAt") : undefined) ?? machine.lastSeenAt;
+        next = { ...next, machines: { ...next.machines, [id]: { ...rest, status, nodeVersion, lastSeenAt, ...why } } };
       }
       break;
     }

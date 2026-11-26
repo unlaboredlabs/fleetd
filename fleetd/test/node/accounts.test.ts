@@ -217,16 +217,16 @@ test("on the workspace's runner, an endpoint the Test doesn't reach says what to
   // Through the gateway: the tailnet's access rules.
   await onRunner(
     async () => {
-      throw new Error("the gateway couldn't reach 100.104.249.49:8317");
+      throw new Error("the gateway couldn't reach 100.101.102.103:8317");
     },
     async () => {
-      await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: "http://100.104.249.49:8317" } });
+      await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: "http://100.101.102.103:8317" } });
       const out = await ok("claude_account_test", { account: { kind: "hub" } });
       expect(out).toEqual({
         kind: "claude_account_tested",
         ok: false,
         error:
-          "the endpoint 100.104.249.49:8317 doesn't answer (the gateway couldn't reach 100.104.249.49:8317): the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it",
+          "the endpoint 100.101.102.103:8317 doesn't answer (the gateway couldn't reach 100.101.102.103:8317): the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it",
       });
     },
   );
@@ -298,4 +298,34 @@ test("a 1Password token is saved, tested and lists cards through the Rust node's
   const refused = await ok("onepassword_test", { personId: "p_bbbbbbbb" });
   expect(refused).toEqual({ kind: "onepassword_tested", vaults: [], error: "1Password: invalid service account token ***OP_SERVICE_ACCOUNT_TOKEN***" });
   expect(await ok("onepassword_token", { personId: "p_bbbbbbbb" })).toEqual({ kind: "onepassword_saved" });
+});
+
+// S3 of the Nov 26 sweep: an invalid workspace key was saved anyway. The workspace now has the node try a sealed key
+// it doesn't keep first, on the endpoint's free model list.
+test("a workspace key is tried before it is saved: a refusal says so, and the key is kept nowhere", async () => {
+  const api = Bun.serve({
+    port: 0,
+    fetch: (req) =>
+      req.headers.get("x-api-key") === "sk-good"
+        ? Response.json({ data: [{ id: "claude-haiku" }] })
+        : new Response('{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', { status: 401 }),
+  });
+  try {
+    const endpoint = `http://127.0.0.1:${api.port}`;
+    const bad = await ok("claude_account_test", { account: { kind: "hub" }, trial: { sealed: sealed("sk-bad"), endpoint } });
+    expect(bad).toMatchObject({ kind: "claude_account_tested", ok: false, refused: true });
+    expect(bad.error).toContain("HTTP 401");
+    expect(bad.error).not.toContain("sk-bad");
+    expect(await ok("claude_account_test", { account: { kind: "hub" }, trial: { sealed: sealed("sk-good"), endpoint } })).toEqual({ kind: "claude_account_tested", ok: true });
+    expect(existsSync(join(nodeHome, "claude-accounts", "hub.json"))).toBe(false);
+    // An endpoint that doesn't answer says nothing of the key: no refusal.
+    const gone = Bun.serve({ port: 0, fetch: () => new Response("") });
+    const port = gone.port;
+    gone.stop(true);
+    const silent = await ok("claude_account_test", { account: { kind: "hub" }, trial: { sealed: sealed("sk-x"), endpoint: `http://127.0.0.1:${port}` } });
+    expect(silent.ok).toBe(false);
+    expect(silent.refused).toBeUndefined();
+  } finally {
+    api.stop(true);
+  }
 });

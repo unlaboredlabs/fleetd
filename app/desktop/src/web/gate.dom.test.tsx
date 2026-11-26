@@ -57,12 +57,28 @@ it("signed out: Welcome to fleetd, and Sign in or Make an account in the box", a
   await show({ at: "signed-out" });
   expect(host.querySelector("[data-screen]")?.getAttribute("data-screen")).toBe("web.sign-in");
   expect(host.querySelector("h1")?.textContent).toBe("Welcome to fleetd");
+  // The terms and privacy policy, before WorkOS's page: the App Store and the law ask for them where an account is made.
+  const links = [...host.querySelectorAll("a")].map((a) => [a.textContent, a.getAttribute("href")]);
+  expect(links).toEqual([
+    ["terms of service", "https://fleetd.sh/terms"],
+    ["privacy policy", "https://fleetd.sh/privacy"],
+  ]);
   await press("Sign in");
   expect(actions.signIn).toHaveBeenCalledOnce();
   // The site's Sign up lands here: making an account is a button of its own, not a link under Sign in on WorkOS's page.
   await press("Make an account");
   expect(actions.signUp).toHaveBeenCalledOnce();
   expect(actions.signIn).toHaveBeenCalledOnce();
+});
+
+// S10: after Delete account the page was only the welcome, with no word that the account was gone.
+it("signed out just after Delete account: says the account is deleted, and what a joined machine does", async () => {
+  await show({ at: "signed-out", deleted: true });
+  expect(host.querySelector("[data-deleted]")?.textContent).toBe(
+    "Your fleetd account is deleted, with its workspaces.A machine you joined stops fleetd by itself. To remove fleetd there, run fleetd uninstall on it.",
+  );
+  await show({ at: "signed-out" });
+  expect(host.querySelector("[data-deleted]")).toBeNull();
 });
 
 it("each invitation in turn: Join, a refusal said in the box, then Not now goes on to the app", async () => {

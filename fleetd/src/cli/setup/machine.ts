@@ -320,6 +320,8 @@ export type Resolved = {
   exe: string;
   /** How to run it again. */
   again: string;
+  /** The same with --no-service, for a machine with no systemd user service manager; undefined: it has it already. */
+  againByHand?: string;
   enroll: Enroll;
   claudeConfigDir?: string;
 };
@@ -345,6 +347,13 @@ export function preparedSteps(r: Resolved, p: Prepared): Begin[] {
 
 /** `linux-x64`, `darwin-arm64`. */
 export const preparedPlatform = (p: Prepared) => `${p.facts.platform}-${p.facts.arch}`;
+
+/**
+ * Where a joining machine gets a new code: fleetd cloud's Get started for a cloud workspace (its people have no
+ * workspace machine), `fleetd pair --worker` on a self-hosted one's.
+ */
+export const newJoinLine = (machineId = "<name>") =>
+  `get a new join line where this one came from: Get started on fleetd cloud, or fleetd pair --worker ${machineId} on your workspace's machine`;
 
 /** The join to run again after one that stopped before it enrolled. */
 function joinAgain(a: AddArgs, hub: string, code: string, machineId: string): string {
@@ -403,6 +412,13 @@ export function resolve(a: AddArgs, exe: string): Resolved {
         : local
           ? "fleetd machine add --local"
           : `fleetd machine add ${host}`;
+  const againByHand = a.noService
+    ? undefined
+    : a.enroll.kind === "token"
+      ? joinAgain({ ...a, noService: true }, hubUrl, a.enroll.token, machineId)
+      : joining
+        ? "fleetd init --no-service"
+        : `${again} --no-service`;
   return {
     machineId,
     local,
@@ -419,6 +435,7 @@ export function resolve(a: AddArgs, exe: string): Resolved {
     binary,
     exe,
     again,
+    ...(againByHand === undefined ? {} : { againByHand }),
     enroll: a.enroll,
     ...(a.claudeConfigDir === undefined ? {} : { claudeConfigDir: a.claudeConfigDir }),
   };
@@ -542,7 +559,7 @@ export async function prepare(
   // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
   if (r.enroll.kind === "keep" && plan.steps.some((s) => s.stdin?.kind === "enrollToken")) {
     throw Stop.fail(
-      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: on the workspace's machine, run fleetd pair --worker ${r.machineId}, then run what it prints here with --rejoin`,
+      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: ${newJoinLine(r.machineId)}, then run it here with --rejoin`,
     );
   }
   const prepared: Prepared = { facts, plan, input, ...(fetched === undefined ? {} : { fetched }) };
@@ -564,6 +581,12 @@ export type Added = {
   notes: string[];
 };
 
+/** A Linux step that runs systemctl failed for want of systemd: no systemctl (exit 127), or no user manager to talk to. */
+const noSystemd = (platform: string, command: string, r: { code: number; stdout: string; stderr: string }) =>
+  platform === "linux" &&
+  command.includes("systemctl") &&
+  (r.code === 127 || /not been booted with systemd|failed to connect to bus|systemctl: (command )?not found/i.test(`${r.stdout}\n${r.stderr}`));
+
 /** Runs the plan `prepare` made: records the machine, runs each step, waits until its node is online, checks claude. */
 export async function execute(
   r: Resolved,
@@ -584,6 +607,7 @@ export async function execute(
       home: facts.home,
       configHome: facts.configHome,
       uid: facts.uid,
+      ...(plan.runByHand === undefined ? {} : { runByHand: plan.runByHand }),
     };
     try {
       writeSetup(r.home, { ...r.state, machines: { ...r.state.machines, [r.machineId]: record } });
@@ -614,8 +638,10 @@ export async function execute(
     if (result.code !== 0) {
       const fix =
         step.stdin?.kind === "enrollToken" && r.joining
-          ? "the code is single use and lasts 15 minutes: on the workspace's machine, run fleetd pair --worker for a new one"
-          : `fix that, then run ${r.again}; finished steps are skipped`;
+          ? `the code is single use and lasts 15 minutes: ${newJoinLine(r.machineId)}`
+          : r.againByHand !== undefined && noSystemd(plan.platform, step.command, result)
+            ? `this machine has no systemd user service to run its node (a container, or WSL without systemd): run ${r.againByHand}, then start the node with ${q(plan.layout.bin)} node run --home ${q(plan.layout.nodeHome)}`
+            : `fix that, then run ${r.again}; finished steps are skipped`;
       throw Stop.fail(`step ${i + 1} failed (exit ${result.code}):\n${tail(`${result.stdout}\n${result.stderr}`)}\nFix: ${fix}.`);
     }
     stepsDone = Date.now();

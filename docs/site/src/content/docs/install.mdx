@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install the fleetd CLI and desktop app with one command, and what it needs.
+description: Install the fleetd CLI and desktop app with one command, or download the Mac app alone, and what each needs.
 ---
 
 One command installs fleetd on any Mac or Linux machine:
@@ -11,6 +11,16 @@ curl -fsSL https://fleetd.sh | sh
 
 In a terminal, it then starts the setup wizard, `fleetd init`. Go on with the [Quick start](/docs/quick-start).
 
+## Only the Mac app {#mac-app}
+
+To use fleetd cloud, or a workspace that runs on another computer, a Mac needs only the app:
+
+1. [Download for Mac](/download/mac): a disk image.
+2. Open it and drag **fleetd** onto **Applications**.
+3. Open fleetd from Applications, then sign in or connect to your workspace. See [The desktop app](/docs/desktop-app#pair).
+
+It needs macOS 12 or newer, and updates itself. To run agents or a workspace on this Mac later, run the command above.
+
 ## What you need
 
 - **macOS 13 or newer, or Linux x64.** On an older Mac the installer stops and changes nothing.
@@ -18,7 +28,9 @@ In a terminal, it then starts the setup wizard, `fleetd init`. Go on with the [Q
 - **`git`** on the workspace's machine.
 - **GitHub**: the workspace's own GitHub App, which you create in setup, or `gh` logged in on the workspace.
 
-You don't need `sudo`.
+You don't need `sudo`, and fleetd doesn't run as root: Claude Code won't run agents as root. Logged in as root on
+Linux (most servers' default), the installer offers to make a user named `fleetd` and installs as that user. Without
+a terminal it changes nothing and prints the commands to do the same.
 
 ## What it installs
 

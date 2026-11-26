@@ -1011,9 +1011,15 @@ export class Link {
     this.runnerBy.delete(machineId);
     const seconds = Math.floor(this.timings.silenceMs / 1000);
     this.writeStatus(machineId, "offline");
+    // Since when, for the apps, which patch the machine they hold from this event: its last heartbeat, not the time
+    // they last read it (S5 of the Nov 26 sweep).
+    let lastSeenAt: string | undefined;
+    try {
+      lastSeenAt = store(this.hub).machineGet(machineId)?.lastSeenAt;
+    } catch {}
     // No attention: a node back within minutes (a restart, an update) needs nobody. One still away after
     // hub/outage's 10 minutes pages the admins then, once.
-    this.append("machine.offline", machineId, `${machineId} went offline: no word from its node for ${seconds} s`);
+    this.append("machine.offline", machineId, `${machineId} went offline: no word from its node for ${seconds} s`, lastSeenAt === undefined ? undefined : { lastSeenAt });
     if (live) {
       this.unlink(machineId, live.id, live.state);
       this.close(live.ws, live.state, CLOSE.HEARTBEAT_TIMEOUT, `no frame for ${seconds} s`);

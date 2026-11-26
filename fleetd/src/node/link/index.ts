@@ -21,6 +21,7 @@ import {
   CLOSE,
   HEARTBEAT_INTERVAL_SECS,
   HEARTBEAT_TIMEOUT_SECS,
+  DELETED,
   HUB_CAP,
   NOT_ENROLLED,
   protocolBehind,
@@ -67,6 +68,8 @@ export class LinkFatal extends Error {
     readonly reason: string,
     readonly removed = false,
     readonly unknown = false,
+    /** The workspace was deleted (`DELETED`): the node stops as enrolled, as a removed one does. */
+    readonly deleted = false,
   ) {
     super(`workspace refused this node: ${reason}`);
   }
@@ -567,6 +570,7 @@ function runLinkOnce(
               reason || `closed with ${code}`,
               code === CLOSE.UNAUTHORIZED && reason.includes(REMOVED),
               code === CLOSE.UNAUTHORIZED && reason.includes(NOT_ENROLLED),
+              code === CLOSE.UNAUTHORIZED && reason.includes(DELETED),
             ),
           });
         const why = `workspace closed the link (${code} ${reason})`.trim();

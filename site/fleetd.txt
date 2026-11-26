@@ -6,6 +6,7 @@ Software factories, reinvented as fast as the models improve.
   curl -fsSL https://fleetd.sh | sh
 
 macOS or Linux x64. Open source, MIT.
+Mac app:     https://fleetd.sh/download/mac
 Install:     https://fleetd.sh/docs/install
 Quick start: https://fleetd.sh/docs/quick-start
 Pricing:     https://fleetd.sh/pricing
@@ -82,9 +83,9 @@ Hours are for the smallest computer. Unused time doesn't roll over. Prices are
 in US dollars, plus VAT where it applies, shown at checkout. Sold by Unlabored
 Labs, Inc. Billing details: https://fleetd.sh/docs/billing
 
-Pay as you go, for extra time beyond a plan or no plan at all. Metered to the
-millisecond, only while a computer is running (a month is 730 hours; a second
-of the smallest size is $0.0000167):
+Pay as you go, for extra time beyond a plan or no plan at all. Billed by the
+second, only while a computer is running, with nothing rounded up (a month is
+730 hours; a second of the smallest size is $0.0000167):
   2 CPU, 4 GB    $0.06 an hour
   4 CPU, 8 GB    $0.12 an hour
   8 CPU, 16 GB   $0.24 an hour

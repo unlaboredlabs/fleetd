@@ -100,7 +100,7 @@ describe("Billing on an iPhone, which sells nothing (D733)", () => {
   it("says what's wrong with no call to buy and no row for it, and keeps the cap's", () => {
     const words = (sample: keyof typeof BILLING_SAMPLES | "empty") =>
       shownTopLine(sample === "empty" ? { ...readBilling(BILLING_SAMPLES.plan)!, held: "empty", credits: { ...readBilling(BILLING_SAMPLES.plan)!.credits, leftCents: 0 } } : readBilling(BILLING_SAMPLES[sample])!, false);
-    expect(words("none")).toEqual({ tone: "danger", message: "This workspace has no plan and no credits, so fleetd can't start a computer for its bots.", fix: null });
+    expect(words("none")).toEqual({ tone: "danger", message: "Bots on your own machines are free: this workspace has no plan and no credits for fleetd's computers.", fix: null });
     expect(words("empty")).toEqual({ tone: "danger", message: "No credits left, so bots on fleetd's computers are stopped.", fix: null });
     expect(words("failed")).toEqual({ tone: "danger", message: "The card for the Team plan was declined.", fix: null });
     expect(words("cap")).toEqual(topLine(readBilling(BILLING_SAMPLES.cap)!));

@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, openSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Checklist } from "../../src/cli/setup/checklist.ts";
-import { notes, splitFix } from "../../src/cli/setup/wizard.ts";
+import { failedWithLog, notes, splitFix } from "../../src/cli/setup/wizard.ts";
 
 const ttyTs = join(import.meta.dir, "../../src/cli/tty.ts");
 const wizardTs = join(import.meta.dir, "../../src/cli/setup/wizard.ts");
@@ -120,4 +120,24 @@ test("a note that is its own fix prints once, without a Fix line", () => {
   expect(out.split("after a restart, log that user in again").length).toBe(2);
   expect(out).not.toContain("Fix: launchd");
   expect(out).toContain("Fix: sudo loginctl enable-linger devbox");
+});
+
+// A join that stopped after its code was used blamed "a used or expired code" (W890): a failed step's Fix starts a
+// line of its own, and was missed. The step's own fix shows, with the last line of its output.
+test("a failed step's own fix shows, not the join's fallback", () => {
+  const list = new Checklist();
+  const written: string[] = [];
+  const write = process.stderr.write;
+  process.stderr.write = ((text: string) => written.push(text) > 0) as typeof process.stderr.write;
+  try {
+    const said = "fleetd: step 5 failed (exit 127):\nsh: 1: systemctl: not found\nFix: run fleetd init --join x --no-service, then start the node.";
+    failedWithLog(list, "box", "could not join", [said], "fix the cause above, then run the join line again");
+  } finally {
+    process.stderr.write = write;
+  }
+  const out = written.join("").replace(/\x1b\[[0-9;]*m/g, "");
+  expect(out).toContain("could not join: step 5 failed (exit 127): sh: 1: systemctl: not found");
+  expect(out).toContain("run fleetd init --join x --no-service, then start the node");
+  expect(out).not.toContain("join line again");
+  expect(splitFix("why. Fix: do it.")).toEqual(["why", "do it"]);
 });

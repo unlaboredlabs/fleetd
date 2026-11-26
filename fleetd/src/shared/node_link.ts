@@ -35,6 +35,9 @@ export const REASON_MAX_BYTES = 123;
 // Its words stay "hub": a node of any version matches the reason on them, and an older one would miss "workspace".
 export const REMOVED = "was removed from this hub";
 export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: its node key is revoked`;
+/** What an UNAUTHORIZED close says, and only says, for a deleted workspace (fleetd's cloud, once its person deleted it
+ * or their account): its node stops as enrolled, so nothing dials an address that is gone (S10). */
+export const DELETED = "This workspace was deleted";
 /** What an UNAUTHORIZED close says for a node whose key the hub doesn't hold at all: the agents' Mac stops as enrolled
  * on it too, as only a new code joins it again. */
 export const NOT_ENROLLED = "is not enrolled";
@@ -97,6 +100,9 @@ export const CAP_SESSION_SEAL = "session_seal";
 export const CAP_CLAUDE_ACCOUNTS = "claude_accounts";
 /** `claude_account_reseal`: the node seals a Claude account it holds to another machine's box key (the hub's runner). */
 export const CAP_CLAUDE_RESEAL = "claude_reseal";
+/** `claude_account_test` with `trial`: the node tries a sealed key it doesn't keep, so the workspace refuses a key Claude
+ * refuses before saving it. */
+export const CAP_CLAUDE_KEY_TRIAL = "claude_key_trial";
 export const CAP_ONEPASSWORD = "onepassword";
 export const CAP_ONEPASSWORD_CARDS = "onepassword_cards";
 /** `vault_adopt`, `vault_import_read`, `vault_import_search`, and fills from the vault (node_link.rs CAP_VAULT). */
@@ -352,8 +358,12 @@ export const HOLD_LEASE_SECS = 60;
  */
 export type NodeManager = { user: string; uid: number; linger: boolean; restarts: boolean };
 
+/** A node that runs as root, where Claude Code won't run agents; `systemd`: the machine was booted with it. Absent on
+ * fleetd's own computers (IS_SANDBOX), for a node that doesn't run as root, and from older nodes. */
+export type NodeRoot = { systemd: boolean };
+
 /** `manager`: absent off Linux, from a node that isn't a systemd user service, and from older nodes. */
-export type NodeProbe = { gitEmail?: string; gitEmailFrom?: "env" | "git_config"; manager?: NodeManager };
+export type NodeProbe = { gitEmail?: string; gitEmailFrom?: "env" | "git_config"; manager?: NodeManager; root?: NodeRoot };
 
 /** Node -> hub, one per `node_action`. Not camelCase: its sign-in URL is `login_url` on the wire. */
 export type NodeActionResult = {

@@ -157,6 +157,14 @@ export interface MachineView {
   readonly live?: MachineLive | undefined;
 }
 
+/**
+ * The machine as the live feed has it now: its status and when the hub last heard from it (each heartbeat), which the
+ * list's snapshot keeps from whenever it was read. A machine that dropped is offline since its last heartbeat, not
+ * since the app last read the list (the Nov 26 sweep's "Offline since" three minutes early).
+ */
+export const withLive = (m: Machine, live: Pick<MachineLive, "status" | "asOf"> | undefined): Machine =>
+  live === undefined ? m : { ...m, status: live.status, lastSeenAt: live.asOf };
+
 export const selectMachines = memo(
   (s) => [s.fresh, s.machines, s.live.machines],
   (fresh, machines, live): readonly MachineView[] | undefined =>
@@ -165,8 +173,8 @@ export const selectMachines = memo(
       : Object.values(machines)
       .map((machine) => {
         const now = live[machine.machineId];
-        // The feed's status is newer than the snapshot's when it has one.
-        return { machine: now === undefined ? machine : { ...machine, status: now.status }, live: now };
+        // The feed's status and last word are newer than the snapshot's when it has them.
+        return { machine: withLive(machine, now), live: now };
       })
       .sort((a, b) => a.machine.name.localeCompare(b.machine.name)),
 );

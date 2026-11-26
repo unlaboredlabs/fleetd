@@ -49,7 +49,16 @@ export function needWords(need: any): string {
   return need?.kind === "before" ? `before ${need.what}` : String(need?.kind);
 }
 
-const resume = (step: any) => step.fix?.command ?? `fleetd init --step ${step.id}`;
+/** A check's fix as the terminal says it: its title with its command ("As an admin on devbox, once: sudo …"), the one
+ * that is there when it has only one. */
+export function fixWords(fix: any): string | undefined {
+  const label = typeof fix?.label === "string" ? fix.label.replace(/[.:]+$/, "") : "";
+  const command = typeof fix?.command === "string" ? fix.command : undefined;
+  if (command === undefined) return label === "" ? undefined : label;
+  return label === "" || label.includes(command) ? command : `${label}: ${command}`;
+}
+
+const resume = (step: any) => (step.fix?.command === undefined ? undefined : fixWords(step.fix)) ?? `fleetd init --step ${step.id}`;
 
 export function line(step: any): [State, string, string | undefined] {
   const said = String(step.said ?? "").replace(/\.+$/, "");

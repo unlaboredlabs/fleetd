@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { versionLabel } from "../../../shared/updates";
 import { callKey } from "../../src/data/queries";
+import { withLive } from "../../src/data/selectors";
 import { useCloudTeam, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Text, toast } from "../../ui";
 import { AddMachine, type View } from "../addMachine";
@@ -43,14 +44,14 @@ const toList = () => (window.location.hash = toHash({ id: "settings", tab: "hub.
 export function MachinePage({ machineId }: { machineId: string }) {
   const cloud = useCloudTeam();
   const known = useData((d) => d.machines[machineId]);
-  // The feed's status is newer than the snapshot's when it has one, as the list reads it.
-  const status = useData((d) => d.live.machines[machineId]?.status);
+  // The feed's status and last word are newer than the snapshot's when it has them, as the list reads it.
+  const live = useData((d) => d.live.machines[machineId]);
   const [removed, setRemoved] = useState(false);
   // Removed from here: the page says so at once, whatever the hub's resync still has to drop.
   const machine = useMemo(() => {
     if (removed) return undefined;
-    return known === undefined || status === undefined || status === known.status ? known : { ...known, status };
-  }, [known, status, removed]);
+    return known === undefined ? known : withLive(known, live);
+  }, [known, live, removed]);
   const fresh = useData((d) => d.fresh);
   // fleetd cloud runs no doctor and reaches no machine over SSH: neither is read there, and Repair gives the line.
   const checks = useToolQuery("doctor_list", allChecks, { enabled: useServes("doctor_list") });

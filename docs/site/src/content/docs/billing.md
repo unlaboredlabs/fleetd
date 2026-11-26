@@ -44,7 +44,7 @@ months, and the ones that expire first are used first.
 
 ## Computer time {#computer-time}
 
-Each computer is billed for the time it runs, by size:
+Each computer is billed by the second, only while it runs, with nothing rounded up, at its size's rate:
 
 | Size | Per hour |
 |---|---|

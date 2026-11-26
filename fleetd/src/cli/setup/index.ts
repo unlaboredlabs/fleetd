@@ -1,7 +1,7 @@
 // `fleetd init` and `fleetd uninstall`. `init` without a terminal and without
 // --yes (or --join) only sets up the hub, as scripts expect: setup.json, and unless --no-service the user service
 // that runs it. The wizard (a terminal, --yes, --join, --step) is listed as not ported in PORT_MAP.md.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { NotImplemented } from "../../shared/errors.ts";
@@ -40,11 +40,14 @@ function serviceFailure(said: string): string {
   return why === "" ? "service didn't start" : `service didn't start: ${why}`;
 }
 
+/** This machine was booted with systemd and has systemctl, as the user services need (sd_booted's own test). */
+export const systemdHere = () => existsSync("/run/systemd/system") && Bun.which("systemctl") !== null;
+
 /** The hub service runs this very binary. */
 export function hubServiceSpec(home: string, listen: string, exe: string, path: string, userHome: string): ServiceSpec {
   return {
     role: "hub",
-    description: "fleetd hub",
+    description: "fleetd workspace",
     program: [exe, "hub", "start", "--home", home, "--listen", listen],
     env: [
       ["HOME", userHome],
@@ -134,6 +137,13 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
     throw {
       message: `fleetd runs the workspace as a systemd or launchd service, not on ${process.platform}`,
       fix: "fleetd init --no-service, then run fleetd workspace start yourself",
+    } satisfies Failure;
+  }
+  // Said before a unit is written: systemctl's own "not found" pointed at systemctl again.
+  if (plan.withService && platform === "linux" && !systemdHere()) {
+    throw {
+      message: "this machine has no systemd to run the workspace as a service (a container, or WSL without systemd)",
+      fix: "run fleetd init --no-service, then start the workspace and its node with the commands it prints",
     } satisfies Failure;
   }
   const dirs = localDirs();
@@ -359,6 +369,8 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
     }
     if (platform === "linux" && removed) await removeManagerDropIn();
   }
+  const byHand = await stopByHand(home);
+  if (byHand !== undefined) return fail(byHand);
   const elsewhere = Object.entries(state?.machines ?? {})
     .filter(([, r]) => r.local !== true)
     .map(([id]) => id);
@@ -392,6 +404,32 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
     return fail(`cannot delete the vault's key in ${keys.dir}: ${ioMessage(error)}`);
   }
   return 0;
+}
+
+/** A workspace started by hand on `home` (no systemd: fleetd workspace start, as init prints), which no service stops:
+ * stopped as its service would be, and said. Only fleetd's own processes, never another program that has its database
+ * open. Why it couldn't, or undefined. */
+async function stopByHand(home: string): Promise<string | undefined> {
+  const ours = (pid: number) => {
+    try {
+      return readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, "") === process.execPath;
+    } catch {
+      return false;
+    }
+  };
+  const held = () => processesHolding(join(home, "hub.sqlite")).filter(ours);
+  const pids = held();
+  if (pids.length === 0) return undefined;
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
+  for (let i = 0; i < 20 && held().length > 0; i++) await Bun.sleep(500);
+  const left = held();
+  if (left.length > 0) return `the workspace you started yourself still runs (pid ${left.join(", ")}). Fix: kill -9 ${left.join(" ")}, then run fleetd uninstall again`;
+  say(`stopped the workspace you started yourself (pid ${pids.join(", ")})`);
+  return undefined;
 }
 
 /** What removes fleetd from a machine, as a person pastes it there. */
@@ -458,7 +496,9 @@ async function removeManagerDropIn(): Promise<void> {
   const script = undoManagerScript(user, uid, dropIn);
   const linger = script.includes("disable-linger");
   const what = `${file}${linger ? ` and linger for ${user}` : ""}`;
-  const asRoot = uid === 0 ? "" : Bun.spawnSync(["sudo", "-n", "true"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exitCode === 0 ? "sudo -n " : undefined;
+  // A machine without sudo (a container, a user root made) has none to ask.
+  const sudo = Bun.which("sudo") !== null && Bun.spawnSync(["sudo", "-n", "true"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  const asRoot = uid === 0 ? "" : sudo ? "sudo -n " : undefined;
   if (asRoot !== undefined) await sh(`${asRoot}sh -c "${script}"`, () => {}).catch(() => {});
   // logind keeps linger as a file per user.
   const undone = !existsSync(file) && !(linger && existsSync(`/var/lib/systemd/linger/${user}`));

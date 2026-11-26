@@ -44,7 +44,7 @@ import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
 import { inspect, projectsRoot, scan } from "../repos/index.ts";
-import { accountSecrets, accountSettingsEnv, envFor, geminiVars, held, putOn } from "../actions/accounts.ts";
+import { accountSecrets, accountSettingsEnv, envFor, geminiVars, held, putOn, tryAccountApi } from "../actions/accounts.ts";
 import { privateByName } from "../place/endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
@@ -195,7 +195,7 @@ export type SessionConfig = {
   /** The command that runs fleetd: each session's host, and fleetd's MCP server and hold hook inside sessions. */
   fleetd: string[];
   boxKey?: NodeBoxKey;
-  /** The node's own retries of a run that failed Overloaded or Network, after claude's: 1, 4 and 15 min, ±10%. */
+  /** The node's own retries of a run that failed Overloaded or Network, after claude's: retryDelayMs's. */
   retryScheduleMs?: number[];
   /** Idle processes cost RAM: one without an active run this long is closed; the next send resumes it. */
   idleReapMs?: number;
@@ -204,21 +204,35 @@ export type SessionConfig = {
   /** How long a node that starts waits for the hub's subscription before it wakes the agents whose Monitors were lost
    * in its restart: HELD_WAKE_MS. */
   heldWakeMs?: number;
+  /** When a login Claude refused is tried again on the endpoint's free model list: first, then every: AUTH_CHECK_MS. */
+  authCheckMs?: [first: number, every: number];
 };
+
+/** A refused login is tried again a minute after the refusal, then every three minutes, until it passes. */
+export const AUTH_CHECK_MS: [number, number] = [60_000, 180_000];
 
 /** What a node retry sends, with `--resume`, so claude picks the turn back up. */
 export const RETRY_MESSAGE = "Continue where you left off.";
-export const MAX_RUN_RETRIES = 3;
+/** About an hour of retries (retryDelayMs): a Claude outage longer than that ends the run, which says why. */
+export const MAX_RUN_RETRIES = 30;
 /** How long a lead's hosted start waits before its one more try, when its box came up but it couldn't start there
  * (place/hosted.ts BoxNotReady). A task's recovery tries again itself (the hub's `sandbox` class). Tests set it. */
 export const HOSTED_RETRY = { ms: 30_000 };
 
-/** The delay before retry `attempt` (1-based): 1, 4 and 15 minutes, each ±10% by `unit` in [0, 1), whole seconds. */
+/** The delay before retry `attempt` (1-based): 15 s, 30 s, 1 min, then every 2 min, each ±10% by `unit` in [0, 1),
+ * whole seconds. Short, so a lead is back soon after Claude is (the Nov 26 sweep waited 17 minutes on 1, 4 and 15); a
+ * new message to the session doesn't wait for it at all (`#retryNow`). */
 export function retryDelayMs(attempt: number, unit = Math.random()): number | undefined {
   if (attempt < 1 || attempt > MAX_RUN_RETRIES) return undefined;
-  const base = Math.min(60_000 * 4 ** (attempt - 1), 15 * 60_000);
+  const base = Math.min(15_000 * 2 ** (attempt - 1), 120_000);
   return Math.round((base * (0.9 + 0.2 * Math.min(1, Math.max(0, unit)))) / 1000) * 1000;
 }
+
+/** Every retry's delay, each drawn with its jitter. */
+const retrySchedule = () => Array.from({ length: MAX_RUN_RETRIES }, (_, i) => retryDelayMs(i + 1)!);
+
+/** The variables that hold claude's own key or token. */
+const LOGIN_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"];
 
 const retryable = (cls: FailureClass) => cls === "overloaded" || cls === "network";
 
@@ -239,7 +253,7 @@ export function configFor(home: string, fleetdDirPath: string, fleetd: string[],
     baseEnv: sessionEnv(),
     claudeBin: claude.claudeBinary(),
     fleetd,
-    retryScheduleMs: [1, 2, 3].map((a) => retryDelayMs(a)!),
+    retryScheduleMs: retrySchedule(),
     idleReapMs: 600_000,
     ...(boxKey ? { boxKey } : {}),
   };
@@ -429,6 +443,8 @@ export class SessionService {
   readonly #health = new Health();
   #probing: Promise<unknown> = Promise.resolve();
   #prober: ReturnType<typeof setTimeout> | undefined;
+  /** The next try of a login Claude refused (`#checkLogin`). */
+  #loginCheck: ReturnType<typeof setTimeout> | undefined;
   #itemsPruner: ReturnType<typeof setTimeout> | undefined;
   /** Sessions whose Monitors were lost in the restart before this node, woken at the hub's subscription. */
   #held: string[] = [];
@@ -450,6 +466,8 @@ export class SessionService {
   #setupCancel = new Map<string, { runId: string; abort: AbortController }>();
   /** Node retries done per run; a run in here outlives an exit nobody asked for. */
   #retries = new Map<string, number>();
+  /** Node retries waiting out their delay, by run: a new message to the session sends its retry at once (`#retryNow`). */
+  #retryWaits = new Map<string, { sessionId: string; timer: ReturnType<typeof setTimeout>; fire: () => void }>();
   /** This node's claude refused `--append-system-prompt-file`: until the node restarts, every start passes a session's
    * standing rules at the head of the message it starts with instead. */
   #noPromptFile = false;
@@ -593,9 +611,9 @@ export class SessionService {
     return { generation: ++this.#generation, pid: link.pid, link, lastActive: Date.now(), closing: false, exited, markExited, secrets, aliases: new Map(), tools: new Set(), watching: new Map() };
   }
 
-  /** The node's retry delays: the config's, else 1, 4 and 15 min, each drawn with its jitter. */
+  /** The node's retry delays: the config's, else retryDelayMs's, each drawn with its jitter. */
   get #retrySchedule(): number[] {
-    return this.config.retryScheduleMs ?? [1, 2, 3].map((a) => retryDelayMs(a)!);
+    return this.config.retryScheduleMs ?? retrySchedule();
   }
 
   get #idleReapMs(): number {
@@ -621,6 +639,7 @@ export class SessionService {
       runnerEnv: () => runnerEnv(this.config),
       send: (frame) => this.#outlet?.(frame),
       forgetSignins: (projectId) => this.forgetSignins(projectId),
+      accountChanged: () => this.reprobe(),
     };
   }
 
@@ -1331,6 +1350,8 @@ export class SessionService {
       return { queued };
     });
     if ("again" in recorded) return recorded.again;
+    // A run waiting out a node retry goes again now, ahead of this message, rather than hold it behind the wait.
+    this.#retryNow(id);
     if (steer) for (const steerId of [...(steer.riders ?? []), steer.id]) this.#steers.track(id, runId, steerId, recorded.queued);
     // The worktree is still being set up: the message goes once that has ended and the brief has gone.
     const settingUp = this.#settingUp.get(id);
@@ -2029,7 +2050,8 @@ export class SessionService {
     }
     this.#retries.delete(runId);
     if (typeof outcome === "object" && "Failed" in outcome && outcome.Failed.class === "auth") {
-      this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now()));
+      this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now(), this.#loginKey()));
+      this.#scheduleLoginCheck(true);
       // Claude refused the sign-in it was started with: this claude goes, so the next turn's start reads the session's
       // account again (one reconnected meanwhile), as an idle one goes.
       live.closing = true;
@@ -2413,7 +2435,7 @@ export class SessionService {
         startedAt: c.at,
         completedAt: c.at,
         updatedAt: c.at,
-        kind: { type: "node_retry", attempt, of: this.#retrySchedule.length, delayMs, reason: failure },
+        kind: { type: "node_retry", attempt, of: this.#retrySchedule.length, delayMs, retryAt: new Date(Date.parse(c.at) + delayMs).toISOString(), reason: failure },
       }),
     );
     this.#resend(id, runId, delayMs, unread);
@@ -2422,7 +2444,8 @@ export class SessionService {
   /** After `delayMs`, unless the run ended meanwhile, the session gets the run's message again (`unread`) or
    * RETRY_MESSAGE, under a fresh uuid that maps back to the run. */
   #resend(id: string, runId: string, delayMs: number, unread: boolean): void {
-    setTimeout(async () => {
+    const fire = async () => {
+      this.#retryWaits.delete(runId);
       if (!this.store.runs(id).some((r) => r.id === runId && isActive(r.status))) {
         if (unread) this.#steers.failed(runId, "the run ended before claude took it in");
         return;
@@ -2437,7 +2460,19 @@ export class SessionService {
         this.#failRun(id, runId, failureOf(error), (error as Error).message);
         if (unread) this.#steers.failed(runId, (error as Error).message);
       }
-    }, delayMs);
+    };
+    this.#retryWaits.set(runId, { sessionId: id, timer: setTimeout(() => void fire(), delayMs), fire: () => void fire() });
+  }
+
+  /** Each of the session's runs waiting out a node retry goes again now: someone wrote to it (a message, a wake), so
+   * nobody waits out a delay Claude may be back well before. One that fails again waits its next delay. */
+  #retryNow(id: string): void {
+    for (const [runId, wait] of this.#retryWaits) {
+      if (wait.sessionId !== id) continue;
+      clearTimeout(wait.timer);
+      this.#retryWaits.delete(runId);
+      wait.fire();
+    }
   }
 
   /** Drops a send claude still holds queued; a no-op once it has started. Waits up to WITHDRAW_WAIT_MS for claude. */
@@ -2643,11 +2678,14 @@ export class SessionService {
         endpoint = account ? envFor(this.home, account).vars.find(([k]) => k === "ANTHROPIC_BASE_URL")?.[1] : undefined;
       } catch {}
       const info = runnerClaude(account, endpoint, nodeTailnet()?.on === true);
-      this.#healthChanged((h) => h.probed(info, started));
+      this.#healthChanged((h) => h.probed(info, started, this.#loginKey()));
       return this.#health.info() ?? info;
     }
     const env = runnerEnv(this.config);
+    const key = this.#loginKey();
     let info = await claude.probe(this.config.claudeBin, env);
+    const file = this.#loginFile();
+    if (file !== undefined) info.loginFile = file;
     // Logged out here: the runner as a session on the Claude account the hub sealed to this node runs it. Read as
     // logged out, the machine would be degraded and every message to its agents refused.
     const account = info.login === "logged_out" ? held(this.home) : undefined;
@@ -2658,8 +2696,91 @@ export class SessionService {
         if (onAccount.login === "logged_in") info = onAccount;
       } catch {}
     }
-    this.#healthChanged((h) => h.probed(info, started));
+    // Behind a proxy the login is the proxy's, fixed where nothing here changes: any probe that finds it logged in
+    // clears a refusal, as before.
+    this.#healthChanged((h) => h.probed(info, started, info.proxy === undefined ? key : undefined));
     return this.#health.info() ?? info;
+  }
+
+  /** Tries a refused login again after AUTH_CHECK_MS (`first`: the first wait), while the refusal stands. */
+  #scheduleLoginCheck(first: boolean): void {
+    clearTimeout(this.#loginCheck);
+    this.#loginCheck = undefined;
+    if (this.#stopping || !this.#health.refused()) return;
+    const [firstMs, everyMs] = this.config.authCheckMs ?? AUTH_CHECK_MS;
+    this.#loginCheck = setTimeout(() => void this.#checkLogin(), first ? firstMs : everyMs);
+  }
+
+  /** The login a refused run ran on, tried on the endpoint's free model list (no model runs): the refusal clears when it
+   * answers. One it refuses, one that doesn't answer, or a login the node can't read (a Mac keychain) is tried again
+   * later; a changed login clears it at the next probe meanwhile. */
+  async #checkLogin(): Promise<void> {
+    this.#loginCheck = undefined;
+    if (!this.#health.refused()) return;
+    const env = this.#loginEnv();
+    if (env !== undefined) {
+      try {
+        await tryAccountApi(env);
+        console.log(`${nowIso()} INFO the refused Claude login works again`);
+        this.#healthChanged((h) => h.runCompleted());
+        return;
+      } catch {}
+    }
+    this.#scheduleLoginCheck(false);
+  }
+
+  /** The variables of the login the node's sessions start on: its own (claude.env, the environment), else the account
+   * the workspace sealed to it, else claude's own sign-in in its credentials file. Undefined when there is none to read. */
+  #loginEnv(): Env | undefined {
+    const env = runnerEnv(this.config);
+    if (LOGIN_VARS.some((k) => env[k])) return env;
+    const account = held(this.home);
+    if (account) {
+      try {
+        putOn(env, envFor(this.home, account).vars);
+        return env;
+      } catch {}
+    }
+    try {
+      const signedIn = JSON.parse(readFileSync(join(claude.configDir(env), ".credentials.json"), "utf8")) as { claudeAiOauth?: { accessToken?: unknown } };
+      const token = signedIn.claudeAiOauth?.accessToken;
+      if (typeof token === "string" && token !== "") return { ...env, CLAUDE_CODE_OAUTH_TOKEN: token };
+    } catch {}
+    return undefined;
+  }
+
+  /** `claude.env` when it sets the machine's Claude key or token, as `~/…`: a refused key is replaced there. */
+  #loginFile(): string | undefined {
+    try {
+      const set = parseEnvFile(readFileSync(this.config.claudeEnv, "utf8")).some(([k, v]) => LOGIN_VARS.includes(k) && v !== "");
+      return set ? tilde(this.config.claudeEnv) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A digest of the Claude login the node's sessions start on now: its variables (claude.env's, the account the
+   * workspace sealed to this node), claude's credentials and settings files, and on a Mac its keychain entry's change
+   * time. A refusal stands until it changes (Health). No secret leaves it. */
+  #loginKey(): string {
+    const env = runnerEnv(this.config);
+    const parts = LOGIN_VARS.concat("ANTHROPIC_BASE_URL").map((k) => `${k}=${env[k] ?? ""}`);
+    const account = held(this.home);
+    try {
+      if (account) parts.push(...envFor(this.home, account).vars.map(([k, v]) => `held ${k}=${v}`));
+    } catch {}
+    for (const file of [".credentials.json", "settings.json"].map((f) => join(claude.configDir(env), f))) {
+      try {
+        const st = statSync(file);
+        parts.push(`${file} ${st.mtimeMs} ${st.size}`);
+      } catch {}
+    }
+    if (process.platform === "darwin") {
+      // Its attributes only, never the secret (that would take -w or -g).
+      const out = Bun.spawnSync(["security", "find-generic-password", "-s", "Claude Code-credentials"], { stdout: "pipe", stderr: "ignore", timeout: 5_000 });
+      parts.push(/"mdat"<timedate>=(\S+)/.exec(out.stdout.toString())?.[1] ?? "");
+    }
+    return createHash("sha256").update(parts.join("\n")).digest("hex");
   }
 
   /** Applies `f` to the runner's health and pushes `runner_info` when what it reports changed; the prober then
@@ -2754,6 +2875,8 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
+    clearTimeout(this.#loginCheck);
+    for (const wait of this.#retryWaits.values()) clearTimeout(wait.timer);
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
     this.store.close();
@@ -2776,6 +2899,8 @@ export class SessionService {
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
     clearTimeout(this.#prober);
+    clearTimeout(this.#loginCheck);
+    for (const wait of this.#retryWaits.values()) clearTimeout(wait.timer);
     for (const id of [...this.#live.keys()]) {
       const dir = hostDir(this.home, id);
       await placeAt(dir).stop(dir);

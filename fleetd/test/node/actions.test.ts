@@ -305,7 +305,7 @@ test("a session on the hub's API key talks to its endpoint, not the gateway the 
   const user = join(home.dir, ".claude", "settings.json");
   put(user, JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://localhost:8317", ANTHROPIC_AUTH_TOKEN: "machine-gateway-token" } }));
   try {
-    await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("hub-key-0123"), endpoint: "http://100.104.249.49:8317" } });
+    await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("hub-key-0123"), endpoint: "http://100.101.102.103:8317" } });
     await ok("launch", { sessionId: "s3", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", claudeAccount: { kind: "hub" } });
     await until("the run", () => service.store.session("s3")?.summary.latestRun?.status === "completed");
     const args = readFileSync(join(nodeHome, "hosts", "s3.argv"), "utf8").split("\n");
@@ -318,7 +318,7 @@ test("a session on the hub's API key talks to its endpoint, not the gateway the 
     expect(env.ANTHROPIC_API_KEY).toBe("hub-key-0123");
     // What claude picks, and what a hosted box checks before the agent starts there (place/hosted.ts): the account's.
     const cwd = service.store.session("s3")!.summary.worktreePath ?? repo;
-    expect(claudeEndpoint({ env, args, cwd })).toEqual({ url: "http://100.104.249.49:8317", source: join(nodeHome, "sessions", "s3", "settings.json") });
+    expect(claudeEndpoint({ env, args, cwd })).toEqual({ url: "http://100.101.102.103:8317", source: join(nodeHome, "sessions", "s3", "settings.json") });
     // The machine's gateway token is emptied over its settings; the key itself stays out of the file.
     const overlay = readFileSync(join(nodeHome, "sessions", "s3", "settings.json"), "utf8");
     expect(JSON.parse(overlay).env).toMatchObject({ ANTHROPIC_AUTH_TOKEN: "", CLAUDE_CODE_OAUTH_TOKEN: "", CLAUDE_CODE_USE_BEDROCK: "" });

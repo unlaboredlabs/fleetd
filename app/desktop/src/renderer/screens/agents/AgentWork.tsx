@@ -18,7 +18,7 @@ import { DmCard } from "../dms/DmCard";
 import { FinishedAgent } from "./Finished";
 import { useAgentDms } from "../dms/hooks";
 import { withDms, type AgentMessage } from "../dms/model";
-import { describe } from "../live/words";
+import { describe, onOfflineMachine } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
 import { actionLine, agentState, nowLine, STATE_WORD, workPlace } from "./model";
@@ -79,6 +79,7 @@ export function AgentWork({ id }: { id: string }) {
     return () => ro.disconnect();
   }, [steerable]);
   const row = agent?.row;
+  const offline = useData((d) => row !== undefined && onOfflineMachine(row, (m) => d.machines[m]?.status));
   const taskId = row?.taskId;
   const dms = useAgentDms(row?.projectRef ?? NO_PROJECT, taskId);
   // The message being written shows only while the agent writes; once it ends, its thread's event reads it in.
@@ -165,7 +166,7 @@ export function AgentWork({ id }: { id: string }) {
           <Text size="xs" tone="faint">
             Now
           </Text>
-          <SteadyActivityLine line={nowLine(describe(row), work.steps)} />
+          <SteadyActivityLine line={offline ? describe(row, true) : nowLine(describe(row), work.steps)} />
         </div>
         <AgentSession project={row.projectRef} laneId={row.laneId} />
       </div>

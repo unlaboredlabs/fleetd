@@ -6,7 +6,7 @@
 import { Gauge } from "lucide-react";
 import { useMemo } from "react";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { periodWord, sizeWord } from "../../../shared/billing";
+import { periodWord, sizeWord, topLine } from "../../../shared/billing";
 import { atOnceWord, computerStateWord, heldLine, usedWord } from "../../../shared/provided";
 import { RUNNER_ID } from "../../../shared/providers";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
@@ -31,7 +31,11 @@ export function ProvidedComputers() {
   );
   const slots = useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
   if (billing === undefined || !billing.providedOn) return null;
-  const atOnce = slots === undefined ? undefined : atOnceWord(slots.hosted ?? []);
+  // Held only as Billing says, read again each time the app comes to the front: the workspace's limits (slots) stay at
+  // none until it sends new ones, so credits just bought would still read as held.
+  const held = topLine(billing) !== null;
+  const counted = slots === undefined ? undefined : atOnceWord(slots.hosted ?? []);
+  const atOnce = held ? null : counted === null ? undefined : counted;
   const toBilling = () => navigate({ id: "settings", tab: "hub.billing", at: hub.id });
   return (
     <SettingsSection
@@ -46,7 +50,7 @@ export function ProvidedComputers() {
       }
       data={{ "data-provided": "" }}
     >
-      {atOnce === null ? (
+      {held ? (
         <GroupNote
           tone="danger"
           action={
