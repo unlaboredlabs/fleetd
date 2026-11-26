@@ -40,6 +40,7 @@ import { onPath } from "./paths.ts";
 import { install as installAgentDesktop, macDir } from "./mac/agent_desktop.ts";
 import { type App, type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE_MINUTES, MacLent, type MacConfig, macEnabled, needs as macNeeds } from "./mac/index.ts";
 import { MacScreen } from "./mac/screen.ts";
+import { host as macHost, isAgentsMac } from "../mac_tool/index.ts";
 import type { Screen } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
 import { DesktopSessions, IDLE_MINUTES } from "./desktops.ts";
@@ -520,6 +521,8 @@ export class Desktops extends DesktopSessions implements Screens {
     if (gate) {
       throw new ToolError("failed", `The Mac's screen can't be lent now: ${gate.message}.`, "say so in your result, with what a person must do at the Mac");
     }
+    // On the agents' Mac, the disk its builds share: room first, else a plain refusal (mac_tool/host.ts `room`).
+    if (isAgentsMac(this.node)) await macHost(this.node).room();
     const agentDesktop = await installAgentDesktop(this.node.home).catch((e: Error) => e);
     let screen: Screen;
     try {

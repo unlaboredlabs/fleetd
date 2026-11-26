@@ -1,6 +1,7 @@
 // The agents' Mac on a node: on the agents' Mac itself (node.json
 // `agentsMac`), the hub's `mac_call`s go to the host and their answers back as `mac_result`; on every other node, an
 // agent's `fleetd mac` (the local call `mac`) goes to the client, from the agent's worktree.
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
@@ -14,6 +15,7 @@ import { type IosConfig, Simulators, supported as simulatorsHere } from "../devi
 import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
 import { SimScreens, simctlTools } from "../device/ios/sim_screen.ts";
 import { iosDir } from "../device/ios/wrapper.ts";
+import { macDir } from "../desktop/mac/agent_desktop.ts";
 import { pinSelf } from "../self_exe.ts";
 import { homeDir } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
@@ -192,15 +194,15 @@ const housekeeping = new WeakMap<Host, Timer[]>();
  * while the disk is short, now and every SWEEP_EVERY; what agents do on it written for the menu bar whenever it
  * changes (activity.rs). */
 function startHousekeeping(node: Node, h: Host): void {
-  // One sweep at a time: a slow one (a big build's folder, a mirror's gc) is never started again under itself.
-  let sweeping = false;
+  // What a node before left that no one can use now: its jobs' logs, and its Mac screen sessions' folders (neither
+  // outlives the node).
+  h.forgetJobs();
+  rmSync(join(macDir(node.home), "sessions"), { recursive: true, force: true });
+  // One sweep at a time (host.ts `housekeep`): a slow one (a big build's folder, a mirror's gc) is never started again under itself.
   const clean = () => {
-    if (sweeping) return;
-    sweeping = true;
     h.housekeep()
       .then((gone) => gone.length > 0 && console.info(`${new Date().toISOString()} INFO the Mac swept ${gone.join(", ")}`))
-      .catch((e) => console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`))
-      .finally(() => (sweeping = false));
+      .catch((e) => console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`));
   };
   let last: Activity | undefined;
   const write = () => (last = writeActivity(node.home, h.activity(), last));
@@ -209,7 +211,7 @@ function startHousekeeping(node: Node, h: Host): void {
   housekeeping.set(h, [setInterval(clean, SWEEP_EVERY), setInterval(write, ACTIVITY_EVERY)]);
 }
 
-/** `node_action` mac_ended: the tasks the hub says ended for good; their folders here go (host.ts `ended`). */
+/** `node_action` mac_ended: the tasks the hub says ended; their folders here go (host.ts `ended`). */
 export async function ended(node: Node, action: NodeAction): Promise<NodeActionResult> {
   const gone = await host(node).ended(action.tasks ?? []);
   if (gone.length > 0) console.info(`${new Date().toISOString()} INFO the Mac removed ended tasks' folders: ${gone.join(", ")}`);

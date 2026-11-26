@@ -157,6 +157,7 @@ The Mac's page, the menu bar icon on the Mac and `fleetd doctor` show what's wro
 | iOS runtime | `xcodebuild -downloadPlatform iOS` |
 | Screen lock, sleep | [Keep it awake and unlocked](#awake) |
 | Tools | `brew install cocoapods`; the Mac must reach nodejs.org and npmjs.org |
+| Disk | [Disk space](#disk) |
 
 macOS asks again for Screen Recording from time to time. If a permission still reads off, run `fleetd node restart`
 on the Mac.
@@ -165,6 +166,22 @@ on the Mac.
 
 The Mac joins without Xcode. Only builds and simulators wait for it, and the check turns green by itself once Xcode
 is installed and selected.
+
+## Disk space {#disk}
+
+Each agent's folder on the Mac holds its pushed work, its own DerivedData and its job logs. It goes once its task
+ends, with any job or simulator the task left running. Each agent keeps its last 20 job logs, each up to 256 MB.
+
+Below 30 GB free, fleetd frees old builds first, then the folders of agents idle for an hour. An agent whose folder
+went runs `mac push` again. Below 20 GB, new jobs, pushes and simulators are refused with how much is free, and the
+Mac's page shows its disk as failing.
+
+fleetd deletes only its own folders and the simulators it made. Free anything else yourself. Simulators no installed
+Xcode can run take the most room:
+
+```sh
+xcrun simctl delete unavailable
+```
 
 ## What agents share {#shared}
 
