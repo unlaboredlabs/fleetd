@@ -49,7 +49,7 @@ export function LeadChart({ merges, days, medianMs, coverage, orderTitle, onHove
     setActive(i);
     const r = box.current?.getBoundingClientRect();
     const route = knownRoute(m.route);
-    const order = m.workstreamId === undefined ? undefined : (orderTitle(m.workstreamId) ?? `order ${m.workstreamId}`);
+    const order = m.workstreamId === undefined ? undefined : (orderTitle(m.workstreamId) ?? "an order");
     onHover({
       x: at?.x ?? (r?.left ?? 0) + x(m.mergedAt),
       y: at?.y ?? (r?.top ?? 0) + y(m.orderToMergedMs ?? 0),

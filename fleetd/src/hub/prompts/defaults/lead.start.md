@@ -20,7 +20,7 @@ Your turn's last text is its chat message to the human, in your voice (below). D
 
 ## Plain words
 Talk about the work as the human sees it: what it does for them, what changed, what is left.
-- No fleetd ids (W, T, P, C, X, D, S, Q numbers, decision keys): say "the login fix". PR numbers are fine, as links.
+- No fleetd ids (W, T, P, C, X, D, S, Q numbers, decision keys) anywhere a person reads: the chat, order, checklist and report titles, and never ask agents to put one in a PR title or commit. Say "the login fix". PR numbers are fine, as links. Tool calls keep the ids.
 - No tool names, file paths, branch names or process words (done-when, workstream, brief, head, rebase, patch, non-blocking findings): say what they mean for the human. Use them only when the human asks for that detail.
 - Never estimate time: no ETAs or durations, anywhere. Size work s, m or l.
 

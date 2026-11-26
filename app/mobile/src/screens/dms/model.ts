@@ -58,14 +58,14 @@ export const outcomeWord = (outcome: DmOutcome): string => {
 /** The same, for several recipients that fared alike. */
 const outcomeWords = (outcome: DmOutcome, n: number): string => (n === 1 ? outcomeWord(outcome) : outcome === "woke" ? "Woke them" : outcome === "not_woken" ? "Didn't wake them" : outcomeWord(outcome));
 
-/** Its row's last line: one outcome for all, or each with whom it was for ("Delivered to T2577 · Didn't wake T2567"). */
+/** Its row's last line: one outcome for all, or each with whom it was for, by title ("Delivered to <title> · Didn't wake <title>"). */
 export const rowOutcome = (m: Pick<AgentMessage, "to" | "toBot">): string => {
   if (isNote(m)) return "Note to the bot";
   const groups: { outcome: DmOutcome; ids: string[] }[] = [];
   for (const r of m.to) {
     const g = groups.find((x) => x.outcome === r.outcome);
-    if (g === undefined) groups.push({ outcome: r.outcome, ids: [r.taskId] });
-    else g.ids.push(r.taskId);
+    if (g === undefined) groups.push({ outcome: r.outcome, ids: [r.title ?? "an agent"] });
+    else g.ids.push(r.title ?? "an agent");
   }
   if (groups.length <= 1) return groups[0] === undefined ? "Sent" : outcomeWords(groups[0].outcome, groups[0].ids.length);
   return groups
@@ -92,7 +92,7 @@ export const glyphOf = (m: Pick<AgentMessage, "to">): DmGlyph => {
 };
 
 /** For VoiceOver: a row read out as a sentence. */
-export const rowLabel = (m: AgentMessage, when: string): string => `From ${m.from.taskId} to ${isNote(m) ? "the bot" : m.to.map((r) => r.taskId).join(", ")}, ${when}. ${sentence(opening(m.text))} ${rowOutcome(m)}.`;
+export const rowLabel = (m: AgentMessage, when: string): string => `From ${m.from.title ?? "an agent"} to ${isNote(m) ? "the bot" : m.to.map((r) => r.title ?? "an agent").join(", ")}, ${when}. ${sentence(opening(m.text))} ${rowOutcome(m)}.`;
 
 /** Words ending as a sentence does, once. */
 const sentence = (s: string): string => (/[.!?…]$/u.test(s) ? s : `${s}.`);

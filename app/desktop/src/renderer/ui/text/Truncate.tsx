@@ -7,6 +7,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "../primitives/Popover";
 import { Tooltip } from "../primitives/Tooltip";
 import { textClass, type TextStyleProps } from "./Text";
 import { isCut, observeSize } from "./observeSize";
+import { RefText } from "./Refs";
 import s from "./text.module.css";
 
 export interface TruncateProps extends TextStyleProps {
@@ -52,6 +53,9 @@ export const Truncate = memo(function Truncate({ children, as: As = "span", line
     return observeSize(el, measure);
   }, [el, children, lines, expanded]);
 
+  // fleetd's ids in its words show as their names (RefText); code (mono) is shown as written.
+  const shown = style.mono === true ? children : <RefText text={children} inRow />;
+
   const toggleInline = (next: boolean, fromKeyboard: boolean) => {
     refocus.current = fromKeyboard;
     setExpanded(next);
@@ -78,7 +82,7 @@ export const Truncate = memo(function Truncate({ children, as: As = "span", line
           toggleInline(false, true);
         }}
       >
-        {children}
+        {shown}
       </As>
     );
   }
@@ -116,7 +120,7 @@ export const Truncate = memo(function Truncate({ children, as: As = "span", line
           }
         : {})}
     >
-      {children}
+      {shown}
     </As>
   );
 
@@ -125,7 +129,7 @@ export const Truncate = memo(function Truncate({ children, as: As = "span", line
   if (!cut) return node;
 
   const tipped = (
-    <Tooltip content={children} open={tipOpen} onOpenChange={(o) => setTipOpen(o && !popOpen && el !== null && isCut(el))}>
+    <Tooltip content={shown} open={tipOpen} onOpenChange={(o) => setTipOpen(o && !popOpen && el !== null && isCut(el))}>
       {expand === "popover" ? <PopoverAnchor asChild>{node}</PopoverAnchor> : node}
     </Tooltip>
   );
@@ -154,7 +158,7 @@ function FullText({ text, style }: { text: string; style: TextStyleProps }) {
   return (
     <>
       <div data-text="wrap" className={cx(s.text, s.pre, s.popoverText, textClass({ ...style, size: style.mono ? "sm" : "md" }))}>
-        {text}
+        {style.mono ? text : <RefText text={text} inRow />}
       </div>
       <div className={s.popoverActions}>
         <Button

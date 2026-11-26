@@ -2,7 +2,8 @@
 // `code` runs. Shared by the messages and the told panel. With the project, its PR mentions and artifact links
 // (`[Title](artifact:<name>)`) are links that open the PR or the artifact in the panel.
 import { useMemo } from "react";
-import { InlineCode, Markdown, Text, type TextProps } from "../../ui";
+import { InlineCode, Markdown, RefMark, RefText, Text, type TextProps } from "../../ui";
+import { refOf } from "../../../shared/refs";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { artifactLinks } from "../artifacts/model";
 import { codeRuns, machineCode, prLinks } from "./format";
@@ -26,24 +27,27 @@ export function Message({ text, project, blocks = true }: { text: string; projec
   return <Markdown source={md} blocks={blocks} breaks />;
 }
 
-/** One line of words with its `code` runs set as code, and its PR links: no block markdown. */
+/** One line of words with its `code` runs set as code, its PR links, and fleetd's ids as chips: no block markdown. */
 export function InlineText(props: { text: string; project?: ProjectKey | undefined } & Omit<TextProps, "children">) {
   const { text, project, ...style } = props;
   const { machineId, projectId } = project ?? {};
   const runs = useMemo(() => codeRuns(source(text, machineId, projectId)), [text, machineId, projectId]);
   return (
     <Text {...style}>
-      {runs.map((r, i) =>
-        r.code ? (
+      {runs.map((r, i) => {
+        const kind = r.code ? refOf(r.text) : undefined;
+        return kind !== undefined ? (
+          <RefMark key={i} of={{ id: r.text.trim(), kind, opens: false }} />
+        ) : r.code ? (
           <InlineCode key={i}>{r.text}</InlineCode>
         ) : r.href !== undefined ? (
           <a key={i} className={s.link} href={r.href}>
             {r.text}
           </a>
         ) : (
-          r.text
-        ),
-      )}
+          <RefText key={i} text={r.text} />
+        );
+      })}
     </Text>
   );
 }

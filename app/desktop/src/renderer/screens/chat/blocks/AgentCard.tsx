@@ -56,8 +56,8 @@ export function AgentCard({ agent }: { agent: AgentBlock }) {
       : task.data !== undefined
         ? [task.data.task.title, taskStateText(task.data.task)]
         : missing
-          ? [`Agent ${taskId}`, "This workspace has no such task."]
-          : [`Agent ${taskId}`, task.error !== null ? "Its state can't be read now." : ""];
+          ? ["An agent", "This workspace has no such task."]
+          : ["An agent", task.error !== null ? "Its state can't be read now." : ""];
   return (
     <div className={b.card} data-block="agent">
       <div className={b.prTop}>

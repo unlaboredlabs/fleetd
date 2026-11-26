@@ -44,9 +44,11 @@ describe("a bot's DMs between agents", () => {
     expect(rowOutcome(dm("M1", [to("T2577", "woke"), to("T2580", "woke")]))).toBe("Woke them");
     expect(rowOutcome(dm("M1", [to("T2577", "not_woken"), to("T2580", "not_woken")]))).toBe("Didn't wake them");
     expect(rowOutcome(dm("M1", [to("T2577", "refused")]))).toBe("Not sent");
-    expect(rowOutcome(dm("M1", [to("T2577", "delivered"), to("T2567", "not_woken"), to("T2580", "delivered")]))).toBe("Delivered to T2577, T2580 · Didn't wake T2567");
-    expect(rowOutcome(dm("M1", [to("T2577", "delivered"), to("T2539", "refused")]))).toBe("Delivered to T2577 · Not sent to T2539");
-    expect(rowOutcome(dm("M1", [to("T2577", "woke"), to("T2567", "held")]))).toBe("Woke T2577 · Held for T2567");
+    expect(
+      rowOutcome(dm("M1", [to("T2577", "delivered", { title: "Close codes" }), to("T2567", "not_woken", { title: "Reply quotes" }), to("T2580", "delivered")])),
+    ).toBe("Delivered to Close codes, an agent · Didn't wake Reply quotes");
+    expect(rowOutcome(dm("M1", [to("T2577", "delivered", { title: "Close codes" }), to("T2539", "refused")]))).toBe("Delivered to Close codes · Not sent to an agent");
+    expect(rowOutcome(dm("M1", [to("T2577", "woke", { title: "Close codes" }), to("T2567", "held", { title: "Reply quotes" })]))).toBe("Woke Close codes · Held for Reply quotes");
   });
 
   it("marks a row by what most needs a look: not sent, didn't wake, then held, then woke", () => {
@@ -58,8 +60,8 @@ describe("a bot's DMs between agents", () => {
   });
 
   it("reads a row out as one sentence", () => {
-    expect(rowLabel(dm("M1", [to("T2577", "delivered")], "Rebased."), "23:04")).toBe("From T2573 to T2577, 23:04. Rebased. Delivered.");
-    expect(rowLabel(dm("M1", [to("T2577", "not_woken")], "Rebased"), "23:04")).toBe("From T2573 to T2577, 23:04. Rebased. Didn't wake it.");
+    expect(rowLabel(dm("M1", [to("T2577", "delivered")], "Rebased."), "23:04")).toBe("From Phone redials fast on restart to an agent, 23:04. Rebased. Delivered.");
+    expect(rowLabel(dm("M1", [to("T2577", "not_woken")], "Rebased"), "23:04")).toBe("From Phone redials fast on restart to an agent, 23:04. Rebased. Didn't wake it.");
   });
 
   it("labels a note to the bot as sent to the bot, with no recipient's outcome", () => {
@@ -68,7 +70,7 @@ describe("a bot's DMs between agents", () => {
     expect(route(note)).toBe("T2573 → the bot");
     expect(rowOutcome(note)).toBe("Note to the bot");
     expect(glyphOf(note)).toBe("delivered");
-    expect(rowLabel(note, "23:04")).toBe("From T2573 to the bot, 23:04. Moving the cloud pin in #404. Note to the bot.");
+    expect(rowLabel(note, "23:04")).toBe("From Phone redials fast on restart to the bot, 23:04. Moving the cloud pin in #404. Note to the bot.");
   });
 
   it("counts them on the Info row once there are any", () => {

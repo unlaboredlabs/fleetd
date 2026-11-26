@@ -8,6 +8,7 @@ import { bubbleTime, fullTime, listTime, type Clock } from "../../chatView";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { space, type, useTheme } from "../../theme";
 import { ListRow, ListSection } from "../../ui/List";
+import { Names } from "../../ui/Names";
 import { useNow } from "../time";
 import { readDms } from "./api";
 import { OutcomeGlyph, useDmsChanged } from "./Dms";
@@ -39,12 +40,12 @@ export function Dm({ route }: ChatInfoProps<"Dm">) {
   return (
     <ScrollView style={{ backgroundColor: t.grouped }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
       <ListSection header="From">
-        <ListRow title={m.from.taskId} detail={m.from.title} />
+        <ListRow title={m.from.title ?? "An agent"} />
       </ListSection>
       <ListSection header="Message" footer={`Sent ${fullTime(m.sentAt, now)}`}>
         <View style={styles.text}>
           <Text style={[type.body, { color: t.label }]} selectable>
-            {m.text}
+            <Names text={m.text} />
           </Text>
         </View>
       </ListSection>
@@ -58,25 +59,22 @@ export function Dm({ route }: ChatInfoProps<"Dm">) {
   );
 }
 
-/** One recipient, as the log's rows: its id and when, its title, what became of it, and the hub's words on that. */
+/** One recipient, as the log's rows: its title and when, what became of it, and the hub's words on that. */
 function ReceiptRow({ receipt: r, when }: { receipt: DmReceipt; when: string | undefined }) {
   const t = useTheme();
   return (
     <View style={styles.receipt} accessible>
       <View style={styles.top}>
-        <Text style={[type.body, styles.grow, { color: t.label }]}>{r.taskId}</Text>
+        <Text style={[type.body, styles.grow, { color: t.label }]} numberOfLines={2}>
+          {r.title ?? "An agent"}
+        </Text>
         {when === undefined ? null : <Text style={[type.subhead, { color: t.secondary }]}>{when}</Text>}
       </View>
-      {r.title === undefined ? null : (
-        <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={2}>
-          {r.title}
-        </Text>
-      )}
       <View style={styles.outcome}>
         <OutcomeGlyph glyph={glyphOf({ to: [r] })} size={13} />
         <Text style={[type.subhead, styles.grow, { color: t.label }]}>{outcomeWord(r.outcome)}</Text>
       </View>
-      {r.detail === undefined || r.detail.trim() === "" ? null : <Text style={[type.footnote, { color: t.secondary }]}>{r.detail}</Text>}
+      {r.detail === undefined || r.detail.trim() === "" ? null : <Text style={[type.footnote, { color: t.secondary }]}><Names text={r.detail} /></Text>}
     </View>
   );
 }

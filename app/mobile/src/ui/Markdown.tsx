@@ -4,14 +4,16 @@
 // stand, as in Messages: holding one opens its menu, whose Select Text has them.
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
-import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
 import { fenceView, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
 import { bubble, fitKey, fitWidth, wordsMax } from "../bubble";
 import { columnWidths, isNumeric, longestWord, type Measured } from "../table";
 import { mono, space, type, useTheme } from "../theme";
+import { refOf } from "../../../desktop/src/shared/refs";
 import { haptics } from "./haptics";
 import { Icon } from "./Icon";
+import { Name, Names } from "./Names";
 import { usePaneWidth } from "./pane";
 import { SkeletonBlock } from "./Skeleton";
 
@@ -305,13 +307,17 @@ function Inlines({ nodes, ink, onAccent, small = false }: { nodes: readonly Inli
       {nodes.map((n, i) => {
         switch (n.t) {
           case "text":
-            return <Fragment key={i}>{n.text}</Fragment>;
-          case "code":
+            // fleetd's ids in the words by name (Names): an agent's or an order's title.
+            return <Names key={i} text={n.text} />;
+          case "code": {
+            const kind = refOf(n.text);
+            if (kind !== undefined) return <Name key={i} of={{ id: n.text.trim(), kind, opens: false }} />;
             return (
               <Text key={i} style={[styles.inlineCode, small && styles.cellCode, { backgroundColor: onAccent ? "rgba(255,255,255,0.18)" : t.fillQuiet }]}>
                 {small ? n.text.replace(/ /gu, "\u00A0") : n.text}
               </Text>
             );
+          }
           case "strong":
             return (
               <Text key={i} style={styles.strong}>

@@ -128,6 +128,9 @@ export const useSeveralHubs = (): boolean => useHubs().length > 1;
 /** `FIRST_HUB`'s layer keeps its keys as they were; another hub's are prefixed with its id (seen marks, last project). */
 export const hubKey = (hub: string, key: string): string => (hub === FIRST_HUB ? key : `${hub}:${key}`);
 
+/** Whether a hub's data is here: a part that can show without one (a chip in a window with no hub) asks first. */
+export const useHasData = (): boolean => useContext(DataContext) !== undefined;
+
 export const useDataLayer = (): DataLayer => {
   const layer = useContext(DataContext);
   if (layer === undefined) throw new Error("useDataLayer outside DataProvider");

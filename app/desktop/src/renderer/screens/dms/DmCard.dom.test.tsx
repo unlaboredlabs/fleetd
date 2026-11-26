@@ -40,10 +40,10 @@ const ANSWER: AgentMessage = {
   to: [{ taskId: "T2577", title: "A stopping workspace closes node links as a restart", outcome: "woke", at: "2026-11-08T23:09:00.000Z", detail: "it answers what T2577 asked at 23:05" }],
 };
 
-it("shows a DM it got as from the other agent, a link to it, with how it reached it", () => {
+it("shows a DM it got as from the other agent, by its name and a link to it, with how it reached it", () => {
   render(ANSWER, "T2577");
   const card = host.querySelector("[data-dm=M20]");
-  expect(card?.getAttribute("aria-label")).toBe("DM from T2573");
+  expect(card?.getAttribute("aria-label")).toBe("DM from Quiet update states on the phone");
   expect(card?.textContent).toContain("From");
   expect(card?.querySelector("a")?.getAttribute("href")).toBe("#/project/devbox/storefront/agents/T2573");
   expect(card?.querySelector("[data-outcome=woke]")?.textContent).toBe(`Woke it, ${local(ANSWER.sentAt)}: it answers what T2577 asked at 23:05.`);
@@ -62,8 +62,8 @@ it("shows a DM it sent to several with a receipt for each, and the guard's refus
     "T2573",
   );
   const card = host.querySelector("[data-dm=M21]");
-  expect(card?.getAttribute("aria-label")).toBe("DM to T2577, T2567");
-  expect([...(card?.querySelectorAll("a") ?? [])].map((a) => a.textContent)).toEqual(["T2577", "T2567"]);
+  expect(card?.getAttribute("aria-label")).toBe("DM to A stopping workspace, Reply shows its quote");
+  expect([...(card?.querySelectorAll("a") ?? [])].map((a) => a.textContent)).toEqual(["A stopping workspace", "Reply shows its quote"]);
   expect(card?.querySelector("[data-outcome=delivered]")?.textContent).toMatch(/^T2577: Delivered at its next step, \d\d:\d\d\.$/u);
   expect(card?.querySelector("[data-outcome=not_woken]")?.textContent).toBe("Didn’t wake T2567: it has finished and isn’t waiting on T2573. Held for its next run.");
 });

@@ -1,12 +1,13 @@
 // One DM on an agent's thread: a quiet hairline card, apart from the lead's Told rail and the agent's own steps. "From
-// T2573" or "To T2577 · its title", the other agent's id a link to it, the words cut at three lines, and one receipt
+// <agent>" or "To <agent>", the other agent by its name, a chip that opens it, the words cut at three lines, and one receipt
 // line saying what became of it (a line per recipient when it went to several). A note shows on its sender's thread as
 // "To the bot", with no receipt to give. Read-only: nobody edits a DM.
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { Fragment } from "react";
-import { Text, Truncate } from "../../ui";
+import { RefText, Text, Truncate } from "../../ui";
 import { shortClock } from "../chat/format";
-import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
+import { RefChip } from "../refs/RefChip";
+import type { ProjectKey } from "../shell/routes";
 import { cardReceipt, cardReceiptFor, isNote, type AgentMessage, type AgentMessageTo } from "./model";
 import s from "./dms.module.css";
 
@@ -15,10 +16,9 @@ export function DmCard({ dm, self, project }: { dm: AgentMessage; self: string; 
   const peers: readonly { readonly taskId: string; readonly title?: string | undefined }[] = sent ? dm.to : [dm.from];
   const mine = dm.to.find((t) => t.taskId === self);
   const Arrow = sent ? ArrowUpRight : ArrowDownLeft;
-  const only = peers.length === 1 ? peers[0] : undefined;
   const note = isNote(dm);
   return (
-    <article className={s.card} data-dm={dm.id} aria-label={note ? "Note to the bot" : `${sent ? "DM to" : "DM from"} ${peers.map((p) => p.taskId).join(", ")}`}>
+    <article className={s.card} data-dm={dm.id} aria-label={note ? "Note to the bot" : `${sent ? "DM to" : "DM from"} ${peers.map((p) => p.title ?? "an agent").join(", ")}`}>
       <div className={s.head}>
         <span className={s.arrow}>
           <Arrow size={13} strokeWidth={2} aria-hidden />
@@ -31,19 +31,11 @@ export function DmCard({ dm, self, project }: { dm: AgentMessage; self: string; 
           {peers.map((p, i) => (
             <Fragment key={p.taskId}>
               {i > 0 ? ", " : null}
-              <a className={s.peer} href={toHash(panelRoute(project, { tab: "agents", agent: p.taskId }))} title={p.title ?? p.taskId}>
-                {p.taskId}
-              </a>
+              <RefChip of={{ id: p.taskId, kind: "agent", opens: false }} title={p.title} project={project} />
             </Fragment>
           ))}
         </span>
-        <span className={s.peerTitle}>
-          {only?.title === undefined ? null : (
-            <Truncate size="xs" tone="quiet" expand="none">
-              {only.title}
-            </Truncate>
-          )}
-        </span>
+        <span className={s.peerTitle} />
         <Text size="xs" tone="faint" tabular>
           {shortClock(dm.sentAt)}
         </Text>
@@ -67,7 +59,7 @@ function Receipt({ t, several = false, received }: { t: AgentMessageTo; several?
   const guard = t.outcome === "woke" || t.outcome === "not_woken";
   return (
     <Text size="xs" tone={t.outcome === "refused" ? "danger" : guard ? "default" : "quiet"} strong={guard} data-outcome={t.outcome}>
-      {several ? cardReceiptFor(t, fmt) : cardReceipt(t, received, fmt)}
+      <RefText text={several ? cardReceiptFor(t, fmt) : cardReceipt(t, received, fmt)} />
     </Text>
   );
 }

@@ -1,0 +1,34 @@
+/* A name for one of fleetd's ids in running text (RefChip): a mark inside text, so xs corners, tinted from the text's
+   own colour so it sits on any ground (a page, the lead's bubble, your dark one). It wraps with its words. `[data-ref]`
+   outranks the links of the text it sits in (markdown's `.root a`): it is a name, not a link's blue. */
+.chip[data-ref] {
+  padding: 0 3px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  color: inherit;
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  cursor: default;
+}
+a.chip[data-ref] {
+  cursor: pointer;
+}
+a.chip[data-ref]:hover {
+  background: color-mix(in srgb, currentColor 13%, transparent);
+}
+.chip[data-ref]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+/* A plain word (its name isn't known): no weight, no tint. */
+.word[data-ref] {
+  font-weight: inherit;
+  background: none;
+  padding: 0;
+}
+/* In a row or a one-line slot: the name alone, as the row's own words. */
+.inRow[data-ref] {
+  color: inherit;
+}

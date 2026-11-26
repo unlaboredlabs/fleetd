@@ -12,6 +12,7 @@ import { space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { Icon } from "../../ui/Icon";
 import { ListSection } from "../../ui/List";
+import { Names } from "../../ui/Names";
 import { EmptyState } from "../../ui/States";
 import { errorWords, Problem, Symbol, useRead } from "../manage/parts";
 import { useNow } from "../time";
@@ -114,13 +115,13 @@ function DmRow({ message: m, when, onPress }: { message: AgentMessage; when: str
         <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
           <View style={styles.top}>
             <Text style={[type.headline, styles.grow, { color: t.label }]} numberOfLines={1}>
-              {routeLine(m)}
+              <Names text={routeLine(m)} plain />
             </Text>
             <Text style={[type.subhead, { color: t.secondary }]}>{when}</Text>
             <Icon name="chevron" size={13} color={t.tertiary} weight="semibold" />
           </View>
           <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={2}>
-            {opening(m.text)}
+            <Names text={opening(m.text)} plain />
           </Text>
           <View style={styles.outcome}>
             <OutcomeGlyph glyph={glyphOf(m)} />

@@ -35,6 +35,7 @@ import { archiveWords, UNDO_MS } from "../archive";
 import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
+import { Names, useSpoken } from "../ui/Names";
 import { useBeside } from "../ui/pane";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
@@ -503,6 +504,8 @@ function SwipingChat({ row, separator, open, onPress, onPin, more }: { row: Chat
   const t = useTheme();
   const acts = rowActions(row, onPin);
   const [read, pin, mute] = acts;
+  // Read out with names where its preview holds fleetd's ids, as the preview shows them.
+  const label = useSpoken(rowLabel(row));
   const swipe = (a: MenuItem, color: string): SwipeAction => ({ label: a.label, icon: FILLED[a.icon] ?? a.icon, color, onPress: a.onPress });
   return (
     <SwipeRow id={row.key} leading={[swipe(read, t.blue), swipe(pin, t.orange)]} trailing={[swipe(mute, t.indigo)]}>
@@ -513,7 +516,7 @@ function SwipingChat({ row, separator, open, onPress, onPin, more }: { row: Chat
           color={t.bg}
           onPress={tap(onPress)}
           accessibilityRole="button"
-          accessibilityLabel={rowLabel(row)}
+          accessibilityLabel={label}
           accessibilityState={{ selected: open }}
           style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : null)}
         >
@@ -572,7 +575,7 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
           ) : null}
           <Text style={[type.subhead, styles.preview, { color: accentLine ? t.accent : t.secondary }]} numberOfLines={accentLine ? 1 : 2}>
             {mine ? <Text style={{ color: t.label }}>You: </Text> : null}
-            {mine ? text.slice(5) : text}
+            <Names text={mine ? text.slice(5) : text} plain />
           </Text>
           <View style={styles.marks}>
             {row.approvals > 0 ? (
