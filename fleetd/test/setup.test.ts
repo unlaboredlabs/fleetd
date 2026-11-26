@@ -211,5 +211,5 @@ test("the Claude step's Test tries the workspace's key with a claude call, and a
   const out = await ok("setup_test", { step: "claude" });
   expect(calls.some((c) => c.op === "claude_account_test")).toBe(true);
   expect(out.step).toMatchObject({ status: "look", failing: true, way: "the workspace's API key" });
-  expect((out.step as { said: string }).said).toContain("failed its Test on lab: Invalid API key");
+  expect((out.step as { said: string }).said).toContain("failed its Test on lab: Claude refused this key: it isn't a valid API key");
 });

@@ -21,6 +21,7 @@ import { signedInAgain } from "../leads/signed_in.ts";
 import { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 import { spread } from "./spread.ts";
 import { CAP_CLAUDE_KEY_TRIAL } from "../../shared/node_link.ts";
+import { KEY_REFUSED, KEY_REFUSED_FIX, plainRefusal } from "./refusal.ts";
 
 export { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 
@@ -208,13 +209,7 @@ export async function testAccount(hub: Hub, account: ClaudeAccount, held: Claude
   return tried;
 }
 
-/** What the workspace says of a key Claude refused, at Save and at Test. */
-export const KEY_REFUSED = "Claude refused this key: it isn't a valid API key.";
-export const KEY_REFUSED_FIX = "Copy the key again from the Anthropic Console and paste it.";
-
-/** Claude Code's own words for a refused key ("Invalid API key · Fix external API key") in plain words; any other
- * failure as it was said. */
-export const plainRefusal = (said: string): string => (/invalid (x-)?api[ -]key|authentication_error|HTTP 401/iu.test(said) ? KEY_REFUSED : said);
+export { KEY_REFUSED, KEY_REFUSED_FIX, plainRefusal } from "./refusal.ts";
 
 /**
  * Whether the endpoint refuses the key in `seals` (401 or 403), tried once on the first machine that can try a key it
