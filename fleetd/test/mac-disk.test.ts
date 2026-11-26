@@ -36,7 +36,7 @@ const DAY = 86_400_000;
 function mac() {
   const home = tempHome();
   const host = new Host(join(home.dir, "work"), new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32))));
-  cleanups.push(home.done, () => (host.endJobs(), host.stop()));
+  cleanups.push(home.done, () => host.stop());
   return { host, root: host.root, home: home.dir };
 }
 
@@ -123,16 +123,18 @@ test("the hub's word that tasks ended removes their folders, ending their jobs a
   expect(await host.ended(["T4"], now + ENDED_QUIET)).toEqual(["T4"]);
 });
 
-test("at the node's start the job logs an older node left without their records go; the agents' work stays", () => {
+test("at the node's start the job logs a node before left go; the agents' work stays", () => {
   const { host, root } = mac();
   const dir = folder(root, "T1");
   mkdirSync(join(dir, "jobs"));
   writeFileSync(join(dir, "jobs", "1.log"), "x".repeat(1000));
   mkdirSync(join(dir, "repo"));
-  host.adoptJobs();
-  expect(readdirSync(join(dir, "jobs"))).toEqual([]);
+  host.forgetJobs();
+  expect(existsSync(join(dir, "jobs"))).toBe(false);
   expect(existsSync(join(dir, "repo"))).toBe(true);
-  expect(host.activity().jobs).toEqual([]);
+  // The next step makes the folder again.
+  host.agent(caller("T1"));
+  expect(readdirSync(join(dir, "jobs"))).toEqual([]);
 });
 
 test("an agent keeps only its newest JOBS_KEPT finished jobs' logs on the Mac, and a log stops growing at its cap", async () => {
@@ -146,7 +148,7 @@ test("an agent keeps only its newest JOBS_KEPT finished jobs' logs on the Mac, a
     return done.job;
   };
   for (let i = 1; i <= JOBS_KEPT + 5; i++) expect(await run("true")).toBe(i);
-  const logs = () => readdirSync(join(root, "T1", "jobs")).filter((n) => n.endsWith(".log")).map((n) => Number(n.replace(".log", ""))).sort((a, b) => a - b);
+  const logs = () => readdirSync(join(root, "T1", "jobs")).map((n) => Number(n.replace(".log", ""))).sort((a, b) => a - b);
   expect(logs()).toEqual(Array.from({ length: JOBS_KEPT }, (_, i) => i + 6));
   expect((await host.step(agent, { step: "ps" }))[0]).toMatchObject({ jobs: expect.arrayContaining([expect.objectContaining({ job: 6 })]) });
   // A job that says more than the cap: its log holds the cap and a line saying so, and its end is still kept.
@@ -231,12 +233,11 @@ test("an older node's folder without .used goes by its own time, a node's start 
   };
   old("T2970");
   old("my-project");
-  // A node's start drops an older node's job logs and leaves the folder's time as it was (it made the folder new for ever before).
+  // A node's start drops its job logs and leaves the folder's time as it was (it made the folder new for ever before).
   mkdirSync(join(root, "T2970", "jobs"));
-  writeFileSync(join(root, "T2970", "jobs", "1.log"), "x");
   utimesSync(join(root, "T2970"), (now - 10 * DAY) / 1000, (now - 10 * DAY) / 1000);
-  new Host(root, new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)))).adoptJobs();
-  expect(readdirSync(join(root, "T2970", "jobs"))).toEqual([]);
+  new Host(root, new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)))).forgetJobs();
+  expect(existsSync(join(root, "T2970", "jobs"))).toBe(false);
   expect(await sweep(root, 3, now)).toEqual(["T2970"]);
   expect(readdirSync(root)).toEqual(["my-project"]);
 });
