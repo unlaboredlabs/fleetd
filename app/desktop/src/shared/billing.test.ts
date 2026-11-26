@@ -13,26 +13,28 @@ import {
   hours,
   money,
   noBuyWhy,
-  offerWord,
-  planChoice,
-  planLine,
-  planTerms,
-  hoursWord,
-  planWord,
   portalShown,
   readBilling,
   readCap,
   readPage,
   sizeWord,
   topLine,
-  usageRows,
   limitLine,
   limitsSet,
   readLimit,
   readWarningsOn,
-  warningsWhen,
   type BillingState,
 } from "./billing";
+import {
+  hoursWord,
+  offerWord,
+  planChoice,
+  planLine,
+  planTerms,
+  planWord,
+  usageRows,
+  warningsWhen,
+} from "./billingWords";
 import { heldLine, usedWord } from "./provided";
 import { BILLING_SAMPLES, SAMPLE_NOW, type BillingSample } from "./billing.samples";
 

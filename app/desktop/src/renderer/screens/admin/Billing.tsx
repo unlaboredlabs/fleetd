@@ -21,16 +21,8 @@ import {
   money,
   noBuyWhy,
   periodWord,
-  planChoice,
-  planLine,
-  planTerms,
-  planWord,
-  rateWord,
   sizeWord,
   topLine,
-  usageRows,
-  percentsWord,
-  warningsWhen,
   type BillingState,
   billingReturnOf,
   PAID_READ_EVERY_MS,
@@ -40,6 +32,16 @@ import {
   showsPaid,
   withoutBillingReturn,
 } from "../../../shared/billing";
+import {
+  percentsWord,
+  planChoice,
+  planLine,
+  planTerms,
+  planWord,
+  rateWord,
+  usageRows,
+  warningsWhen,
+} from "../../../shared/billingWords";
 import type { BillingOpen } from "../../../shared/cloud";
 import { BILLING_TERMS } from "../../../shared/legal";
 import type { PairFailure } from "../../../shared/pairing";

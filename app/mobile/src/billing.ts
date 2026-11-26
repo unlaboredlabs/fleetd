@@ -20,6 +20,7 @@ import {
 import type { KeptHub } from "./cloud/account";
 
 export * from "../../desktop/src/shared/billing";
+export * from "../../desktop/src/shared/billingWords";
 
 /** Whether this phone sells plans and credits: Android does, iOS doesn't (D733). `os` is Platform.OS. */
 export const sells = (os: string): boolean => os !== "ios";
