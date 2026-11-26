@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
-import { machineName, offFooter } from "./model";
+import { machineName, offFooter, onlineNow } from "./model";
 import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, leadLines, leadRestartRow, leadSections, leadValue, LEAD_HUB, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
@@ -260,3 +260,17 @@ describe("where an admin fixes a screen kind that can't open", () => {
     expect(offFooter(off("none"), true, null, true)).toEqual({});
   });
 });
+
+describe("New Bot's machines", () => {
+  it("are online as the app knows them now, not as read when the link came back", () => {
+    // Seen on the Duo: the workspace restarted, its list was read a moment before the machine linked again, and New Bot
+    // said "Nothing that runs agents is online" with the machine back.
+    const read = [{ machineId: "factory-a", name: "factory-a", online: false }];
+    const machines = [{ machineId: "factory-a", name: "factory-a", status: "online" }] as never;
+    expect(onlineNow(read, machines)).toEqual([{ machineId: "factory-a", name: "factory-a", online: true }]);
+    expect(onlineNow(read, [{ machineId: "factory-a", name: "factory-a", status: "offline" }] as never)).toEqual([]);
+    // A machine the app has no word on keeps what the read said.
+    expect(onlineNow([{ machineId: "other", name: "other", online: true }], machines)).toHaveLength(1);
+  });
+});
+
