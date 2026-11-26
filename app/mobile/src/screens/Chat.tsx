@@ -89,6 +89,7 @@ import { machineName } from "./manage/model";
 import type { SkillSaved } from "./manage/skillsModel";
 import { setupLine } from "./setupChanged";
 import { SetupChangedLine } from "./SetupChangedLine";
+import { heldLine } from "../botMemory";
 import { TURN_LINE_HEIGHT, TurnLine } from "./TurnLine";
 import { WakeRow } from "./WakeRow";
 import { staleAt, wakeIn } from "../wake";
@@ -135,6 +136,8 @@ interface ThreadActions {
   readonly openArtifact: (name: string, version: number | undefined) => void;
   /** The project's Info screen, where a setup change its lead made shows. */
   readonly openInfo: () => void;
+  /** Its Memory over its Info screen, where an admin keeps a held memory line or not. */
+  readonly openMemory: () => void;
   /** A tag's order tapped: the chat narrowed to it, from the bubble it was on (`from`), where closing it goes back to. */
   readonly lens: (about: ChatAbout, from: string | undefined) => void;
   /** About… on a bubble, in a tagged chat: moves its message to another open order or none; undefined with tags off. */
@@ -669,6 +672,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         haptics.tap();
         navigation.navigate("ChatInfo", { screen: "Info", params: { key: now.current.chatKey } });
       },
+      openMemory: () => {
+        haptics.tap();
+        const key = now.current.chatKey;
+        navigation.navigate("ChatInfo", { state: { index: 1, routes: [{ name: "Info", params: { key } }, { name: "Memory", params: { key } }] } });
+      },
       lens: (about, from) => {
         haptics.tap();
         lensFrom.current = from;
@@ -1169,6 +1177,7 @@ function ItemView({
   if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
   const changed = setupLine(item.message);
   if (changed !== undefined && item.message !== undefined) return <SetupChangedLine chatKey={chatKey} messageId={item.message.messageId} line={changed} onOpen={actions.openInfo} />;
+  if (heldLine(item.message)) return <HeldLine text={item.text} onPress={actions.openMemory} />;
   const vaultImport = (item.message as { vaultImport?: VaultImportCard } | undefined)?.vaultImport;
   if (vaultImport !== undefined)
     return vaultImport.state === "open" ? (
@@ -1764,6 +1773,19 @@ function Event({ text, icon }: { text: string; icon?: "approvals" | "lock" }) {
     <View style={styles.event}>
       {icon === undefined ? null : <Icon name={icon} size={13} color={t.secondary} />}
       <Text style={[type.footnote, styles.eventText, { color: t.secondary }]}>{text}</Text>
+    </View>
+  );
+}
+
+/** A bot memory line held for an admin's OK: its quiet line, and Review, to the bot's Memory where an admin keeps it. */
+function HeldLine({ text, onPress }: { text: string; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <View style={styles.event}>
+      <Text style={[type.footnote, styles.eventText, styles.shrink, { color: t.secondary }]}>{text}</Text>
+      <Pressable accessibilityRole="link" accessibilityLabel="Review" accessibilityHint="Opens the bot's memory" onPress={onPress} hitSlop={8} style={({ pressed }) => pressed && { opacity: PRESSED_OPACITY }}>
+        <Text style={[type.footnote, { color: t.link }]}>Review</Text>
+      </Pressable>
     </View>
   );
 }

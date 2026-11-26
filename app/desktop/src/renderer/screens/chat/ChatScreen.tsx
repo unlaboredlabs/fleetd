@@ -301,7 +301,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     return () => ro.disconnect();
   }, [missing]);
   const targets = waiting?.targets;
-  const waitedOn = targets?.[0]?.id;
   const mark = useMemo(() => (shown?.at === undefined ? undefined : { ...shown, at: shown.at }), [shown]);
   // Which of the places it waits on Show went to last; -1 before the first press, or once that one is answered.
   const showing = mark === undefined || targets === undefined ? -1 : targets.findIndex((t) => t.id === mark.id && t.part === mark.part);
@@ -408,7 +407,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const actions = useMemo(
     (): BubbleActions => ({
       project,
-      waitedOn,
       skips: question,
       send: (text) => {
         onSent();
@@ -422,7 +420,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       tags: tagActions,
       pins: pinActions,
     }),
-    [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen, tagActions, pinActions],
+    [project, question, onSent, layer, key, mark, lookAt, seen, tagActions, pinActions],
   );
 
   const panel = usePanelHandle();

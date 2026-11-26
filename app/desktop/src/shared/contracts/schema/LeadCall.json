@@ -3421,6 +3421,18 @@
     "RememberCall": {
       "description": "`remember`: one entry, appended, or put in place of the entry that contains `replaces`.",
       "properties": {
+        "effect": {
+          "description": "Project scope, required: what the line does. loosens: it makes the bot ask less before acting, or merge or deploy\nwith less review; held for an admin's OK when the person isn't one.",
+          "enum": [
+            "none",
+            "loosens"
+          ],
+          "type": "string"
+        },
+        "own": {
+          "description": "Project scope: the line is the lead's own lesson, not a person's words; its author shows as the lead.",
+          "type": "boolean"
+        },
         "replaces": {
           "description": "Words of the entry this one replaces, quoted exactly; it must match one entry of the file.",
           "maxLength": 1000,

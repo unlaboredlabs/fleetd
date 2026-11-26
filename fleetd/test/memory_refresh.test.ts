@@ -168,8 +168,8 @@ test("a refresh posts one line with its changes once it ends, and nothing on a q
   Memory.of(hub).set(projectTarget(PROJECT), "- Deploys freeze on Fridays.\n- Use npm.\n- Run the e2e suite before a release.\n");
   say(hub, "human", "No npm here, pnpm only. The Friday freeze is over.");
   await tick(hub);
-  await refreshCall(hub, "remember", { scope: "project", text: "Staging deploys need the VPN." });
-  await refreshCall(hub, "remember", { scope: "project", text: "No npm: use pnpm.", replaces: "Use npm" });
+  await refreshCall(hub, "remember", { scope: "project", effect: "none", text: "Staging deploys need the VPN." });
+  await refreshCall(hub, "remember", { scope: "project", effect: "none", text: "No npm: use pnpm.", replaces: "Use npm" });
   await refreshCall(hub, "forget", { scope: "project", entry: "Friday", reason: "The freeze ended." });
   expect(memoryMd(hub)).toBe("- No npm: use pnpm.\n- Run the e2e suite before a release.\n- Staging deploys need the VPN.\n");
   expect(lines(hub).length).toBe(1);
@@ -198,7 +198,7 @@ test("a session past its hour, or one that failed, is stopped and its changes st
   const { hub, clock, node } = setup();
   say(hub, "human", "We moved to pnpm.");
   await tick(hub);
-  await refreshCall(hub, "remember", { scope: "project", text: "pnpm, never npm." });
+  await refreshCall(hub, "remember", { scope: "project", effect: "none", text: "pnpm, never npm." });
   clock.ms += 3_600_000 + 60_000;
   await tick(hub);
   expect(node.stops).toEqual(["refresh-1"]);

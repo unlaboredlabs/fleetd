@@ -25,7 +25,7 @@ const FILES: Record<string, { name: string; mime: string }> = {
 
 let host: HTMLDivElement;
 let root: Root;
-const actions: BubbleActions = { project: PROJECT, waitedOn: undefined, send: () => undefined, reply: () => undefined, show: () => undefined };
+const actions: BubbleActions = { project: PROJECT, send: () => undefined, reply: () => undefined, show: () => undefined };
 
 /** Whether an observed image is on screen: an image is read only once its row has been. */
 let onScreen = true;

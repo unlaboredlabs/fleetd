@@ -25,10 +25,11 @@
       "type": "object"
     },
     "ChatOpenItemKind": {
-      "description": "`ChatItem`'s kind.",
+      "description": "`ChatItem`'s kind, or `memory_hold`: a bot memory line held for an admin's OK, one per owner or admin.",
       "enum": [
         "secret_request",
-        "command_approval"
+        "command_approval",
+        "memory_hold"
       ],
       "type": "string",
       "x-open": true

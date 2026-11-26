@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatBlock, ChatMessage } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
-import { askAnswer, bubblesOf, quoted, quoteOf, replyOf, replyText, tapbackSend, unshownOnly, type Bubble } from "./bubbles";
+import { askAnswer, bubblesOf, quoted, quoteOf, replyOf, replyText, unshownOnly, type Bubble } from "./bubbles";
 
 const AT = "2026-10-19T09:00:00.000Z";
 const item = (id: string, author: ChatItem["author"], text: string, over: Partial<ChatItem> = {}): ChatItem => ({
@@ -62,24 +62,6 @@ describe("a reply", () => {
     expect(quoted(items, 2, "Merge the dates PR first?")).toBe("b");
     expect(quoted(items, 1, "Merge the dates PR first?")).toBe("a");
     expect(quoted(items, 2, "Something else")).toBeUndefined();
-  });
-});
-
-describe("a tapback", () => {
-  const text: Bubble = { kind: "text", key: "0", text: "Ready to merge both?" };
-  const approve: Bubble = { kind: "block", key: "1", text: "", block: { v: 1, kind: "ask", question: "Merge both?" } };
-  const pick: Bubble = { kind: "block", key: "1", text: "", block: { v: 1, kind: "ask", question: "Which first?", options: ["Dates", "Discounts"] } };
-
-  it("sends nothing but a 👍 on what waits for you", () => {
-    expect(tapbackSend("❤️", text, true, true)).toBeUndefined();
-    expect(tapbackSend("👍", text, false, true)).toBeUndefined();
-    expect(tapbackSend("👍", text, true, true)).toEqual({ t: "reply", text: "> Ready to merge both?\n\n👍" });
-  });
-
-  it("approves an open approve-or-deny ask, and never picks an option for you", () => {
-    expect(tapbackSend("👍", approve, false, true)).toEqual({ t: "answer", text: "Approve" });
-    expect(tapbackSend("👍", approve, false, false)).toBeUndefined();
-    expect(tapbackSend("👍", pick, true, true)).toBeUndefined();
   });
 });
 

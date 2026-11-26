@@ -1,5 +1,5 @@
 // What the lead is waiting on you for, in a few words, for the quiet line above the composer: an open approval or
-// secret first (the lead can't go on without it), loaded or not, else the questions of its newest message since you last wrote that
+// secret first (the lead can't go on without it), loaded or not, and a bot memory line held for your OK as an admin, else the questions of its newest message since you last wrote that
 // asks any; nothing when it asks nothing. Below all of that, what there is to look at: the messages the lead nudged
 // you about (a showcase, something to try, a risk), until seen. Pure.
 import type { ChatOpenItem, ChatOpenNudge } from "../../../shared/contracts";
@@ -59,12 +59,19 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
     }
     return "command";
   };
-  const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter((i) => openItem(i) && mine(i.message?.for?.personId)).map((i) => ({ id: i.id, kind: kindOf(i) }))];
+  // A held memory line is one item per admin: the one for you, loaded or not, as long as the hub lists it.
+  const held = away.filter((o) => o.kind === "memory_hold" && o.for !== undefined && mine(o.for)).map((o) => ({ id: o.messageId, kind: "memory" }));
+  const open = [
+    ...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })),
+    ...items.filter((i) => openItem(i) && mine(i.message?.for?.personId)).map((i) => ({ id: i.id, kind: kindOf(i) })),
+    ...held,
+  ];
   if (open.length > 0) {
     const count = (kind: string) => open.filter((i) => i.kind === kind).length;
-    const [approvals, signIns, inputs, secrets] = [count("command"), count("signIn"), count("input"), count("secret")];
+    const [approvals, signIns, inputs, secrets, memory] = [count("command"), count("signIn"), count("input"), count("secret"), count("memory")];
     const parts = [
       approvals > 0 ? `${plural(approvals, "command")} to approve` : "",
+      memory > 0 ? `${plural(memory, "memory line")} to keep or not` : "",
       signIns > 0 ? `${plural(signIns, "sign-in")} to fill in` : "",
       inputs > 0 ? `${plural(inputs, "secure input")} to enter` : "",
       secrets > 0 ? `${plural(secrets, "secret")} to enter` : "",

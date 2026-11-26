@@ -1,10 +1,8 @@
-// A message as the bubbles it shows, and the two things you add to a lead's bubble: a reply, and a tapback. Pure.
+// A message as the bubbles it shows, and what you add to a lead's bubble: a reply. Pure.
 //
 // A lead message the hub split (`parts`) is one bubble per part, a block where the part has one this build knows;
 // any other text is one bubble. A reply travels as plain chat text, a one-line quote of the bubble then a blank line,
 // so every client (the CLI too) shows it as it is, and names the bubble (`replyTo`), which the lead reads whole.
-// Tapbacks stay on this device: a heart or a laugh isn't worth a lead's turn. Only 👍 on something waiting for you is sent: as the ask's
-// Approve when the bubble asks, as a 👍 reply to the bubble the lead waits on otherwise.
 import type { ChatBlock } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 
@@ -128,32 +126,6 @@ export function quoted(items: readonly ChatItem[], before: number, quote: string
     if (bubblesOf(item).some((b) => b.kind === "text" && quoteOf(b.text).startsWith(words))) return item.id;
   }
   return undefined;
-}
-
-// ---- tapbacks ----
-
-export const TAPBACKS = ["👍", "👎", "❤️", "😂", "‼️", "❓"] as const;
-export type Tapback = (typeof TAPBACKS)[number];
-
-/** A tapback's name, for its button and the badge's label. */
-export const TAPBACK_WORD: Readonly<Record<Tapback, string>> = {
-  "👍": "Like",
-  "👎": "Dislike",
-  "❤️": "Love",
-  "😂": "Laugh",
-  "‼️": "Emphasize",
-  "❓": "Question",
-};
-
-/** What a tapback on a lead bubble sends, if anything: only 👍, on an open ask or the bubble the lead waits on. */
-export type TapbackSend = { readonly t: "answer"; readonly text: string } | { readonly t: "reply"; readonly text: string } | undefined;
-
-export function tapbackSend(t: Tapback, bubble: Bubble, waitedOn: boolean, askOpen: boolean): TapbackSend {
-  if (t !== "👍") return undefined;
-  if (bubble.kind === "block" && bubble.block.kind === "ask") return askOpen && bubble.block.options === undefined ? { t: "answer", text: "Approve" } : undefined;
-  if (!waitedOn) return undefined;
-  const quote = quoteOf(bubble.text);
-  return { t: "reply", text: quote === "" ? "👍" : replyText(quote, "👍") };
 }
 
 // ---- asks ----

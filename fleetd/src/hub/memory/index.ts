@@ -46,7 +46,8 @@ export function memoryCaps(db: HubDb): MemoryCaps {
 
 const entryLine = (text: string) => `- ${text}`;
 const indexLine = (topic: string) => `- [${topic}](${topic}.md)`;
-const isIndexLine = (line: string) => line.startsWith("- [") && line.trimEnd().endsWith(".md)");
+/** A core's `- [topic](topic.md)` line, which lists a topic and is no entry. */
+export const isIndexLine = (line: string) => line.startsWith("- [") && line.trimEnd().endsWith(".md)");
 const chars = (text: string) => [...text].length;
 
 const joinLines = (lines: string[]) => (lines.length === 0 ? "" : `${lines.join("\n")}\n`);
@@ -231,6 +232,26 @@ export class Memory {
     else if (!present && has) return joinLines(lines.filter((l) => !(isIndexLine(l) && l.includes(link))));
     else return undefined;
     return joinLines(lines);
+  }
+
+  /** The whole entry of `t` that contains `words`, refused unless exactly one does. */
+  entryOf(t: Target, words: string): string {
+    const lines = linesOf(this.read(t));
+    return (lines[oneEntry(t, lines, words)] as string).replace(/^(- )+/, "").trimEnd();
+  }
+
+  /**
+   * What a `remember` of `call` would do, without writing: whether the file already says exactly that, and the whole
+   * entry `replaces` matches (refused unless it matches one). A line held for an admin is checked so, and written later.
+   */
+  wouldRemember(r: ProjectRef, person: PersonId | undefined, call: RememberCall): { already: boolean; replaced?: string } {
+    secretRefusal(call.text);
+    const t = targetFor(call.scope, r, person, call.topic);
+    const lines = linesOf(this.read(t));
+    if (lines.some((l) => l.trimEnd() === entryLine(call.text))) return { already: true };
+    if (call.replaces === undefined) return { already: false };
+    const old = (lines[oneEntry(t, lines, call.replaces)] as string).replace(/^(- )+/, "").trimEnd();
+    return old.length >= 1 ? { already: false, replaced: old } : { already: false };
   }
 
   /**

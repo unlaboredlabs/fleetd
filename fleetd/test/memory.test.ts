@@ -11,7 +11,7 @@ import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 const lead: LeadCaller = { projectRef: PROJECT, by: "lead:lab-a/p1", agent: { kind: "lead" } };
 const remember = (hub: Parameters<typeof answer>[0], body: Record<string, unknown>) =>
-  answer(hub, lead, { op: "remember", ...body } as LeadCall);
+  answer(hub, lead, { op: "remember", ...(body.scope === "project" ? { effect: "none" } : {}), ...body } as LeadCall);
 
 test("credentials are replaced by their shape; code and prose stay", () => {
   const cases: [string, string][] = [

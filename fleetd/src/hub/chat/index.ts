@@ -299,9 +299,10 @@ export class Chat {
     return message;
   }
 
-  /** A remembered line's new state, in place. */
-  setRemembered(message: ChatMessage, remembered: RememberedItem): ChatMessage {
+  /** A remembered line's new state, in place, and its words when they change (a held line kept or not). */
+  setRemembered(message: ChatMessage, remembered: RememberedItem, text?: string): ChatMessage {
     message.remembered = remembered;
+    if (text !== undefined) message.text = text;
     message.updatedAt = this.nowTs();
     this.put(message);
     this.announce(message);
@@ -717,8 +718,13 @@ export class Chat {
           return [{ messageId: m.messageId, kind, ...(person ? { for: person } : {}) } as ChatOpenItem];
         })
         .slice(0, CHAT_OPEN_ITEMS_MAX);
+      // A bot memory line held for an admin's OK (memory/hold_rules.ts) waits on each owner and admin.
+      const held = this.heldLines(r);
+      const admins = held.length > 0 ? this.admins() : [];
+      for (const m of held) for (const a of admins) if (openItems.length < CHAT_OPEN_ITEMS_MAX) openItems.push({ messageId: m.messageId, kind: "memory_hold", for: a });
+      const waiting = [...waiters(this.asked(r), open), ...held.flatMap(() => admins)];
       const human = parseMs(this.lastHuman(r)?.createdAt ?? "");
-      parts = { version, ...(recent.length > 0 ? { last: recent[recent.length - 1] } : {}), openItems, waiting: waiters(this.asked(r), open), ...(human !== undefined ? { humanMs: human } : {}) };
+      parts = { version, ...(recent.length > 0 ? { last: recent[recent.length - 1] } : {}), openItems, waiting, ...(human !== undefined ? { humanMs: human } : {}) };
       if (version !== undefined) this.states.set(k, parts);
     }
     const { last, openItems } = parts;
@@ -821,6 +827,24 @@ export class Chat {
   /** Drops the chat states read so far: another process changed the messages, which this one's versions don't see. */
   forgetStates(): void {
     this.states.clear();
+  }
+
+  /** The project's chat lines of bot memory lines held for an admin's OK, oldest first. */
+  private heldLines(r: ProjectRef): ChatMessage[] {
+    return this.many(
+      `SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+       AND json_extract(data, '$.remembered.hold') = 'waiting' ORDER BY seq LIMIT 20`,
+      r.machineId,
+      r.projectId,
+    );
+  }
+
+  /** The workspace's owners and admins still on it. */
+  private admins(): string[] {
+    return this.db.conn
+      .query<{ p: string }, []>("SELECT person_id AS p FROM people WHERE removed_ms IS NULL AND role IN ('owner', 'admin') ORDER BY created_ms, rowid")
+      .all()
+      .map((row) => row.p);
   }
 
   private onHub(person: string): boolean {

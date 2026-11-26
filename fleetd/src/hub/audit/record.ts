@@ -108,6 +108,12 @@ const scopeName = (scope: unknown) => ((scope as { kind?: string } | undefined)?
 
 /** Each audited tool's row, made before it runs (a deleted thing's name is gone after). */
 const PLANS: Partial<Record<ToolName, Plan>> = {
+  memory_hold_answer: (hub, input) => ({
+    kind: "bot.settings",
+    bot: botOf(hub, input.projectRef as ProjectRef),
+    target: "Memory",
+    summary: input.keep === true ? "Kept a memory line held for an admin" : "Didn't keep a memory line held for an admin",
+  }),
   invite_create: (hub, input) => {
     const name = str(input.name) ?? personName(hub, input.personId) ?? "someone";
     // A new person comes in as a member unless a role is named; another device of someone here keeps theirs.

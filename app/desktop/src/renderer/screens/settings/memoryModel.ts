@@ -1,7 +1,7 @@
 // Settings → Projects → Instructions & memory's rules, kept pure: a file's name, its length against its cap as the hub counts it, its lines as
-// entries with where each was remembered, and the whole file after an entry is edited, deleted or put back. The file
+// entries with where each was remembered and who taught it, and the whole file after an entry is edited, deleted or put back. The file
 // stays the truth: every change is the file's new text, for memory_set.
-import type { MemoryFile, MemoryNote } from "../../../shared/contracts";
+import type { MemoryAuthor, MemoryFile, MemoryNote } from "../../../shared/contracts";
 import { toHash } from "../shell/routes";
 
 /** `user.md`, `MEMORY.md` or `<topic>.md`, as the files are named on the hub. */
@@ -46,7 +46,12 @@ export interface MemoryLine {
   readonly text: string;
   /** Where it came from: only for a line `remember` wrote that reads as it did. Anything else shows none. */
   readonly note?: MemoryNote;
+  /** A bot's line: who taught it, a person's name or "the lead"; absent when the workspace has no record. */
+  readonly by?: string;
 }
+
+/** Who taught a line, in words: their name, or the lead for its own. */
+export const authorWord = (a: Pick<MemoryAuthor, "by">): string => a.by?.name ?? "the lead";
 
 const BULLET = /^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$/;
 const HEADING = /^(#{1,6}\s+)(.*)$/;
@@ -58,11 +63,12 @@ const isIndexLine = (line: string): boolean => line.startsWith("- [") && line.tr
 const entryLine = (text: string): string => `- ${text}`;
 
 /** The file's lines, blank ones and a core's topic lines left out, each with its note when there is one. */
-export function memoryLines(f: Pick<MemoryFile, "scope" | "topic" | "text" | "notes">): MemoryLine[] {
+export function memoryLines(f: Pick<MemoryFile, "scope" | "topic" | "text" | "notes" | "authors">): MemoryLine[] {
   const index = !f.topic;
   // Notes are newest first; a line written twice gets its newest.
   const notes = new Map<string, MemoryNote>();
   for (const note of f.notes) if (!notes.has(entryLine(note.text))) notes.set(entryLine(note.text), note);
+  const authors = new Map((f.authors ?? []).map((a) => [a.text, authorWord(a)]));
   const out: MemoryLine[] = [];
   split(f.text).lines.forEach((raw, at) => {
     const line = raw.trimEnd();
@@ -72,11 +78,20 @@ export function memoryLines(f: Pick<MemoryFile, "scope" | "topic" | "text" | "no
     out.push(
       heading
         ? { at, raw, kind: "heading", text: heading[2] ?? "" }
-        : { at, raw, kind: "entry", text: BULLET.exec(line)?.[2] ?? line.trim(), ...(note ? { note } : {}) },
+        : entry(at, raw, BULLET.exec(line)?.[2] ?? line.trim(), note, authors.get(line.replace(/^(- )+/, ""))),
     );
   });
   return out;
 }
+
+const entry = (at: number, raw: string, text: string, note: MemoryNote | undefined, by: string | undefined): MemoryLine => ({
+  at,
+  raw,
+  kind: "entry",
+  text,
+  ...(note ? { note } : {}),
+  ...(by === undefined ? {} : { by }),
+});
 
 /** Whether a line shows under a search: every word of it, in any case. */
 export function lineMatches(line: Pick<MemoryLine, "text">, query: string): boolean {

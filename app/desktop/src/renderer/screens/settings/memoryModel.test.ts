@@ -7,6 +7,21 @@ import { searchSettings } from "./search";
 const file = (over: Partial<MemoryFile>): MemoryFile => ({ scope: "project", text: "", chars: 0, cap: 4000, notes: [], ...over });
 
 describe("Settings → Bots → Instructions & memory", () => {
+  it("marks each line with who taught it, when the workspace has a record", () => {
+    const f = file({
+      text: "- Use pnpm.\n- Ship behind a flag.\n- An old line.\n",
+      authors: [
+        { text: "Use pnpm.", at: "2026-11-26T10:00:00.000Z", by: { personId: "p-bea", name: "Bea" } },
+        { text: "Ship behind a flag.", at: "2026-11-26T10:00:00.000Z" },
+      ],
+    });
+    expect(memoryLines(f).map((l) => [l.text, l.by])).toEqual([
+      ["Use pnpm.", "Bea"],
+      ["Ship behind a flag.", "the lead"],
+      ["An old line.", undefined],
+    ]);
+  });
+
   it("names the files as the hub does", () => {
     expect(fileName({ scope: "user" })).toBe("user.md");
     expect(fileName({ scope: "project" })).toBe("MEMORY.md");

@@ -2294,8 +2294,8 @@ export type ChatOpenItem = {
   messageId: ChatMessageId;
 };
 
-/** `ChatItem`'s kind. */
-export type KnownChatOpenItemKind = "secret_request" | "command_approval";
+/** `ChatItem`'s kind, or `memory_hold`: a bot memory line held for an admin's OK, one per owner or admin. */
+export type KnownChatOpenItemKind = "secret_request" | "command_approval" | "memory_hold";
 /** KnownChatOpenItemKind, or a value from a newer hub. */
 export type ChatOpenItemKind = KnownChatOpenItemKind | (string & {});
 
@@ -5350,7 +5350,19 @@ export type MemoryCaps = {
   user: number;
 };
 
+/** Who taught a line of a bot's memory file. */
+export type MemoryAuthor = {
+  /** When they taught it. */
+  at: Timestamp;
+  /** Absent: the lead's own. */
+  by?: PersonRef;
+  /** The entry, as the file has it without its "- ". */
+  text: string;
+};
+
 export type MemoryFile = {
+  /** A bot's file: who taught each line that has a record, in the file's order. Absent: none has. */
+  authors?: MemoryAuthor[];
   cap: number;
   chars: number;
   /** Newest first. */
@@ -5372,6 +5384,8 @@ export type MemoryGetOutput = {
   caps?: MemoryCaps;
   /** With projectRef: MEMORY.md first, then the topic files by name. */
   files?: MemoryFile[];
+  /** With projectRef: the bot's changes held for an admin's OK, oldest first. Absent when none waits. */
+  held?: MemoryHeld[];
   next?: string;
   projectCap?: number;
   /** With projectRef: the project's files together, and their cap. */
@@ -5409,6 +5423,38 @@ export type MemoryImportOutput = {
   prompt: string;
   /** Distilled but not written, and why. */
   skipped: MemorySkipped[];
+  truncated?: boolean;
+};
+
+/** A bot memory change held for an admin's OK: `memory_hold_answer` keeps it or not. */
+export type MemoryHeld = {
+  at: Timestamp;
+  /** Who taught it; absent: the lead, on no one's message. */
+  by?: PersonRef;
+  /** It takes `text` out of the file instead of adding it. */
+  forgotten?: boolean;
+  /** Its chat line, which `memory_hold_answer` names. */
+  messageId: ChatMessageId;
+  /** The whole entry it goes in place of. */
+  replaced?: string;
+  text: string;
+  topic?: MemoryTopic;
+};
+
+/** Waiting for an admin, kept by one, or not kept. */
+export type MemoryHold = "waiting" | "kept" | "dropped";
+
+export type MemoryHoldAnswerInput = {
+  /** True writes it to the bot's memory; false drops it. */
+  keep: boolean;
+  /** The held line's chat line (`MemoryHeld.messageId`). */
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+};
+
+export type MemoryHoldAnswerOutput = {
+  next?: string;
+  ok: true;
   truncated?: boolean;
 };
 
@@ -7934,8 +7980,18 @@ export type RecoveryPausedData = {
 
 /** What a `remember` or `forget` call wrote, as a line in the project's chat. Undone with `memory_undo`. */
 export type RememberedItem = {
+  /**
+   * A bot's line: who taught it, the person the lead's turn was for or whose edit wrote it. Absent: the lead's own,
+   * a line in user scope, or one from an older workspace.
+   */
+  by?: PersonRef;
   /** `forget` removed `text`; Undo puts it back. */
   forgotten?: boolean;
+  /**
+   * A bot's change held for an admin's OK, as it loosens what asks or merges: waiting (nothing written yet), kept by an
+   * admin (written), or dropped. Absent: written at once.
+   */
+  hold?: MemoryHold;
   /** User scope: whose memory it is in. Absent for the shared `user.md` of a hub from before people. */
   person?: PersonId;
   /** Why it was forgotten. */
@@ -11559,6 +11615,7 @@ export interface ToolMap {
   memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
+  memory_hold_answer: { input: MemoryHoldAnswerInput; output: MemoryHoldAnswerOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   onepassword_cards: { input: OnePasswordCardsInput; output: OnePasswordCardsOutput };
   onepassword_get: { input: OnePasswordGetInput; output: OnePasswordGetOutput };

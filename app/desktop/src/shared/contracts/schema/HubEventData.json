@@ -1171,10 +1171,11 @@
       "type": "object"
     },
     "ChatOpenItemKind": {
-      "description": "`ChatItem`'s kind.",
+      "description": "`ChatItem`'s kind, or `memory_hold`: a bot memory line held for an admin's OK, one per owner or admin.",
       "enum": [
         "secret_request",
-        "command_approval"
+        "command_approval",
+        "memory_hold"
       ],
       "type": "string",
       "x-open": true
@@ -2431,6 +2432,15 @@
       "pattern": "^[A-Za-z0-9_.:/-]{1,128}$",
       "type": "string"
     },
+    "MemoryHold": {
+      "description": "Waiting for an admin, kept by one, or not kept.",
+      "enum": [
+        "waiting",
+        "kept",
+        "dropped"
+      ],
+      "type": "string"
+    },
     "MemoryRefreshed": {
       "description": "What a nightly memory refresh changed, as one line in the project's chat: each change with its own Undo, and Undo\nall. Posted only when something changed.",
       "properties": {
@@ -3104,9 +3114,17 @@
     "RememberedItem": {
       "description": "What a `remember` or `forget` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
       "properties": {
+        "by": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "A bot's line: who taught it, the person the lead's turn was for or whose edit wrote it. Absent: the lead's own,\na line in user scope, or one from an older workspace."
+        },
         "forgotten": {
           "description": "`forget` removed `text`; Undo puts it back.",
           "type": "boolean"
+        },
+        "hold": {
+          "$ref": "#/$defs/MemoryHold",
+          "description": "A bot's change held for an admin's OK, as it loosens what asks or merges: waiting (nothing written yet), kept by an\nadmin (written), or dropped. Absent: written at once."
         },
         "person": {
           "$ref": "#/$defs/PersonId",

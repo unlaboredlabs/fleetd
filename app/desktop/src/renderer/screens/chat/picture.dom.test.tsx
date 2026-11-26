@@ -33,7 +33,7 @@ const show = vi.fn((_path: string): Promise<OpenOutcome> => Promise.resolve({ ok
 
 let host: HTMLDivElement;
 let root: Root;
-const actions: BubbleActions = { project: PROJECT, waitedOn: undefined, send: () => undefined, reply: () => undefined, show: () => undefined };
+const actions: BubbleActions = { project: PROJECT, send: () => undefined, reply: () => undefined, show: () => undefined };
 
 class FakeIntersectionObserver {
   constructor(private cb: IntersectionObserverCallback) {}

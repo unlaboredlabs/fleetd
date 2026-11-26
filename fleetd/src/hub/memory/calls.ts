@@ -1,10 +1,12 @@
 // The lead's `remember`, `forget` and `memory_read`, scoped to the caller's project by its session.
 // User scope is a person's own memory: the one whose message the turn answers
 // (a project's owner), and refused when that is nobody; a tidy's, the person it tidies. A nightly refresh's or tidy's
-// changes are kept for its one line at the end.
-import type { MemoryScope, PersonId, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
+// changes are kept for its one line at the end. A bot's line records who taught it (lines.ts), and one that loosens what
+// asks or merges, taught by someone who isn't an admin, waits for an admin's OK instead (hold_rules.ts).
+import type { MemoryScope, PersonId, PersonRef, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
+import { aboutFor } from "../chat/about.ts";
 import { chat } from "../chat/index.ts";
 import { LeadRecords } from "../leads/records.ts";
 import { runHuman } from "../leads/requested.ts";
@@ -12,6 +14,8 @@ import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
 import { events } from "../store/events.ts";
 import { isoMs, nowMs } from "../store/time.ts";
 import { FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, userTarget, type You, youOf } from "./index.ts";
+import { changeLoosens, holdsForAdmin, MEMORY_EFFECTS, type MemoryEffect } from "./hold_rules.ts";
+import { anyAdmin, heldLines, isAdmin, taught } from "./lines.ts";
 import { record, refreshYou } from "./refresh_store.ts";
 import { recordTidy } from "./tidy_store.ts";
 
@@ -80,6 +84,32 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
       ...(call.topic === undefined ? {} : { topic: call.topic as string }),
       ...(call.replaces === undefined ? {} : { replaces: call.replaces as string }),
     };
+    if (scope === "project") {
+      if (!MEMORY_EFFECTS.includes(call.effect as MemoryEffect)) {
+        throw new ToolError(
+          "invalid",
+          "Invalid remember call: in project scope, effect says what the line does: loosens or none.",
+          "loosens: it makes this bot ask less before acting, or merge or deploy with less review. Else none.",
+        );
+      }
+      if (call.own !== undefined && typeof call.own !== "boolean") throw invalid("remember call: own is true or false");
+      const taughtBy = teacher(hub, caller);
+      const { already, replaced } = memory.wouldRemember(r, undefined, remember);
+      if (already) return { file: nameOf(projectTarget(r, remember.topic)), next: "Already remembered, word for word." };
+      const loosening = changeLoosens(call.text, call.effect as MemoryEffect, replaced);
+      if (holdsForAdmin(loosening, isAdmin(hub.db, taughtBy?.personId), anyAdmin(hub.db))) {
+        return hold(hub, r, { scope: "project", ...topicOf(remember.topic), text: call.text, ...(replaced === undefined ? {} : { replaced }) }, taughtBy);
+      }
+      const { target, item, chars } = memory.remember(r, undefined, remember);
+      let next = "Already remembered, word for word.";
+      if (item) {
+        const by = call.own === true ? undefined : taughtBy;
+        taught(hub.db, r, call.topic as string | undefined, call.text, by?.personId, nowMs(hub.clock));
+        remembered(hub, r, caller, { ...item, ...(by ? { by } : {}) });
+        next = `Remembered in ${nameOf(target)}. Sessions get it from their next start; you already know it.`;
+      }
+      return { file: nameOf(target), chars, cap: memory.cap(target), next };
+    }
     const { target, item, chars } = memory.remember(r, whose(hub, caller, scope), remember);
     let next = "Already remembered, word for word.";
     if (item) {
@@ -97,6 +127,13 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
       ...(call.topic === undefined ? {} : { topic: call.topic as string }),
       ...(typeof call.reason === "string" ? { reason: call.reason } : {}),
     };
+    if (scope === "project") {
+      const taughtBy = teacher(hub, caller);
+      const whole = memory.entryOf(projectTarget(r, forget.topic), forget.entry);
+      if (holdsForAdmin(changeLoosens(undefined, undefined, whole), isAdmin(hub.db, taughtBy?.personId), anyAdmin(hub.db))) {
+        return hold(hub, r, { scope: "project", ...topicOf(forget.topic), text: whole, forgotten: true, ...(forget.reason === undefined ? {} : { reason: forget.reason }) }, taughtBy);
+      }
+    }
     const { target, item, chars } = memory.forget(r, whose(hub, caller, scope), forget);
     remembered(hub, r, caller, item);
     return {
@@ -120,6 +157,29 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
     };
   }
   throw new ToolError("invalid", `${call.op} is not a memory call.`);
+}
+
+/** Who teaches a lead's line: the person its turn is for (its order's starter, else whose message it answers); none for a nightly refresh. */
+function teacher(hub: Hub, caller: LeadCaller): PersonRef | undefined {
+  if (caller.agent.kind === "memory_refresh") return undefined;
+  return aboutFor(hub, caller.projectRef, nowMs(hub.clock)).for;
+}
+
+const topicOf = (topic: string | undefined) => (topic === undefined ? {} : { topic });
+
+/**
+ * A change held for an admin's OK (hold_rules.ts), checked as its write would be: a chat line that waits on the
+ * workspace's owners and admins, and nothing written to memory until one keeps it. The same change held twice is one.
+ */
+export function hold(hub: Hub, r: ProjectRef, item: RememberedItem, by: PersonRef | undefined): Record<string, unknown> {
+  const file = nameOf(projectTarget(r, item.topic));
+  const what = item.forgotten === true ? "Taking this line out" : "A line that loosens what asks or merges";
+  const next = `Held for an admin's OK: ${what.toLowerCase()} waits until an owner or admin keeps it. Memory is as it was: act as it says until then.`;
+  const same = (m: RememberedItem) => m.text === item.text && m.topic === item.topic && (m.forgotten === true) === (item.forgotten === true);
+  if (heldLines(hub.db, r).some((m) => m.remembered !== undefined && same(m.remembered))) return { file, held: true, next };
+  const text = item.forgotten === true ? `Waiting for an admin's OK to forget: ${item.text}` : `Waiting for an admin's OK: ${item.text}`;
+  chat(hub).add(r, { author: "system", text, remembered: { ...item, ...(by ? { by } : {}), hold: "waiting" } });
+  return { file, held: true, next };
 }
 
 /** The chat line that says what was remembered or forgotten and offers Undo, and the event for Settings > Memory. */
