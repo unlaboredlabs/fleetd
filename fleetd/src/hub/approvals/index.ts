@@ -772,7 +772,7 @@ export class Approvals {
     const timeoutSec = r.gated?.timeoutSec ?? 0;
     const at = this.now();
     if (o.error !== undefined) {
-      const why = clip(`not run on ${machine}: ${o.error}`, EVIDENCE_MAX);
+      const why = clip(notRunWhy(machine, o.error), EVIDENCE_MAX);
       return this.changeFrom(id, "approved", (r) => {
         r.state = "failed";
         r.finishedAt = at;
@@ -824,4 +824,15 @@ import { hubDeps } from "./wire.ts";
  */
 export function openRequests(hub: Hub, limit: number, project?: ProjectRef): HumanRequest[] {
   return new Requests(hub.db).list({ ...(project ? { projectRef: project } : {}), states: ["open"], limit });
+}
+
+/**
+ * Why an approved command didn't run, as the person reads it under the card: a program the machine doesn't have says
+ * so ("fly isn't installed on devbox"), not the node's `spawn fly ENOENT`; anything else in the node's words.
+ */
+export function notRunWhy(machine: string, error: string): string {
+  const start = /^could not start (\S+?):[\s\S]*\b(ENOENT|EACCES)\b/u.exec(error.trim());
+  if (start?.[2] === "ENOENT") return `${start[1]} isn't installed on ${machine}, or isn't on the PATH fleetd runs commands with.`;
+  if (start?.[2] === "EACCES") return `${machine} doesn't let fleetd run ${start[1]}: it isn't executable for fleetd's user.`;
+  return `not run on ${machine}: ${error}`;
 }
