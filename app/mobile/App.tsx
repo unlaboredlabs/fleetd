@@ -43,6 +43,7 @@ import { cloud, ReviewSignIn, type OnSignedIn } from "./src/screens/Cloud";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { Devices } from "./src/screens/Devices";
+import { ShareLinks } from "./src/screens/ShareLinks";
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Memory } from "./src/screens/Memory";
 import { Billing } from "./src/screens/Billing";
@@ -63,6 +64,7 @@ import { VaultImport } from "./src/screens/vault/VaultImport";
 import { VaultItem } from "./src/screens/vault/VaultItem";
 import { VaultMove } from "./src/screens/vault/VaultMove";
 import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
+import { openPreview } from "./src/preview";
 import { Session } from "./src/session";
 import type { Key, State } from "./src/store";
 import { onHome, openChatKey, splitOf } from "./src/split";
@@ -387,10 +389,11 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
   useEffect(() => {
     if (opened === null) return;
     if (opened.t === "chat") pending.current = { t: "chat", key: opened.key };
+    else if (opened.t === "preview") void openPreview(session, opened.name, opened.to);
     else approvals.current = true;
     onOpened();
     tryPending();
-  }, [opened, onOpened, tryPending]);
+  }, [opened, onOpened, tryPending, session]);
 
   useEffect(() => {
     session.start();
@@ -720,6 +723,7 @@ function SettingsScreens() {
     <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="ShareLinks" component={ShareLinks} options={{ ...pushed(t, "Share Links"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Memory" component={Memory} options={large("Memory")} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Connections" component={Connections} options={large("Connections")} />

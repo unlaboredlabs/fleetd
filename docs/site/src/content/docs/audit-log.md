@@ -18,6 +18,7 @@ The audit log records who did what in the workspace, when, and on which bot or i
 | Merges | PRs merged by the merge train, or on GitHub |
 | Workspace settings | Changes in **Settings › Workspace**: updates, profiles, machines, recordings and the workspace's caps |
 | Connections | Tool servers, GitHub, Claude, Gemini, 1Password and Tailscale connected or removed |
+| Share links | [Share links](/docs/share-links) made, opened, renewed and stopped, and the feature turned on or off |
 
 Each row names the person by the name they had at the time, so rows about someone who has left still say who it was. Agents' actions show as that person's agent. Changes the workspace refused, such as a member trying to change an admin-only setting, are recorded too, marked **refused**.
 

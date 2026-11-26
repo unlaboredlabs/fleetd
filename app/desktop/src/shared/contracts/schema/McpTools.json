@@ -1604,7 +1604,12 @@
         "pr.merged",
         "workspace.settings",
         "connection.added",
-        "connection.removed"
+        "connection.removed",
+        "share_link.create",
+        "share_link.open",
+        "share_link.renew",
+        "share_link.revoke",
+        "share_link.switch"
       ],
       "type": "string",
       "x-open": true
@@ -3683,6 +3688,19 @@
           "properties": {
             "kind": {
               "const": "ask",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PreviewBlock",
+          "properties": {
+            "kind": {
+              "const": "preview",
               "type": "string"
             }
           },
@@ -12971,6 +12989,42 @@
         "setup_test.output": {
           "$ref": "#/$defs/SetupTestOutput"
         },
+        "share_link_open.input": {
+          "$ref": "#/$defs/ShareLinkOpenInput"
+        },
+        "share_link_open.output": {
+          "$ref": "#/$defs/ShareLinkOpenOutput"
+        },
+        "share_link_renew.input": {
+          "$ref": "#/$defs/ShareLinkRenewInput"
+        },
+        "share_link_renew.output": {
+          "$ref": "#/$defs/ShareLinkRenewOutput"
+        },
+        "share_link_revoke.input": {
+          "$ref": "#/$defs/ShareLinkRevokeInput"
+        },
+        "share_link_revoke.output": {
+          "$ref": "#/$defs/ShareLinkRevokeOutput"
+        },
+        "share_links_list.input": {
+          "$ref": "#/$defs/ShareLinksListInput"
+        },
+        "share_links_list.output": {
+          "$ref": "#/$defs/ShareLinksListOutput"
+        },
+        "share_links_settings_set.input": {
+          "$ref": "#/$defs/ShareLinksSettingsSetInput"
+        },
+        "share_links_settings_set.output": {
+          "$ref": "#/$defs/ShareLinksSettingsSetOutput"
+        },
+        "share_port.input": {
+          "$ref": "#/$defs/SharePortInput"
+        },
+        "share_port.output": {
+          "$ref": "#/$defs/SharePortOutput"
+        },
         "sidebar_order_get.input": {
           "$ref": "#/$defs/SidebarOrderGetInput"
         },
@@ -13601,6 +13655,18 @@
         "setup_list.output",
         "setup_test.input",
         "setup_test.output",
+        "share_link_open.input",
+        "share_link_open.output",
+        "share_link_renew.input",
+        "share_link_renew.output",
+        "share_link_revoke.input",
+        "share_link_revoke.output",
+        "share_links_list.input",
+        "share_links_list.output",
+        "share_links_settings_set.input",
+        "share_links_settings_set.output",
+        "share_port.input",
+        "share_port.output",
         "sidebar_order_get.input",
         "sidebar_order_get.output",
         "sidebar_order_set.input",
@@ -16980,6 +17046,30 @@
       ],
       "type": "string",
       "x-open": true
+    },
+    "PreviewBlock": {
+      "description": "A share link's card in chat: \"Open preview\". The app asks for its address (`share_link_open`); none is in the block.",
+      "properties": {
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9]{12}$",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "Profile": {
       "description": "One task profile (Settings › Hub › Providers): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on\nthe default when none is.",
@@ -22218,6 +22308,232 @@
       },
       "required": [
         "checks"
+      ],
+      "type": "object"
+    },
+    "ShareLink": {
+      "description": "A port on one machine, open at its own address to the workspace's signed-in members only, until it ends.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "createdBy": {
+          "$ref": "#/$defs/AuditActor",
+          "description": "Who made it: a person, or an agent and the person whose work it was."
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it stops opening; renewing moves it."
+        },
+        "label": {
+          "description": "What it shows, in the maker's words (\"The login page\").",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "pattern": "^[a-z0-9]{12}$",
+          "type": "string",
+          "description": "12 of a-z0-9: the first label of its address."
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The bot whose agent made it."
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef",
+          "description": "The agent's session that made it; on fleetd's computers, which computer the port is on."
+        },
+        "url": {
+          "description": "`https://<name>.<preview address>`. It opens signed in only through `share_link_open`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "machineId",
+        "port",
+        "createdBy",
+        "createdAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "ShareLinkOpenInput": {
+      "description": "`share_link_open`: the link's address with a one-time code that signs this person in on it for a while.",
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]{12}$",
+          "type": "string"
+        },
+        "to": {
+          "description": "A path on the preview to land on; default `/`.",
+          "maxLength": 2000,
+          "pattern": "^/[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ShareLinkOpenOutput": {
+      "properties": {
+        "url": {
+          "description": "Good once, for a minute.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "ShareLinkRenewInput": {
+      "properties": {
+        "minutes": {
+          "description": "From now; default 120, at most 1440.",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "name": {
+          "pattern": "^[a-z0-9]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ShareLinkRenewOutput": {
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/ShareLink"
+        }
+      },
+      "required": [
+        "link"
+      ],
+      "type": "object"
+    },
+    "ShareLinkRevokeInput": {
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ShareLinkRevokeOutput": {
+      "type": "object"
+    },
+    "ShareLinksListInput": {
+      "type": "object"
+    },
+    "ShareLinksListOutput": {
+      "properties": {
+        "enabled": {
+          "description": "Whether links open in this workspace: an admin's switch.",
+          "type": "boolean"
+        },
+        "links": {
+          "description": "Open ones, newest first.",
+          "items": {
+            "$ref": "#/$defs/ShareLink"
+          },
+          "type": "array"
+        },
+        "previewUrl": {
+          "description": "Where links live (`https://preview.example.com`); absent while none is set, which a self-hosted admin sets.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "links"
+      ],
+      "type": "object"
+    },
+    "ShareLinksSettingsSetInput": {
+      "description": "The workspace's share links: on or off, and (self-hosted) where they live. Owners and admins only.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "previewUrl": {
+          "description": "An https origin of its own, never the workspace's address or a parent of it; empty clears it.",
+          "maxLength": 300,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ShareLinksSettingsSetOutput": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "previewUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "SharePortInput": {
+      "description": "`share_port`: a person's device turns a port on one of the workspace's machines into a share link (an agent's\ncomes from its own session's machine, through agent-mcp). A port that is already shared gives its link, renewed.",
+      "properties": {
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "minutes": {
+          "description": "How long it lasts; default 120, at most 1440.",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machineId",
+        "port"
+      ],
+      "type": "object"
+    },
+    "SharePortOutput": {
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/ShareLink"
+        }
+      },
+      "required": [
+        "link"
       ],
       "type": "object"
     },

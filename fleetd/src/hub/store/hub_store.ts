@@ -40,6 +40,7 @@ export const MACHINE_TABLES = [
   "node_keys",
   "enroll_tokens",
   "machine_roles",
+  "share_links",
   "slot_machine_caps",
   "slot_shares",
   "slot_claims",

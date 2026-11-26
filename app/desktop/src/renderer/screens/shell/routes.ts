@@ -109,6 +109,7 @@ export const SETTINGS_TABS = [
   "hub.billing",
   "hub.signin",
   "hub.audit",
+  "hub.share",
   "hub.updates",
   "hub.agents",
   "hub.profiles",

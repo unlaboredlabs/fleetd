@@ -11,6 +11,7 @@ import { Ask } from "./Ask";
 import { Chart } from "./Chart";
 import { FileCard } from "./FileCard";
 import { Checklist, Media } from "./Media";
+import { PreviewCard } from "./PreviewCard";
 import { Table } from "./Table";
 import { useBubbleActions } from "../actions";
 
@@ -42,6 +43,8 @@ function Body({ block, answer }: { block: ChatBlock; answer: string | undefined 
       return <BlockFile block={block} />;
     case "ask":
       return <Ask ask={block} answer={answer} />;
+    case "preview":
+      return <PreviewCard preview={block} />;
   }
 }
 

@@ -467,6 +467,19 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PreviewBlock",
+          "properties": {
+            "kind": {
+              "const": "preview",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -1342,6 +1355,30 @@
       "required": [
         "repo",
         "number"
+      ],
+      "type": "object"
+    },
+    "PreviewBlock": {
+      "description": "A share link's card in chat: \"Open preview\". The app asks for its address (`share_link_open`); none is in the block.",
+      "properties": {
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9]{12}$",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },

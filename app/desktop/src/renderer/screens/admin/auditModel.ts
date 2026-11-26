@@ -13,6 +13,7 @@ export const KIND_GROUPS: ReadonlyArray<{ value: string; label: string; cloud?: 
   { value: "pr", label: "Merges" },
   { value: "workspace", label: "Workspace settings" },
   { value: "connection", label: "Connections" },
+  { value: "share_link", label: "Share links" },
   { value: "signin", label: "Sign-ins", cloud: true },
   { value: "sso", label: "SSO", cloud: true },
   { value: "billing", label: "Billing", cloud: true },

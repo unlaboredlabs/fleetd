@@ -38,6 +38,11 @@ export const AUDIT_KINDS: readonly KnownAuditKind[] = [
   "workspace.settings",
   "connection.added",
   "connection.removed",
+  "share_link.create",
+  "share_link.open",
+  "share_link.renew",
+  "share_link.revoke",
+  "share_link.switch",
 ];
 
 /** How long a row stays: a year. */

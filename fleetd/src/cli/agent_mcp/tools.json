@@ -1849,6 +1849,41 @@
    }
   },
   {
+   "name": "share_port",
+   "op": "share_port",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Share a dev server you started (any local port on your own machine) as a link for the workspace's signed-in members: a person opens it on their computer or phone, hot reload included. port: the dev server's port; minutes: how long it lasts (default 120, at most 1440); label: what it shows, in a few words. Returns the link and a block: put the block in your message or result as a ```fleetd-block fence and the chat shows an Open preview card. Never a public link: only members who sign in open it. Sharing the same port again renews its link.",
+   "inputSchema": {
+    "properties": {
+     "label": {
+      "description": "What it shows (\"The login page\").",
+      "maxLength": 120,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "minutes": {
+      "description": "How long it lasts; default 120.",
+      "maximum": 1440,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "port": {
+      "description": "The dev server's port on your machine.",
+      "maximum": 65535,
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "required": [
+     "port"
+    ],
+    "type": "object"
+   }
+  },
+  {
    "name": "artifact_read",
    "op": "artifact_read",
    "lead": true,
@@ -3200,6 +3235,21 @@
    },
    "/title": {
     "expected": "a string"
+   }
+  },
+  "share_port": {
+   "/label": {
+    "expected": "a string"
+   },
+   "/minutes": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 1440"
+   },
+   "/port": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 65535"
    }
   },
   "artifact_read": {

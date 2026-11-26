@@ -326,6 +326,9 @@
 .fileGlyph[data-glyph="slides"] {
   --glyph-tint: var(--series-2);
 }
+.fileGlyph[data-glyph="preview"] {
+  --glyph-tint: var(--accent);
+}
 .fileText {
   display: flex;
   flex: 1;

@@ -202,6 +202,7 @@ export function Settings() {
       <ListSection>
         <ListRow title="Connections" onPress={() => navigation.navigate("Connections")} />
         <ListRow title="Devices" onPress={() => navigation.navigate("Devices")} />
+        <ListRow title="Share Links" onPress={() => navigation.navigate("ShareLinks")} />
       </ListSection>
       <CloudSettings />
       <RestartHub />

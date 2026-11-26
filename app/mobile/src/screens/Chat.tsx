@@ -35,6 +35,7 @@ import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, t
 import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendStays, sentSays, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
+import { openPreview } from "../preview";
 import { onHome } from "../split";
 import { useBeside, useStrip } from "../ui/pane";
 import { SheetRoom } from "../ui/StripRoom";
@@ -1492,6 +1493,40 @@ function MediaView({
   );
 }
 
+/** A share link's card: Open Preview opens it signed in, in the in-app browser. */
+function PreviewCard({ name, label, port }: { name: string; label: string | undefined; port: number | undefined }) {
+  const t = useTheme();
+  const session = useSession();
+  const [busy, setBusy] = useState(false);
+  const open = () => {
+    if (busy) return;
+    haptics.tap();
+    setBusy(true);
+    void openPreview(session, name).finally(() => setBusy(false));
+  };
+  const title = label ?? (port === undefined ? "Preview" : `Preview of port ${String(port)}`);
+  return (
+    <Pressable accessibilityRole="link" accessibilityLabel={`Open preview: ${title}`} onPress={open} style={styles.blockCard}>
+      {({ pressed }) => (
+        <Card style={[styles.pr, pressed && styles.pressed]}>
+          <View style={[styles.prIcon, { backgroundColor: t.blue }]}>
+            <Icon name="browser" size={18} color="#FFFFFF" weight="semibold" />
+          </View>
+          <View style={styles.grow}>
+            <Text style={[type.subhead, styles.strong, { color: t.label }]} numberOfLines={2}>
+              {title}
+            </Text>
+            <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={1}>
+              {busy ? "Opening…" : port === undefined ? "Open Preview" : `Port ${String(port)} · Open Preview`}
+            </Text>
+          </View>
+          {busy ? <ActivityIndicator color={t.tertiary} /> : <Icon name="external" size={14} color={t.tertiary} weight="semibold" />}
+        </Card>
+      )}
+    </Pressable>
+  );
+}
+
 function BubbleView({
   bubble,
   canAnswer,
@@ -1587,6 +1622,8 @@ function BubbleView({
         </Pressable>
       );
     }
+    case "preview":
+      return <PreviewCard name={bubble.name} label={bubble.label} port={bubble.port} />;
     case "checklist": {
       const done = bubble.items.filter((i) => i.done).length;
       return (

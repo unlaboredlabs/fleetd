@@ -18,7 +18,7 @@ describe("Settings' search for a member", () => {
 
   it("offers an owner or admin every Hub page, and what was a page once on the page that holds it", () => {
     const pages = new Set(optionsFor(true).filter((o) => isHubTab(o.tab)).map((o) => o.tab));
-    expect([...pages].sort()).toEqual(["hub.agents", "hub.audit", "hub.instructions", "hub.machines", "hub.people", "hub.providers", "hub.setup", "hub.usage", "hub.vault"]);
+    expect([...pages].sort()).toEqual(["hub.agents", "hub.audit", "hub.instructions", "hub.machines", "hub.people", "hub.providers", "hub.setup", "hub.share", "hub.usage", "hub.vault"]);
     const at = (key: string) => optionsFor(true).find((o) => o.key === key)?.tab;
     expect([at("hub.updates"), at("hub.tools"), at("hub.skills")]).toEqual(["hub.machines", "hub.agents", "hub.agents"]);
     expect([at("hub.accounts"), at("admin.claude"), at("admin.claude.members"), at("admin.github")]).toEqual(["hub.setup", "hub.setup", "hub.setup", "hub.setup"]);

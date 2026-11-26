@@ -62,10 +62,10 @@ describe("agent-mcp", () => {
     );
   });
 
-  test("a worker sees only report, ask_lead, its brief, agents, CI, decisions, reviews, images, artifacts, attachments and browser", () => {
+  test("a worker sees only report, ask_lead, its brief, agents, CI, decisions, reviews, images, artifacts, share links, attachments and browser", () => {
     expect(names("worker")).toEqual([
       "agents", "decisions_search", "report", "ask_lead", "brief_read", "agent_message", "wait_ci", "review_read", "chat_file", "publish_artifact",
-      "artifact_read", "attachment_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential", "fill_address",
+      "share_port", "artifact_read", "attachment_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential", "fill_address",
       "vault_items", "vault_store", "request_sign_in",
     ]);
     const lead = names("lead");
@@ -73,7 +73,7 @@ describe("agent-mcp", () => {
       "spawn_agent", "message_agent", "agents", "stop_agent", "request_secret", "decide", "brief", "close", "gated_run",
       "remember", "forget", "memory_read", "nudge", "checklist", "skill_install", "skill_save", "project_message",
       "factory_status", "chat_search", "chat_read", "confirm_step", "review_read", "chat_file", "publish_artifact",
-      "artifact_read", "attachment_read",
+      "share_port", "artifact_read", "attachment_read",
     ]) {
       expect(lead).toContain(tool);
     }
