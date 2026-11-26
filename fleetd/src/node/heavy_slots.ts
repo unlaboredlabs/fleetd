@@ -12,9 +12,9 @@
 // one returns at once, its run taking a slot of its own, and the other only waits for that run.
 //
 // On Linux a run is held to its slot's own CPUs (slotCpus: `taskset`), and its children with it. A slot counted as one
-// run's test workers, but a run fans out past them: on Nov 26 the desktop check's four Playwright workers, each an
-// Electron app, kept 10.4 cores busy, a fleetd check's four test workers with the hubs and browsers its tests start up
-// to 4.7, so six slots' runs could ask for 60 of the devbox's 32 and the load passed 100. Pinned, the six can use 24
+// run's test workers, but a run fans out past them: on Nov 26 a desktop check (vitest's workers, esbuild, Electron) kept
+// up to 11.8 cores busy in one slot, a fleetd or cloud check (test workers, the hubs, browsers and Postgres its tests
+// start) up to 4.7, and with three desktop checks among the six the devbox's load passed 110. Pinned, the six can use 24
 // at most, and tools that size themselves by the CPUs they may use (`nproc`, Node's and Bun's availableParallelism,
 // `bun test --parallel`, Go, Rust) see the slot's 4.
 import { closeSync, existsSync, readFileSync, readlinkSync } from "node:fs";
