@@ -171,8 +171,8 @@ code changed since the last one that went to TestFlight; otherwise it sends the 
 ## Over-the-air updates {#updates}
 
 A build signed with an update certificate gets new screens and fixes without a reinstall. It checks at launch and each
-time you come back to the app, and switches to the new version as you come back. If a new version crashes as it
-starts, the app goes back to the one before it.
+time you come back to the app, and switches to the new version at its next start, or as you come back after a few
+minutes away. If a new version crashes as it starts, the app goes back to the one before it.
 
 Each update is made for one native fingerprint, a hash of everything native in the app (its native modules, their
 versions, the build settings), so it only ever reaches builds that have the same native code. A change to native

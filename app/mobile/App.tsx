@@ -132,7 +132,7 @@ export default function App() {
   const [hubs, setHubs] = useState<readonly KeptHub[]>([]);
   const [account, setAccount] = useState<SavedAccount | null>(null);
   const [note, setNote] = useState<string | undefined>(undefined);
-  // A new over-the-air update runs as the app comes back from behind (src/appUpdate.ts).
+  // A new over-the-air update runs as the app comes back after a while away (src/appUpdate.ts).
   useEffect(watchUpdates, []);
   // Storage that can't be read pairs again, rather than leave a blank screen.
   useEffect(() => {
