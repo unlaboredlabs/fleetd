@@ -305,7 +305,8 @@ export type NodeActionKind =
   | "github_tokens"
   | "tailnet"
   | "rejoin"
-  | "mac_ended";
+  | "mac_ended"
+  | "mac_sims";
 
 /** The build a node updates to. With `build` and `sha256`, the build's own release and its checksums (the rollout's
  * pick, D701), which a node from before rollouts ignores, taking the channel's newest. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
@@ -332,6 +333,9 @@ export type NodeAction = {
   /** `tailnet`, to the machines that make hosted boxes: the team's Tailscale gateway is on, with its MagicDNS suffix
    * (hub/tailnet), or off (null). Their boxes send tailnet connections and lookups through the hub while it is on. */
   tailnet?: { suffix: string } | null;
+  /** `mac_sims`, to a Mac that lends iOS simulators: how many it runs at once, as its screens settings say (null: its
+   * own default), when they change and as it links. */
+  sims?: number | null;
   /**
    * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
    * only the sessions mid-step that aren't hosted (a project's); else hold every one, as without it. An older node ignores

@@ -192,8 +192,6 @@ export class Host {
   own: string | undefined;
   /** How many simulators at once the machine's screens settings say, as the hub's last `mac_call` carried it. */
   simCap: number | undefined;
-  /** On a Mac that runs agents, its simulators made at the first `sim_start` that wants one: none before. */
-  simsWanted: (() => Promise<MacSims | undefined>) | undefined;
   /** Xcode's own DerivedData (`~/Library/Developer/Xcode/DerivedData`), for the builds that went past an agent's. */
   xcodeData: string | undefined;
   /** The free bytes on the disk that holds `path`. */
@@ -219,6 +217,12 @@ export class Host {
     private readonly key: { open(sealed: Uint8Array): Uint8Array | null },
     private readonly clock: () => number = Date.now,
   ) {}
+
+  /** How many simulators the Mac runs at once, as its screens settings say now (null: its own default). */
+  setSims(n: number | null): void {
+    this.simCap = n ?? undefined;
+    if (this.sims) this.sims.cap = this.simCap;
+  }
 
   /** What the Mac is called in what agents read. */
   private called(): string {
@@ -247,7 +251,7 @@ export class Host {
       // Room first: on a full disk even the agent's folder can't be made.
       if (WRITES.has(envelope.step.step)) await this.room();
       const agent = this.agent(frame.caller, this.worktree(frame.caller, envelope.worktree));
-      if (frame.sims !== undefined) this.simCap = frame.sims ?? undefined;
+      if (frame.sims !== undefined) this.setSims(frame.sims);
       // Any step of the agent's keeps its simulator.
       this.sims?.touch(agent.name);
       const [done, after] = await this.step(agent, envelope.step, raw, frame.screen);
@@ -350,8 +354,6 @@ export class Host {
       case "get":
         return await get(agent.dir, repoOf(agent), step.path, step.offset, step.raw ?? false, agent.repo !== undefined);
       case "sim_start":
-        this.sims ??= await this.simsWanted?.();
-        if (this.sims) this.sims.cap = this.simCap;
         if (!this.sims) {
           throw new ToolError(
             "failed",

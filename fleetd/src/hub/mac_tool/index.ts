@@ -23,7 +23,7 @@ import { TaskRecords } from "../tasks/records.ts";
 import { request } from "../machine_roles/calls.ts";
 import { macFor } from "../machine_roles/mac.ts";
 import { newKey, rolesOn, simPlace } from "../machine_roles/places.ts";
-import { CAP_OWN_MAC } from "../../shared/screens_wire.ts";
+import { CAP_AGENTS_MAC, CAP_OWN_MAC } from "../../shared/screens_wire.ts";
 import { link } from "../link/index.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 
@@ -37,6 +37,17 @@ export function registerLeadCalls(hub: Hub): void {
   calls.register("mac_where", (caller) => where(hub, caller));
   calls.register("mac_send", (caller, call) => send(hub, caller, call as unknown as MacSendCall));
   sweep(hub).register({ name: "mac-ended", run: () => tellEnded(hub) });
+  // A Mac hears how many simulators it runs at once as it links, before any agent asks it for one.
+  link(hub).onLinked(({ machineId }) => {
+    if (link(hub).can(machineId, CAP_OWN_MAC) || link(hub).can(machineId, CAP_AGENTS_MAC)) tellSims(hub, machineId);
+  });
+}
+
+/** Tells Mac `m` how many simulators it runs at once, as its screens settings say now: when they change, as it links. */
+export function tellSims(hub: Hub, m: string): void {
+  void request(hub, m, { t: "node_action", action: "mac_sims", ...sims(hub, m) }, 15_000).catch((e: unknown) =>
+    console.info(`simulators at once not told to ${m}: ${(e as Error).message ?? String(e)}`),
+  );
 }
 
 /** How far back `tellEnded` looks: past it the Mac's own sweep (FOLDER_DAYS of no use) has removed the folder. */

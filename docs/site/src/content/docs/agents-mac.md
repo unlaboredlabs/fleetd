@@ -21,11 +21,12 @@ same Mac:
 - `mac run`, `mac push` and `mac sim start` print one line saying which Mac they used.
 
 Nothing to set up beyond Xcode (the [Xcode block](#xcode) once, and an iOS runtime). The first `mac sim start` makes
-the Mac's golden simulator, once: it takes a few minutes, and `mac sim start` says to try again until it's ready. From
-then on one simulator stays booted and ready for the next agent. If Node.js isn't on the Mac, fleetd installs its own copy for agent-device.
+the Mac's golden simulator, once: it takes a few minutes, and `mac sim start` waits for it. From then on one simulator
+stays booted and ready for the next agent. A person can open an iPhone screen on that Mac from the start too. A Mac
+without Xcode offers no simulators, and `mac sim start` says Xcode is missing. If Node.js isn't on the Mac, fleetd installs its own copy for agent-device.
 
-At most two simulators run at once, the ready one included. Change it on the Mac's page, under **Screens › iOS
-simulators at once**.
+At most two simulators run at once, the ready one and any `--device` model included. Change it on the Mac's page,
+under **Screens › iOS simulators at once**; the Mac takes a new number at once.
 
 Which Mac an agent uses:
 

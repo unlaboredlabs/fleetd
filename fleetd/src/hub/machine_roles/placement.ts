@@ -178,6 +178,14 @@ export function hereOnly(origin: string, host: SessionHost, own: Runner | undefi
 
 export type RunnerRow = { runner: Runner; roles: Roles; why: string };
 
+/** A Mac's simulators at once: the number it says it runs (a small Mac runs fewer, an older setup may say its own),
+ * else the setting, else the default; and the setting. */
+export function simsOf(runner: Pick<Runner, "hosts">, roles: Pick<Roles, "maxSims">): { max: number; set?: number } {
+  const said = runner.hosts?.find((h) => h.host === "ios")?.sims?.max;
+  const max = typeof said === "number" && Number.isInteger(said) && said >= 1 ? Math.min(said, 8) : (roles.maxSims ?? SIMS_DEFAULT);
+  return { max, ...(roles.maxSims === undefined ? {} : { set: roles.maxSims }) };
+}
+
 export function entry({ runner, roles, why }: RunnerRow): MachineRolesEntry {
   return {
     machineId: runner.machineId,
@@ -192,7 +200,7 @@ export function entry({ runner, roles, why }: RunnerRow): MachineRolesEntry {
     hostsOthers: runner.hostsOthers,
     ...(runner.othersNote !== undefined && roles.sessions ? { hostsOthersNote: runner.othersNote } : {}),
     ...(runner.antigravityLogin === true ? { antigravityLogin: true } : {}),
-    ...(runner.lendsSims === true ? { sims: { max: roles.maxSims ?? SIMS_DEFAULT, ...(roles.maxSims === undefined ? {} : { set: roles.maxSims }) } } : {}),
+    ...(runner.lendsSims === true ? { sims: simsOf(runner, roles) } : {}),
   };
 }
 

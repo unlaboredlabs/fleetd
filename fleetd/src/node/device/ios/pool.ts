@@ -551,6 +551,16 @@ export class Pool {
     return this.warmClones.length;
   }
 
+  /** The pool's simulators up now, or on their way: warm, booting, and one being lent. */
+  pooled(): number {
+    return this.warmClones.length + this.booting.size + this.outgoing;
+  }
+
+  /** Deletes a warm clone, to make room for a simulator the pool doesn't make (a device type of an agent's). */
+  async shed(): Promise<void> {
+    await this.warmClones.shift()?.discard();
+  }
+
   /** About how long until the `nth` clone from now (1 is the next) is ready, in seconds: a warm one at once, the rest
    * one boot after another behind the one under way. */
   readyIn(nth: number): number {

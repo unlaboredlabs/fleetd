@@ -7,7 +7,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { join } from "node:path";
 import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
-import { ended as macEnded, isOwnMac } from "./mac_tool/index.ts";
+import { ended as macEnded, host as macHost, isOwnMac } from "./mac_tool/index.ts";
 import { Node } from "./api.ts";
 import { registerAreas, stopAreas } from "./areas.ts";
 import { agentsMac, isAgentsMac, mayJoin } from "./agents_mac/index.ts";
@@ -582,6 +582,12 @@ export async function startNode(
         // The agents' Mac, or a Mac that runs agents: the folders of tasks that ended go.
         if (frame.action === "mac_ended" && (isAgentsMac(config) || isOwnMac(node))) {
           return void macEnded(node, frame as unknown as NodeAction).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
+        }
+        // A Mac that lends iOS simulators: how many it runs at once, at once.
+        if (frame.action === "mac_sims" && (isAgentsMac(config) || isOwnMac(node))) {
+          const sims = (frame as unknown as NodeAction).sims;
+          macHost(node).setSims(typeof sims === "number" && Number.isInteger(sims) && sims > 0 ? sims : null);
+          return void ctx.send({ t: "node_action_result", id: String(frame.id ?? ""), ok: true, message: `${sims ?? "the default number of"} simulators at once` });
         }
         // A node where agents never run in sandboxes (macOS, the agents' Mac) answers below that it doesn't know them.
         if (frame.action === "sandbox_check" || frame.action === "sandbox_limits") {

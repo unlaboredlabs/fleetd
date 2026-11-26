@@ -15,6 +15,7 @@ import { entry, rolesOn, runners, setRoles, setToolOn } from "./places.ts";
 import { register as registerScreens } from "./screens.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 import { SIMS_MAX } from "../../node/mac_tool/protocol.ts";
+import { tellSims } from "../mac_tool/index.ts";
 
 export function register(tools: Registry): void {
   tools.add("machine_roles", machineRoles);
@@ -94,6 +95,8 @@ function machineRolesSet(
     setRoles(c, m, next);
     return [was, next] as const;
   });
+  // The Mac hears a new number of simulators at once now, not at its next `mac` call.
+  if (input.maxSims !== undefined || input.autoSims === true) tellSims(hub, m);
   // TODO(bun): hub/slots `set_runs_agents` once the slots area has it; it reads machine_roles itself meanwhile.
   const row = runners(hub).find((r) => r.runner.machineId === m);
   if (!row) throw new ToolError("not_found", `No machine ${m}.`);
