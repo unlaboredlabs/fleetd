@@ -44,6 +44,9 @@ describe("the hub's line", () => {
     expect(menu({ hub: down })[0]).toMatchObject({ mark: "warning", does: { to: "retry" } });
     expect(read({ hub: { phase: "refused", hub: HUB, message: "This key was revoked" }, label: "Acme" })).toEqual(["Acme refused the key · Pair again"]);
     expect(menu({ hub: { phase: "refused", hub: HUB, message: "" } })[0]).toMatchObject({ mark: "danger", does: { to: "pair" } });
+    // S10: a deleted workspace has nothing to pair or sign in to again: it says so, and opens the workspaces to remove it.
+    expect(read({ hub: { phase: "refused", hub: HUB, message: "This workspace was deleted." }, label: "Acme" })).toEqual(["Acme was deleted"]);
+    expect(menu({ hub: { phase: "refused", hub: HUB, message: "This workspace was deleted." } })[0]).toMatchObject({ mark: "danger", does: { to: "hubs" } });
     expect(read({ hub: { phase: "unpaired" } })).toEqual(["Not paired with a workspace · Pair"]);
     expect(read({ hub: { phase: "unpaired" }, label: "Acme" })).toEqual(["Acme isn't paired · Pair"]);
   });

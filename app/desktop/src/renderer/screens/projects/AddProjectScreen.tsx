@@ -18,6 +18,7 @@ import { HubScope, useCloudTeam, useData, useDataLayer, useHub, useHubs, useTool
 import { projectKey } from "../../src/data/store";
 import { useHubRole } from "../admin/role";
 import { navigate } from "../shell/navigation";
+import { onWeb } from "../../src/web";
 import { HubText } from "./HubText";
 import { NAME_MAX, nameProblem } from "./model";
 import { otherHost, tilde } from "./source";
@@ -186,8 +187,21 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
   const nothing = block === NOTHING_RUNS;
   const cloud = useCloudTeam();
   const role = useHubRole();
+  const hub = useHub();
   /** A folder that is a bot already: adding it would take that bot's place, so it isn't added. */
   const botAt = (path: string): string | undefined => botAtFolder(projects, to?.machineId, path)?.title;
+  // An owner or admin of a cloud team with no GitHub was told to ask an owner or admin (S7): Connect is right here. The
+  // web app goes to GitHub and back to this page; the desktop connects in Settings › Accounts.
+  const connectGithub = () => {
+    if (!onWeb()) {
+      closeAddProject();
+      navigate({ id: "settings", tab: "accounts" });
+      return;
+    }
+    void window.fleetd.cloud.connectGithub(hub.id, { back: `${window.location.pathname}${window.location.hash}`, install: true }).then((out) => {
+      if (!out.ok) setNote({ text: out.failure.fix === undefined ? out.failure.message : `${out.failure.message} ${out.failure.fix}`, problem: true });
+    });
+  };
   const go = () => {
     if (problem !== undefined) return;
     // A repo typed but not yet added goes in with the rest, or Create says why it can't.
@@ -238,7 +252,7 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
           ))}
         </ul>
         {ui.adding !== null ? (
-          <AddRepo text={ui.adding} d={d} machineId={to?.machineId} taken={ui.repos.map(repoKey)} botAt={botAt} />
+          <AddRepo text={ui.adding} d={d} machineId={to?.machineId} taken={ui.repos.map(repoKey)} botAt={botAt} connectGithub={cloud && role.administers ? connectGithub : undefined} />
         ) : ui.repos.length === 0 ? (
           <Text as="p" size="sm" tone="quiet" className={cx(s.none)}>
             None. It works in a folder of its own.
@@ -317,7 +331,22 @@ function RepoRow({ repo, own, onRemove }: { repo: RepoDraft; own: boolean; onRem
 }
 
 /** The add field: Enter adds what is picked, Up/Down move, Esc closes it (not the dialog). */
-function AddRepo({ text, d, machineId, taken, botAt }: { text: string; d: Discovery | null; machineId: string | undefined; taken: ReadonlyArray<string>; botAt: (path: string) => string | undefined }) {
+function AddRepo({
+  text,
+  d,
+  machineId,
+  taken,
+  botAt,
+  connectGithub,
+}: {
+  text: string;
+  d: Discovery | null;
+  machineId: string | undefined;
+  taken: ReadonlyArray<string>;
+  botAt: (path: string) => string | undefined;
+  /** An owner or admin of a cloud team: GitHub's problem is a Connect GitHub here, not a teammate to ask. */
+  connectGithub: (() => void) | undefined;
+}) {
   const list = useMemo(() => repoSuggestions(text, d, machineId, taken, 6), [text, d, machineId, taken]);
   const [sel, setSel] = useState<{ list: typeof list; n: number }>({ list, n: 0 });
   const selected = sel.list === list ? sel.n : 0;
@@ -402,11 +431,22 @@ function AddRepo({ text, d, machineId, taken, botAt }: { text: string; d: Discov
           Looking for repos on your machines and on GitHub…
         </Text>
       ) : (
-        d.problems.map((p) => (
-          <Text as="p" size="sm" tone="quiet" className={cx(s.none)} key={p.message}>
-            <HubText>{p.fix ? `${p.message} ${p.fix}` : p.message}</HubText>
-          </Text>
-        ))
+        d.problems.map((p) =>
+          p.github === true && connectGithub !== undefined ? (
+            <div className={cx(s.none, s.connectLine)} key={p.message} data-connect-github="">
+              <Text size="sm" tone="quiet">
+                GitHub&apos;s repos show here once GitHub is connected.
+              </Text>
+              <Button variant="link" size="sm" onClick={connectGithub}>
+                Connect GitHub
+              </Button>
+            </div>
+          ) : (
+            <Text as="p" size="sm" tone="quiet" className={cx(s.none)} key={p.message}>
+              <HubText>{p.fix ? `${p.message} ${p.fix}` : p.message}</HubText>
+            </Text>
+          ),
+        )
       )}
     </div>
   );

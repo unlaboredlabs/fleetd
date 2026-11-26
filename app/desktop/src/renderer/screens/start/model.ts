@@ -71,15 +71,17 @@ export type ComputerStep =
 /** The team's Tailscale, as the hub runs its one device (tailnet_get): a line of Where agents run, optional. */
 export type TailscaleStep =
   | { readonly at: "todo"; readonly busy?: boolean; readonly error?: string }
-  /** Waiting on the person: Tailscale's sign-in page, opened again from a click. */
-  | { readonly at: "signin"; readonly url?: string }
+  /** Waiting on the person: Tailscale's sign-in page, opened again from a click, or Cancel. */
+  | { readonly at: "signin"; readonly url?: string; readonly cancelling?: true }
   /** Signed in: an admin of the tailnet approves the device in Tailscale's admin console. */
-  | { readonly at: "approve" }
+  | { readonly at: "approve"; readonly cancelling?: true }
   | { readonly at: "done"; readonly tailnet: string };
 
-/** The hub's API key being saved from the step: busy, or why it wasn't. */
+/** The hub's API key being saved from the step: busy, being tested, or why it wasn't, or why Claude refused it. */
 export interface KeyState {
   readonly busy?: boolean;
+  /** Saved, and its Test running: the step ticks only once one worked. */
+  readonly testing?: true;
   readonly error?: string;
 }
 
@@ -99,6 +101,8 @@ export type ClaudeStep =
     }
   /** Hosted sandboxes with no Claude account reaching them: the hub's API key, or the person's subscription. */
   | { readonly at: "account"; readonly provider: string; readonly key?: KeyState }
+  /** A computer logged in to Claude, and the hub's API key, which reaches it first, being tested or refused. */
+  | { readonly at: "key"; readonly machine: string; readonly key: KeyState }
   /** Claude reaches the agents: what on, in a word or two. */
   | { readonly at: "done"; readonly what: string };
 
@@ -153,8 +157,12 @@ export type StepId = "computer" | "claude" | "github" | "project";
 
 /** The Claude step's facts (state.ts reads them from the hub): what reaches the agents, and the steps before it. */
 export interface ClaudeFacts {
-  /** The hub's API key is saved. */
-  readonly hubKey: boolean;
+  /**
+   * The hub's API key: none; saved, and its last Test worked; saved, its Test not in yet; or refused, in the Test's
+   * words. A key is ticked only once a Test worked: one Claude refuses is saved all the same, and the first message
+   * met it (S1).
+   */
+  readonly hubKey: false | "works" | "testing" | { readonly failed: string };
   /** What the team's leads run on (claude_accounts_get `leadsRunOn`); undefined until it is read. */
   readonly leadsRunOn: "account" | "machine_login" | "refused" | undefined;
   /** A computer of the team's own, online with its claude logged in: its name. */
@@ -172,10 +180,20 @@ export interface ClaudeFacts {
  * hosted sandboxes (fleetd's computers), an account the leads run on, since a box has no login of its own. A runner
  * that is up is no Claude: a new cloud team's was, and its first bot was refused for its sign-in (G1).
  */
-export const claudeStepOf = (f: ClaudeFacts): ClaudeStep =>
-  f.hubKey
-    ? { at: "done", what: "API key" }
-    : f.ready !== null
+export const claudeStepOf = (f: ClaudeFacts): ClaudeStep => {
+  if (f.hubKey === "works") return { at: "done", what: "API key" };
+  if (f.hubKey === false) return claudeWithoutKey(f);
+  // Saved and not working yet: the step stays open on the key, its Test running or what Claude said of it.
+  const key: KeyState =
+    f.key?.busy === true ? f.key : f.hubKey === "testing" ? { busy: true, testing: true } : { error: f.key?.error ?? f.hubKey.failed };
+  const open = claudeWithoutKey({ ...f, key, login: f.login === null ? null : { ...f.login, key } });
+  if (open.at !== "done") return open;
+  return f.ready !== null ? { at: "key", machine: f.ready, key } : { at: "account", provider: f.provider, key };
+};
+
+/** The step as it is with no key of the hub's: each place's own way in. */
+const claudeWithoutKey = (f: ClaudeFacts): ClaudeStep =>
+  f.ready !== null
       ? { at: "done", what: f.ready }
       : f.computer.at === "hosted" && f.leadsRunOn === "account"
         ? { at: "done", what: "Claude subscription" }
@@ -208,12 +226,16 @@ export const currentStep = (view: StartView): StepId => (view.who === "teammate"
 
 /**
  * How many steps are left, for the quiet Finish setting up row once the person has gone on to the app. A teammate's
- * one is their GitHub: the team's bots are there already.
+ * one is their GitHub: the team's bots are there already. A skipped GitHub lets the steps go on, but it is still left
+ * here: once the rest was done, nothing led back to it (S8).
  */
-export const stepsLeft = (view: StartView): number => (view.who === "teammate" ? (githubSettled(view.github) ? 0 : 1) : stepsOf(view).filter((s) => !stepDone(view, s)).length);
+export const stepsLeft = (view: StartView): number => {
+  const github = view.github.at === "done" || view.github.at === "requested" ? 0 : 1;
+  return view.who === "teammate" ? github : stepsOf(view).filter((s) => s !== "github" && !stepDone(view, s)).length + github;
+};
 
 /** Whether the hub's API key is being saved from the Claude step. */
-const keyBusy = (c: ClaudeStep): boolean => (c.at === "login" || c.at === "account") && c.key?.busy === true;
+const keyBusy = (c: ClaudeStep): boolean => (c.at === "login" || c.at === "account" || c.at === "key") && c.key?.busy === true;
 
 /** The bot over the page: waiting with you, a hop when the computer joins, at work while a bot is added. */
 export const botOf = (view: StartView): "idle" | "thinking" | "working" | "done" => {
@@ -286,6 +308,17 @@ export const withoutGithubReturn = (search: string): string => {
   query.delete("why");
   const left = query.toString();
   return left === "" ? "" : `?${left}`;
+};
+
+/**
+ * The join line with the person's commit identity on it (`--git-identity`), once their GitHub is connected: their name
+ * and GitHub's noreply address, so their agents' commits are theirs. Without one the machine's own git user, else the
+ * workspace's name, is used (cli/setup/wizard.ts joinIdentity), never an agent's id (S3). A line that has one keeps it.
+ */
+export const lineWithIdentity = (line: string, github: { readonly login: string; readonly userId: number } | undefined, name: string | undefined): string => {
+  if (github === undefined || line.includes("--git-identity")) return line;
+  const who = (name ?? "").replace(/[<>'"\\$`]/gu, "").trim() || github.login;
+  return `${line} --git-identity '${who} <${String(github.userId)}+${github.login}@users.noreply.github.com>'`;
 };
 
 /** The hub's words for a machine whose claude isn't logged in (the node's runner_info problem, kept as degradedReason). */

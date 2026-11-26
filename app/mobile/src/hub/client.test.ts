@@ -91,6 +91,22 @@ describe("HubClient", () => {
     expect(hub.links).toHaveLength(2);
   });
 
+  // S10 (iPhone S1): a deleted workspace's phone said "Connecting…" forever.
+  it("stops for good on fleetd cloud's close for a deleted workspace, a dial after it included, and says it was deleted", () => {
+    const { hub, client, states } = setup();
+    client.start();
+    hub.link.open();
+    hub.link.close(4401, "This workspace was deleted.");
+    expect(states().at(-1)).toEqual({ phase: "refused", hub: HUB, message: "This workspace was deleted." });
+    vi.advanceTimersByTime(60_000);
+    expect(hub.links).toHaveLength(1);
+    // While the delete runs, a drop like any other: dialled again.
+    const again = setup();
+    again.client.start();
+    again.hub.link.close(1008, "This workspace is being deleted.");
+    expect(again.states().at(-1)).toMatchObject({ phase: "retrying" });
+  });
+
   it("treats an error before ready as a refused key", () => {
     const { hub, client, states } = setup();
     client.start();

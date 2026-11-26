@@ -21,6 +21,7 @@ import { toHash } from "../shell/routes";
 import {
   claudeLoggedOut,
   claudeStepOf,
+  lineWithIdentity,
   projectLine,
   pushedWords,
   stepsLeft,
@@ -200,7 +201,7 @@ export function useStart(
               ? { at: "offline", machine: offline.name }
               : {
                   at: "line",
-                  line: join.out?.line ?? null,
+                  line: join.out === null ? null : lineWithIdentity(join.out.line, github.data?.me?.lapsed === true ? undefined : github.data?.me, role.me?.name),
                   ...(join.error === undefined ? {} : { error: join.error }),
                   // A new team's are just not bought yet: no warning for that, only for ones that stopped.
                   ...(provided === undefined || held === null
@@ -214,6 +215,8 @@ export function useStart(
   const tailnetState = tailnetRead.data;
   const [tailnetBusy, setTailnetBusy] = useState(false);
   const [tailnetProblem, setTailnetProblem] = useState<string | null>(null);
+  const [tailnetCancelling, setTailnetCancelling] = useState(false);
+  const cancelling = tailnetCancelling ? { cancelling: true as const } : {};
   // The person signs in on Tailscale's page: the hub's state is read again until it isn't waiting on them.
   const tailnetWaits = tailnetState?.status === "login" || tailnetState?.status === "approve" || tailnetState?.status === "starting";
   useEffect(() => {
@@ -227,9 +230,9 @@ export function useStart(
       : tailnetState.status === "connected"
         ? { at: "done", tailnet: tailnetState.tailnet ?? "Connected" }
         : tailnetState.status === "login" || tailnetState.status === "starting"
-          ? { at: "signin", ...(tailnetState.loginUrl === undefined ? {} : { url: tailnetState.loginUrl }) }
+          ? { at: "signin", ...(tailnetState.loginUrl === undefined ? {} : { url: tailnetState.loginUrl }), ...cancelling }
           : tailnetState.status === "approve"
-            ? { at: "approve" }
+            ? { at: "approve", ...cancelling }
             : {
                 at: "todo",
                 ...(tailnetBusy ? { busy: true } : {}),
@@ -240,8 +243,29 @@ export function useStart(
   const accounts = useToolQuery("claude_accounts_get", noInput, { enabled: owner && live });
   const [keyState, setKeyState] = useState<KeyState | undefined>(undefined);
   const withKey = keyState === undefined ? {} : { key: keyState };
+  // The key's Test, run here once for each key saved without one (just now, or elsewhere): the hub keeps how it went
+  // as the key's last Test; one that couldn't run at all (no machine holding it online) says why, here only.
+  const hubApi = accounts.data?.hubApi;
+  const [testThrew, setTestThrew] = useState<{ readonly of: string; readonly error: string } | null>(null);
+  const untested = page && owner && hubApi !== undefined && hubApi.lastTest === undefined ? hubApi.updatedAt : null;
+  useEffect(() => {
+    if (untested === null) return;
+    call("claude_account_test", { account: "hub_api" }, { timeoutMs: 120_000 }).then(
+      () => mounted.current && refetch(["claude_accounts_get"]),
+      (e: unknown) => mounted.current && setTestThrew({ of: untested, error: errorText(e) }),
+    );
+  }, [untested, call, refetch]);
   const claude = claudeStepOf({
-    hubKey: accounts.data?.hubApi !== undefined,
+    hubKey:
+      hubApi === undefined
+        ? false
+        : hubApi.lastTest?.ok === true
+          ? "works"
+          : hubApi.lastTest !== undefined
+            ? { failed: hubApi.lastTest.error ?? "Claude refused this key." }
+            : testThrew?.of === hubApi.updatedAt
+              ? { failed: testThrew.error }
+              : "testing",
     leadsRunOn: accounts.data?.leadsRunOn.kind,
     ready: ready?.name ?? null,
     computer,
@@ -445,12 +469,8 @@ export function useStart(
             return;
           }
           setKeyState(undefined);
+          // Read again with no Test yet, which the page then runs: the step ticks once it worked.
           refetch(["claude_accounts_get"]);
-          // Tried at once, as Settings does: the hub keeps it as the key's last Test.
-          void call("claude_account_test", { account: "hub_api" }, { timeoutMs: 120_000 }).then(
-            () => refetch(["claude_accounts_get"]),
-            () => undefined,
-          );
         },
         (e: unknown) => mounted.current && setKeyState({ error: errorText(e) }),
       );
@@ -469,6 +489,19 @@ export function useStart(
         )
         .finally(() => {
           if (mounted.current) setTailnetBusy(false);
+          refetch(["tailnet_get"]);
+        });
+    },
+    onTailscaleCancel: () => {
+      // A closed sign-in tab left the wait on show through reloads, with no way out (S6).
+      setTailnetCancelling(true);
+      call("tailnet_disconnect", noInput)
+        .then(
+          () => undefined,
+          (e: unknown) => mounted.current && setTailnetProblem(errorText(e)),
+        )
+        .finally(() => {
+          if (mounted.current) setTailnetCancelling(false);
           refetch(["tailnet_get"]);
         });
     },

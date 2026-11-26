@@ -7,7 +7,7 @@ import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
 import { clearWebCache, keepSession, keptSession } from "./cache";
 import type { GateView } from "./Gate";
-import { createWebShell, followBrowser, followFreshBuild } from "./shell";
+import { createWebShell, DELETED_PARAM, followBrowser, followFreshBuild } from "./shell";
 import { followNewBuild } from "./build";
 import { heldOnReload } from "../renderer/src/held";
 import { afterKeptStart, carriedRemovals, freshMark, NOT_LISTED_YET, withCarried, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
@@ -176,12 +176,22 @@ const bootKept = (): boolean => {
   return true;
 };
 
+/** Delete account came here (shell.ts DELETED_PARAM): said once, and the word leaves the address. */
+const justDeleted = (): boolean => {
+  const query = new URLSearchParams(window.location.search);
+  if (query.get(DELETED_PARAM) !== "1") return false;
+  query.delete(DELETED_PARAM);
+  const left = query.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${left === "" ? "" : `?${left}`}${window.location.hash}`);
+  return true;
+};
+
 const boot = async () => {
   const read = await readSession(window.fetch.bind(window));
   if (!read.ok) {
     // Signed out: what the last account's teams left in this browser goes too.
     if (read.signedOut === true) clearWebCache(window.localStorage);
-    void show(read.signedOut === true ? { at: "signed-out" } : { at: "failed", failure: read.failure });
+    void show(read.signedOut === true ? { at: "signed-out", ...(justDeleted() ? { deleted: true as const } : {}) } : { at: "failed", failure: read.failure });
     return;
   }
   const session = withCarried(read.session, carried);

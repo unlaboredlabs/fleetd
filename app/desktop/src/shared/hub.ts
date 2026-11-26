@@ -59,6 +59,17 @@ export type HubState =
   /** The hub refused the key (close 4401 or an auth error). Nothing retries until a new key is saved. */
   | { readonly phase: "refused"; readonly hub: string; readonly message: string };
 
+/**
+ * fleetd cloud's final word on an address whose workspace was deleted (close 4401 with this reason, on a link open
+ * then and on every dial after): the apps stop at once and say so, never "Connecting…" or "refused the key" (S10).
+ * While the delete runs, a 1008 "This workspace is being deleted." is a drop like any other.
+ */
+export const WORKSPACE_DELETED = "This workspace was deleted.";
+
+/** The workspace's refusal (`refused`'s message) for a close's reason: its deletion as said, else the key refused. */
+export const refusedWords = (reason: string): string =>
+  reason.includes(WORKSPACE_DELETED.slice(0, -1)) ? WORKSPACE_DELETED : `The workspace refused the key${reason === "" ? "" : ` (${reason})`}.`;
+
 export interface HubError {
   /** A hub ErrorCode (`invalid`, `forbidden`, `not_found`, …) or one of the shell's own: `timeout`, `offline`, `disconnected`. */
   readonly code: string;

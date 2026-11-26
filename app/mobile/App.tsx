@@ -28,7 +28,7 @@ import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cach
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
 import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
-import { cloudDomain, type PairFailure } from "./src/desktop";
+import { cloudDomain, WORKSPACE_DELETED, type PairFailure } from "./src/desktop";
 import { deviceName } from "./src/hub/deviceName";
 import { accountPreview, askedOn, deleteAccount } from "./src/accountDelete";
 import { pairLinkStep } from "./src/hub/pairLink";
@@ -519,12 +519,21 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
   useEffect(() => {
     if (refused === undefined || leaving.current) return;
+    // Its workspace was deleted (fleetd cloud's final close): nothing to pair again. It leaves this phone, which then
+    // shows the next workspace kept, or the first screen with that line (iPhone sweep S1: "Connecting…" forever).
+    if (refused === WORKSPACE_DELETED) {
+      leaving.current = true;
+      haptics.warning();
+      if (hubs.some((h) => h.hub !== paired.hub)) Alert.alert(`${paired.hubName} Was Deleted`, "It's no longer on fleetd, so it left this phone.");
+      onForget(WORKSPACE_DELETED);
+      return;
+    }
     haptics.warning();
     Alert.alert(DEVICE === "iPad" ? "Pair This iPad Again" : "Pair This Phone Again", refused, [
       { text: "Not Now", style: "cancel" },
       { text: "Pair Again", onPress: () => onForget(`This ${DEVICE}'s key was refused: pair it again.`) },
     ]);
-  }, [refused, onForget]);
+  }, [refused, onForget, hubs, paired]);
 
   return (
     <SessionContext.Provider value={session}>

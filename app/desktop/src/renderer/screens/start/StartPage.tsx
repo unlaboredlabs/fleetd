@@ -44,6 +44,8 @@ export interface StartActions {
   readonly onTailscale?: () => void;
   /** Tailscale's sign-in page, or its admin console, again from a click. */
   readonly onTailscaleOpen?: () => void;
+  /** Stops waiting on Tailscale's sign-in or approval: the workspace's device stops connecting. */
+  readonly onTailscaleCancel?: () => void;
   readonly onGithub?: () => void;
   readonly onGithubSkip?: () => void;
   /** GitHub's install page again, to choose the repositories fleetd's App reaches. */
@@ -324,6 +326,9 @@ function Tailscale({ step, actions }: { step: TailscaleStep; actions: StartActio
           <Button size="md" onClick={actions.onTailscaleOpen}>
             {step.at === "approve" ? "Open Tailscale" : "Open the sign-in page"}
           </Button>
+          <Button variant="quiet" size="md" disabled={step.cancelling === true} onClick={actions.onTailscaleCancel}>
+            {step.cancelling === true ? "Cancelling…" : "Cancel"}
+          </Button>
         </div>
       </div>
     );
@@ -352,8 +357,11 @@ function Tailscale({ step, actions }: { step: TailscaleStep; actions: StartActio
  * subscription for hosted sandboxes). A hosted team starts on the key; a computer on its login.
  */
 function Claude({ step, tailnet, tailscale, actions }: { step: ClaudeStep; tailnet: boolean | undefined; tailscale: TailscaleStep | undefined; actions: StartActions }) {
-  const [way, setWay] = useState<"key" | "own">(step.at === "login" ? "own" : "key");
+  // A key saved and not working yet opens on it, with its Test's words.
+  const [way, setWay] = useState<"key" | "own">(step.at === "login" && step.key === undefined ? "own" : "key");
   if (step.at === "wait" || step.at === "done") return null;
+  // The computer's own login works: only the key, which reaches it first, is left to fix (or remove in Settings).
+  if (step.at === "key") return <ClaudeKey state={step.key} tailnet={tailnet} tailscale={tailscale} actions={actions} />;
   const own = { value: "own" as const, label: step.at === "login" ? "Claude login" : "Subscription" };
   const key = { value: "key" as const, label: "API key" };
   return (
@@ -436,7 +444,7 @@ function ClaudeKey({ state, tailnet, tailscale, actions }: { state: KeyState | u
       )}
       <div className={s.actions}>
         <Button type="submit" variant="primary" size="md" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {state?.testing === true ? "Testing the key…" : busy ? "Saving…" : "Save"}
         </Button>
       </div>
     </form>

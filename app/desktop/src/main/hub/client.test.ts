@@ -479,6 +479,16 @@ describe("HubClient", () => {
     expect(hub.urls).toHaveLength(1);
   });
 
+  // S10: fleetd cloud's final close for a deleted workspace says so, not that the key was refused.
+  it("stops for good on the close for a deleted workspace, and says it was deleted", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.close(4401, "This workspace was deleted.");
+    expect(client.state).toEqual({ phase: "refused", hub: "http://devbox:4790", message: "This workspace was deleted." });
+    vi.advanceTimersByTime(60_000);
+    expect(hub.urls).toHaveLength(1);
+  });
+
   it("treats an error before ready as a refused key", () => {
     const { hub, client } = setup();
     client.start();

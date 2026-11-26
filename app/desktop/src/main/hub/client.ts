@@ -13,7 +13,7 @@
 // doesn't answer in WAKE_PROBE_MS, as a plain unlock leaves a healthy link: an attempt that went out before the tailnet was
 // back would otherwise hold the next one off for all of READY_TIMEOUT_MS, though a fresh dial gets through at once.
 import type { BrowserInput } from "../../shared/contracts";
-import { MAX_CALL_INPUT_BYTES, WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
+import { MAX_CALL_INPUT_BYTES, refusedWords, WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
 import {
   appUrl,
@@ -681,7 +681,7 @@ export class HubClient implements HubSource {
 
   #onClose(code: number, reason: string, error: SocketError | undefined, opened: boolean): void {
     if (code === CLOSE_UNAUTHORIZED) {
-      this.#refuse(`The workspace refused the key${reason === "" ? "" : ` (${reason})`}.`);
+      this.#refuse(refusedWords(reason));
       return;
     }
     if (opened && (code === CLOSE_RESTART || code === CLOSE_GOING_AWAY)) {

@@ -54,6 +54,7 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const ended = useData((s) => endedAt(s.chatStates[key]?.leadIdleAt, s.chatTurnEnds?.[key]));
   const leadWaiting = useData((s) => leadWaitingOf(s, key));
   const skew = useData((s) => s.live.skewMs ?? 0);
+  const offline = useData((s) => s.machines[refOf(key).machineId]?.status === "offline");
   const row = useToolQuery("status_get", ALL).data?.rows?.find((r) => `${r.projectRef.machineId}/${r.projectRef.projectId}` === key);
   const held = heldWords({ leadWaiting });
   const blocked = heldWords({ blocked: row?.state === "blocked" ? (row.blockedReason ?? "") : undefined });
@@ -67,8 +68,8 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const isCold = cold.see(key, working, activity, landed);
   const stale = asked !== undefined && staleAt === asked;
   return useMemo(
-    () => wakeOf({ asleep, working, activity, activitySince, cold: isCold, writing, asked, waiting, endedAt: ended, idleKnown: idleAt !== undefined, held, blocked, stale }),
-    [asleep, working, activity, activitySince, isCold, writing, asked, waiting, ended, idleAt, held, blocked, stale],
+    () => wakeOf({ asleep, working, activity, activitySince, cold: isCold, writing, asked, waiting, endedAt: ended, idleKnown: idleAt !== undefined, held, blocked, stale, offline }),
+    [asleep, working, activity, activitySince, isCold, writing, asked, waiting, ended, idleAt, held, blocked, stale, offline],
   );
 }
 

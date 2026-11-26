@@ -31,6 +31,9 @@ let joinHeld: Promise<void> | null = null;
 /** What the app sealed for the hub's key, and whether the hub has one since. */
 let sealed: ClaudeAccountRequest[] = [];
 let hubKey = false;
+/** The hub's key's last Test once claude_account_test ran, and whether Claude takes the key (S1). */
+let keyTest: { at: string; machineId: string; ok: boolean; error?: string } | undefined;
+let keyWorks = true;
 /** What the team's leads run on, as claude_accounts_get says: the hub's key once it is saved. */
 let leadsRunOn: { kind: "machine_login" } | { kind: "account"; account: { kind: "person"; personId: string } } = { kind: "machine_login" };
 /** The team's billing as GET /billing/v1 answers: before the switch to fleetd's computers unless a test says. */
@@ -173,9 +176,25 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
                       message: "logged in",
                     }
                 : tool === "claude_accounts_get"
-                  ? { settings: { membersUseHubApi: true }, leadsRunOn: hubKey ? { kind: "account", account: { kind: "hub" } } : leadsRunOn, people: [], ...(hubKey ? { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z" } } : {}) }
+                  ? {
+                      settings: { membersUseHubApi: true },
+                      leadsRunOn: hubKey ? { kind: "account", account: { kind: "hub" } } : leadsRunOn,
+                      people: [],
+                      ...(hubKey ? { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z", ...(keyTest === undefined ? {} : { lastTest: keyTest }) } } : {}),
+                    }
+                : tool === "claude_account_test"
+                  ? {
+                      test: (keyTest = {
+                        at: "2026-11-18T00:00:01Z",
+                        machineId: "hosted",
+                        ok: keyWorks,
+                        ...(keyWorks ? {} : { error: "Claude refused this key: it isn't a valid API key." }),
+                      }),
+                    }
                   : tool === "tailnet_connect"
                     ? (team.tailnet = { status: "login", loginUrl: "https://login.tailscale.com/a/standin" })
+                    : tool === "tailnet_disconnect"
+                      ? (team.tailnet = { status: "off" })
                     : tool === "tailnet_get"
                       ? team.tailnet
                       : {};
@@ -244,6 +263,8 @@ beforeEach(() => {
   joinHeld = null;
   sealed = [];
   hubKey = false;
+  keyTest = undefined;
+  keyWorks = true;
   leadsRunOn = { kind: "machine_login" };
   billing = BILLING_SAMPLES.off;
   window.localStorage.clear();
@@ -258,6 +279,7 @@ beforeEach(() => {
       claudeAccount: (_hub: string, request: ClaudeAccountRequest) => {
         sealed.push(request);
         hubKey = true;
+        keyTest = undefined;
         return Promise.resolve({ ok: true, output: { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z" }, missingOn: [] } });
       },
     },
@@ -454,6 +476,37 @@ it("a new cloud team on fleetd's computers, its runner up, has no Claude ticked 
   await settle();
   expect(host.querySelector('[data-step="claude"]')?.textContent).toContain("API key");
   expect(screen()).toBe("start.github");
+  stop();
+}, 20_000);
+
+// S1: a made-up key ticked "API key" and opened GitHub; the first message then met Claude's refusal.
+it("a key Claude refuses keeps the Claude step open with Claude's words, and one that works ticks it", async () => {
+  billing = { ...BILLING_SAMPLES.plan, providedOn: true };
+  keyWorks = false;
+  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "online", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" });
+  const stop = await render({ machines: [runner] });
+  await until("start.claude");
+  const type = async (value: string) => {
+    const field = host.querySelector<HTMLInputElement>("input[aria-label='API key']");
+    if (field === null) throw new Error("no API key field");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+  };
+  await type("sk-ant-api03-notreal");
+  await click("Save");
+  for (let i = 0; i < 4; i++) await settle();
+  expect(calls.filter((c) => c.tool === "claude_account_test")).toHaveLength(1);
+  expect(screen()).toBe("start.claude");
+  expect(host.querySelector('[data-step="claude"] [role=alert]')?.textContent).toBe("Claude refused this key: it isn't a valid API key.");
+  keyWorks = true;
+  await type("sk-ant-api03-real");
+  await click("Save");
+  await until("start.github");
+  expect(host.querySelector('[data-step="claude"]')?.textContent).toContain("API key");
+  expect(calls.filter((c) => c.tool === "claude_account_test")).toHaveLength(2);
   stop();
 }, 20_000);
 
@@ -717,6 +770,19 @@ it("Tailscale is a line of where agents run: Connect opens Tailscale's sign-in t
   const again = await render({ machines: [machine()], tailnet: { status: "off" } });
   expect(screen()).toBe("start.github");
   again();
+});
+
+// S6: a closed sign-in tab left the wait on show through reloads, with no way out.
+it("Tailscale's sign-in wait has Cancel, which stops connecting and brings Connect back", async () => {
+  const stop = await render({ tailnet: { status: "login", loginUrl: "https://login.tailscale.com/a/standin" } });
+  await until("start.computer");
+  expect(host.textContent).toContain("Waiting for you to sign in to Tailscale");
+  await click("Cancel");
+  for (let i = 0; i < 3; i++) await settle();
+  expect(calls.filter((c) => c.tool === "tailnet_disconnect")).toHaveLength(1);
+  expect(host.textContent).not.toContain("Waiting for you to sign in to Tailscale");
+  expect(button("Connect Tailscale")).toBeDefined();
+  stop();
 });
 
 it("a hub with no Tailscale device leaves its line out", async () => {

@@ -71,6 +71,16 @@ it("signed out: Welcome to fleetd, and Sign in or Make an account in the box", a
   expect(actions.signIn).toHaveBeenCalledOnce();
 });
 
+// S10: after Delete account the page was only the welcome, with no word that the account was gone.
+it("signed out just after Delete account: says the account is deleted, and what a joined machine does", async () => {
+  await show({ at: "signed-out", deleted: true });
+  expect(host.querySelector("[data-deleted]")?.textContent).toBe(
+    "Your fleetd account is deleted, with its workspaces.A machine you joined stops fleetd by itself. To remove fleetd there, run fleetd uninstall on it.",
+  );
+  await show({ at: "signed-out" });
+  expect(host.querySelector("[data-deleted]")).toBeNull();
+});
+
 it("each invitation in turn: Join, a refusal said in the box, then Not now goes on to the app", async () => {
   const invitations = [
     {

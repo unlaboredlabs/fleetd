@@ -69,7 +69,12 @@ export interface WakeIn {
   readonly blocked?: string | undefined;
   /** That message came longer than START_STALE_MS ago on the hub's clock: a lead that hasn't started on it never will. */
   readonly stale?: boolean | undefined;
+  /** The bot's machine is offline: nothing runs there until it is back, whatever the lead's last state said. */
+  readonly offline?: boolean | undefined;
 }
+
+/** The bot's words while its machine is offline and the hub gave no reason of its own. */
+export const MACHINE_OFFLINE_LINE = "Machine offline.";
 
 /** Past this, a start is slow: its word says so, with the time so far. */
 export const SLOW_MS = 30_000;
@@ -115,6 +120,8 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   const waiting = i.waiting === true && !ended;
   // The hub said your message hasn't reached the lead: whatever it works on, it isn't this.
   if (waiting && i.held !== undefined) return { phase: "held", reason: i.held };
+  // Its machine went offline mid-turn: the lead's last state ("working") is stale, so no dots that keep moving (S9).
+  if (i.offline === true && !i.asleep && (waiting || (i.working && i.cold))) return { phase: "held", reason: i.blocked ?? MACHINE_OFFLINE_LINE };
   if (i.working) {
     // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
     if (!i.cold && !waiting) return undefined;

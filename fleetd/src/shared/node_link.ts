@@ -35,6 +35,9 @@ export const REASON_MAX_BYTES = 123;
 // Its words stay "hub": a node of any version matches the reason on them, and an older one would miss "workspace".
 export const REMOVED = "was removed from this hub";
 export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: its node key is revoked`;
+/** What an UNAUTHORIZED close says, and only says, for a deleted workspace (fleetd's cloud, once its person deleted it
+ * or their account): its node stops as enrolled, so nothing dials an address that is gone (S10). */
+export const DELETED = "This workspace was deleted";
 /** What an UNAUTHORIZED close says for a node whose key the hub doesn't hold at all: the agents' Mac stops as enrolled
  * on it too, as only a new code joins it again. */
 export const NOT_ENROLLED = "is not enrolled";

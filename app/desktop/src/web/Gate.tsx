@@ -14,7 +14,8 @@ import s from "./gate.module.css";
 import type { WebFailure, WebInvitation } from "./session";
 
 export type GateView =
-  | { readonly at: "signed-out" }
+  /** `deleted`: the person just deleted their account here (shell.ts deleteAccount), which the page says first. */
+  | { readonly at: "signed-out"; readonly deleted?: true }
   | { readonly at: "failed"; readonly failure: WebFailure }
   | { readonly at: "invited"; readonly email: string; readonly invitations: readonly WebInvitation[]; readonly removed?: string }
   | { readonly at: "no-team"; readonly email: string; readonly removed?: string };
@@ -63,6 +64,13 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
   if (view.at === "signed-out") {
     return (
       <Stage id="web.sign-in" bot="idle" title="Welcome to fleetd" foot={<Legal />}>
+        {view.deleted === true ? (
+          // After Delete account the page was only the welcome, with no word that the account was gone (S10).
+          <div role="status" className={s.deleted} data-deleted="">
+            <Text strong>Your fleetd account is deleted, with its workspaces.</Text>
+            <Text tone="quiet">A machine you joined stops fleetd by itself. To remove fleetd there, run fleetd uninstall on it.</Text>
+          </div>
+        ) : null}
         <Text strong>Sign in, or make an account</Text>
         <Text tone="quiet">With Google, GitHub or a code by email.</Text>
         <div className={st.actions}>

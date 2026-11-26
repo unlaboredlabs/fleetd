@@ -58,6 +58,15 @@ describe("the live strip", () => {
     expect(idle && stripHeadline(idle)).toBe("");
   });
 
+  // S9: with the machine offline, the agent row kept "writer · thinking" for minutes.
+  it("says Machine offline for an agent at work on a machine that is offline, not its last word", () => {
+    const on = { threadRef: { machineId: "devbox", threadId: "t1" } } as const;
+    const s = stripOf([lane("T1", "working", on), lane("T2", "queued", on), lane("T3", "working", { ...on, sandbox: "fleetd's computers" })], [], (m) => (m === "devbox" ? "offline" : undefined));
+    expect(s.lanes.map((l) => l.line.words)).toEqual(["Machine offline", "thinking", "queued"]);
+    expect(s.lanes[0]?.line.thinking).toBe(false);
+    expect(stripOf([lane("T1", "working", on)], [], () => "online").lanes[0]?.line.words).toBe("thinking");
+  });
+
   it("counts agents at work, waiting on you, on hold and queued apart", () => {
     const s = stripOf([
       lane("T1", "working", { live: { laneId: "T1", status: "working", activity: { activity: { kind: "edit", path: "src/a.ts" }, since: T0 } } }),

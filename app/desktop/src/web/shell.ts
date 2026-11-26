@@ -42,6 +42,9 @@ import { toHash } from "../renderer/screens/shell/routes";
 import { WebHub } from "./hub";
 import { readSession, signInPath, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
 
+/** The address's word, after Delete account, that the welcome page says the account is deleted. */
+export const DELETED_PARAM = "deleted";
+
 /** What a desktop-only part answers here; the screens hide those parts, so it is a last word, not a control. */
 export const NEEDS_DESKTOP = "This needs the fleetd desktop app.";
 const desktopOnly: HubError = { code: "desktop_only", message: NEEDS_DESKTOP, fix: "Download it from fleetd.sh." };
@@ -429,7 +432,8 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         const out = await (await invites()).deleteAccount(teamFetch, team, email);
         if (out.ok) {
           cache.clear();
-          deps.go("/");
+          // The welcome page says the account is gone (main.tsx justDeleted).
+          deps.go(`/?${DELETED_PARAM}=1`);
         }
         return out;
       },

@@ -172,6 +172,23 @@ describe("a cloud bot waking", () => {
 });
 
 // W852: "all done?" sat beside a dot grid with no sign the bot had started.
+// S9: the machine went offline mid-turn, and the bot's typing dots kept moving for two minutes beside "thinking".
+describe("a bot whose machine is offline", () => {
+  test("says so in one plain line, no dots, while its lead was at work on your message or hasn't started on it", () => {
+    const working = some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" }, offline: true });
+    expect(working).toEqual({ phase: "held", reason: "Machine offline." });
+    expect(wakeDots(working)).toBe(false);
+    // The hub's own reason, when it has one, is the line.
+    expect(some({ working: true, cold: true, waiting: true, asked: T, offline: true, blocked: "Blocked: devbox is offline." })).toEqual({ phase: "held", reason: "Blocked: devbox is offline." });
+    expect(some({ waiting: true, asked: T, offline: true })).toEqual({ phase: "held", reason: "Machine offline." });
+    // Back online: the lead's own state again.
+    expect(some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" } })).toEqual({ phase: "thinking" });
+    // Asleep, or nothing of yours to answer: nothing new.
+    expect(wakeOf(at({ asleep: true, offline: true }))).toEqual({ phase: "asleep" });
+    expect(wakeOf(at({ working: true, offline: true }))).toBeUndefined();
+  });
+});
+
 describe("the bot in the reply's place on every turn", () => {
   const human = (ms: number) => ({ author: "human", state: "final", createdAt: iso(ms) });
   const lead = (ms: number, state = "final") => ({ author: "lead", state, createdAt: iso(ms) });

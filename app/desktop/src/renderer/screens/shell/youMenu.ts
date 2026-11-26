@@ -9,7 +9,7 @@
 import type { DegradedCause, MachineStatus, SlotHosted } from "../../../shared/contracts";
 import { hostedRow } from "../../../shared/hostedRow";
 import { specOf } from "../../../shared/providers";
-import type { HubState } from "../../../shared/hub";
+import { WORKSPACE_DELETED, type HubState } from "../../../shared/hub";
 import { versionNumber, type UpdatesState } from "../../../shared/updates";
 import { appStatus, clockAt, type Act, type Status } from "../updates/model";
 import type { Quiet } from "../updates/quiet";
@@ -91,6 +91,8 @@ export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null
   const name = label ?? (hub.hub === "" ? "the workspace" : hubName(hub.hub));
   const named = { ...line, name };
   // On the web a key comes with the sign-in, so a refused one is signed in again (HubStatus).
+  // Its workspace was deleted (fleetd cloud's final close): nothing to sign in to again, only to remove from here.
+  if (hub.phase === "refused" && hub.message === WORKSPACE_DELETED) return { ...named, mark: "danger", text: `${name} was deleted`, does: { to: "hubs" } };
   if (hub.phase === "refused") return { ...named, mark: "danger", text: `${name} refused the key`, action: onWeb() ? "Sign in again" : "Pair again", does: { to: "pair" } };
   const hubs = { does: { to: "hubs" } } as const;
   if (hub.phase === "live") {

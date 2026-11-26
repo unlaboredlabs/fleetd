@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, HubScope } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AddProjectScreen } from "./AddProjectScreen";
 import { addUi, closeAddProject, openAddProject, pickHub, pickMachine, useAddUi } from "./store";
@@ -42,6 +42,8 @@ let held: (() => void) | undefined;
 let bare: boolean;
 /** hub_info's role for this app's person. */
 let role: "owner" | "member";
+/** A fleetd cloud team, whose GitHub isn't connected: project_discover's GitHub says so. */
+let cloud: boolean;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -52,6 +54,7 @@ beforeEach(() => {
   held = undefined;
   bare = false;
   role = "owner";
+  cloud = false;
   window.location.hash = "#/projects/add";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -82,9 +85,12 @@ const render = async () => {
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "1", protocol: 1, busy: [], me: { personId: "p_aaaaaaaa", name: "Sam", role, createdAt: AT } } });
       if (tool === "project_discover" && bare) return Promise.resolve({ ok: true, output: { machines: [], github: { owners: [], repos: [] } } });
       if (tool === "project_discover") {
-        const machine = { machineId: "devbox", online: true, cloneRoot: "/home/w/src", repos: [{ path: "/home/w/code/notes-cli", name: "notes-cli" }], ...(projectsRoot ? { projectsRoot } : {}) };
+        const machine = { machineId: "devbox", online: true, cloneRoot: "/home/w/src", repos: cloud ? [] : [{ path: "/home/w/code/notes-cli", name: "notes-cli" }], ...(projectsRoot ? { projectsRoot } : {}) };
         const other = { machineId: "buildbox", online: true, cloneRoot: "/home/b/src", repos: [], projectsRoot: "/home/b/fleetd/projects" };
-        return Promise.resolve({ ok: true, output: { machines: [machine, other], github: { owners: [], repos: [] }, best: "devbox" } });
+        const github = cloud
+          ? { owners: [], repos: [], problem: { code: "gh_unavailable", message: "GitHub isn't connected", fix: "an owner or admin installs fleetd's GitHub App in Settings › Workspace › Setup › GitHub" } }
+          : { owners: [], repos: [] };
+        return Promise.resolve({ ok: true, output: { machines: [machine, other], github, best: "devbox" } });
       }
       if (tool === "project_add") {
         const { title, path } = input as { title: string; path?: string };
@@ -114,7 +120,13 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={layer}>
-          <Shown />
+          {cloud ? (
+            <HubScope hub={{ id: layer.hub, label: "sam", layer, cloud: true }}>
+              <Shown />
+            </HubScope>
+          ) : (
+            <Shown />
+          )}
         </DataProvider>
       </UiProvider>,
     );
@@ -177,6 +189,27 @@ describe("New bot", () => {
     await press(button("Connect a computer"));
     expect(window.location.hash).toBe("#/settings/hub/machines");
     expect(madeWith()).toEqual([]);
+  });
+
+  // S7: the owner of a new cloud team was told to ask "an owner or admin" to install GitHub's App, with no button.
+  it("offers an owner of a cloud team with no GitHub Connect GitHub right in Add a repo; a member keeps the workspace's words", async () => {
+    cloud = true;
+    const connectGithub = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fleetd", { shell: "web", platform: "linux", system: { hostName: () => Promise.resolve("laptop") }, projects: { pickFolder: () => Promise.resolve(null) }, cloud: { connectGithub } });
+    await render();
+    await press(document.querySelector('button[aria-label="Add a repo"]'));
+    expect(document.querySelector("[data-connect-github]")?.textContent).toBe("GitHub's repos show here once GitHub is connected.Connect GitHub");
+    expect(document.body.textContent).not.toContain("an owner or admin");
+    await press(button("Connect GitHub"));
+    expect(connectGithub).toHaveBeenCalledWith("hub", { back: "/#/projects/add", install: true });
+    act(() => closeAddProject());
+    act(() => root.unmount());
+    role = "member";
+    root = createRoot(host);
+    await render();
+    await press(document.querySelector('button[aria-label="Add a repo"]'));
+    expect(button("Connect GitHub")).toBeUndefined();
+    expect(document.body.textContent).toContain("an owner or admin installs fleetd's GitHub App");
   });
 
   it("tells a member with nothing that runs agents who can fix it", async () => {

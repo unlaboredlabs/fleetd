@@ -8,7 +8,8 @@ import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
-import { useToolQuery } from "../../src/data/react";
+import { useData, useToolQuery } from "../../src/data/react";
+import { MACHINE_OFFLINE } from "../live/words";
 import { projectKey } from "../../src/data/store";
 import { useWake } from "./wake";
 import { useSeen } from "../live";
@@ -353,7 +354,24 @@ function TypingLine({ enter }: { enter: Arrival | undefined }) {
 /** The lead writing: the typing bubble, unless its bot stands in the reply's place, woken for this turn (WakeRow.tsx). */
 function Typing({ project, enter }: { project: ProjectRef | undefined; enter: Arrival | undefined }) {
   const waking = useWake(project === undefined ? "" : projectKey(project), true)?.phase === "writing";
-  return waking ? null : <TypingLine enter={enter} />;
+  // Its machine offline: nothing is written there until it is back, so the dots don't keep moving (S9).
+  const offline = useData((d) => project !== undefined && d.machines[project.machineId]?.status === "offline");
+  if (waking) return null;
+  return offline ? <OfflineLine enter={enter} /> : <TypingLine enter={enter} />;
+}
+
+/** In the typing bubble's place while the lead's machine is offline: the bubble, still, with the words. */
+function OfflineLine({ enter }: { enter: Arrival | undefined }) {
+  const e = useEnter(enter);
+  return (
+    <div className={cx(s.line, e.className)} style={e.style}>
+      <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" data-typing-offline="">
+        <Text size="sm" tone="quiet">
+          {MACHINE_OFFLINE}
+        </Text>
+      </div>
+    </div>
+  );
 }
 
 export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {

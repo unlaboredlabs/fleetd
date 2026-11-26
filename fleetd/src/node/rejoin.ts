@@ -72,6 +72,6 @@ export async function enrolAt(ask: RejoinAsk, p: EnrolPorts): Promise<{ ok: true
 
 /** node.json once enrolled at the new hub: its address, enrolled. */
 export const movedConfig = (config: NodeConfig, hub: string): NodeConfig => {
-  const { removed: _removed, ...rest } = config;
+  const { removed: _removed, deleted: _deleted, ...rest } = config;
   return { ...rest, hub, enrolled: true };
 };

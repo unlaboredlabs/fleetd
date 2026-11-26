@@ -2,7 +2,7 @@
 // terminal or its default without one (or with --yes). Ported: a worker joining a hub (`--join … --code …`, the line
 // `fleetd pair --worker` prints) and a joined worker run again, which keeps its enrolment and repairs what it runs.
 // The hub's own setup (where it listens, its logins, workers, a first project, the app) is listed in PORT_MAP.md.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NotImplemented } from "../../shared/errors.ts";
 import { fleetdDir } from "../../shared/home.ts";
@@ -14,7 +14,7 @@ import { claudeLogin } from "./claude_login.ts";
 import { asOwner, claudeKey } from "./connect_steps.ts";
 import { type Added, Stop, join as joinHubAs, localArgs, newJoinLine } from "./machine.ts";
 import { setupRows } from "../../node/agents_mac/rows.ts";
-import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
+import { CLAUDE_INSTALL, CLAUDE_TESTED, loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
 import { attachedArgv, runSsh } from "./ssh.ts";
 import { q } from "./units.ts";
@@ -307,7 +307,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
     if (pasted) [hub, code] = [pasted.hub, pasted.code];
     else code = await ui.input(list, "One-time code", "", "", needed);
   }
-  const identity = opts.identity ?? pasted?.identity;
+  const identity = joinIdentity(opts.identity ?? pasted?.identity, machineGitIdentity(), hub);
   let machineId = opts.machineId ?? pasted?.machineId;
   if (machineId === undefined) {
     const fallback = machineIdFromHost(localHostName());
@@ -324,6 +324,11 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
     return 1;
   }
   list.sectionHeader("Worker");
+  // The join refused a machine without Claude Code, and Get started asks about Claude only in its next step (S2).
+  if (!opts.mac && !(await ensureClaude(list))) {
+    list.outro(list.needsYou(), JOIN_AGAIN);
+    return 1;
+  }
   list.start(`Joining ${hub.trim()}`);
   capture();
   let added: Added | undefined;
@@ -366,7 +371,7 @@ async function repairWorker(opts: InitOptions, ui: Ui, list: Checklist, joined: 
   capture();
   let added: Added | undefined;
   try {
-    const identity = opts.identity ?? joined.identity;
+    const identity = joinIdentity(opts.identity ?? joined.identity, machineGitIdentity(), joined.hub);
     added = await joinHubAs(joined.hub, { kind: "keep" }, {
       ...localArgs(joined.machineId, opts.withService),
       ...(identity ? { gitIdentity: identity } : {}),
@@ -394,6 +399,71 @@ async function repairWorker(opts: InitOptions, ui: Ui, list: Checklist, joined: 
     await workerClaude(ui, list, added);
   }
   return workerEnd(list, "This machine is a worker.", true);
+}
+
+/** Where the machine's claude is, as the join's probe looks for it (machine_plan.ts probeCommand); undefined: none. */
+export function findClaude(home = process.env.HOME ?? ""): string | undefined {
+  const onPath = Bun.which("claude");
+  if (onPath !== null) return onPath;
+  return [`${home}/.local/bin/claude`, `${home}/.claude/local/claude`, "/opt/homebrew/bin/claude", "/usr/local/bin/claude"].find((p) => existsSync(p));
+}
+
+/** Claude's own installer, at the version fleetd is tested with: true once it ended well. Its output is shown only on a failure. */
+async function runClaudeInstall(): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const run = Bun.spawn(["sh", "-c", `${CLAUDE_INSTALL} -s ${CLAUDE_TESTED}`], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  const [out, err, code] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
+  return { ok: code === 0, said: `${out}\n${err}`.trim().split("\n").slice(-3).join(" ") };
+}
+
+/**
+ * Claude Code on this machine before it joins, installed by the join itself when it has none: fleetd runs its agents
+ * through it. False, with the checklist's line and its fix, when it isn't there afterwards.
+ */
+export async function ensureClaude(
+  list: Checklist,
+  deps: { readonly find: () => string | undefined; readonly install: () => Promise<{ readonly ok: boolean; readonly said: string }> } = { find: findClaude, install: runClaudeInstall },
+): Promise<boolean> {
+  if (deps.find() !== undefined) return true;
+  const title = "Installing Claude Code";
+  list.start(title);
+  const tried = await deps.install();
+  if (tried.ok && deps.find() !== undefined) {
+    list.done(title, `${CLAUDE_TESTED}: fleetd runs its agents through it`);
+    return true;
+  }
+  list.failed(title, tried.said === "" ? "Claude Code's installer didn't finish" : tried.said, `run ${CLAUDE_INSTALL}, then paste the join line again`);
+  return false;
+}
+
+/** This machine's own git user (`git config --global`), when it has both a name and an email. */
+export function machineGitIdentity(): GitIdentity | undefined {
+  const read = (key: string) => {
+    try {
+      const out = Bun.spawnSync(["git", "config", "--global", key], { stdout: "pipe", stderr: "ignore" });
+      return out.exitCode === 0 ? out.stdout.toString().trim() : "";
+    } catch {
+      return "";
+    }
+  };
+  const [name, email] = [read("user.name"), read("user.email")];
+  return name !== "" && email !== "" ? { name, email } : undefined;
+}
+
+/**
+ * The commit identity a joining machine's agents get: the one the join line carries (the person's, from their GitHub),
+ * else the machine's own git user, else the workspace's name. With none at all the join said to run a fix on "the
+ * workspace's machine", which a cloud workspace has none of, and an agent made one up with its own id in it
+ * ("fleetd T1 <noreply@anthropic.com>", S3); an id is never part of one.
+ */
+export function joinIdentity(given: GitIdentity | undefined, machineGit: GitIdentity | undefined, hub: string): GitIdentity {
+  if (given !== undefined) return given;
+  if (machineGit !== undefined) return machineGit;
+  let host = "";
+  try {
+    host = new URL(hub.trim()).hostname;
+  } catch {}
+  const name = hubNameOf(hub.trim());
+  return { name: name === "" ? "fleetd" : name, email: `noreply@${host === "" ? "fleetd.invalid" : host}` };
 }
 
 /** The hub's host, as the rows name it. */

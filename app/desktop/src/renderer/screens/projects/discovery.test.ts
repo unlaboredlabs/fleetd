@@ -56,7 +56,7 @@ describe("discovery", () => {
     const github: ProjectDiscoverOutput["github"] = { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh repo list did not run: gh is not logged in on the workspace", fix: "Run `gh auth login` on the workspace machine, or paste the repository's URL" } };
     const d = discovery({ machines: [], github }, names);
     expect(d.problems).toEqual([
-      { message: "gh repo list did not run: gh is not logged in on the workspace.", fix: "Run `gh auth login` on the workspace machine, or paste the repository's URL." },
+      { message: "gh repo list did not run: gh is not logged in on the workspace.", fix: "Run `gh auth login` on the workspace machine, or paste the repository's URL.", github: true },
     ]);
   });
 

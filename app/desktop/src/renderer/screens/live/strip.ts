@@ -6,7 +6,7 @@ import { selectProjectWork, type ProjectWork } from "../../src/data/selectors";
 import type { DataState } from "../../src/data/store";
 import type { AgentLane, AgentRole, PrRef } from "./contracts";
 import { projectKey } from "./lanes";
-import { describe, isChecker, isFinal, isWorking, type Line } from "./words";
+import { describe, isChecker, isFinal, isWorking, onOfflineMachine, type Line } from "./words";
 
 export interface ProjectRef {
   readonly machineId: string;
@@ -58,11 +58,18 @@ export interface Strip {
   readonly lanes: readonly StripAgent[];
 }
 
-const agentOf = (l: AgentLane): StripAgent => ({ laneId: l.laneId, role: l.role, title: l.title, state: stateOf(l), line: describe(l) });
+const agentOf = (l: AgentLane, machine: (machineId: string) => string | undefined): StripAgent => ({
+  laneId: l.laneId,
+  role: l.role,
+  title: l.title,
+  state: stateOf(l),
+  line: describe(l, onOfflineMachine(l, machine)),
+});
 
-export const stripOf = (lanes: readonly AgentLane[], prs: readonly PrRef[] = []): Strip => {
+/** `machine`: a machine's status by its id, so an agent on one offline says so (words.ts onOfflineMachine). */
+export const stripOf = (lanes: readonly AgentLane[], prs: readonly PrRef[] = [], machine: (machineId: string) => string | undefined = () => undefined): Strip => {
   const agents = lanes
-    .map(agentOf)
+    .map((l) => agentOf(l, machine))
     .map((a, i) => ({ a, i }))
     .sort((x, y) => ORDER[x.a.state] - ORDER[y.a.state] || x.i - y.i)
     .map(({ a }) => a);
@@ -123,7 +130,7 @@ export const selectStrip = (project: ProjectRef): ((s: DataState) => Strip | und
   selector = (s: DataState) => {
     const w = work(s);
     if (w === undefined) return undefined;
-    const next = stripOf(shownLanes(w), w.prs);
+    const next = stripOf(shownLanes(w), w.prs, (m) => s.machines[m]?.status);
     if (last !== undefined && sameStrip(last, next)) return last;
     last = next;
     return next;
