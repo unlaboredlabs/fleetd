@@ -42,7 +42,8 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
   });
 
   it("is left to the screens that hold a stack of their own, and to the chat, which keeps out itself", () => {
-    const own = all(/\w+\.Screen/u).filter((s) => s.tag.includes("layout={ownRoom}"));
+    // coveredRoom is ownRoom's, held while another screen covers it (ui/Covered.tsx).
+    const own = all(/\w+\.Screen/u).filter((s) => s.tag.includes("layout={ownRoom}") || s.tag.includes("layout={coveredRoom}"));
     expect(own.map((s) => named(s.tag))).toEqual(["Home", "Settings", "Chat", "ChatInfo"]);
   });
 

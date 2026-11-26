@@ -13,7 +13,7 @@
 // flat list, with no labels. Beside the chat (src/split.ts), a row opens its chat in the other pane, marked while it's open.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
@@ -22,7 +22,7 @@ import { listTime } from "../chatView";
 import { needsComputer } from "../cloud/account";
 import { firstRunShown } from "../firstRun";
 import { useHub, type ChatsParams, type RootParams } from "../hubContext";
-import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
+import { chatList, rowLine, sameChatRow, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
 import { MAX_PINNED, pinsOf, sectionsOf, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
@@ -229,6 +229,9 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   useAnnounce(archivedLine?.text);
   const archiveItem = (row: ChatRow): MenuItem => ({ label: archiveWords(row.project.title, row.archived).label, icon: "archive", onPress: () => archive(row) });
   const holdActions = (row: ChatRow): readonly MenuItem[] => [...rowActions(row, pin), sectionMenus.moveItem(row), archiveItem(row)];
+  // What a row does, as the list is now: one object for good, so a row draws again only when its own chat changed.
+  const rowActs = useRef<RowActs>({ open: () => undefined, pin, more: () => [] });
+  rowActs.current = { open: (key) => open(key), pin, more: (row) => [sectionMenus.moveItem(row), archiveItem(row)] };
   // A change to the sections the hub refused is taken back: a quiet line over the list says why, for a while.
   const [refused, setRefused] = useState<string>();
   useEffect(
@@ -378,7 +381,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
               ) : line.t === "hit" ? (
                 <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
-                <SwipingChat row={line.row} separator={separator} open={beside?.openKey === line.row.key} onPress={() => open(line.row.key)} onPin={pin} more={[sectionMenus.moveItem(line.row), archiveItem(line.row)]} />
+                <SwipingChat row={line.row} separator={separator} open={beside?.openKey === line.row.key} acts={rowActs} />
               )}
             </Animated.View>
           );
@@ -495,14 +498,30 @@ const rowActions = (row: ChatRow, pin: (row: ChatRow) => void): readonly [MenuIt
 /** The swiped row's symbols: the menu's, filled, as Messages' circles draw them. */
 const FILLED: Partial<Record<IconName, IconName>> = { read: "readFill", unread: "unreadFill", pin: "pinned", unpin: "unpinFill", mute: "muteFill", unmute: "unmuteFill" };
 
+/** What a row does: open its chat, pin it, and what its hold menu offers after read, pin and mute. */
+interface RowActs {
+  readonly open: (key: Key) => void;
+  readonly pin: (row: ChatRow) => void;
+  readonly more: (row: ChatRow) => readonly MenuItem[];
+}
+
+const sameSwipingChat = (a: { row: ChatRow; separator: boolean; open: boolean; acts: object }, b: typeof a): boolean =>
+  a.separator === b.separator && a.open === b.open && a.acts === b.acts && sameChatRow(a.row, b.row);
+
 /**
  * A chat row that swipes, as in Messages: right for read (blue, a full swipe's) and pin (orange), left for mute
  * (indigo, a full swipe's too). `more`: what its hold menu offers after those (Move to Section…, Archive).
  */
-/** `open`: its chat is open in the pane beside the list, which marks it as Messages on an iPad does. */
-function SwipingChat({ row, separator, open, onPress, onPin, more }: { row: ChatRow; separator: boolean; open: boolean; onPress: () => void; onPin: (row: ChatRow) => void; more: readonly MenuItem[] }) {
+/**
+ * `open`: its chat is open in the pane beside the list, which marks it as Messages on an iPad does. It draws again only
+ * when its own row changed (sameChatRow): the list makes its rows anew with each change to the state.
+ */
+const SwipingChat = memo(function SwipingChat({ row, separator, open, acts: latest }: { row: ChatRow; separator: boolean; open: boolean; acts: { readonly current: RowActs } }) {
   const t = useTheme();
-  const acts = rowActions(row, onPin);
+  // Opening and pinning go through the list as it is now, which a row drawn earlier doesn't hold.
+  const onPress = () => latest.current.open(row.key);
+  const more = latest.current.more(row);
+  const acts = rowActions(row, (r) => latest.current.pin(r));
   const [read, pin, mute] = acts;
   // Read out with names where its preview holds fleetd's ids, as the preview shows them.
   const label = useSpoken(rowLabel(row));
@@ -525,7 +544,7 @@ function SwipingChat({ row, separator, open, onPress, onPin, more }: { row: Chat
       )}
     </SwipeRow>
   );
-}
+}, sameSwipingChat);
 
 const rowLabel = (row: ChatRow): string => {
   const line = row.working && row.preview !== undefined ? `Working, ${row.preview}` : rowLine(row);

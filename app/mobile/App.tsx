@@ -32,7 +32,7 @@ import { cloudDomain, type PairFailure } from "./src/desktop";
 import { deviceName } from "./src/hub/deviceName";
 import { accountPreview, askedOn, deleteAccount } from "./src/accountDelete";
 import { pairLinkStep } from "./src/hub/pairLink";
-import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
+import { HubContext, HubStoreContext, SessionContext, type ChatsParams, type HubContextValue, type HubStore, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { pinStoreFor, sectionStoreFor } from "./src/prefsStore";
 import { sameHub } from "./src/devices";
@@ -69,7 +69,8 @@ import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { BesideContext, PaneSide, PaneWidth, useBeside, useStrip, type Beside } from "./src/ui/pane";
-import { ownRoom, sheetRoom, stripRoom, useStripBars } from "./src/ui/StripRoom";
+import { coveredRoom } from "./src/ui/Covered";
+import { sheetRoom, stripRoom, useStripBars } from "./src/ui/StripRoom";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
@@ -355,6 +356,7 @@ interface HubProps {
 function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSignedOut, opened, onOpened }: HubProps) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), sections: sectionStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
+  const store = useMemo((): HubStore => ({ subscribe: session.subscribe, getState: session.getState }), [session]);
   const t = useTheme();
   const theme = useMemo(() => navigationTheme(t), [t]);
   // Read once, as the navigator starts: a tapped notification's chat replaces it (tryPending).
@@ -498,6 +500,18 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
     return { session, state, paired: shown, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace, previewCloudAccount, deleteCloudAccount };
   }, [session, state, paired, shown, hubs, account, onForget, onShow, onMade, onSignedIn, onSignedOut]);
 
+  // The screens, drawn again only for what they read themselves (the state through useHub, the navigation's own): not
+  // with every change to the state this reads, several a second on a busy workspace, each drawing every screen in the
+  // stack, those covered too.
+  const screens = useMemo(
+    () => (
+      <NavigationContainer ref={nav} theme={theme} {...(reopened === undefined ? {} : { initialState: reopened })}>
+        <Root />
+      </NavigationContainer>
+    ),
+    [theme, reopened],
+  );
+
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
   useEffect(() => {
@@ -512,9 +526,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
   return (
     <SessionContext.Provider value={session}>
       <HubContext.Provider value={value}>
-        <NavigationContainer ref={nav} theme={theme} {...(reopened === undefined ? {} : { initialState: reopened })}>
-          <Root />
-        </NavigationContainer>
+        <HubStoreContext.Provider value={store}>{screens}</HubStoreContext.Provider>
       </HubContext.Provider>
     </SessionContext.Provider>
   );
@@ -568,20 +580,20 @@ function Root() {
         <View style={styles.fill}>
           <PaneWidth.Provider value={split?.chat}>
             <PaneSide.Provider value={split === undefined ? undefined : "chat"}>
-            {/* A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed
-                reply changes the state with every word. */}
+            {/* A screen under another (the chats list under a chat) doesn't draw again while it's covered (ui/Covered.tsx):
+                on a busy workspace the state changes several times a second. */}
             {/* Each screen keeps out of the iPhone Duo's side strip (ui/StripRoom.tsx), but those holding a stack of their
                 own, whose screens keep out themselves, and the chat, which puts its buttons in the strip. */}
             <RootStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
-              <RootStack.Screen name="Home" component={Home} layout={ownRoom} options={{ headerShown: false, title: "Chats" }} />
-              <RootStack.Screen name="Settings" component={SettingsScreens} layout={ownRoom} options={{ headerShown: false }} />
+              <RootStack.Screen name="Home" component={Home} layout={coveredRoom} options={{ headerShown: false, title: "Chats" }} />
+              <RootStack.Screen name="Settings" component={SettingsScreens} layout={coveredRoom} options={{ headerShown: false }} />
               {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place.
                   Beside the list, one picked there takes the open one's place at once, as Messages' on an iPad, and one
                   straight on Home has nothing behind it to swipe back to. */}
               <RootStack.Screen
                 name="Chat"
                 component={Chat}
-                layout={ownRoom}
+                layout={coveredRoom}
                 getId={({ params }) => params.key}
                 options={({ route, navigation }) => ({
                   ...chatOptions(t),

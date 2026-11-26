@@ -56,8 +56,43 @@ export interface CacheStore {
 /** An open chat at its newest end. */
 const NEWEST: OpenAt = { offset: 0, rows: 0, oldestSeq: undefined };
 
-/** How long after a change what the cache keeps is written: a burst of events writes once. */
-const CACHE_SAVE_MS = 1000;
+/**
+ * How long after a change what the cache keeps is written: a message on its way soon, as iOS may end the app at any
+ * time; the rest (the chats as last seen, the approvals), which the next snapshot reads again, in one write a while
+ * later, as a busy workspace changes it several times a second and each write is the whole cache. Going behind writes
+ * at once.
+ */
+export const CACHE_SAVE_MS = 1000;
+export const CACHE_LATER_MS = 30_000;
+/**
+ * How many files read whole, pictures' previews and avatars the session keeps while the app runs, the ones used last:
+ * each is the file itself, so keeping every one opened or scrolled past grew the app for as long as it ran. One past
+ * them is read again (a preview from the disk, cacheStore.ts), as the first time.
+ */
+export const FILES_KEPT = 8;
+export const PREVIEWS_KEPT = 120;
+export const PICTURES_KEPT = 120;
+
+/** `map` with `key` as its newest, and its oldest gone past `most`. */
+const keep = <K, V>(map: Map<K, V>, key: K, value: V, most: number): void => {
+  map.delete(key);
+  map.set(key, value);
+  for (const oldest of map.keys()) {
+    if (map.size <= most) break;
+    map.delete(oldest);
+  }
+};
+
+/** What `map` holds for `key`, made its newest. */
+const used = <K, V>(map: Map<K, V>, key: K): V | undefined => {
+  const value = map.get(key);
+  if (value !== undefined) {
+    map.delete(key);
+    map.set(key, value);
+  }
+  return value;
+};
+
 /** How long a switch to another hub waits for this one to drop its push registration. */
 const LEAVE_TIMEOUT_MS = 5_000;
 
@@ -92,6 +127,10 @@ export class Session {
   readonly #cache: CacheStore | undefined;
   readonly #previewStore: PreviewStore | undefined;
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the write on its way is due (epoch ms). */
+  #saveAt = 0;
+  /** Stopped: calls cut off by it still answer, and change nothing kept (the next hub's cache is its own). */
+  #stopped = false;
   /** The open chat, when the link dropped with its latest page shown: a replay after the drop keeps it going. */
   #resumable: Key | null = null;
   /** An orders_board read on its way, and another one asked for meanwhile. */
@@ -141,6 +180,7 @@ export class Session {
   }
 
   stop(): void {
+    this.#stopped = true;
     this.#unsubscribeToken?.();
     // Stopped for a Disconnect, or another hub: nothing more is kept (going behind kept what there was).
     if (this.#saveTimer !== null) clearTimeout(this.#saveTimer);
@@ -257,6 +297,16 @@ export class Session {
     void this.readMessagePins(key);
   }
 
+  /** The chat followed now: on screen, on top. */
+  get openKey(): Key | null {
+    return this.#open;
+  }
+
+  /** A chat's screen went: it's followed no more, unless another was opened over it since. */
+  leaveChat(key: Key): void {
+    if (this.#open === key) this.openChat(null);
+  }
+
   /** The chat open when the app was last closed, and where: App.tsx opens it again over the list. */
   get reopen(): { readonly key: Key; readonly at: OpenAt } | undefined {
     return this.#reopen;
@@ -362,10 +412,10 @@ export class Session {
    * kept: the next ask reads it again.
    */
   attachment(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
-    const known = this.#files.get(attachmentId);
+    const known = used(this.#files, attachmentId);
     if (known !== undefined) return known;
     const read = readFile(this.#transfer, { projectRef: refOf(key), attachmentId }).then(typed);
-    this.#files.set(attachmentId, read);
+    keep(this.#files, attachmentId, read, FILES_KEPT);
     void read.then((r) => {
       if (!r.ok) this.#files.delete(attachmentId);
     });
@@ -381,11 +431,11 @@ export class Session {
    * than as a stand-in that preview() replaces a frame later.
    */
   keptPreview(attachmentId: string): AttachmentGetOutput | undefined {
-    const known = this.#previewsRead.get(attachmentId);
+    const known = used(this.#previewsRead, attachmentId);
     if (known !== undefined) return known;
     const kept = this.#previewStore?.load(this.#hub, attachmentId) ?? null;
     if (kept === null) return undefined;
-    this.#previewsRead.set(attachmentId, kept);
+    keep(this.#previewsRead, attachmentId, kept, PREVIEWS_KEPT);
     return kept;
   }
 
@@ -395,7 +445,7 @@ export class Session {
    * was small, or the hub reads no maxSide) gave the file too, which opening it then uses.
    */
   preview(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
-    const known = this.#previews.get(attachmentId);
+    const known = used(this.#previews, attachmentId);
     if (known !== undefined) return known;
     const kept = this.keptPreview(attachmentId) ?? null;
     const read: Promise<Typed<"attachment_get">> =
@@ -405,11 +455,11 @@ export class Session {
             if (r.ok) this.#previewStore?.save(this.#hub, attachmentId, r.file);
             return typed(r);
           });
-    this.#previews.set(attachmentId, read);
+    keep(this.#previews, attachmentId, read, PREVIEWS_KEPT);
     void read.then((r) => {
       if (!r.ok) return void this.#previews.delete(attachmentId);
-      this.#previewsRead.set(attachmentId, r.output);
-      if (r.output.preview !== true && !this.#files.has(attachmentId)) this.#files.set(attachmentId, Promise.resolve(r));
+      keep(this.#previewsRead, attachmentId, r.output, PREVIEWS_KEPT);
+      if (r.output.preview !== true && !this.#files.has(attachmentId)) keep(this.#files, attachmentId, Promise.resolve(r), FILES_KEPT);
     });
     return read;
   }
@@ -421,11 +471,11 @@ export class Session {
    * (project_avatar_get, person_avatar_get) and kept while the app runs; null when the hub can't give it.
    */
   picture(of: ProjectRef | { readonly personId: string }, avatar: string): Promise<string | null> {
-    const known = this.#pictures.get(avatar);
+    const known = used(this.#pictures, avatar);
     if (known !== undefined) return known;
     const call = "personId" in of ? this.#client.call("person_avatar_get", { personId: of.personId }) : this.#client.call("project_avatar_get", { machineId: of.machineId, projectId: of.projectId });
     const read = call.then((r) => (r.ok && r.output.avatar === avatar ? r.output.dataB64 : null));
-    this.#pictures.set(avatar, read);
+    keep(this.#pictures, avatar, read, PICTURES_KEPT);
     void read.then((out) => {
       if (out === null) this.#pictures.delete(avatar);
     });
@@ -721,13 +771,19 @@ export class Session {
     const next = reduce(was, action);
     if (next === was) return;
     this.#state = next;
-    if (next.projects !== was.projects || next.chatStates !== was.chatStates || next.latest !== was.latest || next.sends !== was.sends || next.requests !== was.requests || next.meName !== was.meName) this.#saveSoon();
+    if (next.sends !== was.sends) this.#saveSoon(CACHE_SAVE_MS);
+    else if (next.projects !== was.projects || next.chatStates !== was.chatStates || next.latest !== was.latest || next.requests !== was.requests || next.meName !== was.meName) this.#saveSoon(CACHE_LATER_MS);
     this.#notify();
   }
 
-  #saveSoon(): void {
-    if (this.#cache === undefined || this.#saveTimer !== null) return;
-    this.#saveTimer = setTimeout(() => this.#saveNow(), CACHE_SAVE_MS);
+  /** A write within `ms`: the one on its way, or sooner. */
+  #saveSoon(ms: number): void {
+    if (this.#cache === undefined || this.#stopped) return;
+    const at = Date.now() + ms;
+    if (this.#saveTimer !== null && this.#saveAt <= at) return;
+    if (this.#saveTimer !== null) clearTimeout(this.#saveTimer);
+    this.#saveAt = at;
+    this.#saveTimer = setTimeout(() => this.#saveNow(), ms);
   }
 
   #saveNow(): void {

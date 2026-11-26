@@ -251,6 +251,26 @@ export const runningOf = (orders: readonly OrderCard[]): Record<Key, number> => 
 export const openingChat = (latest: readonly ChatMessage[] | undefined): Chat =>
   latest === undefined || latest.length === 0 ? emptyChat : { ...emptyChat, messages: latest, cached: true };
 
+/**
+ * The chats held whole: the one open and the last ones opened before it, for going back and forth. Each held chat
+ * takes its messages from the events as they come (up to 2000 of them), so one held for each chat ever opened made the
+ * app slower and bigger the longer it ran; one opened again reads its newest page, as on its first opening.
+ */
+export const CHATS_KEPT = 3;
+
+/** A chat opened: held, after the others, which past CHATS_KEPT go from the one opened longest ago. */
+const keepOpened = (s: State, key: Key): State => {
+  const order = Object.keys(s.chats);
+  if (order.at(-1) === key && s.chats[key] !== undefined) return s;
+  const kept = [...order.filter((k) => k !== key), key].slice(-CHATS_KEPT);
+  const chats: Record<Key, Chat> = {};
+  for (const k of kept) chats[k] = k === key ? (s.chats[key] ?? openingChat(s.latest[key])) : s.chats[k]!;
+  const gone = order.filter((k) => !kept.includes(k));
+  if (gone.length === 0) return { ...s, chats };
+  const drop = <T>(map: Readonly<Record<Key, T>>): Readonly<Record<Key, T>> => (gone.some((k) => k in map) ? Object.fromEntries(Object.entries(map).filter(([k]) => !gone.includes(k))) : map);
+  return { ...s, chats, windows: drop(s.windows), olderErrors: drop(s.olderErrors) };
+};
+
 const withChat = (s: State, key: Key, chat: Chat): State => (chat === s.chats[key] ? s : { ...s, chats: { ...s.chats, [key]: chat } });
 
 /** A chat's window, changed; one that has met the chat's own messages joins them and goes (desktop.ts joinWindow). */
@@ -279,7 +299,7 @@ export const reduce = (s: State, a: Action): State => {
     case "frame":
       return applyFrame(s, a.frame, a.nowMs);
     case "chat_open":
-      return s.chats[a.key] === undefined ? withChat(s, a.key, openingChat(s.latest[a.key])) : s;
+      return keepOpened(s, a.key);
     case "resume": {
       const chat = s.chats[a.key];
       if (chat?.cached !== true) return s;
@@ -351,7 +371,8 @@ export const reduce = (s: State, a: Action): State => {
       return sends.length === rows.length ? s : { ...s, sends: { ...s.sends, [a.key]: sends } };
     }
     case "board":
-      return { ...s, running: runningOf(a.orders), orders: a.orders };
+      // Read again with each of an order's events, mostly as it was: the same board changes nothing, and draws nothing.
+      return JSON.stringify(a.orders) === JSON.stringify(s.orders) ? s : { ...s, running: runningOf(a.orders), orders: a.orders };
     case "status": {
       const blocked = Object.fromEntries(a.rows.filter((r) => r.state === "blocked").map((r) => [keyOf(r.projectRef), r.blockedReason ?? ""]));
       return JSON.stringify(blocked) === JSON.stringify(s.blocked ?? {}) ? s : { ...s, blocked };

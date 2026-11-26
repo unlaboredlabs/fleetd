@@ -10,6 +10,8 @@
 #                                iphone.jpg, iphone-left.jpg in the folder, else the desktop app's fixtures);
 #                                PHONE_LAB_WATCH=1 keeps its screens their agent's, to try what a person watching sees;
 #                                PHONE_LAB_CYCLE=<ms> folds an iPhone Duo through its postures by itself, one each <ms>
+#   PHONE_LAB_BUSY=<ms> scripts/phone-lab.sh up
+#                                as up, and keeps it busy: more bots, a message every <ms>, streamed replies, writers
 #   scripts/phone-lab.sh down    stop what `up` and `mac` started and delete its folder
 #
 # It is the factory lab's offline fleet (tests/lab/factory/kit.ts): a hub and a node of their own, run in the

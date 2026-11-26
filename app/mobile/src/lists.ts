@@ -172,6 +172,16 @@ export interface ChatRow extends Row {
   readonly lastSeq: number;
 }
 
+/**
+ * Whether two rows draw the same, every field the same: the list makes its rows anew with each change to the state, and
+ * a row that is the same draws nothing again (Chats.tsx).
+ */
+export const sameChatRow = (a: ChatRow, b: ChatRow): boolean => {
+  if (a === b) return true;
+  const keys = Object.keys(a) as Array<keyof ChatRow>;
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k]);
+};
+
 /** A chat with an approval open floats above the rest, pinned ones too: answering it is what the phone is for. */
 const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Number(a.approvals > 0);
 

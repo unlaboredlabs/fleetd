@@ -46,7 +46,8 @@ describe("what an event reads again", () => {
       { projectRef: { machineId: "devbox", projectId: "p2" }, lanes: [lane("d", "writer", "failed")] },
     ] as never;
     const s = reduce(initial({ phase: "live", hub: "http://devbox:4790" } as never), { t: "board", orders });
-    expect(s.running).toEqual({ "devbox/p1": 2 });
+    expect(s.running).toEqual({ "devbox/p1": 2 });    // Read again as it was (an order's events come in bursts): the state is the same one, and nothing draws again.
+    expect(reduce(s, { t: "board", orders: JSON.parse(JSON.stringify(orders)) as never })).toBe(s);
   });
 
   it("opens a chat on the newest messages the list holds, shown until its latest page starts it over", () => {

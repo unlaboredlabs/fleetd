@@ -3,7 +3,8 @@
 // tailnet's address, which the agents' Mac reaches), seeded with what the app shows: four projects (two with a
 // picture), chats with the person's messages and the lead's replies, and one order waiting on an approval. It writes
 // <run dir>/lab.json once seeded and keeps the fleet up until SIGTERM (`phone-lab.sh down`), then stops every process
-// it started by PID. No real claude runs: every lead is the stand-in, which answers new messages `lab-ok`.
+// it started by PID. No real claude runs: every lead is the stand-in, which answers new messages `lab-ok`. With
+// PHONE_LAB_BUSY set it keeps the workspace busy too (busy, below).
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -60,6 +61,37 @@ const PROJECTS: ReadonlyArray<{ readonly title: string; readonly picture?: reado
   },
 ];
 
+/**
+ * PHONE_LAB_BUSY=<ms>: a busy workspace, for the phone's long-use checks (memory, CPU, frame rate over half an hour).
+ * PHONE_LAB_BUSY_BOTS more bots, a message to the next bot every <ms>, each lead running a tool then streaming a
+ * reply a word every 60 ms, and a writer started on inventory's order every BUSY_WRITER_EVERY messages, working 90 s.
+ */
+const BUSY_MS = Number(process.env.PHONE_LAB_BUSY ?? 0);
+const BUSY_BOTS = Number(process.env.PHONE_LAB_BUSY_BOTS ?? 8);
+const BUSY_WRITER_EVERY = 20;
+
+type Ref = { machineId: string; projectId: string };
+
+/** Keeps the workspace busy until `stopped`: messages round the bots, and writers coming and going. */
+const busy = async (f: Parameters<Parameters<typeof withFactory>[1]>[0], must: (name: string, args: Record<string, unknown>) => Promise<Record<string, unknown>>, refs: readonly Ref[], workstreamId: string, stopped: Promise<unknown>) => {
+  let done = false;
+  const writers: string[] = [];
+  void stopped.then(() => (done = true));
+  for (let n = 0; !done; n++) {
+    const projectRef = refs[n % refs.length]!;
+    await must("chat_send", { projectRef, text: `Where are we? (${String(n)})\nlab-run: sleep 2\nlab-stream: 60`, clientRequestId: randomUUID() }).catch((e: unknown) => console.error(`busy: ${String(e)}`));
+    if (n % BUSY_WRITER_EVERY === 0) {
+      // Each is new work, though its words are the last one's.
+      const spawned = f.lead("spawn_agent", { workstreamId, title: `Busy writer ${String(n / BUSY_WRITER_EVERY)}`, kind: "write", profile: "medium", prompt: "lab-run: sleep 90", ...(writers.length === 0 ? {} : { notDuplicateOf: writers.slice(-10), notDuplicateWhy: "the phone lab's load: each writer is a new one" }) });
+      const taskId = spawned.result?.task?.taskId;
+      if (typeof taskId === "string") writers.push(taskId);
+      else console.error(`busy: spawn_agent: ${spawned.text}`);
+    }
+    if (n % 100 === 0) ok(`busy: ${String(n)} messages sent`);
+    await Promise.race([stopped, new Promise((r) => setTimeout(r, BUSY_MS))]);
+  }
+};
+
 /** A square PNG, a diagonal blend of two colours: a project picture with no file to ship. */
 const picture = ([from, to]: readonly [Rgb, Rgb], size = 256) => {
   const raw = Buffer.alloc((size * 3 + 1) * size);
@@ -107,6 +139,7 @@ await withFactory(
 
     try {
       const machineHome = path.dirname(f.project.root);
+      const seeded: Array<{ machineId: string; projectId: string }> = [];
       for (const p of PROJECTS) {
         let projectId = f.ref.projectId;
         if (p.title !== "inventory") {
@@ -132,6 +165,7 @@ await withFactory(
           await must("chat_send", { projectRef: ref, text, clientRequestId: randomUUID() });
           await turnEnds(`${p.title}'s lead answers "${text}"`, threadId, cursor);
         }
+        seeded.push(ref);
         ok(`seeded ${p.title} (${projectId})`);
       }
       // An order of inventory's waiting on the person: the lead's gated command, Approve or Deny in its chat.
@@ -147,13 +181,29 @@ await withFactory(
       // What inventory's agents wrote to each other, with every outcome, for the DM views.
       await seedAgentMessages(f);
 
+      const refs = [...seeded];
+      if (BUSY_MS > 0) {
+        for (let i = 1; i <= BUSY_BOTS; i++) {
+          const root = path.join(machineHome, `busy-${String(i)}`);
+          fs.mkdirSync(root, { recursive: true });
+          fs.writeFileSync(path.join(root, "README.md"), `# busy ${String(i)}\n`);
+          for (const args of [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "start"]]) execFileSync("git", ["-c", "user.name=lab human", "-c", "user.email=human@lab.invalid", ...args], { cwd: root, stdio: "ignore" });
+          const projectId = (await must("project_add", { machineId: MACHINE, path: root, title: `busy ${String(i)}` })).projectId as string;
+          await must("lead_start", { machineId: MACHINE, projectId });
+          refs.push({ machineId: MACHINE, projectId });
+        }
+        ok(`busy: ${String(BUSY_BOTS)} more bots`);
+      }
+
       const hub = descendants(process.pid).find((p) => p.cmdline.includes("hub") && p.cmdline.includes("start"));
       const lab = { hubUrl: f.hubUrl, fleetdHome: f.dir, hubPid: hub?.pid, nodePid: f.nodePid(), pid: process.pid };
       fs.writeFileSync(path.join(runDir, "lab.json"), `${JSON.stringify(lab, null, 2)}\n`);
       ok(`phone lab up on ${f.hubUrl}`);
-      await new Promise((resolve) => {
+      const stopped = new Promise((resolve) => {
         for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.once(signal, resolve);
       });
+      if (BUSY_MS > 0) await busy(f, must, refs, workstreamId, stopped);
+      await stopped;
     } finally {
       await client.close().catch(() => undefined);
     }

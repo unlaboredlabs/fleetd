@@ -259,14 +259,20 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     for (const said of arrivedReplies(heard.current, entering, items, title)) announce(said);
   }, [entering, items, title]);
 
+  // The session follows one chat, the one on top: back to this one from a chat opened over it, it's followed again
+  // (its newest page read, as the session holds only the chats opened last).
+  const onTop = useIsFocused();
   useEffect(() => {
-    session.openChat(chatKey);
-    return () => {
-      session.openChat(null);
+    if (onTop && session.openKey !== chatKey) session.openChat(chatKey);
+  }, [session, chatKey, onTop]);
+  useEffect(
+    () => () => {
+      session.leaveChat(chatKey);
       // Opened again, it lands on the first unread or the newest, as ever.
       session.closeWindow(chatKey);
-    };
-  }, [session, chatKey]);
+    },
+    [session, chatKey],
+  );
 
   // Removed elsewhere (the desktop app, another phone) while open: back to the list, as nothing is left to show. A tick
   // later, never in the commit that removed it.
