@@ -269,6 +269,7 @@ export class Automations {
    * message the chat tags give another order is not it.
    */
   private withMessage(run: AutomationRun): AutomationRun {
+    if (run.state === "skipped") return this.skippedFor(run);
     if (run.messageId !== undefined || run.workstreamId === undefined || run.endedAt === undefined) return run;
     if (run.state !== "done" && run.state !== "stopped") return run;
     const a = this.row(run.automationId);
@@ -290,6 +291,28 @@ export class Automations {
       return out;
     }
     return run;
+  }
+
+  /**
+   * A run skipped while an earlier one's order was open links that run's message once it has one, so its row opens
+   * what the run it waited on said. A skip for another reason (paused) finds no run open then and links nothing.
+   */
+  private skippedFor(run: AutomationRun): AutomationRun {
+    if (run.messageId !== undefined) return run;
+    const at = parseMs(run.at);
+    if (at === undefined) return run;
+    const row = this.hub.db.all<{ data: string }>(
+      `SELECT data FROM automation_runs WHERE automation_id = ? AND workstream_id IS NOT NULL AND at_ms <= ? AND run_id <> ?
+       ORDER BY at_ms DESC, rowid DESC LIMIT 1`,
+      [run.automationId, at, run.runId],
+    )[0];
+    if (!row) return run;
+    const before = this.settle(decodeRun(row.data));
+    const ended = before.endedAt === undefined ? undefined : parseMs(before.endedAt);
+    if (before.messageId === undefined || (ended !== undefined && ended < at)) return run;
+    const out = storedRun({ ...run, messageId: before.messageId });
+    this.putRun(out);
+    return out;
   }
 
   /** An order closed: a run of it still recorded as running ends with it now, and says so, so the apps redraw it. */
@@ -614,12 +637,15 @@ export class Automations {
     const now = this.now();
     const trigger: AutomationTrigger = start.kind;
     const busy = this.active(id);
+    // In words a person reads beside the run (no run or order ids); the lead's automation_run names the open order.
     const going =
       busy === undefined
         ? undefined
         : busy.workstreamId !== undefined
-          ? `run ${busy.runId} is still going (${busy.workstreamId} is open)`
-          : `run ${busy.runId} is still starting`;
+          ? "the last run's order is still open"
+          : a.watch !== undefined
+            ? "the last look is still going"
+            : "the last run is still starting";
     const webhook = start.kind === "webhook";
     const waiting = webhook ? this.queuedCount(id) : 0;
     const openNow = going !== undefined;
@@ -908,7 +934,7 @@ export class Automations {
               ...run,
               state: "running",
               workstreamId: opened.workstreamId,
-              why: why(`Kept while an earlier run was open; went in ${opened.workstreamId} with ${n} webhook call${n === 1 ? "" : "s"}.`),
+              why: why(`Kept while an earlier run was open; went in one order with ${n} webhook call${n === 1 ? "" : "s"}.`),
             })
           : storedRun({ ...run, state: "failed", why: why(opened.error), endedAt: isoMs(this.now()) });
       this.putRun(out);

@@ -219,6 +219,17 @@ it("makes, edits, pauses, runs and deletes an automation and shows its runs, eac
   const link = runs().querySelector("a") as HTMLAnchorElement;
   expect(link.textContent).toBe("3 dependencies have updates");
   expect(link.getAttribute("href")).toBe("#/project/devbox/storefront?message=m42");
+  // A trigger skipped while it ran says why in words, and opens the same message.
+  hub.runs.unshift({ runId: "ar_skip0001", automationId: "au_test001", trigger: "schedule", at: AT, state: "skipped", why: "the last run's order is still open", messageId: "m42" });
+  await act(async () => {
+    hub.send(event(3, "automation.run", { automationId: "au_test001", runId: "ar_skip0001", state: "skipped", projectRef: project }));
+    await new Promise((done) => setTimeout(done, 150));
+  });
+  await flush();
+  const skipped = runs().querySelector("li") as HTMLElement;
+  expect(skipped.textContent).toContain("Skipped");
+  expect(skipped.querySelector("a")?.textContent).toBe("The last run's order is still open");
+  expect(skipped.querySelector("a")?.getAttribute("href")).toBe("#/project/devbox/storefront?message=m42");
 
   // Pause and resume.
   await chooseFromRow("Dependency check", "Pause");
