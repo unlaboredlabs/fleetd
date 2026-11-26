@@ -48,7 +48,7 @@ function setup({ own = false, sims }: { own?: boolean; sims?: number | null } = 
   Bun.spawnSync(["git", "init", "-q", wt]);
   writeFileSync(join(wt, "app.txt"), "v1\n");
   writeFileSync(join(wt, ".gitignore"), "build/\n");
-  cleanups.push(macHome.done, agent.done, work.done, () => (host.endJobs(), host.stop()));
+  cleanups.push(macHome.done, agent.done, work.done, () => host.stop());
   const side = { home: agent.node.home, call: (op: string, args: Record<string, unknown>, opts: { threadId: string; cwd: string; waitMs: number }) => hubCall(agent.node, op, args, opts) };
   return { host, client: new MacClient(side, () => ["/pinned/fleetd-bun-1"]), wt, macRoot: join(macHome.dir, "mac"), secret, caller, sent, agentHome: agent.node.home };
 }
@@ -392,5 +392,5 @@ test("in a hosted box, fleetd mac is its own node's half: the worktree pushed an
   };
   const answered = (await here(box.dir, { step: "ps" }, "t1", wt, away)) as { error: { code: string; message: string } };
   expect(answered.error).toMatchObject({ code: "machine_offline", message: "fleetd is restarting; try again" });
-  expect(answer(answered)).toEqual({ text: "mac: fleetd is restarting; try again\nmac: try again shortly\n", code: UNAVAILABLE, lost: true });
+  expect(answer(answered)).toEqual({ text: "mac: fleetd is restarting; try again\nmac: try again shortly\n", code: UNAVAILABLE });
 }, 30_000);
