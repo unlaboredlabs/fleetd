@@ -218,8 +218,10 @@ it("has the same button and menu in the viewer, for the picture it shows, and st
   await mount(mine);
   await click(button("Open checkout.png", host));
   const viewer = () => document.querySelector<HTMLElement>("[data-viewer]");
-  // The X keeps the focus the viewer opens with: the download button comes after it.
-  expect([...(viewer()?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("aria-label")).slice(0, 2)).toEqual(["Close", "Save checkout.png"]);
+  // The X keeps the focus the viewer opens with: zoom, Copy and the download button come after it.
+  const labels = [...(viewer()?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("aria-label"));
+  expect(labels.slice(0, 1)).toEqual(["Close"]);
+  expect(labels.slice(1, 6)).toEqual(["Zoom out", "Zoomed to fit", "Zoom in", "Copy image", "Save checkout.png"]);
   await click(button("Save checkout.png", viewer() ?? undefined));
   expect(download).toHaveBeenLastCalledWith(expect.any(String), { projectRef: PROJECT, attachmentId: "F2" });
   expect(viewer()).not.toBeNull();

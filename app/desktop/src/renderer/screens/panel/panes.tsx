@@ -106,5 +106,5 @@ export function SkillsTab({ project, view, onWide }: PaneProps): ReactNode {
 /** The chat's artifacts, or one of them, which asks for the frame's wide width. */
 export function ArtifactsTab({ project, view, onWide }: PaneProps) {
   const one = view.tab === "artifacts" ? view : null;
-  return <ArtifactsTabView project={project} artifact={one?.artifact ?? null} version={one?.version} onWide={onWide} />;
+  return <ArtifactsTabView project={project} artifact={one?.artifact ?? null} version={one?.version} file={one?.file} onWide={onWide} />;
 }

@@ -32,8 +32,11 @@ export type PanelView =
    * list, is the panel's Agents; a link to it opens the settings (`projectSkills`).
    */
   | { readonly tab: "skills"; readonly skill: string | null }
-  /** The chat's artifacts, or one of them by name: its newest version, or `version`. */
-  | { readonly tab: "artifacts"; readonly artifact: string | null; readonly version?: number | undefined }
+  /**
+   * The chat's artifacts, or one of them by name: its newest version, or `version`; or (`file`, with no artifact) a
+   * file sent in the chat, shown as the artifacts are (screens/files).
+   */
+  | { readonly tab: "artifacts"; readonly artifact: string | null; readonly version?: number | undefined; readonly file?: string | undefined }
   /** Activity, or (`dms`) its log of the agents' DMs to each other: where the lead chat's DM count opens. */
   | { readonly tab: "activity"; readonly dms?: true }
   | { readonly tab: Exclude<PanelTab, "agents" | "prs" | "sessions" | "skills" | "artifacts" | "activity"> };
@@ -68,7 +71,7 @@ export const hasItem = (view: PanelView): boolean => {
     case "skills":
       return view.skill !== null;
     case "artifacts":
-      return view.artifact !== null;
+      return view.artifact !== null || view.file !== undefined;
     default:
       return false;
   }
@@ -207,11 +210,15 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   return rest.length === 3 && number !== null ? { repo: `${a ?? ""}/${b ?? ""}`, number } : null;
 };
 
+/** A chat file's id in a route (`F12`): never an artifact's name, which is lowercase. */
+const fileId = (value: string | undefined): string | undefined => (value !== undefined && /^F[1-9][0-9]{0,15}$/u.test(value) ? value : undefined);
+
 /** A version's number in a route: a positive whole number. */
 const versionNumber = (value: string | undefined): number | undefined => (value !== undefined && /^[1-9][0-9]{0,8}$/u.test(value) ? Number(value) : undefined);
 
 /**
- * `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]`, `skills[/<name>]`, `artifacts[/<name>[/<version>]]`, `activity[/dms]` or another
+ * `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]`, `skills[/<name>]`, `artifacts[/<name>[/<version>]]` or
+ * `artifacts/file/<id>`, `activity[/dms]` or another
  * tab's name after the project; else, no view.
  */
 const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
@@ -220,7 +227,11 @@ const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   if (tab === "agents") return { tab, agent: item.length === 1 ? (item[0] ?? null) : null };
   if (tab === "sessions") return { tab, session: item.length === 1 ? (item[0] ?? null) : null };
   if (tab === "skills") return { tab, skill: item.length === 1 ? (item[0] ?? null) : null };
-  if (tab === "artifacts") return item.length === 1 || item.length === 2 ? { tab, artifact: item[0] ?? null, version: versionNumber(item[1]) } : { tab, artifact: null };
+  if (tab === "artifacts") {
+    const file = item[0] === "file" && item.length === 2 ? fileId(item[1]) : undefined;
+    if (file !== undefined) return { tab, artifact: null, file };
+    return item.length === 1 || item.length === 2 ? { tab, artifact: item[0] ?? null, version: versionNumber(item[1]) } : { tab, artifact: null };
+  }
   if (tab === "activity") return item.length === 1 && item[0] === "dms" ? { tab, dms: true } : { tab };
   return isPanelTab(tab) ? listView(tab) : null;
 };
@@ -310,6 +321,7 @@ const panelPath = (view: PanelView): Array<string> => {
   if (view.tab === "agents") return view.agent === null ? ["agents"] : ["agents", view.agent];
   if (view.tab === "sessions") return view.session === null ? ["sessions"] : ["sessions", view.session];
   if (view.tab === "skills") return view.skill === null ? ["skills"] : ["skills", view.skill];
+  if (view.tab === "artifacts" && view.artifact === null && view.file !== undefined) return ["artifacts", "file", view.file];
   if (view.tab === "artifacts") return view.artifact === null ? ["artifacts"] : ["artifacts", view.artifact, ...(view.version === undefined ? [] : [String(view.version)])];
   if (view.tab === "activity") return view.dms === true ? ["activity", "dms"] : ["activity"];
   if (view.tab !== "prs") return [view.tab];
