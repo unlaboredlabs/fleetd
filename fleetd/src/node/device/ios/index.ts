@@ -117,7 +117,7 @@ export function healthFrom(
   }
   if (!lazy && !node()) return of("unavailable", "No iOS simulators: agent-device needs Node.js 22.12 or later on the node's PATH.", "brew install node", false);
   if (state.failed) {
-    return of("unavailable", `Making the golden iOS simulator failed: ${state.failed}. The next mac sim start tries again.`, undefined, true);
+    return of("unavailable", `Making the golden iOS simulator failed: ${state.failed}. A mac sim start tries again a few minutes after.`, undefined, true);
   }
   if (lazy) return of("preparing", `Xcode with ${x.ok}; the Mac makes its golden iOS simulator at the first mac sim start.`, undefined, true);
   return of("preparing", `Xcode with ${x.ok}; the node makes its golden iOS simulator next.`, undefined, true);
@@ -146,7 +146,11 @@ export function simWaiting(waiting: Waiting): ToolError {
   return simWords(new ToolError("failed", message, fix));
 }
 
-type Prep = { at: "ready"; pool: Pool } | { at: "wanted" } | { at: "preparing" } | { at: "starting" } | { at: "missing"; why: string };
+type Prep = { at: "ready"; pool: Pool } | { at: "wanted" } | { at: "preparing" } | { at: "starting" } | { at: "missing"; why: string; atMs: number };
+
+/** How long after making the golden failed a start hears why instead of making it again: a waiting `mac sim start`
+ * asks every few seconds, and each try boots a simulator and builds agent-device's runner. */
+export const GOLDEN_RETRY_MS = 5 * 60_000;
 
 export type SimulatorsOptions = {
   simctl?: Simctl;
@@ -216,7 +220,7 @@ export class Simulators {
       (e: Error) => {
         console.warn(`golden iOS simulator not made: ${e.message}`);
         writeState(this.home, { preparing: false, failed: e.message });
-        this.prep = { at: "missing", why: e.message };
+        this.prep = { at: "missing", why: e.message, atMs: Date.now() };
       },
     );
   }
@@ -287,7 +291,15 @@ export class Simulators {
         x.fix === undefined ? "do without a simulator and say so in your result" : `do without a simulator and say so in your result; a person runs ${x.fix} on the Mac`,
       );
     }
-    // A golden that failed is tried again by the next start that asks.
+    // A golden that failed is tried again by the next start that asks, once GOLDEN_RETRY_MS have passed; until then a
+    // start hears why it failed, so one that waits doesn't make it again and again.
+    if (this.prep.at === "missing" && Date.now() - this.prep.atMs < GOLDEN_RETRY_MS) {
+      throw new ToolError(
+        "failed",
+        `This Mac's golden iOS simulator wasn't made: ${this.prep.why}.`,
+        "carry on without a simulator and say so in your result; mac sim start tries making it again in a few minutes",
+      );
+    }
     if (this.prep.at === "missing") this.prep = { at: "wanted" };
     this.beginPrepare();
     const prep = this.prep as Prep;

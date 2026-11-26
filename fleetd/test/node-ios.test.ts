@@ -229,7 +229,7 @@ test("the doctor says where the Mac's simulators stand", () => {
   expect(healthFrom({ enabled: true }, undefined, { preparing: false }, xcode, () => false)?.health.fix).toBe("brew install node");
   // A golden that failed is made again by the next `mac sim start` (Simulators' pool), and the doctor says so.
   expect(healthFrom({ enabled: true }, undefined, { preparing: false, failed: "boom" }, xcode, () => true)).toMatchObject({
-    health: { state: "unavailable", message: "Making the golden iOS simulator failed: boom. The next mac sim start tries again." },
+    health: { state: "unavailable", message: "Making the golden iOS simulator failed: boom. A mac sim start tries again a few minutes after." },
     placeable: true,
   });
 });
@@ -953,4 +953,36 @@ test("a Mac that runs agents without Xcode offers no simulators, and a start say
   const a = host.agent({ machineId: "laptop", projectId: "p1", threadId: "ta", taskId: "T1" });
   await expect(host.step(a, { step: "sim_start", wait: true })).rejects.toThrow("This Mac can't run iOS simulators: no Xcode: install it.");
   await expect(host.step(a, { step: "sim_start" })).rejects.toMatchObject({ fix: "do without a simulator and say so in your result; a person runs xcodes install --latest --select on the Mac" });
+});
+
+test("a golden that failed: a waiting start hears why, and the Mac doesn't make it again and again", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const { xcrun } = fakeXcrun(home.dir);
+  let made = 0;
+  const simulators = new Simulators(home.dir, { enabled: true }, {
+    simctl: new Simctl(setDir(home.dir), xcrun),
+    runner: async () => {},
+    lazy: true,
+    prepare: async () => {
+      made++;
+      throw new Error("xcodebuild failed building agent-device's runner");
+    },
+  });
+  const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
+  cleanups.push(() => sims.shutdown());
+  await simulators.start();
+  const host = new Host(join(home.dir, "mac"), { open: () => null });
+  host.sims = sims;
+  const a = host.agent({ machineId: "laptop", projectId: "p1", threadId: "ta", taskId: "T1" });
+  // The first start makes it and waits; the make fails.
+  expect((await host.step(a, { step: "sim_start", wait: true }))[0]).toMatchObject({ step: "sim_queued" });
+  await until(() => !simulators.preparing());
+  // The next asks, as `mac sim start` sends while it waits, hear why: none makes it again.
+  for (let i = 0; i < 3; i++) {
+    await expect(host.step(a, { step: "sim_start", wait: true })).rejects.toThrow(
+      "This Mac's golden iOS simulator wasn't made: xcodebuild failed building agent-device's runner.",
+    );
+  }
+  expect(made).toBe(1);
 });
