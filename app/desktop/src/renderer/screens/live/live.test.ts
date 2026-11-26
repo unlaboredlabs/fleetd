@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadStepWords } from "../../src/stepWords";
 import type { FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
 import { applyFrame, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus } from "./contracts";
 import { selectProjectRow } from "../../src/data/selectors";
 import { projectKey } from "./lanes";
 import { selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
+
+// The agents' lines say their steps in plain words once the labeller has loaded (src/stepWords.ts).
+beforeAll(() => loadStepWords());
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const project = { machineId: "devbox", projectId: "storefront" } as const;
@@ -158,7 +162,7 @@ describe("the island's glyphs and the card's rows", () => {
     );
     const second = sel(next);
     expect(second).not.toBe(first);
-    expect(second?.lanes[0]?.line).toMatchObject({ words: "editing", machine: "src/a.ts" });
+    expect(second?.lanes[0]?.line).toMatchObject({ words: "editing", machine: "a.ts" });
   });
 });
 

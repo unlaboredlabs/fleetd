@@ -1,0 +1,6 @@
+/* A step's machine text (StepText.tsx): the mono voice at its own size, in the words' colour, no box. */
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: inherit;
+}

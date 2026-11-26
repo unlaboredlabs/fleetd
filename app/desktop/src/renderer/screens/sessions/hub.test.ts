@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserSession as HubSession } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
-import { actionLine } from "./model";
+import { actionLine, type SessionAction } from "./model";
 import { agentOf, browserWords, fromHub, jsonLines, pageFor, shellWords, stepOf, stepsOf, stepWords, viewState, type HubAction, type HubDom } from "./hub";
 
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -76,14 +76,15 @@ describe("a live screen's latest step", () => {
 
   it("is what its agent does now while it is live, and nothing once it ended", () => {
     const live = fromHub(row({ step: step("agent-browser", { command: "agent-browser fill @e12 SAVE10" }) }), { laneId: "T3", title: "x" });
-    expect(live.now).toBe("Typed “SAVE10” in @e12");
+    expect(live.now).toBe("Typed “SAVE10”");
     const ended = fromHub(row({ state: "recorded", endedAt: "2026-10-19T10:02:41.000Z", step: step("agent-browser", { command: "click @e3" }) }), { laneId: "T3", title: "x" });
     expect(ended.now).toBeUndefined();
   });
 
   it("says a browser's, a device's and a desktop's step in words", () => {
-    expect(stepWords(step("agent-browser", { command: "agent-browser open https://shop.example.com/cart" }))).toBe("Opened shop.example.com/cart");
-    expect(stepWords(step("agent-browser", { command: "agent-browser click @e3" }, false))).toBe("Clicked @e3 · failed");
+    expect(stepWords(step("agent-browser", { command: "agent-browser open https://shop.example.com/cart" }))).toBe("Opened shop.example.com");
+    expect(stepWords({ ...step("agent-browser", { command: "agent-browser open https://en.wikipedia.org/wiki/Web_browser" }), result: "✓ Web browser - Wikipedia" })).toBe("Opened Wikipedia");
+    expect(stepWords(step("agent-browser", { command: "agent-browser click @e3" }, false))).toBe("Clicked on the page · failed");
     expect(stepWords(step("agent-device", { command: 'agent-device tap "Add to cart"' }))).toBe("Tapped “Add to cart”");
     expect(stepWords(step("agent-device", { command: "agent-device open sh.acme.storefront" }))).toBe("Opened sh.acme.storefront");
     expect(stepWords(step("agent-device", { command: "agent-device rotate landscape" }))).toBe("Ran rotate landscape");
@@ -107,15 +108,31 @@ describe("an agent-browser command", () => {
   });
 
   it("words each step, a selector or ref in mono and a failure in red", () => {
-    const line = (command: string, more: Partial<HubAction> = {}) => actionLine(stepOf(act(2, "agent-browser", { command }, more)));
-    expect(line("agent-browser open https://shop.example.com/products/linen-shirt")).toMatchObject({ words: "Opened", machine: "shop.example.com/products/linen-shirt" });
-    expect(line("agent-browser click @e14")).toMatchObject({ words: "Clicked", machine: "@e14" });
-    expect(line("agent-browser click '#add-to-cart'")).toMatchObject({ words: "Clicked", machine: "#add-to-cart" });
-    expect(line("agent-browser fill '#q' 'linen'")).toMatchObject({ words: "Typed “linen” in", machine: "#q" });
+    const line = (command: string, more: Partial<HubAction> = {}) => actionLine(stepOf(act(2, "agent-browser", { command }, more)) as SessionAction);
+    expect(line("agent-browser open https://shop.example.com/products/linen-shirt")).toMatchObject({ words: "Opened shop.example.com", raw: "https://shop.example.com/products/linen-shirt" });
+    expect(line("agent-browser click @e14")).toMatchObject({ words: "Clicked on the page", raw: "@e14" });
+    expect(line("agent-browser click text=Search")).toMatchObject({ words: "Clicked “Search”" });
+    expect(line("agent-browser fill '#q' 'linen'")).toMatchObject({ words: "Typed “linen”", raw: "#q" });
     expect(line("agent-browser press Enter")).toMatchObject({ words: "Pressed Enter" });
-    expect(line("agent-browser get text h1", { result: "This page isn’t here\n" })).toMatchObject({ words: "Read h1: This page isn’t here" });
+    expect(line("agent-browser get text h1", { result: "This page isn’t here\n" })).toMatchObject({ words: "Read the page" });
     expect(line("agent-browser snapshot -i")).toMatchObject({ words: "Read the page" });
-    expect(line("agent-browser click @e2", { ok: false })).toMatchObject({ words: "Clicked · failed", tone: "danger" });
+    expect(line("agent-browser eval '[...document.querySelectorAll(\"a\")].map(a => a.href)[0]'")).toMatchObject({ words: "Ran a script on the page" });
+    expect(line("agent-browser click @e2", { ok: false })).toMatchObject({ words: "Clicked on the page · failed", tone: "danger" });
+    expect(line("agent-browser click @e2 >/dev/null", { ok: false, result: "✗ Element not found: @e2. Verify the selector" })).toMatchObject({ words: "Clicked on the page · failed: Element not found: @e2" });
+  });
+
+  it("names the page an open landed on by its title, and never calls it failed for a command after it", () => {
+    const opened = stepOf(act(2, "agent-browser", { command: "agent-browser open https://en.wikipedia.org/wiki/Web_browser && agent-browser get title | grep -q Nope" }, { ok: false, result: "✓ Web browser - Wikipedia\n  https://en.wikipedia.org/wiki/Web_browser" }));
+    expect(opened).not.toHaveProperty("ok");
+    expect(actionLine(opened as SessionAction)).toMatchObject({ words: "Opened Wikipedia", tone: "default" });
+  });
+
+  it("leaves out what touched no page: the browser's own help, a shell fragment", () => {
+    expect(stepOf(act(2, "agent-browser", { command: "agent-browser skills get core 2>&1 | head -80" }))).toBeUndefined();
+    expect(stepOf(act(3, "agent-browser", { command: "agent-browser --help | grep cdp" }))).toBeUndefined();
+    expect(stepOf(act(4, "agent-browser", { command: "agent-browser 2>&1 | tail -1" }))).toBeUndefined();
+    const lines = [act(1, "session_start", {}), act(2, "agent-browser", { command: "agent-browser skills get core" }), act(3, "agent-browser", { command: "agent-browser click @e1" })].map((a) => JSON.stringify(a)).join("\n");
+    expect(stepsOf(jsonLines<HubAction>(lines), []).map((x) => x.kind)).toEqual(["start", "click"]);
   });
 });
 
@@ -126,7 +143,9 @@ describe("what a step acted on", () => {
     );
     expect(step).toMatchObject({ kind: "click", target: "@e14", selector: "#share", box: { x: 672, y: 482, width: 96, height: 36 } });
     // The words still name what the agent said.
-    expect(actionLine(step)).toMatchObject({ words: "Clicked", machine: "@e14" });
+    expect(actionLine(step as SessionAction)).toMatchObject({ words: "Clicked on the page", raw: "@e14" });
+    // Named by the page it found, the replay's words say what it was.
+    expect(actionLine(step as SessionAction, "Share").words).toBe("Clicked “Share”");
     expect(stepOf(act(5, "agent-browser", { command: "agent-browser click @e2" }))).not.toHaveProperty("selector");
   });
 });
@@ -134,18 +153,18 @@ describe("what a step acted on", () => {
 describe("fleetd's own steps", () => {
   it("says a login was filled from 1Password for the page's site, and never names the reference", () => {
     const step = stepOf(act(3, "fill_credential", { ref: "op://Team/Staging shop/password", target: "#password" }, { url: "https://staging.shop.example.com/account/sign-in" }));
-    const line = actionLine(step);
-    expect(line).toMatchObject({ words: "Filled login for staging.shop.example.com from 1Password", login: true });
+    const line = actionLine(step as SessionAction);
+    expect(line).toMatchObject({ words: "Signed in to staging.shop.example.com from the vault", login: true });
     expect(JSON.stringify(line)).not.toContain("op://");
     expect(JSON.stringify(step)).not.toContain("op://");
   });
 
   it("words the start, an ask, a takeover and the end", () => {
-    expect(actionLine(stepOf(act(1, "session_start", { purpose: "x" }))).words).toBe("Started a fresh browser");
-    expect(actionLine(stepOf(act(4, "request_takeover", { reason: "a code" }))).words).toBe("Asked you to take over: a code");
-    expect(actionLine(stepOf(act(5, "takeover", {}))).words).toBe("You took over");
-    expect(actionLine(stepOf(act(6, "hand_back", {}))).words).toBe("You handed back");
-    expect(actionLine(stepOf(act(7, "session_end", {}))).words).toBe("Ended the screen");
+    expect(actionLine(stepOf(act(1, "session_start", { purpose: "x" })) as SessionAction).words).toBe("Started a fresh browser");
+    expect(actionLine(stepOf(act(4, "request_takeover", { reason: "a code" })) as SessionAction).words).toBe("Asked you to take over: a code");
+    expect(actionLine(stepOf(act(5, "takeover", {})) as SessionAction).words).toBe("You took over");
+    expect(actionLine(stepOf(act(6, "hand_back", {})) as SessionAction).words).toBe("You handed back");
+    expect(actionLine(stepOf(act(7, "session_end", {})) as SessionAction).words).toBe("Ended the screen");
   });
 });
 

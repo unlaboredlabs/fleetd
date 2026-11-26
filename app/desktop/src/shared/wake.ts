@@ -1,7 +1,8 @@
-// The bot in the reply's place (W792, W852): from the moment you send until the lead answers, the bot itself stands
-// under your message, with typing dots while its lead takes it and works on it, as a person's avatar does in Messages.
-// It goes when the reply lands, or when the lead is idle after a turn that ended since your message (a quiet turn; the
-// hub's chat state says when, leadIdleAt), and comes back if the lead works on it again (the hub's follow-up). While
+// The bot in the reply's place (W792, W852, W949): from the moment you send, and for as long as its lead works, the bot
+// itself stands at the chat's end with one quiet line beside it: what the lead does now in plain words and how long it
+// has been at it ("Editing index.html · 0:42", workingLine), never anonymous dots. It goes when the lead's turn ends,
+// or when the lead is idle after a turn that ended since your message (a quiet turn; the hub's chat state says when,
+// leadIdleAt), and comes back as soon as the lead works again. While
 // the lead can't take your message it says why in one plain line instead (its machine offline, its usage paused, not
 // sent yet); after START_SLOW_MS with no start and no reason, that it waits for the lead to start, with the time so far;
 // past START_STALE_MS, that the lead didn't start and what to do, never a wait that goes on or goes without a word.
@@ -122,13 +123,13 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   const waiting = i.waiting === true && !ended;
   // The hub said your message hasn't reached the lead: whatever it works on, it isn't this.
   if (waiting && i.held !== undefined) return { phase: "held", reason: i.held };
-  // Its machine went offline: the lead's last state ("working") is stale, so no dots that keep moving (S9). Mid-turn,
+  // Its machine went offline: the lead's last state ("working") is stale, so no step that keeps counting (S9). Mid-turn,
   // the lead carries on once it is back, so it never says it can't start; with nothing running, it can't.
-  if (i.offline === true && !i.asleep && i.working && (waiting || i.cold)) return { phase: "held", reason: carriesOnWords(i.blockedWhy) };
+  if (i.offline === true && !i.asleep && i.working) return { phase: "held", reason: carriesOnWords(i.blockedWhy) };
   if (i.offline === true && !i.asleep && waiting) return { phase: "held", reason: i.blocked ?? MACHINE_OFFLINE_LINE };
-  if (i.working) {
-    // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
-    if (!i.cold && !waiting) return undefined;
+  // The bot stays in the reply's place for the whole of its lead's turn (W949): after its first words too, and on a
+  // turn of its own (an agent's news, an automation), its step beside it in plain words. A reply streaming has it too.
+  if (i.working || i.writing) {
     if (i.writing || a?.kind === "writing") return { phase: "writing" };
     if (a?.kind === "retrying") {
       const at = ms(a.retryAt);
@@ -153,8 +154,28 @@ export const startOf = (w: Wake | undefined): "waking" | "failed" | "held" | und
 /** The wait shows in the reply's place: from the start until the lead's reply lands, its first words included. */
 export const wakeShown = (w: Wake | undefined): boolean => w !== undefined && w.phase !== "asleep";
 
-/** The typing dots beside the bot: while the lead takes your message and works on it, not while it waits or writes. */
-export const wakeDots = (w: Wake): boolean => w.phase === "received" || w.phase === "thinking" || w.phase === "working";
+/** The lead is at its turn (thinking, working or writing): the row says its step and the time so far (workingLine). */
+export const atWork = (w: Wake): boolean => w.phase === "thinking" || w.phase === "working" || w.phase === "writing";
+
+/** "0:42", "3:10", "1:02:05": a turn's time so far, as a clock counts it. */
+export const turnClock = (ms: number): string => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${String(h)}:${String(m).padStart(2, "0")}:${ss}` : `${String(m)}:${ss}`;
+};
+
+/**
+ * The working row's line while the lead is at its turn: its step in plain words (`doing`, shared/steps.ts
+ * activityLabel), else "Thinking", "Writing" or "Working"; and the time since its turn began (`since`, hub epoch ms;
+ * `nowMs` on the hub's clock). Undefined in any other phase: wakeWords says those.
+ */
+export const workingLine = (w: Wake, doing: string | undefined, since: number | undefined, nowMs: number): { readonly words: string; readonly count?: string } | undefined => {
+  if (!atWork(w)) return undefined;
+  const words = w.phase === "writing" ? "Writing" : (doing ?? (w.phase === "thinking" ? "Thinking" : "Working"));
+  return since === undefined ? { words } : { words, count: turnClock(nowMs - since) };
+};
 
 /** The bot's pose in the reply's place: still asleep until it stirs, heavy-lidded while its computer starts, eyes open
  * for its files, then the lead's own looks. */

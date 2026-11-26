@@ -308,6 +308,11 @@ export type ActionItem = {
   status: ActionStatus;
   /** The command, path or tool. */
   summary: string;
+  /**
+   * A tool call's: what it acted on, a file's path, a search's pattern, a page's URL or a web search's words. Absent
+   * from older workspaces.
+   */
+  target?: string;
 };
 
 export type ActionKind = "command" | "file_change" | "tool_call" | "other";

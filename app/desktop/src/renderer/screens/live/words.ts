@@ -1,6 +1,7 @@
 // The lanes' vocabulary: what an agent is doing, in words. Amber is "needs you", danger only on failure words, and
 // everything that is just working stays quiet.
 import type { AgentLane, AgentRole, LaneStatus } from "./contracts";
+import { activityWords } from "../../src/stepWords";
 import { fmtElapsed, parseMs } from "./format";
 
 export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
@@ -22,8 +23,18 @@ export interface Line {
   readonly thinking: boolean;
 }
 
+/** A label's first word as the lane's line has it, lowercase, as its other words are; a name ("GitHub") keeps its case. */
+const lowerFirst = (words: string): string => (/^[A-Z][a-z]/u.test(words) ? `${words.charAt(0).toLowerCase()}${words.slice(1)}` : words);
+
+/** A step's words as a line: its machine text (in backticks, shared/steps.ts) in the line's mono slot, after the words. */
+const stepLine = (text: string): Line => {
+  const at = text.indexOf("`");
+  const end = text.lastIndexOf("`");
+  if (at === -1 || end <= at) return { words: text, tone: "loud", thinking: false };
+  return { words: text.slice(0, at).trimEnd(), machine: text.slice(at + 1, end), tone: "loud", thinking: false };
+};
+
 const say = (words: string, tone: Tone = "quiet"): Line => ({ words, tone, thinking: false });
-const doing = (words: string, machine: string): Line => ({ words, machine, tone: "loud", thinking: false });
 
 /**
  * Whether a lane at work runs on a machine that is offline now (`status`: the machine's, as the snapshot has it): its
@@ -69,20 +80,14 @@ export const describe = (lane: AgentLane, offline = false): Line => {
       if (act === undefined) return lane.status === "starting" ? say("starting") : { ...say("thinking"), thinking: true };
       switch (act.kind) {
         case "command":
-          // The whole command: the row cuts it once, in the middle, to the room it has (parts.tsx MiddleCut).
-          return doing("running", act.text);
         case "edit":
-          return doing("editing", act.path);
         case "read":
-          if (act.pattern) return doing("searching", act.pattern);
-          if (act.path) return doing("reading", act.path);
-          return { ...say("reading"), tone: "loud" };
         case "tool":
-          return act.detail ? doing(act.name, act.detail) : { ...say(act.name), tone: "loud" };
         case "web":
-          return act.detail ? doing("reading the web", act.detail) : { ...say("reading the web"), tone: "loud" };
         case "planning":
-          return { ...say("planning"), tone: "loud" };
+          // In plain words (shared/steps.ts, src/stepWords.ts): "running the tests", "editing index.html", never the
+          // command or path; "working" for the moment the words take to load after the first paint.
+          return stepLine(lowerFirst(activityWords(act) ?? "working"));
         case "writing":
           return { ...say("writing"), tone: "loud" };
         case "compacting":

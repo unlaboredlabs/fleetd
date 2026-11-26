@@ -42,7 +42,7 @@ import {
   type PhoneDevice,
   type SessionAction,
 } from "./model";
-import { structureOf } from "./dom";
+import { structureOf, targetName } from "./dom";
 import { useRecording, useSessions } from "./hub";
 import { addressOf, NAVIGATE, pageNav, pictureOf, setControl, useFrameInput, useLiveFrame, useWatchAgain, type PageNav } from "./live";
 import { useVideo } from "./video";
@@ -630,22 +630,22 @@ function Address({ url, nav, onDone }: { url: string | undefined; nav: PageNav; 
   );
 }
 
-/** A step's time into the session, then its words: the verb, what it acted on, a key beside a filled login. */
+/** A step's time into the session, then its words: what it did, by the page's own names (what the agent clicked, as
+ * the page it found calls it), a key beside a filled login; what the command named is its tooltip. */
 function StepWords({ action }: { action: SessionAction }) {
-  const line = actionLine(action);
+  const html = action.page?.html;
+  const selector = action.selector;
+  const named = action.kind === "click" || action.kind === "type";
+  const name = useMemo(() => (named && html !== undefined && selector !== undefined ? targetName(html, selector) : undefined), [named, html, selector]);
+  const line = actionLine(action, name);
   return (
     <>
       <span className={s.at}>{fmtDuration(action.at)}</span>
-      <span className={cx(s.words, line.who === "you" && s.you)}>
+      <span className={cx(s.words, line.who === "you" && s.you)} title={line.raw}>
         {line.login ? <KeyRound aria-hidden className={s.key} /> : null}
         <Truncate size="xs" tone={line.tone} lines={2} expand="none">
           {line.words}
         </Truncate>
-        {line.machine === undefined ? null : (
-          <span className={s.machine}>
-            <MiddleCut text={line.machine} />
-          </span>
-        )}
       </span>
     </>
   );

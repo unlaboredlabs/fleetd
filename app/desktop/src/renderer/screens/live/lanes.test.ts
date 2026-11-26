@@ -1,10 +1,14 @@
-import { describe as group, expect, it } from "vitest";
+import { beforeAll, describe as group, expect, it } from "vitest";
+import { loadStepWords } from "../../src/stepWords";
 import type { FleetStatus, OrderCard } from "../../../shared/contracts";
 import { selectProjectWork } from "../../src/data/selectors";
 import { applyFrame as frameIn, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus, LiveFrame, LiveLane, PrRef } from "./contracts";
 import { fmtElapsed, fmtTokens, middleEllipsis } from "./format";
 import { describe } from "./words";
+
+// The agents' lines say their steps in plain words once the labeller has loaded (src/stepWords.ts).
+beforeAll(() => loadStepWords());
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
@@ -74,14 +78,16 @@ group("formatters", () => {
 });
 
 group("the activity line", () => {
-  it("is quiet while thinking and loud on tool work; a command reaches it whole", () => {
+  it("is quiet while thinking and loud on tool work, in plain words: a file by its name, a command by what it does", () => {
     expect(describe(lane("T1", "working"))).toMatchObject({ words: "thinking", thinking: true });
     const edit = lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "edit", path: "src/a.ts" }, since: T0 } }) });
-    expect(describe(edit)).toMatchObject({ words: "editing", machine: "src/a.ts", tone: "loud", thinking: false });
+    expect(describe(edit)).toEqual({ words: "editing", machine: "a.ts", tone: "loud", thinking: false });
     expect(describe(lane("T1", "done", { startedAt: at(0), endedAt: at(18), pr: pr(221, "reviewing") })).words).toBe("done in 0:18 · #221");
     expect(describe(lane("T1", "waiting")).tone).toBe("warning");
     const text = "npm test -- cart --reporter=dot --run src/cart/total.test.ts src/cart/discounts.test.ts";
-    expect(describe(lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "command", text }, since: T0 } }) })).machine).toBe(text);
+    expect(describe(lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "command", text }, since: T0 } }) })).words).toBe("running the tests");
+    const heredoc = lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "command", text: "python3 -I - <<'EOF'" }, since: T0 } }) });
+    expect(describe(heredoc).words).toBe("running a script");
     const starting = lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "starting", text: "Starting its computer at boat.dev" }, since: T0 } }) });
     expect(describe(starting)).toMatchObject({ words: "Starting its computer at boat.dev", tone: "quiet" });
   });

@@ -137,3 +137,30 @@ const targetsOf = (doc: Document, selector: string | undefined, index: ReadonlyM
   }
   return [...out];
 };
+
+/** The last pages read for names, by their HTML: a replay's steps share a page until the next one loads. */
+const parsed = new Map<string, Document>();
+
+/**
+ * What a step acted on, by name, as a person reads it ("Search", "Email"): the element `selector` finds in the page
+ * the step found (its HTML), by its label or its own words. Undefined when it can't be found or has no short name.
+ */
+export const targetName = (html: string, selector: string): string | undefined => {
+  let doc = parsed.get(html);
+  if (doc === undefined) {
+    doc = new DOMParser().parseFromString(html, "text/html");
+    parsed.set(html, doc);
+    // A few pages are plenty: a replay walks its steps in order.
+    for (const key of parsed.keys()) if (parsed.size > 4) parsed.delete(key);
+  }
+  let el: Element | null;
+  try {
+    el = doc.querySelector(selector);
+  } catch {
+    return undefined;
+  }
+  // A click lands on an icon or a span inside what it presses: the nearest control or link names it.
+  const named = el?.closest("button,a[href],input,select,textarea,label,[role],summary,option") ?? el;
+  const name = named === null ? undefined : nameOf(named, doc);
+  return name === undefined || name.length > 40 ? undefined : name;
+};

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AgentRow, RecentLanding, WorkItem, WorkListOutput } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 import {
-  actionLine,
   agentState,
   agentDetail,
   alsoOnRepo,
@@ -110,20 +109,6 @@ describe("an agent's state and where its work is", () => {
     expect(agentDetail({ role: "implementer", sandbox: "fleetd's computers", branch: "fleetd/T1-receipt-dates" }, "writer")).toContain("writer · fleetd's computers · ");
     expect(agentDetail({ role: "implementer", profile: "medium", branch: "fleetd/T1-receipt-dates" }, "writer")).toBe("writer · medium · receipt-dates");
     expect(agentDetail({ role: "reader" }, "reader")).toBe("reader");
-  });
-});
-
-describe("an agent's steps", () => {
-  const step = (action: Partial<Extract<Parameters<typeof actionLine>[0], { kind: "action" }>["action"]>) =>
-    actionLine({ kind: "action", id: "a1", at: "2026-10-19T10:00:00.000Z", action: { at: "2026-10-19T10:00:00.000Z", kind: "command", status: "completed", failed: false, summary: "npm test", ...action } });
-
-  it("says each action in the past tense, the one running in the present, and a failure with its exit code", () => {
-    expect(step({})).toEqual({ words: "ran", machine: "npm test", tone: "quiet" });
-    expect(step({ status: "running" }).words).toBe("running");
-    expect(step({ kind: "file_change", summary: "src/a.ts" }).words).toBe("edited");
-    expect(step({ failed: true, status: "failed", exitCode: 1 })).toMatchObject({ tone: "danger", outcome: "failed, exit 1" });
-    expect(step({ failed: true, status: "failed" }).outcome).toBe("failed");
-    expect(step({ kind: "other", summary: "compacted" }).words).toBe("");
   });
 });
 
@@ -275,11 +260,3 @@ describe("the Now line", () => {
   });
 });
 
-describe("a step's line", () => {
-  const step = (kind: "other" | "command", summary: string) => ({ kind: "action", id: "a1", at: "2026-10-17T10:00:00.000Z", action: { at: "2026-10-17T10:00:00.000Z", kind, status: "running", summary, failed: false } }) as const;
-  it("keeps a start's words whole, so the reason after the step's name shows; a command is cut as before", () => {
-    const why = "Putting its files on its computer: GitHub refused the clone of acme/shop from its computer. Trying again in 300 s, by itself.";
-    expect(actionLine(step("other", why))).toEqual({ words: "", machine: why, tone: "quiet", prose: true });
-    expect(actionLine(step("command", "npm test")).prose).toBeUndefined();
-  });
-});

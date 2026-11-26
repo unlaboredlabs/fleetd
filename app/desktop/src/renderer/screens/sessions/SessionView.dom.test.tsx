@@ -238,8 +238,10 @@ it("plays an ended screen's recording the full width, its steps behind Steps, cl
   const steps = [...(stepsList()?.querySelectorAll("li") ?? [])].map((li) => li.textContent);
   expect(steps).toHaveLength(3);
   expect(steps[0]).toContain("Started a fresh browser");
-  // Read whole across the pieces: a split é would come out as U+FFFD (%EF%BF%BD).
-  expect(steps[1]).toContain("shop.example/caf%C3%A9");
+  // The page by its site in words, its address the tooltip, read whole across the pieces: a split é would come out as
+  // U+FFFD.
+  expect(steps[1]).toContain("Opened shop.example");
+  expect(stepsList()?.querySelectorAll("li")[1]?.querySelector("[title]")?.getAttribute("title")).toBe("https://shop.example/café");
   expect(steps[2]).toContain("Ended the screen");
 
   act(() => stepsToggle()?.click());

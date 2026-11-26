@@ -41,19 +41,21 @@ describe("sessionGroups", () => {
 });
 
 describe("actionLine", () => {
-  it("says a login was filled from 1Password, for which site, and nothing of the login itself", () => {
+  it("says a sign-in was filled from the vault, for which site, and nothing of the login itself", () => {
     const line = actionLine(act(6_000, "fill_login", { target: "Email and Password", credential: { site: "example.com", source: "1password" } }));
-    expect(line).toEqual({ who: "agent", words: "Filled login for example.com from 1Password", tone: "default", login: true });
+    expect(line).toEqual({ who: "agent", words: "Signed in to example.com from the vault", tone: "default", login: true });
   });
 
   it("logs where a person typed, never what", () => {
-    expect(actionLine({ at: 0, by: "person", kind: "type", target: "the code field", text: "482913" }).words).toBe("You typed in the code field");
-    expect(actionLine(act(0, "type", { target: "Discount code", text: "SAVE10" })).words).toBe("Typed “SAVE10” in Discount code");
+    expect(actionLine({ at: 0, by: "person", kind: "type", target: "Code", text: "482913" }).words).toBe("You typed into “Code”");
+    expect(actionLine(act(0, "type", { target: "Discount code", text: "SAVE10" })).words).toBe("Typed “SAVE10” into “Discount code”");
   });
 
   it("words each kind of step", () => {
-    expect(actionLine(act(0, "open", { target: "https://shop.example.com/" }))).toMatchObject({ words: "Opened", machine: "shop.example.com" });
-    expect(actionLine(act(0, "open", { target: "https://shop.example.com/checkout" })).machine).toBe("shop.example.com/checkout");
+    expect(actionLine(act(0, "open", { target: "https://shop.example.com/" }))).toMatchObject({ words: "Opened shop.example.com", raw: "https://shop.example.com/" });
+    // By the page's title when the step knows it: what it answered, else the page captured after it.
+    expect(actionLine(act(0, "open", { target: "https://en.wikipedia.org/wiki/Web_browser", text: "Web browser - Wikipedia" })).words).toBe("Opened Wikipedia");
+    expect(actionLine({ ...act(0, "open", { target: "https://shop.example.com/checkout" }), page: { url: "https://shop.example.com/checkout", title: "Checkout", html: "" } }).words).toBe("Opened Checkout");
     expect(actionLine(act(0, "click", { target: "Apply" })).words).toBe("Clicked “Apply”");
     expect(actionLine(act(0, "ask", { text: "the sign-in sends a code" }))).toMatchObject({ words: "Asked you to take over: the sign-in sends a code", tone: "warning" });
     expect(actionLine({ at: 0, by: "person", kind: "take_over" })).toMatchObject({ who: "you", words: "You took over" });

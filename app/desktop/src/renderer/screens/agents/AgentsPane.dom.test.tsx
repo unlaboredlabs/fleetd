@@ -351,7 +351,7 @@ it("holds an agent's line through a burst of tool calls under 100 ms each, then 
   // A long one after the burst shows within a second, and the line ends on the true latest state.
   act(() => frame({ kind: "command", text: "pnpm test" }));
   step(1000);
-  expect(shown()).toMatch(/running ?pnpm test$/u);
+  expect(shown()).toMatch(/running the tests$/u);
   act(() => frame());
   step(2000);
   expect(shown()).toBe("thinking | thinking");
