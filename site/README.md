@@ -104,12 +104,13 @@ and every other link of the site as plain text (`legal.js`), so App Review finds
 inside the app. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
 their word, and move a page's Effective date when its text changes.
 
-`security.html`, `subprocessors.html` and `dpa.html` (`/security`, `/subprocessors`, `/dpa`) are drafts for the person's
-review: the same layout, listing themselves after the five, `noindex`, out of `sitemap.xml`, and linked from no other
-page. Each opens with a "Draft for review" note, and `<mark class="confirm">` marks a feature still being built. The
-security page and the subprocessor list go live once those ship: take off the note, the marks and `noindex`, add them
-to the five pages' lists, the footers and `sitemap.xml`, uncomment the line under the providers in `privacy.html`, and
-point security.txt's Policy at `/security`. The DPA stays a draft until a lawyer has read it and the Terms bring it in.
+`security.html` and `subprocessors.html` (`/security`, `/subprocessors`) share the layout too, listed after the five
+in every list and footer (and with them under `?app=1`), and in `sitemap.xml`; `privacy.html` points to the list under
+its providers, and `.well-known/security.txt`'s Policy is `/security`'s report section. `dpa.html` (`/dpa`) is still a
+draft for the person's review: `noindex`, out of `sitemap.xml`, linked from no other page, opening with a "Draft for
+review" note, `<mark class="confirm">` marking a feature still being built. It stays so until a lawyer has read it and
+the Terms bring it in; then take off the note, the marks and `noindex`, and add it to the lists, the footers,
+`sitemap.xml` and the security page's Certifications and paperwork.
 
 ## Refreshing the clips
 

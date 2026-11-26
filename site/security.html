@@ -1,6 +1,5 @@
 <!doctype html>
-<!-- fleetd.sh/security: how fleetd cloud is run and kept safe. A draft the person reviews before any page links it: noindex, out of sitemap.xml, and the other pages
-     neither list it nor link it. Same layout as the legal pages (legal.css); [confirm] marks what is still to check. -->
+<!-- fleetd.sh/security: how fleetd cloud is run and kept safe. Same layout as the legal pages (legal.css), listed after the five. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -22,7 +21,6 @@
 })();
 </script>
 <title>Security · fleetd</title>
-<meta name="robots" content="noindex">
 <meta name="description" content="How fleetd cloud is run and kept safe: hosting, encryption, backups, the vault, staff access, agents, incidents and reporting a vulnerability.">
 <link rel="canonical" href="https://fleetd.sh/security">
 <meta property="og:title" content="Security · fleetd">
@@ -58,12 +56,10 @@
     <a href="/support">Support</a>
     <a href="/security" aria-current="page" class="gap">Security</a>
     <a href="/subprocessors">Subprocessors</a>
-    <a href="/dpa">Data Processing Agreement</a>
   </nav>
   <article class="doc" aria-labelledby="h">
     <h1 id="h">Security</h1>
-    <p class="when">Draft for review, November 26, 2026</p>
-    <p class="draft"><b>Draft for review.</b> Not linked from the site yet. Items marked <mark class="confirm">[confirm]</mark> are features still being built; the page goes live once they ship.</p>
+    <p class="when">Updated November 26, 2026</p>
     <p>How fleetd cloud (app.fleetd.dev) is run and what protects your workspace: where it runs, how your data is encrypted, what fleetd’s staff can see, what agents can reach, and what we do when something goes wrong. If you run fleetd yourself, read <a href="/docs/security">Security in the docs</a> instead: your workspace then runs on your own machines and none of this applies.</p>
 
     <ul class="facts">
@@ -71,7 +67,7 @@
       <li><span>Way in</span><span>No SSH, no open inbound port. Only Cloudflare Tunnel reaches the servers.</span></li>
       <li><span>Encryption</span><span>TLS 1.2 or newer in transit. Vault items and stored tokens sealed with AES-256-GCM under your workspace’s own keys.</span></li>
       <li><span>Backups</span><span>Every 6 hours, sealed, kept 30 days, with a restore drill that checks every row.</span></li>
-      <li><span>Your content</span><span>Never used to train AI models. Staff downloads of a workspace are logged in that workspace’s audit log <mark class="confirm">[confirm: ships with the cloud audit log]</mark>.</span></li>
+      <li><span>Your content</span><span>Never used to train AI models. Staff downloads of a workspace are logged in that workspace’s audit log.</span></li>
       <li><span>Breaches</span><span>We tell affected customers within 72 hours of becoming aware of a breach.</span></li>
       <li><span>Certifications</span><span>None yet: no SOC 2, ISO 27001 or external penetration test.</span></li>
       <li><span>Report a problem</span><span><a href="mailto:support@fleetd.dev?subject=Security">support@fleetd.dev</a>, subject “Security”.</span></li>
@@ -119,7 +115,7 @@
     <h2 id="staff">What fleetd’s staff can see</h2>
     <ul>
       <li><b>Day to day: counts, not content.</b> Our operations console shows numbers per workspace: people, machines, storage used, last activity and failing jobs. It sits behind Cloudflare Access, for named staff only.</li>
-      <li><b>A workspace’s content, when there is a reason.</b> Staff can download an export of a workspace: its chats, tasks, files and recordings, but no vault items or tokens. We do it only when you ask, for a security incident, or when the law requires it. Each download is recorded in that workspace’s audit log, which its admins see in Settings › Workspace <mark class="confirm">[confirm: ships with the cloud audit log]</mark>.</li>
+      <li><b>A workspace’s content, when there is a reason.</b> Staff can download an export of a workspace: its chats, tasks, files and recordings, but no vault items or tokens. We do it only when you ask, for a security incident, or when the law requires it. Each download is recorded in that workspace’s audit log, which its admins see in Settings › Workspace.</li>
       <li><b>Vault items:</b> see <a href="#vault">The vault</a>. No staff tool shows them.</li>
     </ul>
 
@@ -127,7 +123,7 @@
     <ul>
       <li><b>Repositories:</b> through fleetd’s GitHub App. A bot’s token covers only that bot’s repositories, never their settings or administration, and lasts at most an hour.</li>
       <li><b>Secrets:</b> a bot’s variables reach every agent of that bot. Vault logins and cards are filled, never shown (<a href="#vault">The vault</a>).</li>
-      <li><b>Approvals:</b> each bot has an approval mode. New bots start in YOLO, where agents act without asking. Pick Ask me or Checker decides for a bot whose work needs a second look. Only admins change a bot’s approval mode <mark class="confirm">[confirm: ships with admin-only bot settings]</mark>.</li>
+      <li><b>Approvals:</b> each bot has an approval mode. New bots start in YOLO, where agents act without asking. Pick Ask me or Checker decides for a bot whose work needs a second look. Only admins change a bot’s approval mode.</li>
       <li><b>Removing someone</b> revokes all their devices and closes their connections at once.</li>
     </ul>
 
@@ -149,7 +145,7 @@
     <ul>
       <li>Sign-in is through WorkOS, with an emailed one-time code, Google, GitHub or Apple. Every sign-in asks again; a new device tells your other devices.</li>
       <li>Two-factor sign-in comes from Google, GitHub or Apple when you use them. fleetd has no authenticator app or passkey of its own.</li>
-      <li>Admins can require one sign-in method for the workspace (for example, Google only), and let people with the company’s verified email domain join by themselves <mark class="confirm">[confirm: ships with required sign-in and domain joining]</mark>.</li>
+      <li>Admins can require one sign-in method for the workspace (for example, Google only), and let people with the company’s verified email domain join by themselves.</li>
       <li>fleetd has no SSO (SAML or OIDC) yet.</li>
     </ul>
 
@@ -162,7 +158,7 @@
 
     <h2 id="report">Report a vulnerability</h2>
     <p>Write to <a href="mailto:support@fleetd.dev?subject=Security"><b>support@fleetd.dev</b></a> with “Security” in the subject. Tell us what you found and how to reproduce it. We answer within 3 working days, keep you told as we fix it, and credit you if you like. Please don’t access other people’s data, disrupt the service or make the problem public before it’s fixed. We won’t take legal action over research done in good faith within these rules.</p>
-    <p>The same contact is in fleetd.sh/.well-known/security.txt <mark class="confirm">[confirm: goes live with its own change]</mark>.</p>
+    <p>The same contact is in <a href="/.well-known/security.txt">fleetd.sh/.well-known/security.txt</a>.</p>
 
     <h2 id="status">Status</h2>
     <p><a href="https://status.fleetd.dev">status.fleetd.dev</a> shows whether the cloud app and the website are up, and any incident. We publish no uptime promise (SLA) yet.</p>
@@ -170,7 +166,7 @@
     <h2 id="compliance">Certifications and paperwork</h2>
     <ul>
       <li>We don’t have SOC 2, ISO 27001 or an external penetration test yet. We’ll say here when that changes.</li>
-      <li>Our <a href="/dpa">Data Processing Agreement</a> covers your workspace’s personal data under GDPR, with the EU Standard Contractual Clauses for transfers.</li>
+      <li>A Data Processing Agreement for your workspace’s personal data under GDPR, with the EU Standard Contractual Clauses for transfers, is being reviewed. Write to <a href="mailto:support@fleetd.dev">support@fleetd.dev</a> if you need one.</li>
       <li>For a security questionnaire, write to <a href="mailto:support@fleetd.dev">support@fleetd.dev</a>.</li>
     </ul>
   </article>
@@ -185,6 +181,8 @@
       <a href="/refunds">Refunds</a>
       <a href="/imprint">Imprint</a>
       <a href="/support">Support</a>
+      <a href="/security">Security</a>
+      <a href="/subprocessors">Subprocessors</a>
       <a href="https://status.fleetd.dev">Status</a>
     </nav>
   </div>
