@@ -579,7 +579,15 @@ export class Host {
     }
     for (const name of names) {
       if (name.startsWith(".")) continue;
-      rmSync(join(this.root, name, "jobs"), { recursive: true, force: true });
+      const dir = join(this.root, name);
+      let at: Date | undefined;
+      try {
+        at = statSync(dir).mtime;
+      } catch {}
+      rmSync(join(dir, "jobs"), { recursive: true, force: true });
+      // The folder's own time stays: an older node's folder without `.used` goes by it (`usedAt`), and a removal here
+      // at each start kept it new for ever (T2970 on Nov 26).
+      if (at) utimesSync(dir, at, at);
     }
   }
 
