@@ -199,6 +199,7 @@ function fakePorts(upOn: string | undefined, refuse = false) {
       restarts.push(s.name);
     },
     healthy: async (_h, version) => version === upOn,
+    ran: () => undefined,
     sleep: async (ms) => {
       now += ms;
     },
@@ -254,6 +255,75 @@ test("the watcher keeps a build that comes up, puts back one that doesn't, and o
   process.stderr.write = () => true;
   expect(await run(join(home.dir, "nothing.json"))).toBe(2);
   process.stderr.write = err;
+});
+
+/**
+ * A new build that gets `share` of a core, comes up healthy once it used `upAfterCpuMs` of CPU (never when undefined),
+ * and runs as `pids(nowMs)`; the build put back comes up at once.
+ */
+function busyPorts(o: { share: number; upAfterCpuMs?: number; pids?: (now: number) => number | null }) {
+  let now = 0;
+  let restartedAt = 0;
+  let restarts = 0;
+  const cpu = () => (now - restartedAt) * o.share;
+  const ports: Ports = {
+    restart() {
+      restarts++;
+      restartedAt = now;
+    },
+    healthy: async (_h, version) => (version === "1.1.0" ? o.upAfterCpuMs !== undefined && cpu() >= o.upAfterCpuMs : restarts > 1),
+    ran: () => {
+      const pid = o.pids ? o.pids(now) : 7;
+      return pid === null ? "down" : { pid, cpuMs: cpu() };
+    },
+    sleep: async (ms) => {
+      now += ms;
+    },
+    nowMs: () => now,
+  };
+  return { ports, now: () => now };
+}
+
+test("the watcher keeps a build a busy machine starves, counting the CPU time it got, not the clock", async () => {
+  const dir = join(home.dir, "busy");
+  mkdirSync(dir);
+  const p = plan(dir);
+  // The devbox at load 60, Nov 26: a quarter of a core, so the 30 s of CPU its start takes are 2 min on the clock.
+  const busy = busyPorts({ share: 0.25, upAfterCpuMs: 30_000 });
+  expect(await finish(p, busy.ports)).toEqual({ state: "done", stage: null, message: "runs 1.1.0" });
+  expect(busy.now()).toBeGreaterThan(90_000);
+  expect(readFileSync(p.exe, "utf8")).toBe("new");
+});
+
+test("the watcher puts back a build that spins, one that exits, and one stuck idle", async () => {
+  const dir = join(home.dir, "bad");
+  mkdirSync(dir);
+  // Never up on a whole core: 90 s of CPU time.
+  const spins = busyPorts({ share: 1 });
+  expect(await finish(plan(dir), spins.ports)).toEqual({
+    state: "rolled_back",
+    stage: "health",
+    message: "1.1.0 didn't come up healthy in 90 s of CPU time, so 1.0.0 was put back and runs again",
+  });
+  expect(spins.now()).toBe(90_000);
+  // It exits 3 s in, and the service manager starts it again 5 s later: put back at once, not after 90 s.
+  const exits = busyPorts({ share: 0.5, pids: (now) => (now < 3000 ? 7 : now < 8000 ? null : 8) });
+  expect((await finish(plan(dir), exits.ports)).message).toBe("1.1.0 stopped before it came up healthy, so 1.0.0 was put back and runs again");
+  expect(exits.now()).toBeLessThan(5000);
+  // Alive, not up and using no CPU: the clock's cap, three times the wait.
+  const idle = busyPorts({ share: 0 });
+  expect((await finish(plan(dir), idle.ports)).message).toBe("1.1.0 didn't come up healthy within 270 s, so 1.0.0 was put back and runs again");
+  expect(idle.now()).toBe(270_000);
+  expect(readFileSync(join(dir, "fleetd"), "utf8")).toBe("old");
+});
+
+test("the watcher reads the process from systemd's MainPID or launchd's pid line, and its CPU time from ps", async () => {
+  const { parseCpuTime, parseMainPid } = await import("../src/update/service.ts");
+  expect([parseMainPid("3481283\n", "systemd"), parseMainPid("0\n", "systemd"), parseMainPid("", "systemd")]).toEqual([3481283, null, undefined]);
+  const launchd = "gui/501/sh.fleetd.node = {\n\tactive count = 1\n\tstate = running\n\tpid = 18583\n\t\tstate = active\n}\n";
+  expect([parseMainPid(launchd, "launchd"), parseMainPid("\tstate = not running\n", "launchd")]).toEqual([18583, null]);
+  // Linux: [dd-][hh:]mm:ss; macOS: m:ss.cc.
+  expect(["00:01:51", "1-02:03:04", "  0:00.03\n", "123:45.67", "n/a"].map(parseCpuTime)).toEqual([111_000, 93_784_000, 30, 7_425_670, undefined]);
 });
 
 test("the kept binary reads as it was when the process started, after a new one is renamed over its path", async () => {

@@ -10,7 +10,7 @@ How to keep fleetd up to date, and how to remove it.
 When a new build is ready, owners and admins see **Update available** in the workspace's menu at the top of the sidebar.
 
 1. Click **Update**. Nothing else to confirm.
-2. The workspace restarts on the new build and checks itself. If it isn't healthy within 90 seconds, or a machine doesn't
+2. The workspace restarts on the new build and checks itself. If it doesn't come up healthy, or a machine doesn't
    reconnect, or lead turns fail, it goes back to the old one. See [Self-check and rollback](/docs/releases#self-check).
 3. Every machine then updates, and moves Claude Code to the version that build was tested with.
 4. The app restarts last. A message you were typing is kept.
