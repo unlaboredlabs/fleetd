@@ -189,6 +189,8 @@ export function Settings() {
       {/* A workspace either way; a fleetd cloud one updates itself: no version of its own to read. */}
       <ListSection header="Workspace">
         <ListRow title="Status" value={statusOf(hub.phase)} valueDot={{ live: t.success, busy: t.warning, down: t.tertiary }[linkTone(hub.phase)]} />
+        {/* Refused (revoked on the workspace): its alert's Not Now leaves the way back here, as its Pair Again does. */}
+        {hub.phase === "refused" ? <ListRow title={`Pair This ${DEVICE} Again`} onPress={forget} /> : null}
         <ListRow title="Address" value={paired.hub} selectable />
         {hub.phase === "live" && hub.version !== undefined && paired.cloud !== true ? (
           <ListRow
