@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { HELD, install, machineHere, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
+import { HELD, install, machineCpus, machineHere, parseCpuList, quotaArgs, slotShare, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
 
 const SRC = join(import.meta.dir, "../../src/main.ts");
 const ROOT = join(import.meta.dir, "../../..");
@@ -204,6 +204,66 @@ describe("the slots", () => {
       await a.proc.exited;
     }, SLOW);
   }
+});
+
+describe("each slot's share of the CPUs", () => {
+  test("past the build slots' jobs, an equal share each, at least one", () => {
+    // The devbox: 32 CPUs, 3 build slots of 2 jobs, 6 slots: 4 each, 24 in all.
+    expect(slotShare(32, 6, 6)).toBe(4);
+    // Fewer slots (memory fits fewer), each gets more: 16 CPUs, 2 build jobs, 2 slots.
+    expect(slotShare(16, 2, 2)).toBe(7);
+    // Slots set past the CPUs (node.json): one each.
+    expect(slotShare(8, 6, 3)).toBe(1);
+    // Builds that fill the machine leave the slots every CPU.
+    expect(slotShare(4, 4, 1)).toBe(4);
+  });
+  test("Linux's CPU lists", () => {
+    expect(parseCpuList("0-3,8,10-11\n")).toEqual([0, 1, 2, 3, 8, 10, 11]);
+    expect(parseCpuList("")).toBeUndefined();
+    expect(parseCpuList("3-1")).toBeUndefined();
+  });
+  test("a run's scope: its quota, the session's OOM policy, bound to the session's scope", () => {
+    const cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/fleetd-test-no-such-scope.scope\n";
+    expect(quotaArgs(4, cgroup)).toEqual([
+      "--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", "--property=CPUQuota=400%", "--property=OOMPolicy=continue",
+      "--property=BindsTo=fleetd-test-no-such-scope.scope", "--property=After=fleetd-test-no-such-scope.scope", "--",
+    ]);
+    // Outside a user manager's scope (a service, a container) it binds to nothing.
+    expect(quotaArgs(2, "0::/system.slice/ssh.service\n")).not.toContain("--property=BindsTo=ssh.service");
+  });
+  // A run started from inside one held to a few CPUs (`scripts/check.sh --background` from a run under `taskset`) sizes
+  // the machine, its build jobs and so its slots' share, as every other run does: from the machine's CPUs.
+  test.if(process.platform === "linux" && Bun.which("taskset") !== null)("a run held to one CPU still sizes the whole machine", () => {
+    const home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-heavy-slots-"));
+    homes.push(home);
+    const mod = join(import.meta.dir, "../../src/node/heavy_slots.ts");
+    const script = `const h = await import(${JSON.stringify(mod)}); console.log(JSON.stringify(h.machineHere(${JSON.stringify(home)})));`;
+    const sized = (pin: string[]) => JSON.parse(Bun.spawnSync([...pin, process.execPath, "-e", script], { stderr: "inherit" }).stdout.toString());
+    const whole = sized([]);
+    expect(whole.cores).toBe(machineCpus()!.length);
+    expect(sized([Bun.which("taskset")!, "-c", String(machineCpus()![0])])).toEqual(whole);
+  });
+
+  // What a run fans out to is capped at its slot's share by its scope's quota (cpu.max), on every CPU its caller has (a
+  // run held to 4 CPUs instead put Electron's GPU threads on CPUs 0-3, whatever slot it was in). Before, a run had no
+  // cap of its own.
+  const scopes = process.platform === "linux" && Bun.spawnSync(["systemd-run", "--user", "--scope", "--quiet", "--collect", "true"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  test.if(scopes)("a run and its children are capped at their slot's share, on every CPU", async () => {
+    const m = machine(2);
+    const probe = join(m.home, "probe");
+    writeFileSync(probe, `#!/bin/sh\nsh -c 'echo "$(cat /sys/fs/cgroup$(sed "s/^0:://" /proc/self/cgroup)/cpu.max) $(grep Cpus_allowed_list /proc/self/status | cut -f2)"' >>"$HOME_DIR/cpus"\nexec "$HOME_DIR/check" "$1"\n`);
+    chmodSync(probe, 0o755);
+    const a = m.run("a", [probe, "a"]);
+    await until("a starts", () => m.started().length === 1);
+    m.release("a");
+    expect(await a.proc.exited).toBe(0);
+    const here = machineHere(m.home);
+    const share = slotShare(here.cores, here.buildSlots * here.buildJobs, 2);
+    const [quota, period, cpus] = readFileSync(join(m.home, "cpus"), "utf8").trim().split(" ");
+    expect(Number(quota) / Number(period)).toBe(share);
+    // The wrapper narrows no run's CPUs: it has every one its caller has.
+    expect(cpus).toBe(/Cpus_allowed_list:\s*(\S+)/.exec(readFileSync("/proc/self/status", "utf8"))![1]);
+  }, SLOW);
 });
 
 describe("runs that take no slot", () => {

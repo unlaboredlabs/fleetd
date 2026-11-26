@@ -10,9 +10,18 @@
 // itself under it (fleetd's scripts/check.sh does), unless FLEETD_HEAVY_SLOT says it holds one. So a run inside one
 // takes no second slot, and neither does the repo's declared `background` start or `wait` (.fleetd/pre-push.json): the
 // one returns at once, its run taking a slot of its own, and the other only waits for that run.
+//
+// On Linux, with a systemd user manager, a run is held to its slot's share of the CPUs (slotShare) by a CPU quota: it
+// runs in a scope of its own with `CPUQuota=`, and so does everything it starts. A slot counted as one run's test
+// workers, but a run fans out past them: on Nov 26 a desktop check (vitest's workers, esbuild, Electron) kept up to 11.8
+// cores busy in one slot, a fleetd or cloud check (test workers, the hubs, browsers and Postgres its tests start) up to
+// 4.7, and with three desktop checks among the six the devbox's load passed 110. Capped, the six use 24 of its 32 at
+// most, and a thread the quota holds back doesn't count in the load. A quota leaves the run's CPU affinity alone:
+// pinned to a slot's 4 CPUs instead (#2257), Electron's GPU process put 16 of its threads on CPUs 0-3, whatever CPUs it
+// had, and four pinned desktop checks ran CPUs 0-3 at 100% with the load at 158 and most cores idle.
 import { closeSync, existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import * as buildSlots from "./build_slots.ts";
 import { runInherited, take, writeWrapper } from "./build_slots.ts";
 import { readConfig } from "./config.ts";
@@ -59,12 +68,50 @@ export function ephemeralPorts(): number {
   return 65535 - 49152 + 1;
 }
 
-/** This machine as slotsFit reads it. Builds with no turns (`buildSlots` 0) count as the slots memory fits. */
+/** A Linux CPU list (`0-3,8,10-11`) as its CPUs, in order; undefined when it isn't one. */
+export function parseCpuList(text: string): number[] | undefined {
+  const cpus: number[] = [];
+  for (const part of text.trim().split(",")) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!m) return undefined;
+    const lo = Number(m[1]);
+    const hi = m[2] === undefined ? lo : Number(m[2]);
+    if (hi < lo) return undefined;
+    for (let c = lo; c <= hi; c++) cpus.push(c);
+  }
+  return cpus.length ? cpus : undefined;
+}
+
+/** The machine's CPUs: the root cgroup's (a container's own), else every online one; undefined off Linux. Not this
+ * process's own affinity, which a caller may have narrowed (`taskset`). */
+export function machineCpus(): number[] | undefined {
+  if (process.platform !== "linux") return undefined;
+  for (const path of ["/sys/fs/cgroup/cpuset.cpus.effective", "/sys/devices/system/cpu/online"]) {
+    try {
+      const cpus = parseCpuList(readFileSync(path, "utf8"));
+      if (cpus) return cpus;
+    } catch {}
+  }
+  return undefined;
+}
+
+/** The CPUs each of `slots` slots may use, of `cores`: an equal share of those past the build slots' jobs (`reserved`,
+ * as slotsFit leaves them), at least one; every CPU when the builds fill the machine. */
+export function slotShare(cores: number, reserved: number, slots: number): number {
+  const free = cores > reserved ? cores - reserved : cores;
+  return Math.max(1, Math.floor(free / Math.max(1, slots)));
+}
+
+/** This machine as slotsFit reads it, from its own CPUs (machineCpus), never this process's: a run started inside a
+ * pinned one (`check.sh --background`) must size the slots, and the build jobs they leave out, as every other run
+ * does, or its slot's CPUs would overlap another's. Builds with no turns (`buildSlots` 0) count as the slots memory
+ * fits. */
 export function machineHere(home: string): Machine {
-  const jobs = buildJobsHere();
+  const cores = machineCpus()?.length ?? availableParallelism();
+  const jobs = buildJobsHere(cores);
   const mem = buildSlots.memTotal();
   return {
-    cores: availableParallelism(),
+    cores,
     buildSlots: buildSlots.slotsHere(home) ?? buildSlots.slotsFit(mem),
     buildJobs: jobs,
     testWorkers: testWorkers(jobs),
@@ -103,7 +150,7 @@ export function install(home: string, exe: string[]): string {
 
 /** What a worker's standing rules say about heavy runs. */
 export const briefLine = (slots: number) =>
-  `- Run the repo's full pre-push check (\`.fleetd/pre-push.json\`'s \`check\`, or what its docs name) and any other whole test suite or full build as \`${WRAPPER} <command>\` (\`${WRAPPER} bun run check\`): it takes one of this machine's ${slots} heavy-run slots, so many agents' checks can't overload it and fail on ports or timeouts. With all in use it prints that it is waiting and starts by itself once one frees: give it Bash's longest timeout, and don't stop it or start another. One too long for one command: start \`${WRAPPER} <its background command>\`, then wait with the Monitor tool running its \`wait\` command; neither the start nor the wait holds a slot, and a check that wraps itself takes no second one. Your own partial test commands (one file, a filter) run directly and never wait.\n`;
+  `- Run the repo's full pre-push check (\`.fleetd/pre-push.json\`'s \`check\`, or what its docs name) and any other whole test suite or full build as \`${WRAPPER} <command>\` (\`${WRAPPER} bun run check\`): it takes one of this machine's ${slots} heavy-run slots, so many agents' checks can't overload it and fail on ports or timeouts. With all in use it prints that it is waiting and starts by itself once one frees: give it Bash's longest timeout, and don't stop it or start another. One too long for one command: start \`${WRAPPER} <its background command>\`, then wait with the Monitor tool running its \`wait\` command; neither the start nor the wait holds a slot, and a check that wraps itself takes no second one. Your own partial test commands (one file, a filter) run directly and never wait, unless each worker starts an app or a browser (QA screens, end-to-end runs): those are heavy even filtered to one test.\n`;
 
 /** Whether `argv`, run in `cwd`, is the `background` or `wait` command of the repo's `.fleetd/pre-push.json` (at the
  * top of the repo `cwd` is in). A first word with a slash is a path: `./scripts/check.sh` from the top, or
@@ -128,6 +175,50 @@ export function declaredLight(cwd: string, argv: string[]): boolean {
   });
 }
 
+/** A cgroup v2 file's number, or undefined for `max` or one that can't be read. */
+function cgroupNumber(path: string): number | undefined {
+  try {
+    const v = readFileSync(path, "utf8").trim();
+    return /^\d+$/.test(v) ? Number(v) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `systemd-run`'s arguments that start a run in a scope of its own capped at `cpus` CPUs, up to the `--`: with the
+ * session's own memory cap and OOM policy (runner/scope.ts), and bound to the session's scope, so a stopped agent's run
+ * stops with it. `cgroup` is /proc/self/cgroup's text. */
+export function quotaArgs(cpus: number, cgroup: string): string[] {
+  const path = cgroup.split("\n").find((l) => l.startsWith("0::"))?.slice(3) ?? "";
+  const args = ["--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", `--property=CPUQuota=${cpus * 100}%`, "--property=OOMPolicy=continue"];
+  const max = cgroupNumber(join("/sys/fs/cgroup", path, "memory.max"));
+  const swap = cgroupNumber(join("/sys/fs/cgroup", path, "memory.swap.max"));
+  if (max !== undefined) args.push(`--property=MemoryMax=${max}`);
+  if (swap !== undefined) args.push(`--property=MemorySwapMax=${swap}`);
+  const unit = basename(path);
+  if (unit.endsWith(".scope") && path.includes("/user@")) args.push(`--property=BindsTo=${unit}`, `--property=After=${unit}`);
+  args.push("--");
+  return args;
+}
+
+/** How to start this run held to its slot's share: `systemd-run` and its arguments, once it has started `true` the same
+ * way; undefined off Linux, without a user manager, or when that fails, and the run starts uncapped, as before. */
+function capped(home: string, slots: number): string[] | undefined {
+  if (process.platform !== "linux" || !process.env.XDG_RUNTIME_DIR) return undefined;
+  const systemdRun = Bun.which("systemd-run");
+  if (!systemdRun) return undefined;
+  let cgroup = "";
+  try {
+    cgroup = readFileSync("/proc/self/cgroup", "utf8");
+  } catch {}
+  const m = machineHere(home);
+  const args = [systemdRun, ...quotaArgs(slotShare(m.cores, m.buildSlots * m.buildJobs, slots), cgroup)];
+  const probe = Bun.spawnSync([...args, "true"], { stdout: "ignore", stderr: "pipe", timeout: 5_000 });
+  if (probe.exitCode === 0) return args;
+  process.stderr.write(`fleetd: couldn't cap this run at its slot's share of the CPUs (${probe.stderr.toString().trim() || "systemd-run failed"}): it may use every CPU\n`);
+  return undefined;
+}
+
 export async function main(argv: string[]): Promise<number> {
   const [home, bin, ...args] = argv;
   if (home === undefined || bin === undefined) {
@@ -143,8 +234,10 @@ export async function main(argv: string[]): Promise<number> {
   } catch (error) {
     process.stderr.write(`fleetd: heavy-run slots unavailable (${(error as Error).message}): running without waiting\n`);
   }
+  const cap = slot === undefined ? undefined : capped(home, slots);
   // Held in this process only, never handed to the run's children: a server a test leaves running can't keep it.
-  const code = await runInherited(bin, args, { ...process.env, [HELD]: "1", [OLD.held]: "1" });
+  const env = { ...process.env, [HELD]: "1", [OLD.held]: "1" };
+  const code = cap ? await runInherited(cap[0]!, [...cap.slice(1), bin, ...args], env) : await runInherited(bin, args, env);
   for (const fd of slot ?? []) closeSync(fd);
   return code;
 }
