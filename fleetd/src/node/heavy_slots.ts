@@ -287,7 +287,7 @@ async function watchRun(home: string, pid: number): Promise<(() => void) | undef
     const path = cgroupPath(pid);
     if (path === undefined) return undefined;
     // As the node names it (place/index.ts hostDir): the host's dir is the node home's hosts/<session>.
-    if (path !== mine) return watchMemory(noteFile(join(home, "hosts", session)), join("/sys/fs/cgroup", path));
+    if (path !== mine) return watchMemory(noteFile(join(home, "hosts", session)), join("/sys/fs/cgroup", path), undefined, true);
   }
   return undefined;
 }

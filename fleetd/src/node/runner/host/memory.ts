@@ -97,10 +97,12 @@ function note(file: string, line: string): void {
 }
 
 /** Watches this process's cgroup for kills by its memory cap and notes each in `file`. Nothing where the cgroup has no
- * cap (no scope, macOS). Returns a stop, which reads the cgroup's kills once more: a heavy run (heavy_slots.ts) whose
- * killed step was its last ends at once, and its scope with it. The kernel marks `memory.events` changed at each kill,
- * so a kill is read as it happens (inotify), not at the next tick, while the cgroup is still there. */
-export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS): () => void {
+ * cap (no scope, macOS). Returns a stop, which reads the cgroup's kills once more. `outside`: the watcher isn't in the
+ * cgroup (a heavy run's scope, heavy_slots.ts), so it also reads each kill as it happens (inotify on `memory.events`,
+ * which the kernel marks changed at each), not at the next tick: a run whose killed step was its last ends at once, and
+ * its scope with it. Never from inside: at the kill the cgroup is still full, and a host that wakes there to read /proc
+ * and write its note was often killed as well. */
+export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS, outside = false): () => void {
   const max = Number(cgroup ? read(`${cgroup}/memory.max`)?.trim() : NaN);
   if (!cgroup || !Number.isFinite(max) || max <= 0) return () => {};
   let kills = oomKills(read(`${cgroup}/memory.events`));
@@ -125,11 +127,13 @@ export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS):
   }, tick);
   timer.unref();
   let changed: FSWatcher | undefined;
-  try {
-    changed = watch(`${cgroup}/memory.events`, check);
-    changed.on("error", () => changed?.close());
-    changed.unref?.();
-  } catch {}
+  if (outside) {
+    try {
+      changed = watch(`${cgroup}/memory.events`, check);
+      changed.on("error", () => changed?.close());
+      changed.unref?.();
+    } catch {}
+  }
   return () => {
     clearInterval(timer);
     changed?.close();
