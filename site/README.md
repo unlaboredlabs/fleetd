@@ -66,7 +66,8 @@ devices (the inner face comes up turned away from it, dark, and lightens as it l
 barrels show at its ends, flush in the band. The leaf and the screens are drawn by the page onto a canvas (anything in
 CSS 3D is drawn soft): the leaf from 2x shots the renderer takes of the page's own phone at rest, open and shut (shut, its outer
 display with it, the page's own pixels, so the first turning frame follows the still one), and the inner display from
-its pictures, each projected column by column through the same perspective; past upright both halves
+its pictures, each projected column by column through the same perspective, and the leaf's thickness (5.2 mm) as its
+outline round the D's corners, swept behind the face that shows, so the edge follows the corners as it stands off; past upright both halves
 of the inner display come from one picture, cut at the hinge, so they line up at every angle. Before the frames, the
 renderer measures how far each drawing, flat, lies off the page's own phone (Chrome rounds where it puts each picture),
 and moves it by that. As the leaf stands up the inner display wakes and plays the recording of the phone

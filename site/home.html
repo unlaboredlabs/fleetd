@@ -251,7 +251,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 /* The foldable: two halves on a hinge down its middle, a titanium band round black glass, one display across both open
    and a smaller one on the outside. Shut, it is a D, as Apple's own pictures show it: round at its free edge, square at
    the hinge, where the spine shows past it. The right half lies still; the left half is one leaf on the hinge, its outer
-   display on one face, its half of the inner display on the other and its edge at its free end. Shut, the leaf lies
+   display on one face, its half of the inner display on the other. Shut, the leaf lies
    over the right half, outer display up; it turns over on the hinge in perspective, on a spring that lands it flat
    against the hinge's stop, and at rest the phone is the one piece it is open (.whole), drawn the same. The light comes
    from the top left, as on the laptop: highlights on top and left edges, shade bottom right, the folding half darker
@@ -321,8 +321,6 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 /* The hinge's spine, shut: its cover rounds the halves' hinge edges, micro-blasted titanium, a sliver past the phone's
    straight side. It turns in under the halves as the leaf lifts (the script narrows it toward the hinge). */
 .fold .spine{position:absolute;top:0;bottom:0;left:calc(50% - var(--spine));width:calc(var(--spine) + var(--h));transform-origin:calc(100% - var(--h)) 50%;border-radius:calc(var(--h) + .1cqw) 0 0 calc(var(--h) + .1cqw);background:linear-gradient(90deg,#77746f,#a29f99 30%,#b8b5af 55%,#8d8a85);box-shadow:0 0 0 .03cqw rgba(0,0,0,.55),inset 0 .04cqw 0 rgba(255,255,255,.35),inset 0 -.04cqw 0 rgba(0,0,0,.3)}
-/* The leaf's free edge: its thickness, titanium, square to both faces, seen only while it stands off flat. */
-.fold .edge{position:absolute;top:.5cqw;bottom:.5cqw;left:100%;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#6f6c67,#dedad4 38%,#fbfaf8 50%,#b9b5af 62%,#6f6c67);border-radius:.43cqw;opacity:0}
 .fold .off{position:absolute;z-index:2;inset:0;background:#000;opacity:0;pointer-events:none}
 .fold[data-fold="shut"] .off{opacity:1}
 /* Grounding, lit from the top left: a tight contact shadow just under the phone's bottom edge and a soft one cast
@@ -339,7 +337,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 /* Lying flat it needs no turn: drawn in the plane, as sharp as the rest of the page (anything turned in 3D is drawn soft). */
 .fold[data-fold="shut"] .leaf{transform:none}
 /* On layers of their own from the start, so nothing is promoted (and redrawn) as it begins. */
-.fold[data-fold] :is(.shade,.contact,.off,.dim,.edge,.spine){will-change:opacity,transform}
+.fold[data-fold] :is(.shade,.contact,.off,.dim,.spine){will-change:opacity,transform}
 .fold[data-fold] .face{will-change:opacity}
 
 /* The unfold as it plays: a video of it, rendered offline frame by frame at 2x from this page (scripts/hero-unfold.mjs,
@@ -452,7 +450,6 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
             <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
             <span class="off"></span>
           </div><span class="dim"></span></div>
-          <span class="edge"></span>
         </div>
         <div class="whole"><span class="key a"></span><span class="key b"></span><span class="key s"></span><div class="band"></div><div class="scr">
           <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
@@ -831,7 +828,6 @@ var fleetdMedia={};
     [".o .dim", sampled((a) => ({ opacity: shade(a) }))],
     [".l .dim", sampled((a) => ({ opacity: shade(a - 180) }))],
     [".r .dim", sampled((a) => ({ opacity: a < 90 ? 0.1 * Math.sin(2 * a * rad) : 0 }))],
-    [".edge", sampled((a) => ({ opacity: a > 15 && a < 165 ? 1 : 0 }))],
     // The spine turns in toward the hinge, gone by upright.
     [".spine", sampled((a) => ({ transform: `scaleX(${Math.max(0, Math.cos(Math.min(90, a) * rad))})` }))],
     [":is(.shade,.contact)", sampled((a) => ({ transform: `scaleX(${0.52 + 0.48 * ((1 - Math.cos(Math.min(180, a) * rad)) / 2)})` }))],
@@ -849,8 +845,8 @@ var fleetdMedia={};
     // scale, soft even held still, so each screen is projected onto a canvas through the same perspective as the leaf,
     // a strip per pixel, its corners rounded as the glass is. The canvas has twice the display's pixels and is drawn
     // down to them, as the browser draws a picture down: the turning half's type is as crisp as the flat one's (at the
-    // display's own pixels, each strip placed between two of them comes out soft). The leaf's frame, glass and edge stay
-    // CSS (no detail to soften); its pictures are hidden under the drawing. With the leaf past standing up, the right
+    // display's own pixels, each strip placed between two of them comes out soft). The leaf's thickness is drawn
+    // too, under its face. Its pictures are hidden under the drawing. With the leaf past standing up, the right
     // half's screen is drawn too, from the same pictures: one image across both halves, cut at the hinge. The drawing is
     // shown as a picture (a canvas gets a layer of its own, placed by other rounding than the phone's parts).
     const prepared = { runs: null };
@@ -1000,6 +996,33 @@ var fleetdMedia={};
         // projected as its screens are: a frame turned in CSS 3D is drawn soft, its thin metal edge smeared into two.
         if (faces) {
           const past = a > 90, tex = past ? faces.open : faces.shut;
+          // The leaf's thickness (Apple's 5.2 mm on a phone 164.6 mm wide open), seen past its free edge while it stands
+          // off flat: its outline from the free edge round both corners, drawn again at each depth behind the face that
+          // shows (behind the outer face before upright, the inner one after, centred on it edge on), so it follows the
+          // D's round corners. Titanium, lit by its angle to the light; the face is drawn over it.
+          if (a > 3 && a < 177) {
+            const R = parseFloat(getComputedStyle(duo.querySelector(".whole .band")).borderTopLeftRadius);
+            const t = (fold.width * 5.2) / 164.6, d = (t / 2) * (1 - Math.cos(a * rad));
+            const outline = [[W / 2, 0]];
+            for (let k = 0; k <= 12; k++) outline.push([W - R + R * Math.sin((k / 12) * (Math.PI / 2)), R - R * Math.cos((k / 12) * (Math.PI / 2))]);
+            for (let k = 0; k <= 12; k++) outline.push([W - R + R * Math.cos((k / 12) * (Math.PI / 2)), H - R + R * Math.sin((k / 12) * (Math.PI / 2))]);
+            outline.push([W / 2, H]);
+            const lit = Math.max(0, Math.cos(a * rad) * -Math.sin(LIGHT * rad) + Math.sin(a * rad) * Math.cos(LIGHT * rad));
+            const steps = Math.max(2, Math.ceil(t * scale));
+            for (let i = 0; i <= steps; i++) {
+              const w = d - (t * i) / steps;
+              // Polished: brightest along the face it borders, a little darker toward the back.
+              const tone = (lo, hi) => Math.round((lo + (hi - lo) * lit) * (1 - 0.22 * (i / steps)));
+              g.fillStyle = `rgb(${tone(70, 222)},${tone(68, 219)},${tone(65, 213)})`;
+              g.beginPath();
+              for (const [u, y] of outline) {
+                const x = u * Math.cos(a * rad) - w * Math.sin(a * rad), z = u * Math.sin(a * rad) + w * Math.cos(a * rad), k = P / (P - z);
+                g.lineTo(hx + x * k * scale, (ty + H / 2 + (y - H / 2) * k) * scale);
+              }
+              g.closePath();
+              g.fill();
+            }
+          }
           const [nx, ny] = past ? window.heroUnfold.nudgeFace : window.heroUnfold.nudgeFaceShut;
           const R = parseFloat(getComputedStyle(duo.querySelector(".whole .band")).borderTopLeftRadius);
           // Shut, the leaf is a D: square (nearly) at the hinge.
