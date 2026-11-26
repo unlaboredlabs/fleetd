@@ -348,7 +348,7 @@ test("a join code comes with the line to paste", async () => {
   const out = await call("machine_join", { machineId: "builder-2" });
   expect(out.code).toMatch(/^fle_/);
   expect(out.hubUrl).toBe("http://devbox.example.ts.net:4790");
-  expect(out.line).toContain(`--join http://devbox.example.ts.net:4790 --code ${out.code} --machine-id builder-2`);
+  expect(out.line).toContain(`FLEETD_JOIN_CODE=${out.code} sh -s -- --join http://devbox.example.ts.net:4790 --machine-id builder-2`);
   expect(out.gitIdentity).toBe("ada-lovelace <1+ada-lovelace@users.noreply.github.com>");
   expect(out.next).toStartWith("Run the line on builder-2");
   const rejoin = await call("machine_join", { machineId: "builder-2", rejoin: true });
@@ -362,7 +362,7 @@ test("a join code with no machine named joins whichever computer runs its line, 
   const out = await call("machine_join", {});
   expect(out.machineId).toBeUndefined();
   expect(out.line).toBe(
-    `curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code ${out.code} --git-identity 'ada-lovelace <1+ada-lovelace@users.noreply.github.com>'`,
+    `curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=${out.code} sh -s -- --join http://devbox.example.ts.net:4790 --git-identity 'ada-lovelace <1+ada-lovelace@users.noreply.github.com>'`,
   );
   expect(out.next).toStartWith("Run the line on the computer to add: it installs fleetd and joins under its own name.");
   expect(t.hub.auth.nodes.enrollNode(out.code, "laptop", "k1", "fp1")).toBe("laptop");

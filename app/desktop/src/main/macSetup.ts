@@ -25,7 +25,7 @@ import { administers, serves, type CallOutcome } from "../shared/hub";
 import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacLeaveOutcome, type MacLink, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
 import type { MacActivity, MacBehind, MacDisk, MacMenuBarRead } from "../shared/macMenuBar";
 import { compareVersions, isEdge } from "../shared/pairing";
-import { assetFor, installBuild, thisComputer, type JoinPorts } from "./joinHere";
+import { assetFor, installBuild, joinCode, thisComputer, type JoinPorts } from "./joinHere";
 import { probe, type Fetch } from "./pairing/hubHttp";
 
 /** fleetd's port: a hub on the tailnet is looked for there. */
@@ -47,7 +47,7 @@ export const PANE_URLS: Readonly<Record<MacPane, string>> = {
   lock_screen: "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension",
 };
 
-export interface MacSetupPorts extends Pick<JoinPorts, "download" | "run" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch"> {
+export interface MacSetupPorts extends Pick<JoinPorts, "download" | "run" | "readsJoinCode" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch"> {
   readonly fetch: Fetch;
   /** The addresses of the hubs this app is signed in to. */
   knownHubs(): ReadonlyArray<string>;
@@ -294,8 +294,9 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
 
   next();
   const { found } = pending;
-  const args = ["init", "--join", found.hubUrl, "--code", pending.token, "--machine-id", found.machineId, "--mac", ...(replaces(found) === undefined ? [] : ["--rejoin"])];
-  const ran = await ports.run(installed.bin, args);
+  const given = await joinCode(ports, installed.bin, pending.token);
+  const args = ["init", "--join", found.hubUrl, ...given.args, "--machine-id", found.machineId, "--mac", ...(replaces(found) === undefined ? [] : ["--rejoin"])];
+  const ran = await ports.run(installed.bin, args, given.env);
   if (ran.code !== 0) {
     const said = cliFailure(ran.output);
     const lines = ran.output.trim().split("\n");
@@ -635,7 +636,7 @@ export const signedInPorts = (signedIn: () => ReadonlyArray<SignedIn>): Pick<Mac
 const TAILSCALE = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"];
 
 export const realMacPorts = (
-  join: Pick<JoinPorts, "download" | "run" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch">,
+  join: Pick<JoinPorts, "download" | "run" | "readsJoinCode" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch">,
   extra: Pick<MacSetupPorts, "knownHubs" | "openPane" | "hubRole" | "updateHub">,
 ): MacSetupPorts => ({
   ...join,

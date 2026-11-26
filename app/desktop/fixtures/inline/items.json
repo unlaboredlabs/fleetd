@@ -172,6 +172,19 @@
         "summary": "Edit src/billing/invoice.ts"
       },
       "state": "open"
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q50",
+      "machineId": "devbox",
+      "permission": {
+        "threadId": "t-lead",
+        "requestId": "perm-3",
+        "toolName": "Bash",
+        "summary": "agent-browser open \"https://duckduckgo.com/html/?q=node.js+official+site\" && agent-browser snapshot -i",
+        "site": "duckduckgo.com"
+      },
+      "state": "open"
     }
   ]
 }

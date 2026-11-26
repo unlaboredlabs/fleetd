@@ -18,6 +18,7 @@
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { refused } from "../../actions/chat_file.ts";
 import { readImage, type Image } from "../../actions/image.ts";
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts.ts";
 import { within } from "../../sessions/file_rules.ts";
@@ -382,13 +383,17 @@ export async function fetchNew(box: BoxFs, path: string, max: number): Promise<b
 }
 
 /** A chat file or image the agent made in the box, read under the same rules as on the machine (actions/image.ts):
- * inside its working directory, a plain file, within the size. */
-export async function readChatFile(box: BoxFs, root: string, path: string, offset: number, file: boolean): Promise<Image> {
-  const out = await box.run({ argv: ["realpath", "-e", "--", root, join(root, path)], cwd: "/", env: { PATH: "/usr/local/bin:/usr/bin:/bin" }, timeoutSec: 30 });
+ * inside its working directory or its scratch dir `scratch` (the same path in the box), a plain file, within the size. */
+export async function readChatFile(box: BoxFs, root: string, path: string, offset: number, file: boolean, scratch?: string): Promise<Image> {
+  const env = { PATH: "/usr/local/bin:/usr/bin:/bin" };
+  const out = await box.run({ argv: ["realpath", "-e", "--", root, isAbsolute(path) ? path : join(root, path)], cwd: "/", env, timeoutSec: 30 });
   const [realRoot, real] = out.outputTail.trim().split("\n");
   if (out.exitCode !== 0 || !realRoot || !real) throw new Error(`${path} is not readable here: there is no such file in the agent's box`);
-  if (real !== realRoot && !real.startsWith(realRoot + sep))
-    throw new Error(`${path} is outside your working directory ${realRoot}: only a${file ? "" : "n"} ${file ? "file" : "image"} you made there can go in the chat`);
+  const inside = (dir: string) => real === dir || real.startsWith(dir + sep);
+  // The scratch dir as the box resolves it; one not made there holds nothing.
+  const own = scratch === undefined || inside(realRoot) ? undefined : await box.run({ argv: ["realpath", "-e", "--", scratch], cwd: "/", env, timeoutSec: 30 });
+  const realScratch = own?.exitCode === 0 ? own.outputTail.trim() : undefined;
+  if (!inside(realRoot) && !(realScratch && inside(realScratch))) throw new Error(refused.outside(path, realRoot, file));
   const bytes = await box.read(real, ATTACHMENT_MAX_BYTES).catch((e: Error) => {
     throw new Error(`${path} is not readable here: ${e.message}`);
   });

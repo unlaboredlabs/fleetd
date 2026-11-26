@@ -207,6 +207,7 @@ export {
   offered,
   SENTENCE_MAX,
   sentenceProblem,
+  watchersAbout,
   watcherInput,
   watchLine,
 } from "../../desktop/src/renderer/screens/automations/watchModel";

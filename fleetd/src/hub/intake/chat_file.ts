@@ -1,6 +1,6 @@
 // `chat_file`: a lead or task puts an image it made (a screenshot of a UI change), or any file the chat takes (a PDF, a
 // CSV, a document), in its project's chat, and is told which block shows it. The hub asks the caller's own node for the
-// file, which reads it only from that session's working directory, as the node started it, and only a file whose bytes
+// file, which reads it only from that session's working directory or its scratch dir ($TMPDIR), as the node started it, and only a file whose bytes
 // fit the type its name says. It is stored as an attachment
 // `by` the project's lead (`lead:<project>`), so no person's key reads it and no other project shows it: a lead
 // message's `image` or `file` block of it marks it the project's (attachments.ts `show`), and one never shown goes with
@@ -27,7 +27,7 @@ export function registerLeadCalls(hub: Hub): void {
   );
 }
 
-/** The session the caller runs in, by the hub's own records: its working directory is the only place its file is read from. */
+/** The session the caller runs in, by the hub's own records: its working directory and scratch dir are the only places its file is read from. */
 export function sessionOf(hub: Hub, caller: LeadCaller): ThreadRef {
   let thread: ThreadRef | undefined;
   const r = caller.projectRef;
@@ -57,8 +57,8 @@ function refused(error: unknown, file: boolean): ToolError {
       "invalid",
       error.extra.nodeMessage ?? error.message,
       file
-        ? "Save the file (image, PDF, text or CSV, .docx, .xlsx, .pptx or zip) inside your working directory and pass its path."
-        : "Save the image (png, jpeg, webp or gif) inside your working directory and pass its path.",
+        ? "Save the file (image, PDF, text or CSV, .docx, .xlsx, .pptx or zip) in your working directory or your $TMPDIR and pass its path."
+        : "Save the image (png, jpeg, webp or gif) in your working directory or your $TMPDIR and pass its path.",
     );
   }
   return fromExecutor(error);

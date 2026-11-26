@@ -6,6 +6,7 @@ import type { Hub } from "../src/hub/api/hub.ts";
 import type { Registry } from "../src/hub/api/registry.ts";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { answer } from "../src/hub/automations/calls.ts";
+import { chat } from "../src/hub/chat/index.ts";
 import { automations, type NewAutomation, orderText, QUEUED_MAX } from "../src/hub/automations/index.ts";
 import { start } from "../src/hub/automations/loops.ts";
 import { register } from "../src/hub/automations/tools.ts";
@@ -125,8 +126,8 @@ test("runs missed while the workspace was down run once, late", async () => {
   expect(automations(hub).get(a.automationId)!.nextRunAt).toBe("2026-10-17T14:00:00.000Z");
 });
 
-test("a trigger while a run is open is skipped and recorded", async () => {
-  const { hub } = setup();
+test("a trigger while a run is open is skipped and recorded in plain words, its row opening the open run's message", async () => {
+  const { hub, clock } = setup();
   const autos = automations(hub);
   const [a] = autos.create(fresh(PROJECT, undefined, false));
   const id = a.automationId;
@@ -136,12 +137,23 @@ test("a trigger while a run is open is skipped and recorded", async () => {
   const second = await autos.run(id, { kind: "schedule", dueMs: 1_792_231_200_000 });
   expect(second.state).toBe("skipped");
   expect(second.workstreamId).toBeUndefined();
-  expect(second.why).toContain(w);
+  // What a person reads beside the run: no run or order ids.
+  expect(second.why).toBe("the last run's order is still open");
   expect((await autos.run(id, { kind: "schedule", dueMs: 1_792_231_200_000 })).state).toBe("skipped");
-  expect((await autos.run(id, { kind: "manual", by: "human" })).state).toBe("skipped");
+  // The lead's Run now is told which order is open.
+  const asked = await call(hub, "automation_run", { automationId: id });
+  expect(asked.next).toBe(`Not run: the last run's order is still open (${w}).`);
   expect(workstreamsList(hub.db.conn, { limit: 100 }).length).toBe(1);
 
+  // The open run's message, then its order ends: each skipped row opens that message.
+  const said = chat(hub).add(PROJECT, { author: "lead", text: "Dependencies checked: all current.", createdMs: clock.now() }).message;
   await close(hub, w);
+  expect(autos.runs(id, 10).map((r) => [r.state, r.messageId])).toEqual([
+    ["skipped", said.messageId],
+    ["skipped", said.messageId],
+    ["skipped", said.messageId],
+    ["done", said.messageId],
+  ]);
   const third = await autos.run(id, { kind: "manual", by: "human" });
   expect(third.state).toBe("running");
   const runs = autos.runs(id, 10);
@@ -251,7 +263,7 @@ test("webhook calls while a run is open go in one follow-up order once it ends",
     expect(kept.state).toBe("queued");
     expect(kept.workstreamId).toBeUndefined();
     expect(kept.endedAt).toBeUndefined();
-    expect(kept.why).toContain(w1);
+    expect(kept.why).toBe("Kept: the last run's order is still open; it goes once that ends.");
   }
   expect((await autos.run(id, { kind: "schedule", dueMs: 1_792_231_200_000 })).state).toBe("skipped");
   await settle(hub);
@@ -574,6 +586,33 @@ test("a run closes once its turn ends with nothing in flight, in every bot; else
   await settle(hub);
   expect(workstreamGet(db, w)!.state).toBe("done");
   expect(autos.runs(a.automationId, 1)[0]!.state).toBe("done");
+});
+
+test("a run the lead closes itself ends at once, says so, and links its message in the chat", async () => {
+  const { hub, clock, advance } = setup();
+  const autos = automations(hub);
+  const [a] = autos.create(fresh(PROJECT, undefined, false));
+  autos.start();
+  await settle(hub);
+  const run = await autos.run(a.automationId, { kind: "manual", by: "human" });
+  await advance(MIN);
+  // The run's message, then the lead closes its order on its own (no turn end closes it here).
+  chat(hub).add(PROJECT, { author: "human", text: "unrelated, before", createdMs: clock.now() - 2 * MIN });
+  const said = chat(hub).add(PROJECT, { author: "lead", text: "## Time to stretch 🙆\nStand up for a minute.", createdMs: clock.now() }).message;
+  const before = eventsOf(hub, "automation.run").length;
+  await advance(MIN);
+  await close(hub, run.workstreamId!);
+  await settle(hub);
+  // The apps hear the run ended, so a row reading it again stops saying Running.
+  const ended = eventsOf(hub, "automation.run").slice(before);
+  expect(ended.map((e) => (e.data as { state: string }).state)).toEqual(["done"]);
+  const [done] = autos.runs(a.automationId, 1);
+  expect([done!.state, done!.messageId, done!.said]).toEqual(["done", said.messageId, "Time to stretch 🙆"]);
+  expect(autos.get(a.automationId)!.lastRun?.state).toBe("done");
+  // A later message isn't the run's.
+  await advance(10 * MIN);
+  chat(hub).add(PROJECT, { author: "lead", text: "Something else", createdMs: clock.now() });
+  expect(autos.runs(a.automationId, 1)[0]!.messageId).toBe(said.messageId);
 });
 
 test("the bot checker's standing word is the confirmed automations with a run open", async () => {

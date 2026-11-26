@@ -45,6 +45,29 @@ export function shownText(text: string): string {
     .join("");
 }
 
+/**
+ * `shownText` as plain words, for a hit's one line: no Markdown left to read as syntax. A code fence's lines go (its
+ * code stays), and so do a heading's #s, a quote's >, a bullet, a rule, a table's pipes and separator row, inline
+ * code's backticks and italic or struck-through marks.
+ */
+export function plainText(text: string): string {
+  return shownText(text)
+    .replace(/^ {0,3}(?:`{3,}|~{3,})[^\n]*$/gmu, "")
+    .replace(/^ {0,3}(?:[-*_][ \t]*){3,}$/gmu, "")
+    .replace(/^[ \t]*\|?(?:[ \t]*:?-{3,}:?[ \t]*\|)+(?:[ \t]*:?-{3,}:?[ \t]*)?$/gmu, "")
+    .replace(/^ {0,3}(?:>[ \t]?)+/gmu, "")
+    .replace(/^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/gmu, "$1")
+    .replace(/^[ \t]*[-*+][ \t]+(?:\[[ xX]\][ \t]+)?/gmu, "")
+    .replace(/^[ \t]*\|(.*?)\|?[ \t]*$/gmu, (_all, row: string) => row.split("|").map((c) => c.trim()).join(" · "))
+    .split(/(`+[^`]*?`+)/u)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part.replace(/^`+ ?|(?: ?)`+$/gu, "")
+        : part.replace(/~~(?=\S)([\s\S]*?\S)~~|(?<![\p{L}\p{N}*])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?=[^\s_])([^_\n]*?[^\s_])_(?![\p{L}\p{N}_])/gu, (_all, a?: string, b?: string, c?: string) => a ?? b ?? c ?? ""),
+    )
+    .join("");
+}
+
 /** What the index holds of a message: its text as the chat shows it. */
 export const indexedText = (m: { text: string }) => shownText(m.text);
 /** Whether a message is in the index: once its text is final. */
@@ -132,11 +155,11 @@ export function cut(text: string, max: number): string {
 }
 
 /**
- * A hit's line: the message on one line (whitespace folded), at most LINE_CHARS characters starting a little before
+ * A hit's line: the message on one line in plain words (whitespace folded), at most LINE_CHARS characters starting a little before
  * its first mark (shorter near the message's end), `…` where cut; a message with no text shows its first attachment's name. Its marks are in that line.
  */
 export function hitText(text: string, attachments: AttachmentRef[] | undefined, terms: Term[]): { text: string; marks: [number, number][] } {
-  const line = shownText(text).replace(/\s+/gu, " ").trim() || (attachments?.[0]?.name ?? "");
+  const line = plainText(text).replace(/\s+/gu, " ").trim() || (attachments?.[0]?.name ?? "");
   const marks = marksOf(line, terms);
   const chars = [...line];
   if (chars.length <= LINE_CHARS) return { text: line, marks };

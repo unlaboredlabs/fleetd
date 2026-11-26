@@ -26,5 +26,5 @@ test("an image is the one its name says by its bytes; a chat file by its name an
   expect(chat.chatMime("a.jpg", png, true)).toBe("image/png");
   expect(chat.chatMime("notes.md", new TextEncoder().encode("# hi\n"), true)).toBe("text/plain");
   expect(chat.chatMime("a.pdf", new TextEncoder().encode("# hi\n"), true)).toBeUndefined();
-  expect(chat.refused.outside("x.png", "/w", false)).toBe("x.png is outside your working directory /w: only an image you made there can go in the chat");
+  expect(chat.refused.outside("x.png", "/w", false)).toBe("x.png is outside your working directory /w and your $TMPDIR: only an image you made in one of them can go in the chat");
 });

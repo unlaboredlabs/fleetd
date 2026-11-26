@@ -1243,10 +1243,12 @@ export type AutomationRun = {
   endedAt?: Timestamp;
   /** A scheduled run the hub was down for, run once on its return: by how many minutes. */
   lateMin?: number;
+  /** Its message in the bot's chat: the line a watcher posted, or the lead's first message for the run's order. */
+  messageId?: ChatMessageId;
   /** A webhook run: the size of the body it carried. The body itself is in automation_runs only. */
   payloadBytes?: number;
   runId: AutomationRunId;
-  /** A watcher's run that spoke up: the line it posted in the chat. */
+  /** Its message's first line: what a watcher said when it spoke up, or how the lead's message for the run opens. */
   said?: string;
   /** A scheduled run: the time it was due. */
   scheduledAt?: Timestamp;

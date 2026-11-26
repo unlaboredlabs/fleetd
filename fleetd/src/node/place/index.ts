@@ -36,8 +36,9 @@ export interface Place {
   end(dir: string): Promise<number>;
   /** Runs argv where the agent runs (setup commands), in a process group of its own killed at the timeout. */
   run(r: ConfinedRun): Promise<RunOutcome>;
-  /** A piece of the image or chat file at `path` in the session's working directory `root` (actions/image.ts). */
-  read(root: string, path: string, offset: number, file: boolean): Promise<Image>;
+  /** A piece of the image or chat file at `path` in the session's working directory `root`, or its scratch dir
+   * `scratch` (actions/image.ts). */
+  read(root: string, path: string, offset: number, file: boolean, scratch?: string): Promise<Image>;
 }
 
 /** The dir a session's host keeps its registration and socket in. */

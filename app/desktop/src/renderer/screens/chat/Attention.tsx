@@ -2,14 +2,15 @@
 // you: what for, and Show, which brings it into view and marks it; with more than one place to go, each press goes to
 // the next and the line says which ("1 of 2"). The palette reaches the same
 // Show through the chat.showWaiting command. Otherwise, while the project is blocked, why: the hub's reason, so you
-// know before sending into it, and Resume when its machine's usage pause is the reason. Otherwise what there is to
+// know before sending into it, Resume when its machine's usage pause is the reason, and Open machine (the words too) when
+// its machine is offline or degraded. Otherwise what there is to
 // look at, which the lead flagged (a showcase, something to try, a risk) or an agent suggested trying: how many, the
 // oldest one's reason, Show, which goes to it and counts as seeing it, and Dismiss. A red main, which stops nothing,
 // is the island's (Island.tsx). One row with no dot: the words truncate, and Show, Dismiss or Resume stays.
 // Questions (not an approval or a secret, which the lead can't go on without) have an × that hides them from the bar
 // until the lead asks again; the chat remembers it (hiddenWait).
 import { X } from "lucide-react";
-import { Button, Text, Tooltip } from "../../ui";
+import { Button, cx, Text, Tooltip } from "../../ui";
 import { useCommands } from "../palette";
 import { ResumeButton } from "./Resume";
 import type { LookAt, Waiting } from "./attentionModel";
@@ -20,6 +21,7 @@ export function AttentionLine({
   blocked,
   which,
   resume,
+  onOpenMachine,
   onShow,
   looks,
   onLook,
@@ -32,6 +34,8 @@ export function AttentionLine({
   which?: string | undefined;
   /** The machine whose usage pause blocks the project. */
   resume?: string | undefined;
+  /** Opens the machine that blocks the project, offline or degraded: for whoever can fix it. */
+  onOpenMachine?: (() => void) | undefined;
   onShow: () => void;
   /** The messages to look at, oldest first. */
   looks?: readonly LookAt[] | undefined;
@@ -71,13 +75,21 @@ export function AttentionLine({
   if (waiting === undefined) {
     return blocked === undefined ? null : (
       <div className={s.attention} data-attention="blocked">
-        <Text size="xs" tone="quiet" className={s.attentionWords}>
-          <Text size="xs" strong tone="danger">
-            {blocked === "" ? "Blocked" : "Blocked:"}
+        {/* The words open the machine as Open machine does (the keyboard's way): the pill is what people press. */}
+        <span className={cx(s.attentionWords, onOpenMachine !== undefined && s.attentionOpens)} onClick={onOpenMachine}>
+          <Text size="xs" tone="quiet">
+            <Text size="xs" strong tone="danger">
+              {blocked === "" ? "Blocked" : "Blocked:"}
+            </Text>
+            {blocked === "" ? null : ` ${blocked}`}
           </Text>
-          {blocked === "" ? null : ` ${blocked}`}
-        </Text>
+        </span>
         {resume === undefined ? null : <ResumeButton machineId={resume} />}
+        {onOpenMachine === undefined ? null : (
+          <Button variant="link" onClick={onOpenMachine}>
+            Open machine
+          </Button>
+        )}
       </div>
     );
   }

@@ -238,7 +238,8 @@ jobs:
           "$RUNNER_TEMP/sealed-test" src/push.fixture.json
       - name: Share extension
         run: |
-          swiftc -O plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o "$RUNNER_TEMP/share-test"
+          swiftc -O plugins/share-extension/Shared.swift plugins/share-extension/BotLook.swift plugins/share-extension/test/main.swift \
+            -o "$RUNNER_TEMP/share-test"
           "$RUNNER_TEMP/share-test"
       - name: Shortcuts actions
         run: |

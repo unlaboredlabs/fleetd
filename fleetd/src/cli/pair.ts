@@ -320,8 +320,10 @@ export function q(value: string): string {
 
 export const macFlags = (version: string) => (version === "0.0.0" ? " --mac" : ` --mac --version ${q(version)}`);
 
+/** The installer's join line. Its code goes in the installer's environment, never in its arguments, which any user on
+ * the machine can list (ps) while it runs. */
 export function joinLine(hub: string, code: string, machine: string | undefined, identity?: string): string {
-  let line = `curl -fsSL https://fleetd.sh | sh -s -- --join ${q(hub)} --code ${q(code)}`;
+  let line = `curl -fsSL https://fleetd.sh | FLEETD_JOIN_CODE=${q(code)} sh -s -- --join ${q(hub)}`;
   if (machine !== undefined) line += ` --machine-id ${q(machine)}`;
   if (identity !== undefined) line += ` --git-identity ${q(identity)}`;
   return line;

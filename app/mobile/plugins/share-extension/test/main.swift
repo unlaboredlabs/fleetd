@@ -1,6 +1,7 @@
 // The Share Extension's decisions (Shared.swift): the pairing it reads and the not-paired path, the hub's frames, the
-// chats it offers, and what it sends. mac.yml's `mobile (ios)` job runs it on macOS (it builds on Linux too):
-//   swiftc plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o share-test && ./share-test
+// chats it offers and the bots it draws them with (BotLook.swift), and what it sends. mac.yml's `mobile (ios)` job runs it on macOS (it builds on Linux too):
+//   swiftc plugins/share-extension/Shared.swift plugins/share-extension/BotLook.swift plugins/share-extension/test/main.swift \
+//     -o share-test && ./share-test
 import Foundation
 
 var failures = 0
@@ -49,7 +50,7 @@ let snapshot = try! JSONSerialization.jsonObject(with: json("""
 {"t":"snapshot","cursor":1,"attention":[],
  "machines":[{"machineId":"m1","name":"devbox"}],
  "projects":[
-  {"machineId":"m1","projectId":"p1","title":"billing-api","lastActivityAt":"2026-10-29T10:00:00Z"},
+  {"machineId":"m1","projectId":"p1","title":"billing-api","lastActivityAt":"2026-10-29T10:00:00Z","avatar":"A7","avatarColor":"orange","avatarShape":"ghost"},
   {"machineId":"m1","projectId":"p2","title":"Inbox","lastActivityAt":"2026-10-20T10:00:00Z"},
   {"machineId":"m1","projectId":"p3","title":"Old notes","archivedAt":"2026-10-01T00:00:00Z","lastActivityAt":"2026-10-29T12:00:00Z"},
   {"machineId":"m2","projectId":"p4","title":"Résumé site","lastActivityAt":"2026-10-28T10:00:00Z"}],
@@ -63,10 +64,19 @@ check(ChatTarget.search(chats, "resume").map(\.title) == ["Résumé site"], "sea
 check(ChatTarget.search(chats, "DEVBOX").map(\.title) == ["Inbox", "billing-api"], "search finds a machine")
 check(ChatTarget.search(chats, "  ").count == 3, "an empty search")
 
-// Avatars, as src/avatar.ts draws them.
-for (name, initials, tint) in [("Ada", "A", 5), ("billing-api", "BA", 5), ("Léa's Shop", "LS", 7), ("fleetd", "F", 7), ("Inbox", "I", 9)] {
-  check(Avatar.initials(name) == initials && Avatar.tint(name, count: 10) == tint, "avatar of \(name): \(Avatar.initials(name)) \(Avatar.tint(name, count: 10))")
+// Each chat's look, as the app draws it: its picture when it has one, else its bot in its color and shape.
+check(chats[1].avatar == "A7" && chats[1].color == "orange" && chats[1].shape == "ghost", "billing-api's look")
+check(chats[0].avatar == nil && chats[0].color == nil && chats[0].shape == nil, "Inbox has the default bot")
+
+// Bots: every body and both eyes read as outlines, each one closed; any other command draws nothing.
+for (shape, d) in BotLook.bodies {
+  let ops = PathData.parse(d)
+  check(ops?.first.map { if case .move = $0 { return true } else { return false } } == true && ops?.last == .close, "\(shape)'s body")
 }
+for d in [BotLook.eyes.left, BotLook.eyes.right] { check((PathData.parse(d)?.count ?? 0) > 3, "an eye") }
+check(PathData.parse("M1 2C3 4 5 6 7 8Z") == [.move(1, 2), .curve(3, 4, 5, 6, 7, 8), .close], "a path")
+check(PathData.parse("M1 2L3 4Z") == nil && PathData.parse("M1C2 3Z") == nil && PathData.parse("M1 2C3 4 5 6 7 x8Z") == nil, "a path it doesn't read")
+check(BotLook.paint[BotLook.defaultColor] != nil && BotLook.bodies[BotLook.defaultShape] != nil && BotLook.were.values.allSatisfy { BotLook.paint[$0] != nil }, "defaults")
 
 // Images: the types the hub takes go as they are; the rest as JPEG, named for it.
 check(Mime.ofImage(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0])) == .png, "png")
@@ -77,6 +87,15 @@ check(Mime.ofImage(Data([0, 0, 0, 0x18] + Array("ftypheic".utf8))) == nil, "heic
 check(Upload.name("IMG_0042.HEIC", mime: .jpeg, index: 0) == "IMG_0042.jpg", "renamed for its type")
 check(Upload.name(nil, mime: .png, index: 2) == "image-3.png", "unnamed")
 check(Upload.name(String(repeating: "a", count: 300), mime: .png, index: 0).count <= 120, "a long name")
+
+// Other files go as they are, named as shared, when the hub takes their kind.
+check(Mime.ofFile(name: "report.pdf", data: Data("%PDF-1.7\n".utf8)) == .pdf, "a PDF")
+check(Mime.ofFile(name: "sales.csv", data: Data("a,b\n1,2\n".utf8)) == .csv, "a CSV")
+check(Mime.ofFile(name: "clip.mov", data: Data([0, 0, 0, 0x14, 0x66, 0x74, 0x79, 0x70, 0, 0])) == nil, "a film isn't taken")
+check(Upload.fileName("notes.md", mime: .text, index: 0) == "notes.md", "a text file keeps its name")
+check(Upload.fileName(nil, mime: .pdf, index: 1) == "file-2.pdf" && Upload.fileName("Untitled", mime: .pdf, index: 0) == "Untitled.pdf", "a file without an extension")
+check(Upload.fileName(String(repeating: "b", count: 300) + ".csv", mime: .csv, index: 0).count <= 120, "a long file name")
+check(!Problem.unsent("clip.mov").retry && Problem.unsent("clip.mov").message.hasPrefix("clip.mov isn't"), "a file not taken")
 
 // Size limits and pieces.
 let piece = Limits.pieceBytes
@@ -101,6 +120,9 @@ check(Outgoing.build(note: "", texts: [], links: [SharedLink(url: page.url, titl
 check(Outgoing.build(note: "", texts: [], links: [], images: 1).text == "Shared an image.", "an image alone")
 check(Outgoing.build(note: "", texts: [], links: [], images: 3).text == "Shared 3 images.", "images alone")
 check(Outgoing.build(note: "Look", texts: [], links: [], images: 3).text == "Look", "images with a note")
+check(Outgoing.build(note: "", texts: [], links: [], images: 0, files: 1).text == "Shared a file.", "a file alone")
+check(Outgoing.build(note: "", texts: [], links: [], images: 1, files: 2).text == "Shared 3 files.", "files and an image")
+check(Outgoing.build(note: "Q3", texts: [], links: [], images: 0, files: 2).text == "Q3", "files with a note")
 let long = String(repeating: "x", count: Limits.textChars + 1)
 let longOut = Outgoing.build(note: "From my notes", texts: [long], links: [], images: 0)
 check(longOut.text == "From my notes" && longOut.textFile?.data.count == Limits.textChars + 1 && longOut.textFile?.name == "shared.txt", "long text goes as a file")

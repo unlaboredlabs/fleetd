@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { excerpt, registerLeadCalls, when } from "../src/hub/chat/calls.ts";
+import { automations } from "../src/hub/automations/index.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import { accounts } from "../src/hub/claude_accounts/tools.ts";
@@ -438,5 +439,41 @@ test("lead_start on a lead started ahead that hasn't run a turn starts it for re
   // A lead that runs is returned as it is.
   await call(caller("operate"), "lead_start", { machineId: PROJECT.machineId, projectId: PROJECT.projectId });
   expect(launched.length).toBe(2);
+  done();
+});
+
+test("a device in another zone moves the person's schedules with them, watchers too, and each bot's chat says so", async () => {
+  const { hub, call, done } = withFlow();
+  hub.db.conn.query("INSERT INTO people (person_id, name, role, created_ms, tz) VALUES ('pe_owner1', 'Ada', 'owner', 0, 'UTC')").run();
+  const ada = caller("operate", true, { personId: "pe_owner1", name: "Ada" });
+  const make = (name: string, schedule: { cron?: string; at?: string; tz: string }, watch?: { kind: "other"; every: "day" }) =>
+    automations(hub).create({ projectRef: PROJECT, name, prompt: name, schedule, ...(watch ? { watch } : {}), webhook: false, by: "human", confirmed: true })[0];
+  const digest = make("Morning summary", { cron: "0 8 * * 1-5", tz: "UTC" });
+  const price = make("Headphones under 300", { tz: "UTC" }, { kind: "other", every: "day" });
+  const stretch = make("Stretch", { at: "2026-11-08T16:54", tz: "UTC" });
+  const york = make("New York standup", { cron: "0 9 * * 1-5", tz: "America/New_York" });
+
+  // From the desktop, on UTC: nothing moves.
+  await call(ada, "chat_send", { projectRef: PROJECT, text: "hi", clientRequestId: "c1", tz: "UTC" });
+  // One message from the phone, in Amsterdam.
+  await call(ada, "chat_send", { projectRef: PROJECT, text: "remind me in 2 minutes", clientRequestId: "c2", tz: "Europe/Amsterdam" });
+  const now = (id: string) => automations(hub).get(id)!;
+  // The digest keeps 08:00 on the new clock; the watcher moves with it; the reminder keeps its instant (16:54 UTC is
+  // 17:54 in Amsterdam in November); one named on purpose for New York stays.
+  expect(now(digest.automationId).schedule).toEqual({ cron: "0 8 * * 1-5", tz: "Europe/Amsterdam" });
+  expect(now(digest.automationId).nextRunAt).toBe("2026-11-09T07:00:00.000Z");
+  expect(now(price.automationId).schedule?.tz).toBe("Europe/Amsterdam");
+  expect(now(stretch.automationId).schedule).toEqual({ at: "2026-11-08T17:54", tz: "Europe/Amsterdam" });
+  expect(now(stretch.automationId).nextRunAt).toBe(stretch.nextRunAt);
+  expect(now(york.automationId).schedule?.tz).toBe("America/New_York");
+  const lines = () =>
+    chat(hub)
+      .page(PROJECT, undefined, undefined, 50)
+      .messages.filter((m: { author: string }) => m.author === "system")
+      .map((m: { text: string }) => m.text);
+  expect(lines()).toEqual(["Your 3 automations now run on Europe/Amsterdam time, the zone of the device you last wrote from. They were on UTC."]);
+  // The same zone again says nothing more.
+  await call(ada, "chat_send", { projectRef: PROJECT, text: "thanks", clientRequestId: "c3", tz: "Europe/Amsterdam" });
+  expect(lines().length).toBe(1);
   done();
 });

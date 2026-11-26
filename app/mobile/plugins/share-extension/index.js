@@ -1,5 +1,5 @@
 // The iOS Share Extension (ShareViewController.swift): "fleetd" in the share sheet of Safari, Photos and any other app,
-// which sends text, a link or images into a chosen chat. Added at `expo prebuild` as the native projects are, never
+// which sends text, a link, images or files into a chosen chat. Added at `expo prebuild` as the native projects are, never
 // kept in git: its target in the Xcode project, embedded in the app, with its sources, Info.plist and entitlements.
 // It reads the paired hub from the keychain access group the app shares with its extensions (src/vault.ts,
 // plugins/notification-service), and keeps no copy. The extension's bundle id is the app's plus ".share"; a signed
@@ -9,7 +9,7 @@ const path = require("node:path");
 const { withDangerousMod, withEntitlementsPlist, withXcodeProject } = require("expo/config-plugins");
 
 const TARGET = "FleetdShare";
-const SOURCES = ["ShareViewController.swift", "ShareView.swift", "ShareModel.swift", "HubLink.swift", "Shared.swift"];
+const SOURCES = ["ShareViewController.swift", "ShareView.swift", "ShareModel.swift", "HubLink.swift", "Shared.swift", "BotLook.swift"];
 const EMBED = "Embed Foundation Extensions";
 
 // The group the app's secure storage writes to (its first), named for the notification key it held first.
@@ -25,8 +25,8 @@ ${entries}
 </plist>
 `;
 
-/** Shown in the share sheet for text, one web page or up to 20 images (the hub's ATTACHMENTS_MAX). */
-const IMAGES_MAX = 20;
+/** Shown in the share sheet for text, one web page, or up to 20 images and files (the hub's ATTACHMENTS_MAX). */
+const FILES_MAX = 20;
 
 // The app's version and build, as Expo writes them into the app's own Info.plist: an extension must carry the same.
 const infoPlist = (version, build) =>
@@ -49,7 +49,8 @@ const infoPlist = (version, build) =>
       <dict>
         <key>NSExtensionActivationSupportsText</key><true/>
         <key>NSExtensionActivationSupportsWebURLWithMaxCount</key><integer>1</integer>
-        <key>NSExtensionActivationSupportsImageWithMaxCount</key><integer>${IMAGES_MAX}</integer>
+        <key>NSExtensionActivationSupportsImageWithMaxCount</key><integer>${FILES_MAX}</integer>
+        <key>NSExtensionActivationSupportsFileWithMaxCount</key><integer>${FILES_MAX}</integer>
       </dict>
     </dict>
     <key>NSExtensionPointIdentifier</key><string>com.apple.share-services</string>

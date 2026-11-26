@@ -5,7 +5,9 @@ import { Registry } from "../src/hub/api/registry.ts";
 import { publish } from "../src/hub/artifacts/index.ts";
 import { asksQuestion, chat, needsYou } from "../src/hub/chat/index.ts";
 import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
+import { machineAway } from "../src/hub/chat/flow.ts";
 import { events } from "../src/hub/store/events.ts";
+import { store } from "../src/hub/store/hub_store.ts";
 import type { ChatDelta, ChatMessage } from "../src/shared/contracts.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
@@ -122,5 +124,16 @@ test("an agent's message to another lead is stored once, held, and says why it w
   expect(again.message.messageId).toBe(first.message.messageId);
   expect(chat(hub).held(PROJECT).length).toBe(1);
   expect(checklistRead(hub, PROJECT)).toEqual({ items: [], nextId: 1 });
+  done();
+});
+
+test("a message to an offline machine's lead says, in its first sentence, that it waits: no node, which people needn't know", () => {
+  const { hub, done } = testHub();
+  store(hub).machineUpsert({ machineId: PROJECT.machineId, name: PROJECT.machineId, nodeVersion: "1", status: "offline", lastSeenAt: "2026-11-08T09:00:00Z" } as never);
+  const why = machineAway(hub, PROJECT.machineId) ?? "";
+  // The chat shows the first sentence (heldWords).
+  expect(why.split(". ")[0]).toBe(`${PROJECT.machineId} is offline, so your message waits and goes in when it's back`);
+  expect(why).not.toMatch(/\bnode\b/);
+  expect(why).toContain("Settings › Workspace › Machines");
   done();
 });

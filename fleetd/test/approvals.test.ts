@@ -711,3 +711,44 @@ test("a confirm step's card shows its screenshot only when it is the asking bot'
   await Bun.sleep(10);
   done();
 });
+
+test("in Ask me about everything a web lookup asks once for its site, and other shell commands never ask (F1839)", async () => {
+  const { hub, done } = testHub();
+  startProjectLead(hub);
+  const a = approvals(hub);
+  hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES (?, ?, 'lead-1', ?, 0)", [
+    PROJECT.machineId,
+    PROJECT.projectId,
+    "2026-11-08T10:00:00.000Z",
+  ]);
+  setApprovals(hub.db.conn, PROJECT, "ask");
+  let pending: PendingPermission | undefined;
+  const answers: { request: string; behavior: string }[] = [];
+  a.deps.nodes.pendingPermission = async () => pending;
+  a.deps.nodes.answerPermission = async (_m, _t, request, decision) => {
+    answers.push({ request, behavior: decision.behavior });
+  };
+  const cards = () => new Requests(hub.db).list({ projectRef: PROJECT, limit: 50 } as never).filter((r) => r.permission !== undefined);
+  const ask = async (requestId: string, command: string) => {
+    pending = { requestId, toolName: "Bash", summary: command, input: { command } };
+    await onThreadEvent(a, { ...threadEvent("thread.waiting", pending), machineId: PROJECT.machineId, projectId: PROJECT.projectId, threadId: "lead-1" });
+  };
+  // The lookup as the lead ran it: the browser's help, then a search and pages joined with &&.
+  await ask("p-1", "agent-browser skills get core");
+  await ask("p-2", "ls -la && grep -rn node README.md | head -5");
+  expect(answers).toEqual([
+    { request: "p-1", behavior: "allow" },
+    { request: "p-2", behavior: "allow" },
+  ]);
+  expect(cards()).toEqual([]);
+  await ask("p-3", `agent-browser open "https://duckduckgo.com/html/?q=node.js+official+site" && agent-browser wait --load networkidle && agent-browser snapshot -i`);
+  expect(cards().map((r) => r.permission?.site)).toEqual(["duckduckgo.com"]);
+  await a.answer(person, cards()[0]!.requestId, true);
+  // The site is allowed now: the next search on it runs unasked, with no second card.
+  await ask("p-4", `agent-browser open "https://duckduckgo.com/html/?q=nodejs+download" && agent-browser get text body | head -40`);
+  expect(answers.at(-1)).toEqual({ request: "p-4", behavior: "allow" });
+  expect(cards()).toHaveLength(1);
+  hub.shutdown.abort();
+  await Bun.sleep(10);
+  done();
+});

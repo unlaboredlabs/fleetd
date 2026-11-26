@@ -63,6 +63,21 @@ export function remove(db: HubDb, r: ProjectRef, ids: number[], nowMs: number): 
   });
 }
 
+/**
+ * A person stopped task `taskId`: what was under Doing for it goes back to To do at once, in one transaction. Its items
+ * are those that link the task, and those that link its order when nothing else of the order still runs. The items it
+ * moved, in the list's order (none: nothing written).
+ */
+export function taskStopped(hub: Hub, r: ProjectRef, taskId: string, workstreamId: string | undefined, nowMs: number): TodoItem[] {
+  const others = TaskRecords.live(hub.db.conn, r, 500).some((t) => t.taskId !== taskId && t.workstreamId === workstreamId);
+  const ours = (i: TodoItem) => i.state === "doing" && (i.link?.taskId === taskId || (!others && workstreamId !== undefined && i.link?.workstreamId === workstreamId && i.link.taskId === undefined));
+  const moved = read(hub.db, r).items.filter(ours);
+  if (moved.length === 0) return [];
+  const { list, changed: wrote } = apply(hub.db, r, { items: moved.map((i) => ({ id: i.id, state: "todo" as const })) }, nowMs);
+  if (wrote) changed(hub, r, list, "human", undefined, nowMs);
+  return moved;
+}
+
 /** `checklist.changed`, which tells the app to read the list again; `person` made the change (undefined: the lead). */
 export function changed(hub: Hub, r: ProjectRef, list: Checklist, by: string, person: PersonRef | undefined, now: number): void {
   const [done, total] = [doneCount(list), list.items.length];

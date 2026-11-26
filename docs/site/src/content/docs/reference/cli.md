@@ -56,7 +56,7 @@ fleetd init [--yes] [--listen <host:port>] [--url <url>]
 Make this machine a worker of that workspace, without SSH from the workspace's machine.
 
 ```text
-fleetd init --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
+fleetd init --join <workspace url> [--code <code>] [--machine-id <id>] [--git-identity "Name <email>"]
     [--rejoin] [--claude-config-dir <dir>] [--mac] [--no-service]
 ```
 
