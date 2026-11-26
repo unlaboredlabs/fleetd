@@ -90,11 +90,18 @@ const useTitles = (refs: readonly Ref[]): Array<string | undefined> => {
 const isRef = (r: string | Ref): r is Ref => typeof r !== "string";
 
 /**
+ * The runs of `text` the phone names: a decision's or a file's id stays as written, as "D1" or "F12" is as often
+ * something else and a bubble doesn't know its bot to look it up (the desktop's chip checks).
+ */
+const namedRuns = (text: string): Array<string | Ref> =>
+  splitRefs(text).map((r) => (typeof r !== "string" && (r.kind === "decision" || r.kind === "file") ? r.id : r));
+
+/**
  * Words with fleetd's ids in them as a string with their names, for what a Text can't hold: an accessibility label,
  * which VoiceOver reads out (a chats list's row).
  */
 export const useSpoken = (text: string): string => {
-  const runs = useMemo(() => splitRefs(text), [text]);
+  const runs = useMemo(() => namedRuns(text), [text]);
   const refs = useMemo(() => runs.filter(isRef), [runs]);
   const titles = useTitles(refs);
   if (refs.length === 0) return text;
@@ -113,8 +120,8 @@ export function Name({ of, plain = false }: { of: Ref; plain?: boolean }) {
 
 /** Words with fleetd's ids in them by name (inside a Text). */
 export function Names({ text, plain = false }: { text: string; plain?: boolean }) {
-  const runs = useMemo(() => splitRefs(text), [text]);
-  if (runs.length === 1 && typeof runs[0] === "string") return <>{text}</>;
+  const runs = useMemo(() => namedRuns(text), [text]);
+  if (runs.every((r) => typeof r === "string")) return <>{text}</>;
   return (
     <>
       {runs.map((r, i) => (typeof r === "string" ? <Fragment key={i}>{r}</Fragment> : <Name key={i} of={r} plain={plain} />))}

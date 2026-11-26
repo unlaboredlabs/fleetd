@@ -311,7 +311,7 @@ function Inlines({ nodes, ink, onAccent, small = false }: { nodes: readonly Inli
             return <Names key={i} text={n.text} />;
           case "code": {
             const kind = refOf(n.text);
-            if (kind !== undefined) return <Name key={i} of={{ id: n.text.trim(), kind, opens: false }} />;
+            if (kind === "agent" || kind === "order") return <Name key={i} of={{ id: n.text.trim(), kind, opens: false }} />;
             return (
               <Text key={i} style={[styles.inlineCode, small && styles.cellCode, { backgroundColor: onAccent ? "rgba(255,255,255,0.18)" : t.fillQuiet }]}>
                 {small ? n.text.replace(/ /gu, "\u00A0") : n.text}

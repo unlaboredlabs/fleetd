@@ -19,6 +19,7 @@ interface Named {
 }
 
 const NO_TASK = { taskId: "" };
+const NO_PROJECT = { machineId: "", projectId: "" };
 const NO_ORDER = { workstreamId: "" };
 
 /** Whether a row or lane is the agent `id` (a task id, which is also its lane's id). */
@@ -74,11 +75,31 @@ export interface RefChipProps {
 }
 
 export function RefChip(props: RefChipProps) {
-  return useHasData() ? <LiveChip {...props} /> : <Chip {...props} named={{}} />;
+  if (!useHasData()) return <Chip {...props} named={{}} />;
+  return props.of.kind === "decision" || props.of.kind === "file" ? <CheckedChip {...props} /> : <LiveChip {...props} />;
 }
 
 function LiveChip(props: RefChipProps) {
   return <Chip {...props} named={useNamed(props.of)} />;
+}
+
+const DECISIONS = 500;
+
+/**
+ * A decision's or a file's id: "D1" or "F12" is as often Cloudflare's database or a key, so it is a chip only once the
+ * bot is found to have it (its decisions, its files), and as written until then or if not. A file says its name.
+ */
+function CheckedChip(props: RefChipProps) {
+  const route = useRoute();
+  const where = props.project ?? (route.id === "project" ? route.project : undefined);
+  const r = props.of;
+  const decision = r.kind === "decision";
+  const projectRef = where ?? NO_PROJECT;
+  const decisions = useToolQuery("decisions_list", { projectRef, limit: DECISIONS }, { enabled: decision && where !== undefined });
+  const file = useToolQuery("attachment_get", { projectRef, attachmentId: r.id, length: 1 }, { enabled: !decision && where !== undefined });
+  const found = decision ? decisions.data?.decisions.some((d) => d.decisionId === r.id) === true : file.data !== undefined;
+  if (!found) return <>{r.id}</>;
+  return <Chip {...props} project={where} named={decision ? {} : { title: file.data?.name }} />;
 }
 
 function Chip({ of: r, inRow = false, title, project, named }: RefChipProps & { named: Named }) {

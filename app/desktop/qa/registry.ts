@@ -4427,6 +4427,13 @@ export const screens: readonly Screen[] = [
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
   { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
+  // W919: where an order's chip lands, the order itself: its agents at work and finished, each opening it, and its PRs.
+  {
+    id: "agents.order",
+    route: `#/project/${AGENT.machineId}/${AGENT.projectId}/agents/W1`,
+    fixtures: ["agents-work"],
+    open: (page) => expect(page.locator('[data-screen="agents.order"] h2')).toBeVisible(),
+  },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.
   {
