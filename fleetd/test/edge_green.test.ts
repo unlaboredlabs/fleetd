@@ -1,6 +1,8 @@
 // Edge builds only from green main commits: edge.yml starts on CI finishing with success on a push to main and builds
 // that run's own commit, never main's newest; and every CI job runs in full on main, so no job passes there without
-// running (a scoped job's "nothing changed" would read as green and let a merge another PR broke ship).
+// running (a scoped job's "nothing changed" would read as green and let a merge another PR broke ship). All but the iOS
+// build, main's only, scoped there to what the push changed: half an hour on a Mac each merge would hold every edge
+// build, and it compiles nothing else.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,7 +12,7 @@ const text = (name: string) => readFileSync(join(WORKFLOWS, name), "utf8");
 const yaml = (name: string) => Bun.YAML.parse(text(name)) as Record<string, any>;
 
 /** Runs a job's scope script as GitHub would on `event` to `ref`, and returns what it wrote to GITHUB_OUTPUT. */
-function scope(script: string, event: string, ref: string): string {
+function scope(script: string, event: string, ref: string, env: Record<string, string> = {}): string {
   const dir = `${process.env.TMPDIR ?? "/tmp"}/fleetd-edge-green-${Math.random().toString(36).slice(2)}`;
   const run = (args: string[], cwd = dir) => Bun.spawnSync(args, { cwd, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_NAME: "a", GIT_AUTHOR_EMAIL: "a@example.invalid", GIT_COMMITTER_NAME: "a", GIT_COMMITTER_EMAIL: "a@example.invalid" } });
   Bun.spawnSync(["mkdir", "-p", dir]);
@@ -21,7 +23,7 @@ function scope(script: string, event: string, ref: string): string {
   run(["git", "add", "-A"]);
   run(["git", "commit", "-q", "-m", "two"]);
   const out = join(dir, "out.txt");
-  Bun.spawnSync(["bash", "-c", script], { cwd: dir, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GITHUB_EVENT_NAME: event, GITHUB_REF: ref, GITHUB_OUTPUT: out } });
+  Bun.spawnSync(["bash", "-c", script], { cwd: dir, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GITHUB_EVENT_NAME: event, GITHUB_REF: ref, GITHUB_OUTPUT: out, ...env } });
   const written = Bun.file(out).size > 0 ? readFileSync(out, "utf8") : "";
   Bun.spawnSync(["rm", "-rf", dir]);
   return written;
@@ -56,6 +58,14 @@ test("every scoped CI job runs in full on a push to main, and still skips an unc
     expect([name, onMain.includes("=false")]).toEqual([name, false]);
     expect([name, onPr.includes("=false")]).toEqual([name, true]);
   }
+  // The iOS build alone keeps its scope on main, against the commit before the push (its `before`): skipped when the
+  // push changed nothing it reads, in full when that commit is unknown (above, where it isn't given).
+  const mobile = scripts.find(([name]) => name === "mobile-scope")![1];
+  const pushed = scope(mobile, "push", "refs/heads/main", { BEFORE: "HEAD~1" });
+  expect(pushed).toContain("ios=false");
+  expect(pushed).toContain("app=true");
+  expect(scope(mobile, "push", "refs/heads/main", { BEFORE: "0".repeat(40) })).toContain("ios=true");
+  expect(scope(mobile, "workflow_dispatch", "refs/heads/main")).toContain("ios=true");
   // fleetd's own scope script already runs in full on main.
   expect(readFileSync(join(import.meta.dir, "../../.github/fleetd-scope.sh"), "utf8")).toContain('"$GITHUB_EVENT_NAME" != push');
 });

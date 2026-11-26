@@ -44,6 +44,22 @@ test("the train's fast checks are Linux jobs of ci.yml, the perf budgets among t
   }
 });
 
+test("ci.yml's one macOS job compiles the iOS app on main only, on the release's image", () => {
+  const ci = workflow("ci.yml");
+  const mac = Object.entries(ci.jobs).filter(([, j]) => !String(j["runs-on"]).startsWith("ubuntu-"));
+  expect(mac.map(([id]) => id)).toEqual(["ios"]);
+  const ios = ci.jobs.ios!;
+  // The same image as TestFlight's archive: a build that passes on another Xcode can still break the release.
+  expect(ios["runs-on"]).toBe(workflow("mobile-release.yml").jobs.ios?.["runs-on"]);
+  // Never on a pull request (ci.no-macos-on-prs): on a push to main, or a manual run, that changed native inputs.
+  expect(ios.if).toContain("needs.mobile-scope.outputs.ios != 'false'");
+  expect(ios.if).toContain("(github.event_name == 'push' && github.ref == 'refs/heads/main')");
+  expect(ios.if).not.toContain("pull_request");
+  // On main's run, so the train's watch bisects and reverts a red one; no fast check, nor left to after the merge.
+  expect(settings.fastChecks).not.toContain(ios.name);
+  expect(settings.afterMerge).not.toContain(ios.name);
+});
+
 test("the train's after-merge checks are what mac.yml reports", () => {
   // No PR runs a macOS job: each check mac.yml (Nightly) reports, the iOS build of a manual run among them, is after
   // merge only. mac.yml never starts on a push or a pull request by itself.
