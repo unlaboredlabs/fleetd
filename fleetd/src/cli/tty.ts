@@ -157,6 +157,12 @@ export async function input(
   }
 }
 
+/** One line typed after `question`, as it was typed; undefined when the input ends (Ctrl-D). */
+export async function ask(question: string, hint?: string): Promise<string | undefined> {
+  out(`${bar}\n${color(36, "◆")}  ${question}${hint ? color(90, ` (${hint})`) : ""}: `);
+  return readLine();
+}
+
 /** A spinner: its start line now, its stop line once done. */
 export function spinner() {
   return {

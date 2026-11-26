@@ -3,7 +3,7 @@
 // environment so the login lands where sessions read it, and answers with the sign-in URL it prints. `claude_login_code`
 // (`antigravity_login_code`) types the code the page showed into the waiting login. The agent keeps its token here:
 // nothing of it is read or sent. One login of each at a time: a new one ends the last, and one nobody finishes ends
-// after 10 minutes.
+// after 10 minutes. `fleetd init` drives a login the same way, so its own prompt takes the code.
 import { basename } from "node:path";
 import type { Env } from "../util.ts";
 import { CSI, signInUrl } from "./sign_in_url.ts";
@@ -16,7 +16,8 @@ const ABANDONED_MS = 600_000;
 const OUTPUT_MAX = 64 * 1024;
 /** Between the code and its Enter, as a person types them: a raw-mode terminal app takes one write as a paste. */
 const ENTER_AFTER_MS = 300;
-
+/** What claude says to a wrong code, then waits for another at the same prompt. */
+const REFUSED = /invalid code/i;
 
 /** Its last line with words, without terminal sequences. */
 export function lastWords(output: string): string {
@@ -34,7 +35,13 @@ export class Logins {
   #waiting: Waiting | undefined;
   constructor(readonly codeWaitMs = CODE_WAIT_MS) {}
 
-  #end(): void {
+  /** Whether a login waits for its code. */
+  get waiting(): boolean {
+    return this.#waiting !== undefined;
+  }
+
+  /** Ends the waiting login, if any. */
+  end(): void {
     const w = this.#waiting;
     this.#waiting = undefined;
     if (!w) return;
@@ -51,16 +58,16 @@ export class Logins {
   }
 
   /** Starts `argv` (`claude auth login`, `agy acp --login`) and answers the URL it prints; the last login, if any,
-   * ends. */
-  async start(argv: string[], env: Env): Promise<string> {
+   * ends. `browser`: it may open the sign-in page on this machine's screen, whose sign-in then ends it by itself. */
+  async start(argv: string[], env: Env, opts: { browser?: boolean } = {}): Promise<string> {
     const name = [basename(argv[0] ?? ""), ...argv.slice(1)].join(" ");
-    this.#end();
+    this.end();
     const output = { text: "" };
     const decoder = new TextDecoder();
     let proc: Bun.Subprocess;
     try {
       proc = Bun.spawn(argv, {
-        env: { ...env, BROWSER: "true", TERM: "dumb", NO_COLOR: "1" },
+        env: { ...env, ...(opts.browser ? {} : { BROWSER: "true" }), TERM: "dumb", NO_COLOR: "1" },
         terminal: {
           cols: 2000,
           rows: 40,
@@ -82,7 +89,7 @@ export class Logins {
       if (this.#waiting !== waiting || waiting.exited || Date.now() >= until) {
         const ended = waiting.exited;
         if (ended) await Bun.sleep(100);
-        if (this.#waiting === waiting) this.#end();
+        if (this.#waiting === waiting) this.end();
         throw new Error(
           ended
             ? `${name} ended without a sign-in URL: ${lastWords(output.text)}`
@@ -94,21 +101,22 @@ export class Logins {
   }
 
   /** Types `code` into the waiting login, then Enter a moment later, and answers its last words once it ended well.
-   * Its words never repeat the code. */
+   * Its words never repeat the code. A code it refuses throws at once, the login still waiting for another. */
   async finish(rawCode: string): Promise<string> {
     const code = rawCode.trim();
     const w = this.#waiting;
     if (!w || Date.now() - w.started >= ABANDONED_MS) {
-      this.#end();
+      this.end();
       throw new Error("no login is waiting for a code: start it again");
     }
     const said = () => lastWords(w.output.text.replaceAll(code, ""));
+    const from = w.output.text.length;
     try {
       w.terminal.write(code);
       await Bun.sleep(ENTER_AFTER_MS);
       w.terminal.write("\r");
     } catch (error) {
-      this.#end();
+      this.end();
       throw new Error(`couldn't give the login its code: ${(error as Error).message}`);
     }
     const until = Date.now() + this.codeWaitMs;
@@ -118,17 +126,34 @@ export class Logins {
         await Bun.sleep(100);
         const exit = w.proc.exitCode;
         const words = said();
-        this.#end();
+        this.end();
         if (exit === 0) return words;
         throw new Error(`${w.name} failed: ${words}`);
       }
+      const since = w.output.text.slice(from);
+      if (REFUSED.test(since)) throw new Error(`${w.name} failed: ${lastWords(since.replaceAll(code, ""))}`);
       if (Date.now() >= until) {
         const words = said();
-        this.#end();
+        this.end();
         throw new Error(`${w.name} didn't end within ${Math.round(this.codeWaitMs / 1000)} s of its code: ${words}`);
       }
       await Bun.sleep(100);
     }
+  }
+
+  /** The waiting login's last words once it ended well by itself (signed in through the page it opened); undefined
+   * while it still waits. One that ended otherwise throws. */
+  async ended(): Promise<string | undefined> {
+    const w = this.#waiting;
+    if (!w) throw new Error("no login is waiting for a code: start it again");
+    // Its exit, if it came while nothing here ran (a prompt's blocking read), or a moment after its page's sign-in.
+    for (let i = 0; i < 10 && !w.exited; i++) await Bun.sleep(100);
+    if (!w.exited) return undefined;
+    await Bun.sleep(100);
+    const [exit, words] = [w.proc.exitCode, lastWords(w.output.text)];
+    this.end();
+    if (exit === 0) return words;
+    throw new Error(`${w.name} failed: ${words}`);
   }
 }
 
