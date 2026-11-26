@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { requestOutcome } from "../src/hub/approvals/outcome.ts";
-import { fieldsOf, loginTarget, signInLabel, signInValues, vaultLogin } from "../src/hub/approvals/sign_in_rules.ts";
+import { fieldsOf, loginTarget, signInLabel, signInValues, vaultLogin, vaultTried } from "../src/hub/approvals/sign_in_rules.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { start as startVault } from "../src/hub/vault/loops.ts";
 import type { ItemRow } from "../src/hub/vault/item.ts";
@@ -15,6 +15,8 @@ import { browserSession, M, PROJECT, type VaultHub, vaultHub } from "./vault-kit
 
 let k: VaultHub;
 const S = "B0123456789abcdef0123456789abcdef";
+/** Another browser session of the same lead: a fresh browser. */
+const S2 = "B1123456789abcdef0123456789abcdef";
 const lead: LeadCaller = { projectRef: PROJECT, by: "lead:devbox/p1", agent: { kind: "lead" }, threadId: "t-lead", via: M };
 const SITE = { domain: "shop.example", name: "Shop" };
 const USER = "ada@shop.example";
@@ -30,6 +32,7 @@ beforeEach(async () => {
   startVault(k.hub);
   await k.v.load();
   browserSession(k, S);
+  browserSession(k, S2);
   delivered = [];
   approvals(k.hub).deps.nodes.deliverSecret = async (_m, input) => {
     const plain = k.open(String(input.sealed));
@@ -39,8 +42,8 @@ beforeEach(async () => {
 });
 afterEach(() => k.done());
 
-const open = async (input: Record<string, unknown>, caller: LeadCaller = lead) =>
-  (await leadCalls(k.hub).handler("sign_in_open")!(caller, { op: "sign_in_open", sessionId: S, input: { site: SITE, why: "upload the build", ...input } } as never)) as {
+const open = async (input: Record<string, unknown>, sessionId = S, caller: LeadCaller = lead) =>
+  (await leadCalls(k.hub).handler("sign_in_open")!(caller, { op: "sign_in_open", sessionId, input: { site: SITE, why: "upload the build", ...input } } as never)) as {
     requestId?: string;
     state?: string;
     vault?: { itemId: string; label: string };
@@ -88,10 +91,28 @@ test("submitted with Save: filled on the node, saved as the site's login, and th
   // Its use is logged as the person's.
   const audit = k.hub.db.all<{ action: string; person_id: string | null }>("SELECT action, person_id FROM vault_audit WHERE item_id = ?", [row!.itemId]);
   expect(audit).toEqual([{ action: "create", person_id: k.owner.personId }]);
-  // The second sign-in on that site, and a subdomain's: the vault's login, no request.
-  expect(await open({ username: "#email", password: "#pw" })).toEqual({ vault: { itemId: row!.itemId, label: "Shop" } });
+  // The next sign-in on that site, in a fresh browser: the vault's login, no request.
+  expect(await open({ username: "#email", password: "#pw" }, S2)).toEqual({ vault: { itemId: row!.itemId, label: "Shop" } });
   const opens = approvals(k.hub).list({ projectRef: PROJECT, limit: 100 }).length;
   expect(opens).toBe(1);
+});
+
+test("a login the site refused: asked again in that browser, the person gets the form, and their Save replaces it", async () => {
+  // Typed wrong and saved (Save is on by default).
+  const first = await open({ username: "#email", password: "#pw" });
+  await submit(first.requestId!, { username: USER, password: "typo-pw" });
+  const id = logins()[0]!.itemId;
+  // The site refused it; the agent asks again in the same browser: the form, not the vault's wrong password.
+  const again = await open({ username: "#email", password: "#pw" });
+  expect(again.vault).toBeUndefined();
+  expect(again.requestId).not.toBe(first.requestId);
+  await submit(again.requestId!, { username: USER, password: PASSWORD });
+  expect(logins().map((r) => r.itemId)).toEqual([id]);
+  expect(k.v.store.open(logins()[0]!)).toEqual({ username: USER, password: PASSWORD });
+  // A fresh browser fills the corrected login with no ask; once it filled there, asked again, the person is asked.
+  expect((await open({ username: "#email", password: "#pw" }, S2)).vault?.itemId).toBe(id);
+  await leadCalls(k.hub).handler("vault_fill")!(lead, { op: "vault_fill", sessionId: S2, item: id, field: "password", page: "https://www.shop.example/login" } as never);
+  expect((await open({ username: "#email", password: "#pw" }, S2)).requestId).toMatch(/^Q\d+$/);
 });
 
 test("a code the site asks for after the password: its own form, filled, never kept", async () => {
@@ -164,6 +185,9 @@ test("the rules: fields in fill order, labels, the box's checks, the vault hit a
   expect(fieldsOf({ otp: "#c", username: "#u" })).toEqual(["username", "otp"]);
   expect(signInLabel(SITE, ["otp"])).toBe("Code for Shop");
   expect(signInLabel(SITE, ["username", "otp"])).toBe("Sign in to Shop");
+  expect(vaultTried(["password"], true)).toBe(true);
+  expect(vaultTried(["otp"], true)).toBe(false);
+  expect(vaultTried(["username", "password"], false)).toBe(false);
   expect(signInValues({ username: "a", password: "", otp: null }, ["username"])).toEqual({ username: "a" });
   expect(() => signInValues({ password: 7 }, ["password"])).toThrow("isn't text");
   expect(() => signInValues("x", ["password"])).toThrow("JSON object");

@@ -83,6 +83,13 @@ export function vaultLogin(rows: readonly ItemRow[], domain: string, fields: rea
     .sort((a, b) => b.updatedMs - a.updatedMs)[0];
 }
 
+/**
+ * Whether the vault's login is passed over for the person's form: asked again for a login in a browser session that
+ * was already given one for the site (filled from the vault, or from a form), the site refused it, so the person is
+ * asked, and their "Save to Vault" replaces what was saved. A code alone still fills from the vault.
+ */
+export const vaultTried = (fields: readonly SignInField[], filledInSession: boolean) => !codeOnly(fields) && filledInSession;
+
 /** A login a "Save to Vault" may update: its username (opened) and whether the person may change it. */
 export type SaveCandidate = { row: ItemRow; username: string | undefined; canEdit: boolean };
 

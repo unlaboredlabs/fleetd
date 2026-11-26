@@ -126,6 +126,18 @@ export class VaultAudit {
   }
 
   /** Refusals one browser session drew in the last ten minutes. */
+  /** The page hosts a vault login's username or password was filled on in browser session `sessionId`. */
+  loginHostsIn(sessionId: string): string[] {
+    return this.db
+      .query<{ site: string }, [string]>(
+        `SELECT DISTINCT json_extract(data, '$.site') AS site FROM vault_audit WHERE action = 'fill' AND outcome IN ('pending', 'ok')
+           AND json_extract(data, '$.sessionId') = ? AND json_extract(data, '$.fields[0]') IN ('username', 'password')`,
+      )
+      .all(sessionId)
+      .map((x) => x.site)
+      .filter((s) => typeof s === "string");
+  }
+
   refusalsIn(sessionId: string, now: number): number {
     return (
       this.db

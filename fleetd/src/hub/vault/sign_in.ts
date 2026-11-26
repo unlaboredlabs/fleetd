@@ -16,6 +16,7 @@ import { approvals } from "../approvals/index.ts";
 import { requestOutcome } from "../approvals/outcome.ts";
 import type { SignInBy, SignInRelay } from "../approvals/ports.ts";
 import {
+  codeOnly,
   fieldsOf,
   loginSpec,
   loginTarget,
@@ -29,6 +30,7 @@ import {
   signInText,
   signInValues,
   vaultLogin,
+  vaultTried,
 } from "../approvals/sign_in_rules.ts";
 import { clip } from "../approvals/text.ts";
 import { get as browserSession } from "../browser/store.ts";
@@ -40,6 +42,7 @@ import { isoMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { hubSealTo } from "./aliases.ts";
 import { sessionContext } from "./calls.ts";
+import { onSite } from "./fill.ts";
 import { vault } from "./index.ts";
 import { openToHub, saveItem } from "./items.ts";
 
@@ -57,11 +60,11 @@ export function openSignIn(hub: Hub, caller: LeadCaller, call: LeadCall): Record
   const fields = fieldsOf(input);
   const site = { domain: String(input.site?.domain ?? "").toLowerCase(), name: String(input.site?.name ?? "") };
   const v = vault(hub);
+  const a = approvals(hub);
   if (!v.keys.locked && v.problem === undefined) {
     const hit = vaultLogin(v.usable(), site.domain, fields);
-    if (hit) return { vault: { itemId: hit.itemId, label: hit.label } };
+    if (hit && !vaultTried(fields, loginGivenIn(hub, r, sessionId, site.domain))) return { vault: { itemId: hit.itemId, label: hit.label } };
   }
-  const a = approvals(hub);
   // Asked again for the same fields while the form is still open: the same card.
   const open = a
     .list({ projectRef: r, states: ["open"], limit: 100 })
@@ -86,6 +89,15 @@ export function openSignIn(hub: Hub, caller: LeadCaller, call: LeadCall): Record
     atMs: now,
   });
   return { requestId: opened.requestId, state: opened.state };
+}
+
+/** Whether browser session `sessionId` was given a login for `domain` already: a vault fill of its username or
+ * password there, or a sign-in form the person filled for it. */
+function loginGivenIn(hub: Hub, r: ProjectRef, sessionId: string, domain: string): boolean {
+  if (vault(hub).audit.loginHostsIn(sessionId).some((host) => onSite(host, domain))) return true;
+  return approvals(hub)
+    .list({ projectRef: r, states: ["stored"], limit: 100 })
+    .some((q) => q.secureInput?.signIn !== undefined && q.secureInput.sessionId === sessionId && q.secureInput.site.domain === domain && !codeOnly(q.secureInput.signIn.fields));
 }
 
 /** The person's device, as `secret_submit` checked it: operate on the sink's and the project's machines, there only. */

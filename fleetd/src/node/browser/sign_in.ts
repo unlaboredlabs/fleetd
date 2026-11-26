@@ -48,7 +48,7 @@ export async function requestSignIn(broker: Broker, thread: string, call: Record
     for (const [i, f] of fields.entries()) {
       await fillCredential(broker, thread, { item: hit.itemId, field: f, target: targets[f], submit: i === fields.length - 1 });
     }
-    const message = `Filled the ${fields.map((f) => SAID[f]).join(" and ")} from the vault's ${String(hit.label ?? "login")} and submitted the form; nobody was asked. This browser session now refuses reading filled values back. Look at the page: if it asks for a one-time code next, call request_sign_in with otp.`;
+    const message = `Filled the ${fields.map((f) => SAID[f]).join(" and ")} from the vault's ${String(hit.label ?? "login")} and submitted the form; nobody was asked. This browser session now refuses reading filled values back. Look at the page: if it asks for a one-time code next, call request_sign_in with otp; if the site refused the login, call request_sign_in again: the person is asked, and what they give replaces the saved login.`;
     return { message: session.scrub().text(message) };
   }
   const id = String(opened.requestId ?? "");
