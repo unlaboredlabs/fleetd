@@ -3,12 +3,12 @@
 // renders this for a message with an `item`. The item comes from E1's layer, which re-reads it when the hub
 // re-emits its chat.message; the only state here is what the person just did, until the hub's next read of it.
 // Once answered, an item folds to one line that opens back up to the whole card.
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, EyeOff, KeyRound } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, ToolPreview } from "../../../shared/contracts";
+import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, SecureInput, SignInField, SignInForm, ToolPreview } from "../../../shared/contracts";
 import { marked } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
-import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
+import { Button, Checkbox, Code, cx, Dialog, Field, InlineCode, Input, Text, Truncate } from "../../ui";
 import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
 import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
@@ -20,6 +20,7 @@ import {
   approvalOutcome,
   approvalTitle,
   classWords,
+  codeOnly,
   failureLine,
   needsConfirm,
   OFFLINE_LINE,
@@ -29,6 +30,7 @@ import {
   secretTitle,
   shellLine,
   shellWord,
+  signInAsks,
   withRequest,
   type Action,
   type Outcome,
@@ -126,6 +128,9 @@ export function InlineChatItem({ item: posted, asker }: { item: ChatItem; asker?
   const item = withRequest(posted, listed);
   // A read says something about this request only if it lists it (it holds the hub's newest 100).
   const read = useReadOf("requests_list", REQUESTS);
+  if (item.kind === "secret_request" && item.secureInput?.signIn !== undefined) {
+    return <SignInItem item={item} input={item.secureInput} signIn={item.secureInput.signIn} read={listed === undefined ? undefined : read} />;
+  }
   return item.kind === "secret_request" ? <SecretItem item={item} read={listed === undefined ? undefined : read} asker={asker} /> : <ApprovalItem item={item} read={listed === undefined ? undefined : read} asker={asker} />;
 }
 
@@ -329,6 +334,196 @@ function SecretItem({ item, read, asker }: { item: SecretRequestItem; read: numb
         </>
       )}
     </Shell>
+  );
+}
+
+type SignInValues = Partial<Record<SignInField, string>>;
+
+const FIELD_WORDS: Record<SignInField, string> = { username: "Email or username", password: "Password", otp: "Code" };
+
+/**
+ * A sign-in form (request_sign_in): a card naming the site, and a form it opens. What is typed goes from the form to
+ * main, which seals it to the workspace's key, and is dropped once it is sent; it never enters the chat or this item.
+ * "Securely save to Vault" is on by default: the workspace keeps the login for that site, and the next sign-in fills
+ * by itself.
+ */
+function SignInItem({ item, input, signIn, read }: { item: SecretRequestItem; input: SecureInput; signIn: SignInForm; read: number | undefined }) {
+  const layer = useDataLayer();
+  const live = useLive();
+  const section = useRef<HTMLElement>(null);
+  const key = useKey(item.requestId);
+  const { local, shown, busy, failed, run, refocus, focused } = useSent(key, item, read, "the agent's machine", section);
+  const outcome = secretOutcome(shown);
+  const [opened, setOpen] = useState(false);
+  // Answered here or elsewhere: the form closes.
+  const open = opened && outcome === undefined;
+  const code = codeOnly(signIn.fields);
+  const sealTo = item.sealTo;
+
+  const submit = (values: SignInValues, save: boolean): void => {
+    if (sealTo === undefined || !live || busy) return;
+    run("fill", async () => {
+      const out = await window.fleetd.secret.submit(layer.hub, { requestId: item.requestId, boxPubKey: sealTo, value: JSON.stringify(values), save: save && !code });
+      if (!out.ok) return out;
+      setOpen(false);
+      return { ok: true, sent: { state: "stored", fingerprint: out.fingerprint } };
+    });
+  };
+
+  return (
+    <Shell ref={section} label={input.label} requestId={item.requestId} outcome={outcome} about={secretTitle(item)} site={input.site.domain} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })}>
+      <div className={s.signIn}>
+        <span className={s.signInMark} aria-hidden>
+          <KeyRound />
+        </span>
+        <div className={s.signInText}>
+          <Text as="p" strong className={cx(s.title)}>
+            {marks(input.label)}
+          </Text>
+          <Text as="p" size="sm" tone="quiet" className={cx(s.line)}>
+            <InlineCode>
+              <Exact text={input.site.domain} ltr />
+            </InlineCode>{" "}
+            · {code ? "Asks for the code it sent you" : "Opens a secure form"}
+          </Text>
+        </div>
+        {outcome !== undefined ? null : (
+          <Button variant="secondary" disabled={!live || sealTo === undefined} onClick={() => setOpen(true)}>
+            Open
+          </Button>
+        )}
+      </div>
+      <HiddenWarning fields={[input.site.name, input.site.domain, input.label]} lines={[input.why, item.note]} />
+      {item.note === undefined || item.note.trim() === "" ? null : (
+        <Text as="p" size="sm" tone="quiet" className={cx(s.line)}>
+          {prose(item.note)}
+        </Text>
+      )}
+      {outcome !== undefined ? null : !live ? (
+        <OfflineLine text={OFFLINE_LINE.secret} />
+      ) : sealTo === undefined ? (
+        <p role="alert" className={s.outcome}>
+          <Text size="sm" tone="warning">
+            This workspace can't take a sign-in form yet. Update fleetd on the workspace's machine.
+          </Text>
+        </p>
+      ) : (
+        <FailureLine failed={failed} disabled={busy} focus={refocus && !open} onFocused={focused} onRetry={() => setOpen(true)} />
+      )}
+      {open ? (
+        <SignInForm
+          title={input.label}
+          domain={input.site.domain}
+          why={input.why}
+          asks={signInAsks(signIn.fields)}
+          code={code}
+          busy={busy}
+          failed={failed?.failure.text}
+          onClose={() => setOpen(false)}
+          onSubmit={submit}
+        />
+      ) : null}
+    </Shell>
+  );
+}
+
+/** The form a sign-in card opens: the fields, a show toggle on the password, the vault box, Submit. */
+function SignInForm(props: {
+  title: string;
+  domain: string;
+  why: string;
+  asks: SignInField[];
+  code: boolean;
+  busy: boolean;
+  failed: string | undefined;
+  onClose: () => void;
+  onSubmit: (values: SignInValues, save: boolean) => void;
+}) {
+  const [values, setValues] = useState<SignInValues>({});
+  const [shown, setShown] = useState(false);
+  const [save, setSave] = useState(true);
+  const ready = props.asks.every((f) => (values[f] ?? "").trim() !== "");
+  const send = (): void => {
+    if (!ready || props.busy) return;
+    props.onSubmit(Object.fromEntries(props.asks.map((f) => [f, values[f] ?? ""])), save);
+  };
+  const set = (f: SignInField) => (e: { target: { value: string } }) => setValues((v) => ({ ...v, [f]: e.target.value }));
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) props.onClose();
+      }}
+      title={marks(props.title)}
+      description={
+        <>
+          <InlineCode>
+            <Exact text={props.domain} ltr />
+          </InlineCode>
+          {" · "}
+          {marks(props.why)}
+        </>
+      }
+      footer={
+        <>
+          <Text size="xs" tone="quiet" className={cx(s.signInNote)}>
+            The agent never sees what you type.
+          </Text>
+          <Button variant="primary" disabled={!ready || props.busy} onClick={send}>
+            {props.busy ? "Filling in…" : "Submit"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        className={s.signInForm}
+        autoComplete="off"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        {props.asks.map((f, i) => (
+          <Field key={f} label={FIELD_WORDS[f]}>
+            {f === "password" ? (
+              <span className={s.reveal}>
+                <Input
+                  type={shown ? "text" : "password"}
+                  autoComplete="off"
+                  autoFocus={i === 0}
+                  disabled={props.busy}
+                  value={values[f] ?? ""}
+                  onChange={set(f)}
+                />
+                <Button variant="quiet" iconOnly aria-label={shown ? "Hide password" : "Show password"} aria-pressed={shown} className={s.revealButton} onClick={() => setShown((v) => !v)}>
+                  {shown ? <EyeOff /> : <Eye />}
+                </Button>
+              </span>
+            ) : (
+              <Input
+                type="text"
+                autoComplete={f === "otp" ? "one-time-code" : "off"}
+                inputMode={f === "otp" ? "numeric" : undefined}
+                autoFocus={i === 0}
+                disabled={props.busy}
+                value={values[f] ?? ""}
+                onChange={set(f)}
+              />
+            )}
+          </Field>
+        ))}
+        {props.code ? null : <Checkbox label="Securely save to Vault" className={s.save} checked={save} disabled={props.busy} onCheckedChange={(c) => setSave(c === true)} />}
+        {props.failed === undefined ? null : (
+          <p role="alert" className={s.outcome}>
+            <Text size="sm" tone="danger">
+              {props.failed}
+            </Text>
+          </p>
+        )}
+        {/* Enter in a field submits. */}
+        <button type="submit" hidden aria-hidden tabIndex={-1} />
+      </form>
+    </Dialog>
   );
 }
 
@@ -600,7 +795,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       )}
       {item.outputTail === undefined || item.outputTail.trim() === "" ? null : <Code code={item.outputTail} bare />}
       {offline === undefined ? null : <OfflineLine text={offline} />}
-      <FailureLine failed={failed} disabled={!canAnswer} focus={refocus} onFocused={focused} onRetry={() => failed !== null && failed.action !== "save" && answer(failed.action)} />
+      <FailureLine failed={failed} disabled={!canAnswer} focus={refocus} onFocused={focused} onRetry={() => failed !== null && (failed.action === "approve" || failed.action === "deny") && answer(failed.action)} />
       {shown.state !== "open" ? null : confirming ? (
         <div ref={confirm} tabIndex={-1} role="group" aria-labelledby={`${item.requestId}-confirm`} className={s.confirm}>
           <Text as="p" id={`${item.requestId}-confirm`} size="sm" tone="danger" strong className={cx(s.line)}>

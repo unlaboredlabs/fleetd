@@ -1,6 +1,6 @@
 // What the two inline chat items say, as pure functions: where a secret lands and whether it can be sealed now, the
 // exact command an approval runs, and the one result line under it.
-import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
+import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem, SignInField } from "../../../shared/contracts";
 import { shellWord } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
@@ -15,12 +15,20 @@ export const withRequest = (item: ChatItem, request: HumanRequest | undefined): 
   if (request === undefined || request.requestId !== item.requestId) return item;
   // As the hub's own item (approvals::chat_item): the evidence is a note only while it explains why the request is
   // open again or failed. Otherwise it is bookkeeping, a fingerprint or "exit 0 …", which the item already says.
-  const explains = request.state === "open" || request.state === "failed";
+  // A sign-in form that filled but wasn't saved to the vault says why.
+  const explains = request.state === "open" || request.state === "failed" || (request.secureInput?.signIn !== undefined && request.evidence?.startsWith("not saved") === true);
   const firstLine = request.evidence?.split("\n")[0]?.trim();
   const note = explains && firstLine !== undefined && firstLine !== "" ? { note: firstLine } : {};
   if (item.kind === "secret_request") {
     const fingerprint = request.secret?.fingerprint;
-    return { ...item, state: request.state, ...note, ...(fingerprint === undefined ? {} : { fingerprint }) };
+    return {
+      ...item,
+      state: request.state,
+      ...note,
+      ...(fingerprint === undefined ? {} : { fingerprint }),
+      // A sign-in form's vault login, once it was saved.
+      ...(request.secureInput === undefined ? {} : { secureInput: request.secureInput }),
+    };
   }
   return {
     ...item,
@@ -139,6 +147,11 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
 /** The one line an answered secret folds to, or undefined while it waits. */
 export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   // The fingerprint stays in the data: a raw hash is never UI text.
+  const signIn = item.secureInput?.signIn;
+  if (item.state === "stored" && signIn !== undefined) {
+    if (codeOnly(signIn.fields)) return { tone: "success", text: "Code filled in" };
+    return { tone: "success", text: signIn.saved === undefined ? "Filled in" : "Filled in, saved to Vault" };
+  }
   if (item.state === "stored") return { tone: "success", text: item.secureInput === undefined ? "Secret saved" : "Entered and filled in" };
   if (item.state === "withdrawn") return { tone: "quiet", text: "Not needed any more" };
   if (item.state === "open") return undefined;
@@ -166,9 +179,21 @@ export const approvalTitle = (item: CommandApprovalItem): string =>
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
 export const secretTitle = (item: SecretRequestItem): string =>
-  item.secureInput === undefined ? plain(item.text) : `${item.secureInput.label} for ${item.secureInput.site.name}`;
+  item.secureInput === undefined
+    ? plain(item.text)
+    : item.secureInput.signIn !== undefined
+      ? item.secureInput.label
+      : `${item.secureInput.label} for ${item.secureInput.site.name}`;
 
-export type Action = "approve" | "deny" | "save";
+/** A sign-in form that asks only for a one-time code: the step after a password. */
+export const codeOnly = (fields: readonly SignInField[]): boolean => fields.length === 1 && fields[0] === "otp";
+
+/** What a sign-in form asks for: a login is the username and password together (so the vault keeps it whole), and the
+ * code when the page shows one. */
+export const signInAsks = (fields: readonly SignInField[]): SignInField[] =>
+  codeOnly(fields) ? ["otp"] : fields.includes("otp") ? ["username", "password", "otp"] : ["username", "password"];
+
+export type Action = "approve" | "deny" | "save" | "fill";
 export type Failure = { readonly text: string; readonly retry: boolean };
 
 /**
@@ -176,7 +201,7 @@ export type Failure = { readonly text: string; readonly retry: boolean };
  * ids and tools, and a fixture's or a newer hub's can be anything. Retry only where trying again can help.
  */
 export const failureLine = (action: Action, error: Pick<HubError, "code">, machine: string): Failure => {
-  const not = action === "save" ? "Not saved" : action === "approve" ? "Not approved" : "Not denied";
+  const not = action === "save" ? "Not saved" : action === "fill" ? "Not filled in" : action === "approve" ? "Not approved" : "Not denied";
   switch (error.code) {
     case "offline":
     case "disconnected":
@@ -190,6 +215,7 @@ export const failureLine = (action: Action, error: Pick<HubError, "code">, machi
     case "not_found":
       return { text: `${not}: it's no longer open.`, retry: false };
     case "invalid":
+      if (action === "fill") return { text: "Not filled in: the page may have moved on. Try again, or tell the agent in the chat.", retry: true };
       return action === "save" ? { text: "Not saved: check the value and try again.", retry: true } : { text: `${not}: it was already answered.`, retry: false };
     default:
       return { text: `${not}: something went wrong.`, retry: true };

@@ -53,15 +53,19 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   // A secure input is a secret too, said as what it is once its page is loaded.
   const kindOf = (i: ChatItem) => {
     const item = i.message?.item;
-    if (i.kind !== "gated") return item?.kind === "secret_request" && item.secureInput !== undefined ? "input" : "secret";
+    if (i.kind !== "gated") {
+      if (item?.kind !== "secret_request" || item.secureInput === undefined) return "secret";
+      return item.secureInput.signIn === undefined ? "input" : "signIn";
+    }
     return "command";
   };
   const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter((i) => openItem(i) && mine(i.message?.for?.personId)).map((i) => ({ id: i.id, kind: kindOf(i) }))];
   if (open.length > 0) {
     const count = (kind: string) => open.filter((i) => i.kind === kind).length;
-    const [approvals, inputs, secrets] = [count("command"), count("input"), count("secret")];
+    const [approvals, signIns, inputs, secrets] = [count("command"), count("signIn"), count("input"), count("secret")];
     const parts = [
       approvals > 0 ? `${plural(approvals, "command")} to approve` : "",
+      signIns > 0 ? `${plural(signIns, "sign-in")} to fill in` : "",
       inputs > 0 ? `${plural(inputs, "secure input")} to enter` : "",
       secrets > 0 ? `${plural(secrets, "secret")} to enter` : "",
     ];

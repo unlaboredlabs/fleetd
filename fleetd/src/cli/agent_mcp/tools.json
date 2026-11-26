@@ -2367,7 +2367,7 @@
    "lead": true,
    "worker": false,
    "browser": true,
-   "description": "When a page needs something only the person may give and you must never see (an ID number, a texted code): site, target (the field's CSS selector, in the page or a frame), label in their words (\"Passport number\"), why in one line. They type it in a sealed field and fleetd fills it; you are woken once it is in. With ref nobody is asked: call secure_input_fill. Never ask for such a value in chat.",
+   "description": "For something only the person may give that isn't a login (an ID or passport number): site, target (the field's CSS selector, in the page or a frame), label in their words (\"Passport number\"), why. They type it in a sealed field and fleetd fills it; you are woken once it is in. With ref nobody is asked: call secure_input_fill. Never ask for it in chat.",
    "inputSchema": {
     "properties": {
      "label": {
@@ -2449,17 +2449,15 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "When a sign-in page needs a login you don't have: site, the CSS selector of each field the page shows now (username, password, otp), why in one line. A vault login for the site fills at once and submits, with no ask. Else the person gets a secure sign-in form in the chat (saved to the vault by default), fleetd fills the fields and submits, and you are woken; you never see the values. If the page then asks for a one-time code, call it again with otp. Never ask for a login or code in chat; request_takeover only for captchas, passkeys, device approvals or judgement calls.",
+   "description": "Sign in on a login page: site (the page's host), each field's CSS selector (username, password, otp), why. A vault login fills at once; else the person fills a secure form in chat, saved to the vault; you're woken once it's filled, never seeing it. A code asked next: call again with otp.",
    "inputSchema": {
     "properties": {
      "otp": {
-      "description": "The one-time code field's CSS selector.",
       "maxLength": 500,
       "minLength": 1,
       "type": "string"
      },
      "password": {
-      "description": "The password field's CSS selector.",
       "maxLength": 500,
       "minLength": 1,
       "type": "string"
@@ -2467,9 +2465,7 @@
      "site": {
       "properties": {
        "domain": {
-        "description": "The page's host: it fills only there.",
         "maxLength": 253,
-        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
         "type": "string"
        },
        "name": {
@@ -2486,7 +2482,6 @@
       "type": "object"
      },
      "username": {
-      "description": "The username or email field's CSS selector.",
       "maxLength": 500,
       "minLength": 1,
       "type": "string"
@@ -3494,8 +3489,7 @@
     ]
    },
    "/site/domain": {
-    "expected": "a string",
-    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$, got {got}"
+    "expected": "a string"
    },
    "/site/name": {
     "expected": "a string"

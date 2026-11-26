@@ -341,6 +341,9 @@
         }
       ]
     },
+    "BoxPublicKey": {
+      "type": "string"
+    },
     "BrowserControl": {
       "description": "Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the\nagent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's\nbrowser tools answer that a person has control.",
       "enum": [
@@ -3336,6 +3339,10 @@
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
+        },
+        "sealTo": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The key a sign-in form's box is sealed to: the workspace's own (secret_submit). Absent: the sink machine's."
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",

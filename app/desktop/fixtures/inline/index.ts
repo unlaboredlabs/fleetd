@@ -11,6 +11,8 @@
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, an
 // email in several languages shown as written, and two multi-line commands: one on its lines, one with a carriage return. inline-propose is a chat with a lead's proposals for a new project
 // (fixtures/inline/propose.json): two waiting, and one approved, one declined and one that could not be made.
+// inline-sign-in is a chat with sign-in forms (fixtures/inline/sign-in.json): one filled and saved to the vault, the
+// code its site sent, and another site's sign-in.
 import fs from "node:fs";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -23,6 +25,7 @@ import integrations from "./integrations.json" with { type: "json" };
 import checker from "./checker.json" with { type: "json" };
 import secure from "./secure.json" with { type: "json" };
 import propose from "./propose.json" with { type: "json" };
+import signIn from "./sign-in.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
 const BOX_PUB_KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
@@ -90,7 +93,7 @@ const inlineItems = (
       ...opt("evidence", item["note"]),
       ...(secret
         ? {
-            secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]) },
+            secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]), ...opt("sealTo", item["sealTo"]) },
             ...opt("secureInput", item["secureInput"]),
           }
         : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("purchase", item["purchase"]), ...opt("secureInput", item["secureInput"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
@@ -197,7 +200,8 @@ export default defineGroup({
     checked.answer("attachment_get", { projectRef: shotRef, attachmentId: "F7" }, { attachmentId: "F7", name: "lupa-confirm.png", mime: "image/png", bytes: png.length, dataB64: png.toString("base64") });
     const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a bot's secure input: a passport number to type in a sealed field.", secure.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
+    const signedIn = inlineItems(base("typical"), "inline-sign-in", "A chat with a bot's sign-in forms: one filled and saved to the vault, the code its site sent still to enter, and another site's sign-in waiting.", signIn.items, signIn.opening);
     const proposed = inlineItems(base("typical"), "inline-propose", "A chat with a lead's proposals for a new bot: two waiting, one approved, one declined and one that could not be made.", propose.items, propose.opening);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, checked, sealed, marked, proposed];
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, checked, sealed, marked, proposed, signedIn];
   },
 });

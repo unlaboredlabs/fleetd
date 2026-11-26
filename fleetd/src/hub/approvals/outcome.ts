@@ -31,6 +31,7 @@ export function chatItem(r: HumanRequest): ChatItem {
       text: line(r.text, 300) ?? "a secret",
       sink: r.secret.sink,
       envName: r.secret.envName,
+      sealTo: r.secret.sealTo,
       secureInput: r.secureInput,
       state: r.state === "stored" ? "stored" : r.state === "withdrawn" ? "withdrawn" : "open",
       fingerprint: r.secret.fingerprint,

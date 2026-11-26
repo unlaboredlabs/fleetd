@@ -186,6 +186,9 @@
       ],
       "type": "object"
     },
+    "BoxPublicKey": {
+      "type": "string"
+    },
     "BrowserSessionId": {
       "pattern": "^B[0-9a-f]{32}$",
       "type": "string"
@@ -1571,6 +1574,10 @@
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
+        },
+        "sealTo": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The key a sign-in form's box is sealed to: the workspace's own (secret_submit). Absent: the sink machine's."
         },
         "secureInput": {
           "$ref": "#/$defs/SecureInput",

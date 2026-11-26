@@ -148,3 +148,64 @@
   background: color-mix(in srgb, var(--warning) 12%, transparent);
   white-space: nowrap;
 }
+/* A sign-in form's card: the key, the site and what opens, and Open at the end. */
+.signIn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  /* One width for every sign-in card, so a run of them lines up; narrower in a narrow chat. */
+  width: 26rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.signInMark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--quiet);
+}
+.signInMark svg {
+  width: 16px;
+  height: 16px;
+}
+.signInText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.signInForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* The controls' type, which the checkbox's box is set against. */
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+/* The password's show toggle sits inside its field, at the end. */
+.reveal {
+  position: relative;
+  display: block;
+}
+.reveal input {
+  width: 100%;
+  padding-inline-end: 36px;
+}
+.revealButton {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 2px;
+  margin-block: auto;
+}
+.signInNote {
+  margin-inline-end: auto;
+}
+/* Its box on the middle of the words' line: the line is the controls' 20 px, the box 16 px, its tick set 2 px high in it. */
+.save > button {
+  margin-top: 4px;
+}

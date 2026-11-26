@@ -8295,6 +8295,8 @@ export type SecretRequestItem = {
   /** Why it is open again, or why it could not be stored. */
   note?: string;
   requestId: ChatRequestId;
+  /** The key a sign-in form's box is sealed to: the workspace's own (secret_submit). Absent: the sink machine's. */
+  sealTo?: BoxPublicKey;
   /** A project's secure input (`fill:` sink): the site, the field and why; what is typed fills that field, once. */
   secureInput?: SecureInput;
   sink: SecretSink;
