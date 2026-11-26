@@ -52,16 +52,20 @@ export interface Ref {
   readonly opens: boolean;
 }
 
-// A whole token: not inside a branch (fleetd/T12-x), a path, a hash (#T1), a mention or a longer word. T and W are
-// always ours; the rest also name everyday things at one digit (an M1 Mac, Q4, S3, R2), so they need two.
+// A whole token: not inside a branch (fleetd/T12-x), a path, a hash (#T1), a mention or a longer word. T, W, D and F
+// are ours from one digit (a young workspace's D5 or F2); the rest also name everyday things at one digit (an M1 Mac,
+// Q4, S3, R2), so they need two.
 const REF = /(?<![\w#@/.\\-])([TWDQNMSXCF])([1-9]\d{0,7})(?![\w-]|\.\w)/gu;
-// Two-digit tokens that are something else first: the X11 display server, the F10 to F12 keys.
-const NOT_OURS = new Set(["X11", "F10", "F11", "F12"]);
+// Two-digit tokens that are something else first: the X11 display server. (F12 is a file far more often than a key in
+// what agents write: the lead names attachments so.)
+const NOT_OURS = new Set(["X11"]);
+
+const FROM_ONE: ReadonlySet<RefKind> = new Set(["agent", "order", "decision", "file"]);
 
 const kindOf = (letter: string, digits: string): RefKind | undefined => {
   const kind = KIND[letter];
   if (kind === undefined) return undefined;
-  if (kind !== "agent" && kind !== "order" && digits.length < 2) return undefined;
+  if (!FROM_ONE.has(kind) && digits.length < 2) return undefined;
   return NOT_OURS.has(`${letter}${digits}`) ? undefined : kind;
 };
 

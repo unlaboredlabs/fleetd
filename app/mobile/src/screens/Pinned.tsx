@@ -5,6 +5,7 @@
 // working glyph takes the bubble's place; an approval waiting is an orange dot on the avatar, as the rows mark it (pinnedGrid.ts). A tap
 // opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute, Move to Section…) in
 // iOS's menu. A pin grows into its place and an unpinned one shrinks away, on the app's snap curve.
+import type { ComponentProps } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, { withTiming, type EntryAnimationsValues, type ExitAnimationsValues } from "react-native-reanimated";
 import { phaseOf } from "../desktop";
@@ -16,6 +17,7 @@ import { useBot } from "../ui/botState";
 import { usePaneWidth } from "../ui/pane";
 import { HoldMenu } from "../ui/HoldMenu";
 import { Icon } from "../ui/Icon";
+import { Names, useSpoken } from "../ui/Names";
 import type { MenuItem } from "../ui/Menu";
 import { dur, ease, PRESSED_OPACITY, rowMove, useReduceMotion } from "../ui/motion";
 import { StateGlyph } from "../ui/StateGlyph";
@@ -49,13 +51,13 @@ export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: reado
         const slot = { bottom: avatar - 22, left: -(cell - avatar) / 2 + SLOT_INSET, right: -(cell - avatar) / 2 + SLOT_INSET };
         return (
           <Animated.View key={row.key} style={{ width: cell }} {...(arrived.has(row.key) ? { entering: pinIn(reduce) } : {})} exiting={pinOut} {...(reduce ? {} : { layout: rowMove })}>
-            <HoldMenu
+            <PinButton
               items={menu(row)}
               radius={CELL_RADIUS}
               color={t.bg}
               onPress={() => onOpen(row)}
               accessibilityRole="button"
-              accessibilityLabel={label(row)}
+              label={label(row)}
               style={({ pressed }) => (pressed ? { opacity: PRESSED_OPACITY } : null)}
             >
               <View style={styles.cell}>
@@ -72,12 +74,17 @@ export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: reado
                   </Text>
                 </View>
               </View>
-            </HoldMenu>
+            </PinButton>
           </Animated.View>
         );
       })}
     </View>
   );
+}
+
+/** A pin's button, read out with names where its label holds fleetd's ids (ui/Names), as its bubble shows them. */
+function PinButton({ label, ...menu }: Omit<ComponentProps<typeof HoldMenu>, "accessibilityLabel"> & { label: string }) {
+  return <HoldMenu {...menu} accessibilityLabel={useSpoken(label)} />;
 }
 
 /** Messages' typing bubble, its three dots the app's working glyph: a pill with two small rounds trailing down to the avatar. */
@@ -109,7 +116,7 @@ function Said({ text, muted }: { text: string; muted: boolean }) {
   return (
     <View style={[styles.said, { backgroundColor: t.bubble, borderColor: t.bg }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Text style={[type.caption, { color: muted ? t.secondary : t.label }]} numberOfLines={2}>
-        {text}
+        <Names text={text} plain />
       </Text>
     </View>
   );

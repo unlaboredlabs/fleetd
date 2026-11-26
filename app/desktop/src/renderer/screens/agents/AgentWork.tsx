@@ -15,6 +15,7 @@ import { MiddleCut, SteadyActivityLine } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { AgentSession } from "../sessions/AgentSession";
 import { DmCard } from "../dms/DmCard";
+import { FinishedAgent } from "./Finished";
 import { useAgentDms } from "../dms/hooks";
 import { withDms, type AgentMessage } from "../dms/model";
 import { describe } from "../live/words";
@@ -106,6 +107,9 @@ export function AgentWork({ id }: { id: string }) {
     );
   }
   if (agent === undefined || row === undefined) {
+    // A finished agent's link (a chip, a DM, the checklist) names its task: what it ended with, never an empty page.
+    const [machineId = "", projectId = "", lane = ""] = id.split("/");
+    if (/^T[1-9]\d*$/u.test(lane)) return <FinishedAgent project={{ machineId, projectId }} taskId={lane} />;
     return (
       <div className={s.workBody} data-screen="agents.work">
         <EmptyState title="This agent isn’t running now">It finished, or was stopped. The chat says how it went.</EmptyState>

@@ -25,6 +25,7 @@ import { SessionRow, WaitRow } from "../sessions/SessionRows";
 import { navigate } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { AgentWork } from "./AgentWork";
+import { isOrderId, OrderView } from "./OrderView";
 import { agentDetail, alsoOnRepo, nextExpiry, otherProjects, projectGroups, type ElsewhereRow, type GroupLine, type OrderTitle } from "./model";
 import { StateDot } from "./parts";
 import s from "./agents.module.css";
@@ -88,9 +89,13 @@ function useElsewhere(project: ProjectKey): { base: string; rows: readonly Elsew
   }, [query.data, projects, key, now]);
 }
 
-/** The project's agents and screens, or (`agent`, a lane) one agent's work. `at`: the place in the list a link named. */
+/**
+ * The project's agents and screens, or (`agent`, a lane) one agent's work, or (`agent`, an order's id: its chip's link)
+ * that order. `at`: the place in the list a link named.
+ */
 export function AgentsPane({ project, agent, at = null }: { project: ProjectKey; agent: string | null; at?: "screens" | null }) {
   const key = projectKey(project);
+  if (agent !== null && isOrderId(agent)) return <OrderView key={agent} project={project} workstreamId={agent} />;
   if (agent !== null) return <AgentWork key={agent} id={`${key}/${agent}`} />;
   return <AgentList project={project} at={at} />;
 }
