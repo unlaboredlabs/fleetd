@@ -48,12 +48,10 @@ import { Message } from "./text";
 import { TagLine } from "./lens/Lens";
 import { aboutOf, partAbout } from "./lens/tags";
 import s from "./view.module.css";
-import { onWeb } from "../../src/web";
 
-// The picture viewer loads on first use, not with the first chat: on the web once the app is idle, on the desktop at once.
+// The picture viewer comes after the first chat, once the app is idle.
 const ImageViewerView = preloadable(() => import("./ImageViewer").then((m) => m.ImageViewer));
-if (onWeb()) preloadWhenIdle(ImageViewerView);
-else ImageViewerView.preload().catch(() => undefined);
+preloadWhenIdle(ImageViewerView);
 
 /**
  * An attachment as a chip. A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to

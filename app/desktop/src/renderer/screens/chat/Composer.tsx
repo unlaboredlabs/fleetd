@@ -21,7 +21,6 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectLeadAtWork, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, preloadable, preloadWhenIdle, Text, Tooltip, Truncate } from "../../ui";
-import { onWeb } from "../../src/web";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
 import { composerSendOn } from "../live/steerModel";
@@ -36,10 +35,9 @@ import c from "./composer.module.css";
 
 const IN_CHAT = '[data-screen="chat"], [data-screen^="chat."]';
 
-// A picture's square loads on first use, not with the first chat: on the web once the app is idle, on the desktop at once.
+// A picture's square comes after the first chat, once the app is idle.
 const PictureChipView = preloadable(() => import("./PictureChip").then((m) => m.PictureChip));
-if (onWeb()) preloadWhenIdle(PictureChipView);
-else PictureChipView.preload().catch(() => undefined);
+preloadWhenIdle(PictureChipView);
 
 /** A folder among the dropped items: that's a project to add, not a file for the lead. */
 const hasFolder = (data: DataTransfer): boolean =>
