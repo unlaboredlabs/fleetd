@@ -22,6 +22,8 @@ const POLL_MS = 100;
 const PROBE_MS = 1000;
 /** The longest the restart waits for `plan.answered`. */
 export const ANSWER_WAIT_MS = 2000;
+/** The longest the watcher waits on a new build with the default wait: for `answered`, then the cap on the clock. */
+export const WATCH_MAX_MS = ANSWER_WAIT_MS + HEALTH_WAIT_SECS * CAP_TIMES * 1000;
 
 export type Health = { kind: "hub"; url: string } | { kind: "node"; up: string };
 

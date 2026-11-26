@@ -37,7 +37,7 @@ import {
 import type { Clock } from "../../shared/clock.ts";
 import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, replaceFile, restore, type Sums, swap, retireHelper } from "../../update/index.ts";
 import { bucketOf, choose, type Choice, type Picker, parseSpeed, readRollout, type Rollout, rolloutId, type Speed } from "../../update/rollout.ts";
-import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
+import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict, WATCH_MAX_MS } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, buildNumber, isDayNumbered, versionCmp, versionLabel } from "../../update/version.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
@@ -231,6 +231,8 @@ export type Timing = {
   nodePoll: number;
   verdict: number;
   nodeBack: number;
+  /** After a node answered "restarting": how long it gets to link again, on the new build or the one put back. */
+  nodeRestart: number;
   restart: number;
   prefetchEvery: number;
   drainPoll: number;
@@ -251,6 +253,9 @@ export const defaultTiming = (): Timing => ({
   nodePoll: 1000,
   verdict: HEALTH_WAIT_SECS * 2 * 1000,
   nodeBack: HEALTH_WAIT_SECS * 3 * 1000,
+  // Past the watcher's longest wait on the new build, with time for the old one to link again once put back: a node
+  // build stuck idle is then seen rolled back, not failed and pushed to it again at the next automatic update.
+  nodeRestart: WATCH_MAX_MS + HEALTH_WAIT_SECS * 1000,
   restart: HEALTH_WAIT_SECS * 3 * 1000,
   // Downloads from the release CDN, not GitHub's API: no rate limit to mind.
   prefetchEvery: 120_000,
@@ -1484,7 +1489,7 @@ class Drive {
         return this.setPart(machineId, "failed", "download", (e as Error).message);
       }
       this.setPart(machineId, "restarting", undefined, `restarting on ${label}`);
-      const back = asked + this.u.timing.nodeBack;
+      const back = this.u.clockNow() + this.u.timing.nodeRestart;
       for (;;) {
         const ch = ports.nodeChanged(machineId);
         const n = facts();
@@ -1505,7 +1510,7 @@ class Drive {
             machineId,
             "failed",
             "health",
-            `didn't come back within ${Math.floor(this.u.timing.nodeBack / 60_000)} min: check the fleetd node service on ${node.name}`,
+            `didn't come back within ${Math.floor(this.u.timing.nodeRestart / 60_000)} min: check the fleetd node service on ${node.name}`,
           );
         }
         if (this.stopped()) return;
