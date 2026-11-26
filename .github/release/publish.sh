@@ -32,6 +32,9 @@
 # GPUI), and the next `fleetd update` moves it over. Its Linux tarball is still built, around the AppImage, so that
 # CLI moves a Linux install in one run (build-release.yml).
 #
+# The Mac app's disk image (macos-dmg.sh) goes up under its plain name only, never pinned: it is for a person
+# downloading from fleetd.sh (fleetd.sh/download/mac), and nothing reads it from release.json.
+#
 # The desktop app's update feeds (latest-mac.yml, latest-linux.yml, from update-yml.sh) go up after the assets they
 # point at, for the same reason. An edge build that didn't build the desktop app keeps the previous feeds.
 #

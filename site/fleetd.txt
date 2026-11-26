@@ -6,6 +6,7 @@ Software factories, reinvented as fast as the models improve.
   curl -fsSL https://fleetd.sh | sh
 
 macOS or Linux x64. Open source, MIT.
+Mac app:     https://fleetd.sh/download/mac
 Install:     https://fleetd.sh/docs/install
 Quick start: https://fleetd.sh/docs/quick-start
 Pricing:     https://fleetd.sh/pricing

@@ -356,6 +356,34 @@ jobs:
           else
             echo "not notarized yet: Gatekeeper rejecting a downloaded copy is expected"
           fi
+      - name: Disk image
+        # What Download for Mac on fleetd.sh hands a person (.github/release/macos-dmg.sh), made only from an app whose
+        # ticket is stapled, then signed, notarized and stapled itself: it opens offline with no warning. When Apple
+        # outlasts its wait, this build ships no image and the release keeps the one it has (publish.sh keeps what a
+        # build didn't make); dragged to Applications, that older app updates itself.
+        if: steps.notarize.outputs.stapled == 'true'
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+          NOTARY_WAIT: 20m
+        run: |
+          dmg=dist/fleetd-desktop-macos-universal.dmg
+          .github/release/macos-dmg.sh build dist/fleetd.app "$dmg"
+          # A disk image is signed as data: no hardened runtime, no entitlements.
+          .github/release/codesign/codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "$dmg"
+          .github/release/macos-dmg.sh check "$dmg"
+          rc=0
+          .github/release/macos-sign.sh notarize "$dmg" || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "::warning::the disk image's notarization outlasted its wait: this build ships no disk image"
+            rm -f "$dmg"
+            exit 0
+          fi
+          [ "$rc" = 0 ] || exit "$rc"
+          .github/release/macos-sign.sh staple "$dmg"
+          .github/release/macos-dmg.sh check "$dmg" notarized
       - name: Remove the signing keychain
         if: always()
         run: .github/release/macos-sign.sh cleanup
