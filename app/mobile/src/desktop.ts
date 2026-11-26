@@ -33,6 +33,8 @@ export type {
   ChatMessage,
   ChatMessageEventData,
   CommandApprovalItem,
+  SecretRequestItem,
+  SignInField,
   FleetStatus,
   HubRole,
   HubEvent,
