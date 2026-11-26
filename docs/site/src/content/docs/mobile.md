@@ -106,8 +106,9 @@ Tap your picture at the top of Chats:
 - Your photo and name.
 - **Connections**, **Devices**, **Vault**, **Memory** (with **Import Memory**) and **Notifications**.
 
-Admins also get **Machines**, **Providers** (the workspace's Anthropic key, Google sign-in per machine, and each provider's
-profiles), **Update** (updates the workspace and every machine), **Restart Workspace**, and **Billing** on a cloud workspace.
+Admins also get **Usage** (the desktop's [Usage page](/docs/desktop-app#usage), read-only), **Machines**, **Providers**
+(the workspace's Anthropic key, Google sign-in per machine, and each provider's profiles), **Update** (updates the
+workspace and every machine), **Restart Workspace**, and **Billing** on a cloud workspace.
 
 ### Devices {#devices}
 

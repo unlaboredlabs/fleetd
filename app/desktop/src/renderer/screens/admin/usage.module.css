@@ -1,0 +1,186 @@
+/* Settings › Workspace › Usage, in a settings page's column. Tokens only; marks wear the --series-* slots (the
+   Factory's), every word wears ink. Nothing animates. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+.refetching {
+  opacity: 0.55;
+}
+.skeleton {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.skeleton > span {
+  height: 84px;
+  border-radius: var(--radius-group);
+  background: var(--group);
+}
+
+/* What runs now: a dot, live while an agent runs, and the line. */
+.now {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.nowDot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.nowLive {
+  background: var(--success);
+}
+
+/* ---- tiles: three a row, or four once the cloud's spend is one of them ---------------------------------------- */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: var(--space-3);
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--group-edge);
+  border-radius: var(--radius-group);
+  background: var(--group);
+}
+.tileValue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* ---- charts: side by side on a wide page, one over the other on a narrow one ------------------------------------ */
+.charts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.chartHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  min-height: 20px;
+}
+
+/* ---- tables: a group's rows, a hairline between two, the figures right-aligned in tabular digits. Each figure's
+   column is as wide as its widest word, all of them the same gap apart; the name takes what is left. ------------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.table th,
+.table td {
+  width: 1%;
+  padding: var(--space-2) 0 var(--space-2) var(--space-5);
+  text-align: right;
+  font-size: var(--text-md);
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table th:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.table thead th {
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-1);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  cursor: default;
+}
+.table tbody tr + tr > * {
+  border-top: 1px solid var(--hairline);
+}
+.table tbody tr:first-child > * {
+  border-top: 1px solid var(--hairline);
+}
+.nameCol {
+  width: auto !important;
+  max-width: 0;
+  text-align: left !important;
+}
+.quietRow > * {
+  color: var(--quiet);
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.whoText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.cut {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.noOne {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px dashed var(--border);
+  border-radius: 50%;
+}
+/* A figure with its share of the largest as a short bar before it. */
+.barCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+.bar {
+  position: relative;
+  width: 20px;
+  height: 6px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--series-4);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

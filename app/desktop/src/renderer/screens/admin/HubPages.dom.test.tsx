@@ -203,7 +203,7 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Providers", "Audit log", "Bot defaults", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Usage", "Machines", "Providers", "Audit log", "Bot defaults", "Setup2 left"]);
   // Nothing nested and nothing to pick in the sidebar.
   expect(nav()?.querySelector("[role='group']")).toBeNull();
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();

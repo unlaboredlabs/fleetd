@@ -34,6 +34,7 @@ import { start as s30 } from "../usage/loops.ts";
 import { start as s31 } from "../watchdog/loops.ts";
 import { start as s32 } from "../work/loops.ts";
 import { start as s33 } from "../transfer/loops.ts";
+import { start as s34 } from "../workspace_usage/loops.ts";
 
 /** Every module's background loops ; each stops on `hub.shutdown`. */
 export function startAll(hub: Hub): void {
@@ -71,4 +72,5 @@ export function startAll(hub: Hub): void {
   s31(hub); // hub/watchdog
   s32(hub); // hub/work
   s33(hub); // hub/transfer, after hub/usage: it wraps its holds
+  s34(hub); // hub/workspace_usage
 }

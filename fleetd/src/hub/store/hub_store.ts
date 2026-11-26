@@ -108,6 +108,8 @@ export const MACHINE_KEEPS = [
   "time_wakes",
   "metric_merges",
   "metric_touches",
+  // The Usage page's counts, kept with the orders and tasks they count.
+  "usage_facts",
   "workstreams",
   "tasks",
   // What its agents wrote to each other: the person's audit, kept with the tasks it names.

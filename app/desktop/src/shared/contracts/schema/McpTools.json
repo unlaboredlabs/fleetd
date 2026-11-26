@@ -13210,6 +13210,12 @@
         "work_list.output": {
           "$ref": "#/$defs/WorkListOutput"
         },
+        "workspace_usage.input": {
+          "$ref": "#/$defs/WorkspaceUsageInput"
+        },
+        "workspace_usage.output": {
+          "$ref": "#/$defs/WorkspaceUsageOutput"
+        },
         "workstream_list.input": {
           "$ref": "#/$defs/WorkstreamListInput"
         },
@@ -13654,6 +13660,8 @@
         "work_done.output",
         "work_list.input",
         "work_list.output",
+        "workspace_usage.input",
+        "workspace_usage.output",
         "workstream_list.input",
         "workstream_list.output"
       ],
@@ -28602,6 +28610,283 @@
       "required": [
         "repoKey",
         "base"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageBot": {
+      "description": "A bot's usage over the period.",
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/WorkspaceUsageCounts"
+        },
+        "name": {
+          "description": "The bot's name as people read it; \"Removed bots\" for those removed since, together.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Absent: the bots removed since, together."
+        }
+      },
+      "required": [
+        "counts",
+        "name"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageCounts": {
+      "description": "What a person, a bot or the whole workspace did over a period: counts only, never what a message said. A person's\norders, agents, agent time and merges are those of the orders they started.",
+      "properties": {
+        "agentMs": {
+          "description": "Agents' working time (thinking, tools, starting up), not their waits; counted by UTC day.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "agents": {
+          "description": "Agents started: writers, readers and reviewers.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "approvals": {
+          "description": "Approvals and secret requests answered.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "askToMergeMs": {
+          "description": "The median time from the ask to its PR merged, over the merges that know their ask; absent with none.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "computerMs": {
+          "description": "fleetd cloud: time on fleetd's computers. Absent on a self-hosted workspace.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "description": "Agents that failed, and orders stopped before they were done.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "merged": {
+          "description": "PRs merged through fleetd (the merge train, or by hand from fleetd).",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "messages": {
+          "description": "Messages a person wrote to a lead.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "orders": {
+          "description": "Orders started.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spendCents": {
+          "description": "fleetd cloud: what that time cost, in `currency`'s cents. Absent on a self-hosted workspace.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agentMs",
+        "agents",
+        "approvals",
+        "failed",
+        "merged",
+        "messages",
+        "orders"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageDay": {
+      "description": "One calendar day in `tz`.",
+      "properties": {
+        "agentMs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "computerMs": {
+          "description": "fleetd cloud only.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "date": {
+          "$ref": "#/$defs/LocalDate"
+        },
+        "failed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "merged": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "orders": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spendCents": {
+          "description": "fleetd cloud only.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agentMs",
+        "date",
+        "failed",
+        "merged",
+        "orders"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageInput": {
+      "properties": {
+        "days": {
+          "description": "The last 7, 30 or 90 calendar days in `tz`, today included.",
+          "enum": [
+            7,
+            30,
+            90
+          ],
+          "type": "integer"
+        },
+        "tz": {
+          "$ref": "#/$defs/TimeZone"
+        }
+      },
+      "required": [
+        "days",
+        "tz"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageMember": {
+      "description": "A person's usage over the period.",
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/WorkspaceUsageCounts"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef"
+        },
+        "removed": {
+          "description": "They were removed from the workspace; what they did still counts.",
+          "type": "boolean"
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole"
+        }
+      },
+      "required": [
+        "counts",
+        "person",
+        "role"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageNow": {
+      "description": "The workspace right now.",
+      "properties": {
+        "queued": {
+          "description": "Agents waiting for a free slot.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "description": "Agents running.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "description": "Approvals and secret requests waiting for an answer.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "queued",
+        "running",
+        "waiting"
+      ],
+      "type": "object"
+    },
+    "WorkspaceUsageOutput": {
+      "description": "Settings › Workspace › Usage: for the workspace's owners and admins only.",
+      "properties": {
+        "bots": {
+          "description": "Each bot with any count in the period, most agent time first.",
+          "items": {
+            "$ref": "#/$defs/WorkspaceUsageBot"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "currency": {
+          "description": "fleetd cloud: the currency of every `spendCents`.",
+          "maxLength": 8,
+          "minLength": 1,
+          "pattern": "^[A-Za-z]+$",
+          "type": "string"
+        },
+        "days": {
+          "description": "Every calendar day of the period, oldest first, empty days included.",
+          "items": {
+            "$ref": "#/$defs/WorkspaceUsageDay"
+          },
+          "maxItems": 90,
+          "type": "array"
+        },
+        "members": {
+          "description": "Each person on the workspace, and each removed one with any count in the period; most agent time first.",
+          "items": {
+            "$ref": "#/$defs/WorkspaceUsageMember"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "now": {
+          "$ref": "#/$defs/WorkspaceUsageNow"
+        },
+        "previous": {
+          "$ref": "#/$defs/WorkspaceUsageCounts",
+          "description": "The period of the same length just before, for the whole workspace."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "total": {
+          "$ref": "#/$defs/WorkspaceUsageCounts",
+          "description": "The whole workspace over the period."
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unattributed": {
+          "$ref": "#/$defs/WorkspaceUsageCounts",
+          "description": "Work no person started (automations, the merge train's fixes, agents' own): in `total`, not in any member's."
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "bots",
+        "days",
+        "members",
+        "now",
+        "previous",
+        "since",
+        "total",
+        "unattributed",
+        "until"
       ],
       "type": "object"
     },

@@ -205,6 +205,7 @@ export const TOOLS = {
   hub_move_cancel: { scope: "admin", module: "src/hub/transfer" },
   hub_move_resume: { scope: "admin", module: "src/hub/transfer" },
   people_list: { scope: "read", module: "src/hub/people" },
+  workspace_usage: { scope: "read", module: "src/hub/workspace_usage" },
   invite_create: { scope: "admin", module: "src/hub/people" },
   invite_revoke: { scope: "admin", module: "src/hub/people" },
   person_set: { scope: "admin", module: "src/hub/people" },

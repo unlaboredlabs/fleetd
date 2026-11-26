@@ -8,6 +8,7 @@
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
   Brain,
+  ChartColumn,
   CreditCard,
   KeyRound,
   Layers,
@@ -75,6 +76,7 @@ const HUB_PAGES: ReadonlyArray<{
   icon: ReactNode;
 }> = [
   { tab: "hub.people", label: HUB_PAGES_SHOWN.people, icon: <Users /> },
+  { tab: "hub.usage", label: HUB_PAGES_SHOWN.usage, icon: <ChartColumn /> },
   { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
   { tab: "hub.providers", label: HUB_PAGES_SHOWN.providers, icon: <KeyRound /> },
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },

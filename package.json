@@ -310,6 +310,7 @@
     "./hub/work/landing_rules": "./fleetd/src/hub/work/landing_rules.ts",
     "./hub/work/matcher": "./fleetd/src/hub/work/matcher.ts",
     "./hub/work/repo_key": "./fleetd/src/hub/work/repo_key.ts",
-    "./hub/work/view": "./fleetd/src/hub/work/view.ts"
+    "./hub/work/view": "./fleetd/src/hub/work/view.ts",
+    "./hub/workspace_usage/read": "./fleetd/src/hub/workspace_usage/read.ts"
   }
 }

@@ -169,6 +169,8 @@ export const REBUILT: Record<string, string> = {
   decisions_fts_idx: "part of the decisions' search index",
   migrations_applied: "the manifest names the migrations the rows are at (`schema`); import runs the ones after them",
   prompt_renames: "made by its migration, the same on every workspace",
+  usage_cursors: "how far the Usage page's counts are folded: from the start again",
+  usage_facts: "the Usage page's counts, folded again from the messages, orders, agents and requests while the workspace runs",
 };
 
 /** The tables that stay behind, each with why. */

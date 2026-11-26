@@ -38,7 +38,7 @@ describe("a page pushed with a large title of its own", () => {
   it("has the Settings page's bar on iOS, with no ground of a pushed page's", () => {
     expect(app).toContain('...(Platform.OS === "ios" ? { headerStyle: {}, headerLargeStyle: {}, ...stripBars } : {}),');
     const large = [...app.matchAll(/<SettingsStack\.Screen name="(\w+)"[^\n]*options=\{large\("\1"\)\}/gu)].map((m) => m[1]);
-    expect(large).toEqual(["Memory", "Connections", "Machines", "Billing", "Providers", "Vault"]);
+    expect(large).toEqual(["Memory", "Connections", "Machines", "Billing", "Usage", "Providers", "Vault"]);
     expect(sources.join("\n")).not.toMatch(/(pushed|sheet)\(t, [^)]*\), headerLargeTitleEnabled: true/u);
   });
 });

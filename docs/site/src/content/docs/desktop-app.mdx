@@ -88,17 +88,41 @@ Press ⌘, to open Settings. Type in **Search settings** to find any option. Set
 - **You**: General (name, appearance, notifications), Accounts (your Claude and GitHub), Vault, Your memory, Workspaces &
   devices.
 - **Bots**: each bot's settings: repos, agents, instructions, automations, vault variables.
-- **Workspace** (owners and admins only): People, Machines, Providers, Bot defaults, Setup, and Billing and Sign-in on a cloud workspace.
+- **Workspace** (owners and admins only): People, Usage, Machines, Providers, Bot defaults, Setup, and Billing and Sign-in
+  on a cloud workspace.
 
 What changes a teammate's work outside your bot is in Workspace.
 
 ### Workspace {#workspace}
 
 - **People**: who's on the workspace, their roles, and invites.
+- **Usage**: who uses the workspace, what it ships and what it costs. See [Usage](#usage).
 - **Machines**: the machines, what runs where, and updates. See [Machines](/docs/machines#page).
 - **Providers**: what agents run on (Anthropic, Google), how each is connected, and the profiles under each.
 - **Bot defaults**: the default profile, the lead's profile, skills and instructions for every bot.
 - **Setup**: what the workspace is connected to and the steps still left.
+
+### Usage {#usage}
+
+**Settings › Workspace › Usage** shows the last 7, 30 or 90 days. Only owners and admins see it.
+
+- **Now**: agents running, agents waiting for a slot, approvals waiting for an answer.
+- **Tiles**: orders started, PRs merged, the median time from ask to merge, agent hours, approvals answered, and
+  agents failed or orders stopped. Each shows the change against the period before.
+- **Charts**: orders started and PRs merged per day, and agent hours per day. Past 30 days, each bar is a week.
+- **People**: each person's messages to leads, orders, agents, agent hours, merges and approvals answered.
+- **Bots**: each bot's orders, agents, agent hours, merges, time from ask to merge, and failures.
+
+A person's orders, agents, agent hours and merges come from the orders they started. Their messages and approvals are
+their own. Work no person started (automations, fixes the merge train asks for) is in the **No one** row, with the
+leads' working time that isn't on any order (replies in chat, sorting new asks). A lead's time on an order counts for
+whoever started it.
+
+Agent hours count agents thinking, running tools and starting up, not waiting. They are counted by UTC day.
+
+On a cloud workspace, **Computer** and **Spend** columns show time on fleetd's computers and what it cost.
+
+Usage counts things. It never shows what anyone wrote.
 
 ## Shortcuts {#shortcuts}
 

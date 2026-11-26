@@ -10972,6 +10972,103 @@ export type WorkStep = WorkMessage & {
   kind: "action";
 };
 
+/** A bot's usage over the period. */
+export type WorkspaceUsageBot = {
+  counts: WorkspaceUsageCounts;
+  /** The bot's name as people read it; "Removed bots" for those removed since, together. */
+  name: string;
+  /** Absent: the bots removed since, together. */
+  projectRef?: ProjectRef;
+};
+
+/**
+ * What a person, a bot or the whole workspace did over a period: counts only, never what a message said. A person's
+ * orders, agents, agent time and merges are those of the orders they started.
+ */
+export type WorkspaceUsageCounts = {
+  /** Agents started: writers, readers and reviewers. */
+  agents: number;
+  /** Agents' working time (thinking, tools, starting up), not their waits; counted by UTC day. */
+  agentMs: number;
+  /** Approvals and secret requests answered. */
+  approvals: number;
+  /** The median time from the ask to its PR merged, over the merges that know their ask; absent with none. */
+  askToMergeMs?: number;
+  /** fleetd cloud: time on fleetd's computers. Absent on a self-hosted workspace. */
+  computerMs?: number;
+  /** Agents that failed, and orders stopped before they were done. */
+  failed: number;
+  /** PRs merged through fleetd (the merge train, or by hand from fleetd). */
+  merged: number;
+  /** Messages a person wrote to a lead. */
+  messages: number;
+  /** Orders started. */
+  orders: number;
+  /** fleetd cloud: what that time cost, in `currency`'s cents. Absent on a self-hosted workspace. */
+  spendCents?: number;
+};
+
+/** One calendar day in `tz`. */
+export type WorkspaceUsageDay = {
+  agentMs: number;
+  /** fleetd cloud only. */
+  computerMs?: number;
+  date: LocalDate;
+  failed: number;
+  merged: number;
+  orders: number;
+  /** fleetd cloud only. */
+  spendCents?: number;
+};
+
+export type WorkspaceUsageInput = {
+  /** The last 7, 30 or 90 calendar days in `tz`, today included. */
+  days: 7 | 30 | 90;
+  tz: TimeZone;
+};
+
+/** A person's usage over the period. */
+export type WorkspaceUsageMember = {
+  counts: WorkspaceUsageCounts;
+  person: PersonRef;
+  /** They were removed from the workspace; what they did still counts. */
+  removed?: boolean;
+  role: HubRole;
+};
+
+/** The workspace right now. */
+export type WorkspaceUsageNow = {
+  /** Agents waiting for a free slot. */
+  queued: number;
+  /** Agents running. */
+  running: number;
+  /** Approvals and secret requests waiting for an answer. */
+  waiting: number;
+};
+
+/** Settings › Workspace › Usage: for the workspace's owners and admins only. */
+export type WorkspaceUsageOutput = {
+  /** Each bot with any count in the period, most agent time first. */
+  bots: WorkspaceUsageBot[];
+  /** fleetd cloud: the currency of every `spendCents`. */
+  currency?: string;
+  /** Every calendar day of the period, oldest first, empty days included. */
+  days: WorkspaceUsageDay[];
+  /** Each person on the workspace, and each removed one with any count in the period; most agent time first. */
+  members: WorkspaceUsageMember[];
+  next?: string;
+  now: WorkspaceUsageNow;
+  /** The period of the same length just before, for the whole workspace. */
+  previous: WorkspaceUsageCounts;
+  since: Timestamp;
+  /** The whole workspace over the period. */
+  total: WorkspaceUsageCounts;
+  truncated?: boolean;
+  /** Work no person started (automations, the merge train's fixes, agents' own): in `total`, not in any member's. */
+  unattributed: WorkspaceUsageCounts;
+  until: Timestamp;
+};
+
 export type Workstream = {
   /** Absent while draft. */
   brief?: Brief;
@@ -11291,6 +11388,7 @@ export interface ToolMap {
   work_claim: { input: WorkClaimInput; output: WorkClaimOutput };
   work_done: { input: WorkDoneInput; output: WorkDoneOutput };
   work_list: { input: WorkListInput; output: WorkListOutput };
+  workspace_usage: { input: WorkspaceUsageInput; output: WorkspaceUsageOutput };
   workstream_list: { input: WorkstreamListInput; output: WorkstreamListOutput };
 }
 
