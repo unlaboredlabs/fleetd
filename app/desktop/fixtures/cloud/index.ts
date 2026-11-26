@@ -353,6 +353,40 @@ export default defineGroup({
     fleetd(base("typical"), "only", "Machines on a workspace on fleetd's computers with no machine of its own: they run its bots, at once and time used.", false),
     fleetd(base("typical"), "own", "Machines on a workspace with a machine of its own and fleetd's computers: Linux machine picks between them.", true),
     fleetd(base("typical"), "older", "Machines on fleetd's computers where the cloud doesn't answer the pick yet: still says where agents run.", false, true),
+    (() => {
+      // Usage on a cloud workspace over 30 days: each person's computer time and spend, and No one holding only the
+      // leads' own boxes, which no person's order started (its row shows for that alone).
+      const f = admin(base("typical"), "cloud-usage", "Usage on a fleetd cloud workspace: spend per person and bot, No one holding only the leads' computer time.");
+      const H = 3_600_000;
+      const counts = (c: JsonObject): JsonObject => ({ agents: 0, agentMs: 0, approvals: 0, failed: 0, merged: 0, messages: 0, orders: 0, computerMs: 0, spendCents: 0, ...c });
+      const days: JsonObject[] = Array.from({ length: 30 }, (_, k) => {
+        const d = new Date(Date.UTC(2026, 9, 20 + k));
+        const busy = d.getUTCDay() === 0 || d.getUTCDay() === 6 ? 0.3 : 1;
+        const orders = Math.round((3 + (k % 4)) * busy);
+        return { date: d.toISOString().slice(0, 10), orders, merged: Math.round(orders * 1.4), failed: k % 7 === 3 ? 1 : 0, agentMs: Math.round(orders * 2.1 * H), computerMs: Math.round(orders * 2.6 * H), spendCents: Math.round(orders * 2.6 * 8) };
+      });
+      const sum = (key: string) => days.reduce((n, d) => n + (d[key] as number), 0);
+      f.answer("workspace_usage", undefined, {
+        since: "2026-10-20T00:00:00.000Z",
+        until: "2026-11-18T15:00:00.000Z",
+        now: { running: 4, queued: 0, waiting: 1 },
+        currency: "USD",
+        total: counts({ orders: sum("orders"), merged: sum("merged"), failed: sum("failed"), agentMs: sum("agentMs"), messages: 412, agents: 356, approvals: 23, askToMergeMs: 3 * H + 40 * 60_000, computerMs: sum("computerMs") + 61 * H, spendCents: sum("spendCents") + 366 }),
+        previous: counts({ orders: 96, merged: 120, failed: 6, agentMs: 190 * H, messages: 380, agents: 301, approvals: 19, askToMergeMs: 4 * H + 5 * 60_000, computerMs: 290 * H, spendCents: 1_980 }),
+        members: [
+          { person: { personId: "p_aaaaaaaa", name: "Sam Rivera" }, role: "owner", counts: counts({ messages: 231, orders: 58, agents: 196, agentMs: 132 * H, merged: 81, approvals: 17, failed: 3, askToMergeMs: 3 * H + 20 * 60_000, computerMs: 166 * H, spendCents: 1_190 }) },
+          { person: { personId: "p_bbbbbbbb", name: "Alice Chen" }, role: "admin", counts: counts({ messages: 142, orders: 37, agents: 131, agentMs: 85 * H, merged: 54, approvals: 6, failed: 1, askToMergeMs: 4 * H + 10 * 60_000, computerMs: 103 * H, spendCents: 742 }) },
+          { person: { personId: "p_cccccccc", name: "Bob Okafor" }, role: "member", counts: counts({ messages: 39, orders: 9, agents: 29, agentMs: 19 * H, merged: 11, computerMs: 24 * H, spendCents: 166 }) },
+        ],
+        unattributed: counts({ computerMs: 61 * H, spendCents: 366 }),
+        bots: [
+          { name: "storefront", projectRef: { machineId: "hosted", projectId: "storefront" }, counts: counts({ orders: 61, agents: 214, agentMs: 141 * H, merged: 88, failed: 2, askToMergeMs: 3 * H + 30 * 60_000, computerMs: 203 * H, spendCents: 1_464 }) },
+          { name: "api", projectRef: { machineId: "hosted", projectId: "api" }, counts: counts({ orders: 43, agents: 142, agentMs: 95 * H, merged: 58, failed: 2, askToMergeMs: 4 * H, computerMs: 151 * H, spendCents: 1_000 }) },
+        ],
+        days,
+      });
+      return f;
+    })(),
     admin(base("typical"), "cloud-billing-unreachable", "Billing when the workspace doesn't answer: why, and Try again.", {
       billingFailure: { code: "offline", message: "Can't reach acme.", fix: "Check your connection, then try again." },
     }),

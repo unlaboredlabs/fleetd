@@ -60,12 +60,12 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-async function render(cloud: boolean) {
+async function render(cloud: boolean, output: WorkspaceUsageOutput = answer(cloud)) {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "workspace_usage") asked.push(input as Record<string, unknown>);
-      return Promise.resolve(tool === "workspace_usage" ? ({ ok: true, output: answer(cloud) } as never) : ({ ok: false, error: { code: "not_found", message: "not faked" } } as never));
+      return Promise.resolve(tool === "workspace_usage" ? ({ ok: true, output } as never) : ({ ok: false, error: { code: "not_found", message: "not faked" } } as never));
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -132,4 +132,10 @@ it("on fleetd cloud, adds what time on fleetd's computers cost, per person and b
   expect(tile("Spend")).toBe("Spend$1,240↑ 24%400h on fleetd's computers");
   expect(table("People")[0]).toEqual(["People", "Messages", "Orders", "Computer", "Merged", "Approvals", "Spend"]);
   expect(table("People")[1]).toEqual(["Maya ChenOwner", "235", "73", "100h", "113", "18", "$310"]);
+});
+
+it("on fleetd cloud, lists No one when all it holds is time on fleetd's computers: the leads' own boxes", async () => {
+  const leadsOnly = { ...answer(true), unattributed: counts({ computerMs: 11 * 60_000 + 40_000, spendCents: 1 }) };
+  await render(true, leadsOnly);
+  expect(table("People").at(-1)).toEqual(["No oneAutomations, lead chats", "0", "0", "12m", "0", "0", "$0.01"]);
 });
