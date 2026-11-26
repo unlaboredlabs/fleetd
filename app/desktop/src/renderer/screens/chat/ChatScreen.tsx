@@ -53,6 +53,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // Out of reach, between attempts or during one after a failure (not the first connect, which is loading).
   const offline = useData((d) => !d.fresh && (d.hub.phase === "retrying" || (d.hub.phase === "connecting" && d.hub.attempt > 0)));
   const [sent, setSent] = useState(0);
+  // A reply sent: the chat keeps its place, so the next older bubble can be answered too.
+  const [replied, setReplied] = useState(0);
   /**
    * Show: a message brought into view (again on each press). From the waiting line, what the lead waits on, with its
    * bubble and when, for the mark.
@@ -192,13 +194,20 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const held = view?.held === true;
   const bot = { needs: barWaiting !== undefined, blocked: !held && data.blocked !== undefined, done: justDone };
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
-  const onSent = useCallback(() => {
-    // Back to following the newest message, out of a window far back.
-    layerOf.chat.leaveWindow(key);
-    setShown(undefined);
-    setReplyTo(undefined);
-    setSent((n) => n + 1);
-  }, [layerOf, key]);
+  const onSent = useCallback(
+    (reply = false) => {
+      setReplyTo(undefined);
+      if (reply) {
+        setReplied((n) => n + 1);
+        return;
+      }
+      // Back to following the newest message, out of a window far back.
+      layerOf.chat.leaveWindow(key);
+      setShown(undefined);
+      setSent((n) => n + 1);
+    },
+    [layerOf, key],
+  );
   const layer = layerOf;
   // Search (⌘F) and pins. A hit or a pin opens the chat at its message, read around it when it is far back; Esc from
   // search goes back to where you were: the message you were reading, or the end.
@@ -524,6 +533,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               openSeq={shown?.n}
               openPart={shown?.part}
               sent={sent}
+              replied={replied}
               entering={arrived?.entering}
               inset={inset}
               latestSlot={latestSlot}

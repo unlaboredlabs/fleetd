@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { aimOf, arrivedSince, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, holdFrom, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, withScreens, type ThreadRow } from "./chatView";
+import { aimOf, arrivedSince, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, holdFrom, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendStays, sentSays, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, withScreens, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -482,6 +482,27 @@ describe("holdFrom", () => {
     expect(holdFrom(false, false, undefined)).toBeUndefined();
     expect(holdFrom(false, false, 0)).toBeUndefined();
     expect(holdFrom(false, true, 0)).toBe(1);
+  });
+});
+
+describe("sendStays", () => {
+  it("keeps the place for a reply sent from further up, so the next older bubble can be answered", () => {
+    expect(sendStays(true, true)).toBe(true);
+  });
+  it("goes to the newest for a plain send, and for a reply at the newest end", () => {
+    expect(sendStays(false, true)).toBe(false);
+    expect(sendStays(false, false)).toBe(false);
+    expect(sendStays(true, false)).toBe(false);
+  });
+});
+
+describe("sentSays", () => {
+  it("says Sent while the reader is up and nothing came since", () => {
+    expect(sentSays(false, 0)).toBe(true);
+  });
+  it("gives way to the count once the lead answers, and goes at the newest end", () => {
+    expect(sentSays(false, 1)).toBe(false);
+    expect(sentSays(true, 0)).toBe(false);
   });
 });
 

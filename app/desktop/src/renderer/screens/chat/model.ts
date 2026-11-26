@@ -360,12 +360,17 @@ export const newestKey = (rows: readonly Row[]): string => rows.findLast(hasItem
 
 /**
  * The way back to the newest message while scrolled up from `from` (newestKey then): how many arrived below since,
- * yours aside. Undefined at the end. Older pages loading above don't count.
+ * yours aside. Undefined at the end. Older pages loading above don't count. `sentFrom`: your reply went in below when
+ * this was the newest row (newestKey then), and it says so until something arrives after it, whatever came before.
  */
-export function latestLabel(rows: readonly Row[], from: string | undefined): string | undefined {
+export function latestLabel(rows: readonly Row[], from: string | undefined, sentFrom?: string): string | undefined {
   if (from === undefined) return undefined;
-  const at = rows.findIndex((r) => r.key === from);
-  const n = at === -1 ? 0 : rows.slice(at + 1).filter((r) => hasItem(r) && !isMineRow(r)).length;
+  const since = (key: string): number => {
+    const at = rows.findIndex((r) => r.key === key);
+    return at === -1 ? 0 : rows.slice(at + 1).filter((r) => hasItem(r) && !isMineRow(r)).length;
+  };
+  if (sentFrom !== undefined && since(sentFrom) === 0) return "Sent";
+  const n = since(from);
   return n === 0 ? "Latest" : `${String(n)} new`;
 }
 
