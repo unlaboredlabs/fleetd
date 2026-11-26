@@ -8,9 +8,23 @@ export interface Waiting {
    * open requests haven't said yet. */
   readonly kind: "approve" | "secret" | "signIn" | "reply" | "blocked" | "unknown";
   readonly count: number;
-  /** The first one's words: the request's line on why, or why it is blocked. */
+  /** The first one's words: what the request is about (requestWhat), or why it is blocked. */
   readonly what?: string | undefined;
+  /** It can't be done here, only on the desktop (a secret on the phone). */
+  readonly elsewhere?: boolean | undefined;
 }
+
+/** What an open request is about, in a few words: a command's reason (the lead's own words), a sign-in's site, a
+ * field's label and site ("Passport number for Visa application"), else the request's own line. */
+export const requestWhat = (r: {
+  readonly text?: string | undefined;
+  readonly gated?: { readonly reason?: string | undefined } | undefined;
+  readonly secureInput?: { readonly label: string; readonly site: { readonly name: string }; readonly signIn?: unknown } | undefined;
+}): string | undefined => {
+  const s = r.secureInput;
+  if (s !== undefined) return s.signIn !== undefined ? s.site.name : `${s.label} for ${s.site.name}`;
+  return r.gated?.reason ?? r.text;
+};
 
 /** A row's second line: `lead` in front of `text`, both in the line's tone. */
 export interface RowLine {
@@ -36,6 +50,7 @@ export const waitingLine = (w: Waiting, status: string | undefined): RowLine => 
       if (what === undefined) return { text: many ? `${n} commands to approve` : "A command to approve", tone: "want" };
       return { lead: many ? `${n} to approve:` : "Approve:", text: what, tone: "want" };
     case "secret":
+      if (w.elsewhere === true) return what === undefined ? { text: many ? `${n} secrets to enter on the desktop` : "A secret to enter on the desktop", tone: "want" } : { lead: "Enter on the desktop:", text: what, tone: "want" };
       if (what === undefined) return { text: many ? `${n} secrets to enter` : "A secret to enter", tone: "want" };
       return { lead: many ? `${n} secrets to enter:` : "Enter a secret:", text: what, tone: "want" };
     case "signIn":

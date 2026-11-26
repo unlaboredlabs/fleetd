@@ -4,7 +4,7 @@ import { WAKE_QUIET_MS, type HubState } from "../../../shared/hub";
 import { RESTART_HOLD_MS } from "../../src/data/store";
 import type { ProjectRow } from "../../src/data/selectors";
 import type { ProjectKey } from "./routes";
-import { rowLine, type RowLine, type Waiting } from "../../../shared/rowLine";
+import { requestWhat, rowLine, type RowLine, type Waiting } from "../../../shared/rowLine";
 
 /** Why a project wants you: a secret to enter, a command to approve, a reply, or something outside the work. */
 export type WantWord = "secret" | "approve" | "reply" | "blocked";
@@ -49,6 +49,8 @@ export interface RequestIn {
   readonly text?: string | undefined;
   /** A command's: why it runs, in the lead's words, which the row says over `text`. */
   readonly gated?: { readonly reason?: string | undefined } | undefined;
+  /** A field or a sign-in the person fills in: its label and site, which the row says over `text`. */
+  readonly secureInput?: { readonly label: string; readonly site: { readonly name: string }; readonly signIn?: unknown } | undefined;
   /** The person it waits on (requests_list's `for`); absent: anyone. */
   readonly for?: { readonly personId: string } | undefined;
 }
@@ -88,11 +90,19 @@ const wantOf = ({ key, needsYou }: ProjectRow, marks: MarksIn): Want | undefined
   const open = marks.requests?.filter((r) => r.state === "open" && projectId(r.projectRef) === key && mine(r));
   const secrets = open?.filter((r) => r.kind === "secret") ?? [];
   const approvals = open?.filter((r) => r.kind === "approval") ?? [];
+  const what = (rs: readonly RequestIn[]) => (rs[0] === undefined ? undefined : requestWhat(rs[0]));
   if (secrets.length > 0) {
-    return { word: "secret", count: secrets.length, label: `The lead needs ${plural(secrets.length, "secret", "secrets")} from you`, waiting: { kind: "secret", count: secrets.length, what: secrets[0]?.text } };
+    // A sign-in form says its site; any other secret what it is for.
+    const signIn = secrets.every((r) => r.secureInput?.signIn !== undefined);
+    return {
+      word: "secret",
+      count: secrets.length,
+      label: `The lead needs ${plural(secrets.length, "secret", "secrets")} from you`,
+      waiting: { kind: signIn ? "signIn" : "secret", count: secrets.length, what: what(secrets) },
+    };
   }
   if (approvals.length > 0) {
-    return { word: "approve", count: approvals.length, label: `${plural(approvals.length, "command", "commands")} to approve`, waiting: { kind: "approve", count: approvals.length, what: approvals[0]?.gated?.reason ?? approvals[0]?.text } };
+    return { word: "approve", count: approvals.length, label: `${plural(approvals.length, "command", "commands")} to approve`, waiting: { kind: "approve", count: approvals.length, what: what(approvals) } };
   }
   if (needsYou) {
     return marks.requests === undefined

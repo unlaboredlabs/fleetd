@@ -685,6 +685,40 @@ it("orders the list the ones that want you first, or from its ⋯ by name, draws
   expect(host.querySelector("nav[aria-label='Sidebar']")?.hasAttribute("data-compact")).toBe(true);
 });
 
+it("never moves a row under the pointer when a bot starts or stops waiting on you: it takes its place once the pointer leaves", async () => {
+  await mount([{ id: "hub", label: "devbox" }]);
+  const waiting = (needsYou: boolean, seq: number): HubFrame => ({
+    t: "event",
+    event: { seq, at: AT, type: "chat.waiting", summary: "", machineId: "devbox", projectId: "storefront", data: { projectRef: { machineId: "devbox", projectId: "storefront" }, needsYou, leadWorking: false, lastSeq: 1 } },
+  });
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(withTwo("devbox", "storefront", "Ada"));
+  });
+  await settle();
+  // storefront waits on you: first, though Ada spoke last.
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
+  const list = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*=list]");
+  const pointer = (type: "pointerover" | "pointerout") => act(() => void list?.dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget: document.body })));
+  pointer("pointerover");
+  // It stops waiting under the pointer: nothing moves.
+  act(() => hub("hub").send(waiting(false, 100)));
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
+  // The pointer leaves: it takes its place among the rest, newest first.
+  pointer("pointerout");
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  // It waits again under the pointer: still nothing moves until it leaves.
+  pointer("pointerover");
+  act(() => hub("hub").send(waiting(true, 101)));
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
+  pointer("pointerout");
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["storefront", "Ada"]);
+});
+
 /**
  * `#/`'s redirect to its project never lands, as when the packaged smoke sets `#/` again before the page reads it:
  * the page keeps showing the project from `#/` itself. Returns the undo.

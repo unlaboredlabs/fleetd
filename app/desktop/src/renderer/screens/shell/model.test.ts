@@ -40,6 +40,9 @@ describe("sidebar bots", () => {
         { projectRef: P("ops"), kind: "approval", state: "open", text: "Run the stock migration on staging" },
         { projectRef: P("ops"), kind: "approval", state: "open", text: "Install the scanner" },
         { projectRef: P("app"), kind: "secret", state: "open", text: "The App Store Connect key" },
+        // A field on a page says its label and the site, never the page's host; a sign-in, the site.
+        { projectRef: P("visa"), kind: "secret", state: "open", text: "Enter Passport number for Visa application (visas.example): the form", secureInput: { label: "Passport number", site: { name: "Visa application" } } },
+        { projectRef: P("store"), kind: "secret", state: "open", text: "Sign in to Devbox Store (store.example)", secureInput: { label: "Sign in", site: { name: "Devbox Store" }, signIn: {} } },
         // Someone else's waits on them, not you.
         { projectRef: P("web"), kind: "approval", state: "open", text: "Deploy", for: { personId: "p_ada" } },
       ],
@@ -51,6 +54,8 @@ describe("sidebar bots", () => {
       [
         row("ops", { needsYou: true }),
         row("app", { needsYou: true }),
+        row("visa", { needsYou: true }),
+        row("store", { needsYou: true }),
         row("ask", { needsYou: true, status: "Need your yes on the Friday deck" }),
         row("box"),
         row("run", { working: true, leadWorking: true, status: "Deck sent" }),
@@ -63,6 +68,8 @@ describe("sidebar bots", () => {
     expect(rows?.map((p) => [p.project.title, p.say])).toEqual([
       ["ops", { lead: "2 to approve:", text: "Run the stock migration on staging", tone: "want" }],
       ["app", { lead: "Enter a secret:", text: "The App Store Connect key", tone: "want" }],
+      ["visa", { lead: "Enter a secret:", text: "Passport number for Visa application", tone: "want" }],
+      ["store", { lead: "Sign in:", text: "Devbox Store", tone: "want" }],
       ["ask", { text: "Need your yes on the Friday deck", tone: "want" }],
       ["box", { lead: "Blocked:", text: "buildbox is offline", tone: "want" }],
       ["run", { text: "Working…", tone: "working" }],

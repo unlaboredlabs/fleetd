@@ -4,7 +4,7 @@
 // your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, proposal, rowSay, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary, type RowLine, type Waiting } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, proposal, requestWhat, rowSay, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary, type RowLine, type Waiting } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -63,12 +63,15 @@ const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] |
   return needsYou ? "Waiting for your reply" : undefined;
 };
 
-/** Each Waiting made once per what it says, so a row that says the same is the same (sameChatRow). */
+/** Each Waiting made once per what it says, so a row that says the same is the same (sameChatRow); a few hundred at
+ * most, the oldest let go first. */
 const waitings = new Map<string, Waiting>();
+const WAITINGS_MAX = 200;
 const waitingAs = (w: Waiting): Waiting => {
-  const k = `${w.kind}|${String(w.count)}|${w.what ?? ""}`;
+  const k = `${w.kind}|${String(w.count)}|${w.elsewhere === true ? "d" : ""}|${w.what ?? ""}`;
   const known = waitings.get(k);
   if (known !== undefined) return known;
+  if (waitings.size >= WAITINGS_MAX) waitings.delete(waitings.keys().next().value as string);
   waitings.set(k, w);
   return w;
 };
@@ -79,11 +82,12 @@ const waitingOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[
   const approvals = open.filter((r) => r.kind === "approval");
   const signIns = open.filter((r) => r.secureInput?.signIn !== undefined);
   const secrets = open.filter((r) => r.kind === "secret" && r.secureInput?.signIn === undefined);
-  // A command says why it runs, in the lead's words, over its request's line.
-  const first = (rs: readonly HumanRequest[], kind: Waiting["kind"]): Waiting => waitingAs({ kind, count: rs.length, what: rs[0]?.gated?.reason ?? rs[0]?.text });
+  const first = (rs: readonly HumanRequest[], kind: Waiting["kind"], elsewhere = false): Waiting =>
+    waitingAs({ kind, count: rs.length, what: rs[0] === undefined ? undefined : requestWhat(rs[0]), ...(elsewhere ? { elsewhere } : {}) });
   if (approvals.length > 0) return first(approvals, "approve");
   if (signIns.length > 0) return first(signIns, "signIn");
-  if (secrets.length > 0) return first(secrets, "secret");
+  // A secret other than a sign-in is entered only on the desktop.
+  if (secrets.length > 0) return first(secrets, "secret", true);
   return needsYou ? waitingAs({ kind: "reply", count: 1 }) : undefined;
 };
 

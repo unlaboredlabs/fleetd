@@ -573,7 +573,9 @@ const SwipingChat = memo(function SwipingChat({ row, separator, open, acts: late
 
 const rowLabel = (row: ChatRow): string => {
   const said = rowLine(row);
-  const line = said.tone === "want" ? `Waiting for you: ${lineWords(said)}` : lineWords(said);
+  // Heard as waiting on you, once: a line that already says so isn't told twice.
+  const words = lineWords(said);
+  const line = said.tone === "want" && !words.startsWith("Waiting") ? `Waiting for you: ${words}` : words;
   const counts = [
     row.pinned ? "Pinned" : undefined,
     row.muted ? "Muted" : undefined,

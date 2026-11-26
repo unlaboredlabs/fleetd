@@ -184,7 +184,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const view = useSidebarView();
   const viewHub = viewedHub(view, hubs, route.at);
   const folded = useFolded();
-  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, folded)), [projects, view, viewHub, folded]);
+  const heldRows = useHeldRows() !== null;
+  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, folded, heldRows)), [projects, view, viewHub, folded, heldRows]);
   // A bot opened on another hub (the palette, a notification) brings its hub on show.
   useEffect(() => showHub(route.at), [route.at]);
   const modHeld = useModHeld();

@@ -100,11 +100,15 @@ describe("lists", () => {
 describe("a sign-in form", () => {
   it("is said as a sign-in to fill in here, not a secret for the desktop", () => {
     const projects = { "m1/shop": project("shop", "Shop") };
-    const signIn = { ...asked("Q7"), kind: "secret", projectRef: { machineId: "m1", projectId: "shop" }, secureInput: { signIn: { fields: ["username", "password"] } } } as unknown as HumanRequest;
-    const typed = { ...asked("Q8"), kind: "secret", projectRef: { machineId: "m1", projectId: "shop" } } as HumanRequest;
+    const signIn = { ...asked("Q7"), kind: "secret", projectRef: { machineId: "m1", projectId: "shop" }, secureInput: { label: "Sign in", site: { domain: "store.example", name: "Devbox Store" }, signIn: { fields: ["username", "password"] } } } as unknown as HumanRequest;
+    const typed = { ...asked("Q8"), kind: "secret", projectRef: { machineId: "m1", projectId: "shop" }, text: "The Stripe key, for the webhook" } as HumanRequest;
     const want = (requests: HumanRequest[]) => lists({ projects, chatStates: {}, requests })?.needsYou.map((r) => r.want);
+    const line = (requests: HumanRequest[]) => lists({ projects, chatStates: {}, requests })?.needsYou.map((r) => rowLine(r));
     expect(want([signIn])).toEqual(["1 sign-in to fill in"]);
     expect(want([typed])).toEqual(["1 secret to enter on the desktop"]);
+    // The row says the site to sign in to, and that the secret is entered on the desktop.
+    expect(line([signIn])).toEqual([{ lead: "Sign in:", text: "Devbox Store", tone: "want" }]);
+    expect(line([typed])).toEqual([{ lead: "Enter on the desktop:", text: "The Stripe key, for the webhook", tone: "want" }]);
   });
 });
 

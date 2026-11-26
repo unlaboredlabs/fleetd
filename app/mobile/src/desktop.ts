@@ -222,7 +222,7 @@ export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../..
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor, workedToward, type TurnSpan } from "../../desktop/src/shared/turnWords";
-export { lineWords, rowLine as rowSay, type RowLine, type Waiting } from "../../desktop/src/shared/rowLine";
+export { lineWords, requestWhat, rowLine as rowSay, type RowLine, type Waiting } from "../../desktop/src/shared/rowLine";
 export {
   askedAt,
   ColdTurns,

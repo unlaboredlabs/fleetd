@@ -42,6 +42,12 @@ describe("the rows on show, which ⌘1–9 count", () => {
     expect(keys(shownRows(sectioned, view(), "a", new Set([foldKey("b", "work")])))).toEqual(["pin", "top", "api", "garden"]);
   });
 
+  it("leave the ones that want you where they are while the list is held, so none moves under the pointer", () => {
+    expect(keys(shownRows(ROWS, view(), "a", undefined, true))).toEqual(["pin", "top", "Api", "garden"]);
+    const rest = ROWS.filter((r) => !r.pinned);
+    expect(sortRows(rest, "recent", true)).toBe(rest);
+  });
+
   it("keep the order they came in when sorted by recent and none wants you", () => {
     const rest = ROWS.filter((r) => !r.pinned && r.want === undefined);
     expect(sortRows(rest, "recent")).toBe(rest);

@@ -103,12 +103,13 @@ interface Shown {
   readonly project: { readonly title: string };
 }
 
-/** Bots in the list's order: the ones that want you first, then as they came (newest first, held while the pointer is
- * over the list); or by name. */
-export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarSort): ReadonlyArray<P> =>
+/** Bots in the list's order: the ones that want you first, then as they came (newest first); or by name. While the
+ * pointer is over the list (`held`: sidebarState.ts holdRows) the frame already keeps them as they were drawn, the
+ * ones that wanted you first among them, so none moves under it, not even one that starts or stops wanting you. */
+export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarSort, held = false): ReadonlyArray<P> =>
   sort === "name"
     ? rows.toSorted((a, b) => a.project.title.localeCompare(b.project.title, undefined, { sensitivity: "base" }))
-    : rows.some((r) => r.want !== undefined)
+    : !held && rows.some((r) => r.want !== undefined)
       ? rows.toSorted((a, b) => Number(b.want !== undefined) - Number(a.want !== undefined))
       : rows;
 
@@ -174,12 +175,12 @@ const NO_FOLDS: ReadonlySet<string> = new Set();
  * in no section, then each section, in the order the frame arranged them), each group in the list's order. A folded section's chats are
  * left out, bar the pinned ones (among the pins). ⌘1–9 count these.
  */
-export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string, shut: ReadonlySet<string> = NO_FOLDS): ReadonlyArray<P> => {
+export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string, shut: ReadonlySet<string> = NO_FOLDS, held = false): ReadonlyArray<P> => {
   const own = rows.filter((p) => p.hub === hub);
   const rest = own.filter((p) => !p.pinned && (p.section === undefined || !shut.has(foldKey(hub, p.section))));
   const group = new Map<string | undefined, number>();
   for (const p of rest) if (!group.has(p.section)) group.set(p.section, group.size);
   // A stable sort by group keeps each group in the list's order.
-  const grouped = sortRows(rest, v.sort).toSorted((a, b) => (group.get(a.section) ?? 0) - (group.get(b.section) ?? 0));
+  const grouped = sortRows(rest, v.sort, held).toSorted((a, b) => (group.get(a.section) ?? 0) - (group.get(b.section) ?? 0));
   return [...own.filter((p) => p.pinned), ...grouped];
 };

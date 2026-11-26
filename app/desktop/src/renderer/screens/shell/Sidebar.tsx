@@ -56,7 +56,7 @@ import { sameProject, type ProjectKey, type Screen } from "./routes";
 import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
-import { holdRows } from "./sidebarState";
+import { holdRows, useHeldRows } from "./sidebarState";
 import { foldKey, openHub, setListView, shownRows, SORTS, sortRows, toggleFold, useFolded, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
 import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
@@ -447,7 +447,8 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   const view = given.view ?? windowView;
   const hub = given.hub ?? viewedHub(view, hubs, screen.at);
   const folded = useFolded();
-  const shown = given.shown ?? (projects === undefined ? undefined : shownRows(projects, view, hub, folded));
+  const held = useHeldRows() !== null;
+  const shown = given.shown ?? (projects === undefined ? undefined : shownRows(projects, view, hub, folded, held));
   const loaded = useHubRows();
   const jumpOf = (p: Placed): number | null => {
     const at = shown?.indexOf(p) ?? -1;
@@ -455,7 +456,13 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   };
   // Nothing outlives the sidebar holding its rows.
   useEffect(() => () => holdRows(null), []);
-  const keys = projects?.map((p) => p.key);
+  // Held as drawn: each hub's rows on show in the list's order (the ones that want you first), then the rest.
+  const keys = useMemo(() => {
+    if (projects === undefined) return undefined;
+    const drawn = hubs.flatMap((h) => shownRows(projects, view, h.id, folded, held));
+    const at = new Set(drawn);
+    return [...drawn, ...projects.filter((p) => !at.has(p))].map((p) => p.key);
+  }, [projects, hubs, view, folded, held]);
   const shownHub = hubs.find((h) => h.id === hub) ?? hubs[0];
   const openOn = (id: string): ProjectKey | null => (screen.id === "project" && screen.at === id ? screen.project : null);
   const hold = { onPointerEnter: () => holdRows(keys ?? null), onPointerLeave: () => holdRows(null) };
@@ -734,11 +741,13 @@ function ProjectGroup(props: {
   // Under the pins: the chats in none of your sections under Bots, then each section's label and its chats.
   const { sort, compact } = props.view;
   const folded = useFolded();
+  const held = useHeldRows() !== null;
   const lines = useMemo(() => {
     const below = sectionLines(
       sortRows(
         (rows ?? []).filter((p) => !p.pinned),
         sort,
+        held,
       ),
       sections,
       (id) => folded.has(foldKey(hub.id, id)),
@@ -746,7 +755,7 @@ function ProjectGroup(props: {
     // With sections on show, the chats in none get a label of their own too; with none, no label at all.
     const labelled = below[0]?.t === "chat" && below.some((l) => l.t === "section");
     return labelled ? [{ t: "section" as const, section: BOTS, folded: false, count: 0, dot: undefined }, ...below] : below;
-  }, [rows, sections, sort, folded, hub.id]);
+  }, [rows, sections, sort, folded, hub.id, held]);
   // Your sections on show, in order: what a label's Move up and Move down pass (Bots is none of them).
   const labelled = lines.flatMap((l) => (l.t === "section" && l.section !== BOTS ? [l.section.id] : []));
   const rowsByKey = useMemo(() => new Map((rows ?? []).map((p) => [p.key, p])), [rows]);
