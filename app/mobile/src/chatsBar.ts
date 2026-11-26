@@ -1,6 +1,6 @@
 // What the chats list's bars say, as Messages' on iOS 26: at the top, the person's avatar, which opens Settings and
-// carries the link to the hub as a dot; at the bottom, a round button whose menu picks a filter, beside the search
-// field (screens/Chats.tsx, ui/Toolbar.tsx).
+// carries the link to the hub as a dot (in the iPhone Duo's side strip, one of iOS's buttons there); at the bottom, a
+// round button whose menu picks a filter, beside the search field (screens/Chats.tsx, ui/Toolbar.tsx).
 import type { SFSymbol } from "expo-symbols";
 import type { HubState } from "./desktop";
 import type { Filter } from "./lists";
@@ -52,3 +52,9 @@ export const meAvatar = (meName: string | undefined, hubName: string, phase: Hub
   if (restarting !== undefined) return { initial, tone: "restarting", label: `Settings, ${restarting}` };
   return { initial, tone: linkTone(phase), label: `Settings, ${linkWords(phase)}` };
 };
+
+/**
+ * The avatar's symbol where it is one of iOS's bar buttons (the iPhone Duo's side strip): the initial on a disc, for a
+ * letter SF Symbols draws (A to Z), else a person on one.
+ */
+export const meSymbol = (initial: string): SFSymbol => (/^[A-Z]$/u.test(initial) ? (`${initial.toLowerCase()}.circle.fill` as SFSymbol) : "person.crop.circle.fill");
