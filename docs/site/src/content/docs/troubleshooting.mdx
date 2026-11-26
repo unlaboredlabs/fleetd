@@ -56,8 +56,9 @@ Settings › Workspace › Setup › GitHub (see [GitHub](/docs/github)), or run
 The workspace's Claude API key, someone's Claude subscription or a 1Password token was revoked, ran out of credit or
 expired. Paste it again in the place the line names, then press **Test**.
 
-A line saying a key "isn't on" a machine means that machine was offline when the key was saved. Save it again while
-the machine is online.
+A line saying a Claude key or subscription "isn't on" a machine means no machine holding it has been online with that
+one since it joined or was saved. A machine holding it passes it on by itself once both are online; else save it again
+while the machine is online. A 1Password token isn't passed on: save it again.
 
 ## Claude {#claude}
 

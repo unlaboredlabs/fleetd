@@ -8,6 +8,8 @@ import { chat } from "../../src/hub/chat/index.ts";
 import { accounts } from "../../src/hub/claude_accounts/tools.ts";
 import { people } from "../../src/hub/people/store.ts";
 import { HubDb } from "../../src/hub/store/db.ts";
+import { start as chatLoops } from "../../src/hub/chat/loops.ts";
+import { events, followOthers } from "../../src/hub/store/events.ts";
 import { tempHome } from "../helpers.ts";
 
 test("people remove hands what waited on them to the owner and forgets their subscription, as the app does", async () => {
@@ -35,6 +37,37 @@ test("people remove hands what waited on them to the owner and forgets their sub
     // Gone already: said, not removed twice.
     expect(await peopleCommand(["remove", dana.personId], home)).toMatchObject({ code: 1 });
     after.db.conn.close();
+  } finally {
+    tmp.done();
+  }
+});
+
+test("a running workspace hears of a removal from the terminal at once: its waiting-on-you and its apps", async () => {
+  const tmp = tempHome();
+  try {
+    const home = join(tmp.dir, "hub");
+    const running = new Hub({ home, listen: { host: "127.0.0.1", port: 4790 } }, HubDb.open(home), { now: () => Date.now() });
+    const owner = people(running).ensureOwner();
+    const dana = people(running).create("Dana Park", "member");
+    const r = { machineId: "devbox", projectId: "p1" };
+    chat(running).add(r, { author: "lead", text: "Resize them on upload, or lazy-load them?", for: { personId: dana.personId, name: dana.name } });
+    chatLoops(running);
+    followOthers(running);
+    // What the running workspace says now, kept in its memory.
+    expect(chat(running).state(r, false)).toMatchObject({ needsYou: true, needsYouFor: [dana.personId] });
+    const heard: string[] = [];
+    events(running).subscribe((e) => heard.push(e.type));
+
+    expect(await peopleCommand(["remove", dana.personId], home)).toMatchObject({ code: 0 });
+
+    // Within its next look (a second), it delivers the terminal's events and reads the chat again.
+    const end = Date.now() + 5_000;
+    while (!heard.includes("people.changed") && Date.now() < end) await Bun.sleep(50);
+    expect(heard).toContain("people.changed");
+    expect(heard).toContain("chat.waiting");
+    expect(chat(running).state(r, false)).toMatchObject({ needsYou: true, needsYouFor: [owner.personId] });
+    running.shutdown.abort();
+    running.db.conn.close();
   } finally {
     tmp.done();
   }

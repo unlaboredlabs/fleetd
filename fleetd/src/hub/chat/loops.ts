@@ -12,12 +12,18 @@ import { registerLeadCalls } from "./calls.ts";
 import { fill } from "./find.ts";
 import { leadThread, run, state, states } from "./flow.ts";
 import { chat, chatState, sendAsAgent } from "./index.ts";
+import { events } from "../store/events.ts";
 
 /** Each connection's running chat subscription, which a new `chat` replaces. */
 const running = new WeakMap<AppConn, () => void>();
 
 export function start(hub: Hub): void {
   chatState(hub);
+  // `fleetd people remove` hands a removed person's cards on from its own process: what the hub kept of the chats' states
+  // goes, read again from the messages as they are now.
+  events(hub).onOthers((got) => {
+    if (got.some((e) => e.type === "chat.message" || e.type === "people.changed")) chat(hub).forgetStates();
+  });
   registerLeadCalls(hub);
   // fleetd_status (and so the app's snapshot) carries each readable project's chat state.
   executorHooks(hub).extendStatus((h, caller) => {

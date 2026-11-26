@@ -788,6 +788,11 @@ export class Chat {
     return changed;
   }
 
+  /** Drops the chat states read so far: another process changed the messages, which this one's versions don't see. */
+  forgetStates(): void {
+    this.states.clear();
+  }
+
   private onHub(person: string): boolean {
     return !!this.db.conn.query("SELECT 1 FROM people WHERE person_id = ? AND removed_ms IS NULL").get(person);
   }

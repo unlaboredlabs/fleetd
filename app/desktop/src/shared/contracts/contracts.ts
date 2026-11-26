@@ -117,6 +117,12 @@ export const ACCOUNTS_ACCEPT_PATH = "/v1/app/accept";
 /** The accounts service's team of the person's own, made by the make value the sign-in answered: POST, JSON. */
 export const ACCOUNTS_TEAM_PATH = "/v1/app/team";
 
+/** For one signed in with no workspace (the sign-in answered `make` and no teams), on the accounts service: POST `{ make }` answers what deleting their account would take, as ACCOUNTS_ACCOUNT_PATH does. A make value that ran out or was replaced is refused `signed_out` (401). */
+export const ACCOUNTS_APP_ACCOUNT_PATH = "/v1/app/account";
+
+/** The same person's delete of their account: POST `{ make, email }`, answered `{ deleted, workspaces }` as ACCOUNTS_ACCOUNT_DELETE_PATH is. */
+export const ACCOUNTS_APP_ACCOUNT_DELETE_PATH = "/v1/app/account/delete";
+
 /** The accounts service's sign-out: POST, JSON, always 204. */
 export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 

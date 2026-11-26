@@ -176,14 +176,15 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
       const got = readAccepted(made.body);
       return got === null ? odd(t) : account.connectMade(got);
     },
+    // One signed in with no workspace (No workspace yet) asks with the sign-in's make value instead.
     accountPreview: async () => {
       const t = accountTeam();
-      return t === null ? NO_WORKSPACE : accountPreview(fetch, t);
+      return t === null ? ((await account.heldPreview()) ?? NO_WORKSPACE) : accountPreview(fetch, t);
     },
     // Deleted, every key of theirs opens nothing now: the app forgets the account's workspaces without asking them.
     deleteAccount: async (email) => {
       const t = accountTeam();
-      if (t === null) return NO_WORKSPACE;
+      if (t === null) return (await account.heldDelete(email)) ?? NO_WORKSPACE;
       const out = await deleteAccount(fetch, t, email);
       if (out.ok) account.deleted();
       return out;

@@ -277,7 +277,7 @@ test("the Claude checks read the key and the owner's subscription", () => {
   const partly = c.claudeKey(withApi(api([sealed("devbox")], tested(true))));
   expect(partly.status).toBe("warn");
   expect(partly.message).toContain("isn't on buildbox");
-  expect(partly.fix?.label).toBe("Save it again while buildbox is online");
+  expect(partly.fix?.label).toBe("Bring a machine that holds it online, or save it again while buildbox is online");
   // Saved is set up: untested, it wants a look, so setup never reads it as no key and passes on a machine's login.
   expect(c.claudeKey(withApi(api(both))).status).toBe("warn");
   expect(c.claudeKey(withApi(api(both, tested(true)))).status).toBe("ok");

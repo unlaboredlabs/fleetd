@@ -23,6 +23,7 @@ import {
   shownHub,
   signOutAll,
   type AfterSignInAsk,
+  type HeldAccount,
   type AuthResult,
   type KeptHub,
   type SignInPorts,
@@ -100,6 +101,26 @@ describe("No team yet", () => {
     expect(ask.asked).toEqual(["Signed in as new@example.com", "eve@other.example invited you to acme as member", "No team yet for new@example.com"]);
     expect(out).toMatchObject({ ok: true, teams: [{ name: "new", ok: true }] });
     expect(fake.madeOnAsking).toEqual(["new new@example.com"]);
+  });
+
+  it("removed from their team: No Workspace Yet is asked, and its Delete Account reads what goes and deletes with the make value", async () => {
+    await fake.team("acme", ["sam@acme.example", "bob@acme.example"]);
+    fake.remove("acme", "bob@acme.example");
+    const ask = {
+      ...answering(),
+      makeTeam: async (email: string, account: HeldAccount) => {
+        ask.asked.push(`No team yet for ${email}`);
+        expect(await account.preview()).toEqual({ ok: true, value: { email: "bob@acme.example", deletes: [], leaves: [], blocked: [] } });
+        expect(await account.remove("someone@else.example")).toMatchObject({ code: "wrong_email" });
+        expect(await account.remove("bob@acme.example")).toBeNull();
+        return "deleted" as const;
+      },
+    };
+    const out = await signInAsking(ports("bob@acme.example"), ask);
+    expect(ask.asked).toEqual(["Signed in as bob@acme.example", "No team yet for bob@acme.example"]);
+    expect(out).toEqual({ ok: false, cancelled: true });
+    expect(fake.deletedAccounts).toEqual(["bob@acme.example"]);
+    expect(fake.madeOnAsking).toEqual([]);
   });
 
   it("Not Now makes nothing, and isn't asked of someone with a team", async () => {

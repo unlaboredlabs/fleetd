@@ -19,6 +19,7 @@ import { accountKey, ClaudeAccountStore } from "./index.ts";
 import { accountRemoved, activePeople, administrator, me as person, refOf } from "./people.ts";
 import { signedInAgain } from "../leads/signed_in.ts";
 import { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
+import { spread } from "./spread.ts";
 
 export { CAP_CLAUDE_ACCOUNTS, checkSeals } from "./setup.ts";
 
@@ -68,6 +69,8 @@ export function register(tools: Registry): void {
     s.putHubApi(api);
     // A lead Claude refused for its sign-in carries on with this one.
     signedInAgain(hub);
+    // A machine the app didn't seal to (one joined since its list was read) gets it from one that holds it.
+    void spread(hub);
     return {
       hubApi: api,
       missingOn: missingOn(hub, api.sealedOn),
@@ -110,6 +113,7 @@ export function register(tools: Registry): void {
     s.putSubscription(p.personId, subscription);
     // A lead Claude refused for its sign-in carries on with this one.
     signedInAgain(hub);
+    void spread(hub);
     return {
       me: s.setup().person(p),
       missingOn: missingOn(hub, subscription.sealedOn),

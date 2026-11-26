@@ -17,7 +17,7 @@ import { Alert, AppState, KeyboardAvoidingView, Linking, Platform, ScrollView, S
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { blockedLine, deleteAccountLines, emailMatches, LEGAL_PAGES } from "../accountDelete";
-import { signInAsking, type AfterSignInAsk, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
+import { signInAsking, type AfterSignInAsk, type HeldAccount, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
 import { builtCloudConfig, type CloudConfig } from "../cloud/config";
 import { invitationLine, invitationTitle, type PairFailure } from "../desktop";
 import { deviceName } from "../hub/deviceName";
@@ -65,13 +65,55 @@ const alertAsk: AfterSignInAsk = {
         { text: "Join", onPress: () => resolve(true) },
       ], { cancelable: false }),
     ),
-  makeTeam: (email) =>
+  makeTeam: (email, account) =>
     new Promise((resolve) =>
       Alert.alert("No Workspace Yet", `Make one of your own for ${email}, or ask a teammate to invite this email.`, [
         { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
+        { text: "Delete Account…", style: "destructive", onPress: () => void deleteHeld(email, account).then((gone) => resolve(gone ? "deleted" : false)) },
         { text: "Make a Workspace", isPreferred: true, onPress: () => resolve(true) },
       ], { cancelable: false }),
     ),
+};
+
+/**
+ * Delete Account from No Workspace Yet: what goes, read first, then the email typed back, as Settings' Delete Account
+ * asks; true once the account is gone. Android has no typed prompt: it says where to delete instead.
+ */
+const deleteHeld = async (email: string, account: HeldAccount): Promise<boolean> => {
+  if (Platform.OS !== "ios") {
+    await new Promise<void>((done) => Alert.alert("Delete Account", "Delete your account in the desktop app or the web app.", [{ text: "OK", onPress: () => done() }]));
+    return false;
+  }
+  const read = await account.preview();
+  if (!read.ok) {
+    haptics.warning();
+    await new Promise<void>((done) => Alert.alert("Couldn't read your account", `${read.failure.message} ${read.failure.fix ?? ""}`.trim(), [{ text: "OK", onPress: () => done() }]));
+    return false;
+  }
+  haptics.warning();
+  const typed = await new Promise<string | undefined>((done) =>
+    Alert.prompt(
+      "Delete Your fleetd Account?",
+      `${deleteAccountLines(read.value).join("\n\n")}\n\nThis can't be undone. Type ${email} to confirm.`,
+      [
+        { text: "Cancel", style: "cancel", onPress: () => done(undefined) },
+        { text: "Delete", style: "destructive", onPress: (t?: string) => done(t) },
+      ],
+      "plain-text",
+      "",
+      "email-address",
+    ),
+  );
+  if (typed === undefined || typed.trim() === "") return false;
+  const failure = emailMatches(typed, email) ? await account.remove(typed) : { code: "wrong_email", message: "That isn't your account's email", fix: `Type ${email} to delete the account.` };
+  if (failure !== null) {
+    haptics.warning();
+    await new Promise<void>((done) => Alert.alert("Your account wasn't deleted", `${failure.message} ${failure.fix ?? ""}`.trim(), [{ text: "OK", onPress: () => done() }]));
+    return false;
+  }
+  haptics.success();
+  Alert.alert("Your fleetd account is deleted");
+  return true;
 };
 
 /** A signed-in account's outcome, for the app to keep its teams' keys; a failure there is the keychain's. */

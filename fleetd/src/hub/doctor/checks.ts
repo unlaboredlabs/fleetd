@@ -480,8 +480,8 @@ function accountEntry(
     return hubEntry(
       name,
       "warn",
-      `${what} isn't on ${list}, so nothing runs on it there: it goes only to the machines online when it's saved.`,
-      manual(`Save it again while ${list} ${missing.length === 1 ? "is" : "are"} online`),
+      `${what} isn't on ${list} yet, so nothing runs on it there: it reaches a machine from one that holds it while both are online.`,
+      manual(`Bring a machine that holds it online, or save it again while ${list} ${missing.length === 1 ? "is" : "are"} online`),
     );
   }
   // Saved is set up: untested, it wants a look rather than reading as nothing there (setup reads the first set up).
