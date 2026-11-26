@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- fleetd.sh/pricing: what fleetd cloud costs, and how it differs from a workspace you run yourself. The same page as home.html
      in type, colour and header, set denser: plain tables you read at a glance. Free comes first: the cloud workspace costs nothing while agents run on your own
-     machines with your own Claude login, as Get started's "Your own machine (free)" says. The paid plans, agents at once, sizes and
+     machines, as Get started's "Your own machine (free)" says. The paid plans, agents at once, sizes and
      credits are read at load from fleetd cloud's public plans (accounts.fleetd.dev/v1/plans), which ops sets; the
      values written here are today's, shown until it answers and whenever it doesn't. Keep them in step with
      fleetd-cloud (src/billing/stripe/prices.ts, src/billing/rates.ts) and the docs' Billing page. -->
@@ -119,8 +119,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1.23;font-size:clamp(34px,4
 .plan ul{list-style:none;margin:20px 0 0;padding:0;font-size:15px}
 .plan li{padding:7px 0;border-top:1px solid var(--rule)}
 .plan li span:not([data-f]){color:var(--grey)}
-.plan{display:flex;flex-direction:column}
-.plan .go{margin-top:auto;padding-top:18px;font-size:15px}
+.plan .go{padding:7px 0;border-top:1px solid var(--rule);font-size:15px}
 .plan .go a{text-decoration-color:var(--grey)}
 .plan .go a:hover{text-decoration-color:currentColor}
 
@@ -235,7 +234,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 <section class="w blk full" id="plans" aria-labelledby="plans-h">
   <div>
     <h2 id="plans-h">fleetd cloud</h2>
-    <p>Free when agents run on your own machines. Plans are for agents on our computers, and cover the whole team.</p>
+    <p>Free when agents run on your own machines. Plans are for agents on our computers, and cover the whole workspace.</p>
   </div>
   <div>
     <div class="plans">
@@ -244,7 +243,6 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <p class="price"><b>$0</b><span>a month</span></p>
         <ul>
           <li>Your own machines <span>run the agents</span></li>
-          <li>Your own Claude login</li>
         </ul>
         <p class="go"><a href="https://app.fleetd.dev">Sign up and connect your machine</a></p>
       </div>
