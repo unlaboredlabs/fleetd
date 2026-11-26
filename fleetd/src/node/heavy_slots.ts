@@ -19,13 +19,16 @@
 // most, and a thread the quota holds back doesn't count in the load. A quota leaves the run's CPU affinity alone:
 // pinned to a slot's 4 CPUs instead (#2257), Electron's GPU process put 16 of its threads on CPUs 0-3, whatever CPUs it
 // had, and four pinned desktop checks ran CPUs 0-3 at 100% with the load at 158 and most cores idle.
+// The run's scope sits beside its session's, so it takes only what the session's memory cap has left (memoryLeft),
+// and the wrapper watches it for kills by that cap and tells the agent, as the session's host does for its own scope.
 import { closeSync, existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import * as buildSlots from "./build_slots.ts";
 import { runInherited, take, writeWrapper } from "./build_slots.ts";
 import { readConfig } from "./config.ts";
 import { buildJobsHere } from "./load/index.ts";
+import { noteFile, watchMemory } from "./runner/host/memory.ts";
 import { testWorkers } from "./sessions/share.ts";
 
 export const COMMAND = "heavy-slot";
@@ -185,37 +188,107 @@ function cgroupNumber(path: string): number | undefined {
   }
 }
 
-/** `systemd-run`'s arguments that start a run in a scope of its own capped at `cpus` CPUs, up to the `--`: with the
- * session's own memory cap and OOM policy (runner/scope.ts), and bound to the session's scope, so a stopped agent's run
- * stops with it. `cgroup` is /proc/self/cgroup's text. */
-export function quotaArgs(cpus: number, cgroup: string): string[] {
-  const path = cgroup.split("\n").find((l) => l.startsWith("0::"))?.slice(3) ?? "";
-  const args = ["--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", `--property=CPUQuota=${cpus * 100}%`, "--property=OOMPolicy=continue"];
-  const max = cgroupNumber(join("/sys/fs/cgroup", path, "memory.max"));
-  const swap = cgroupNumber(join("/sys/fs/cgroup", path, "memory.swap.max"));
-  if (max !== undefined) args.push(`--property=MemoryMax=${max}`);
-  if (swap !== undefined) args.push(`--property=MemorySwapMax=${swap}`);
-  const unit = basename(path);
-  if (unit.endsWith(".scope") && path.includes("/user@")) args.push(`--property=BindsTo=${unit}`, `--property=After=${unit}`);
+/** A run's memory cap: `MemoryMax=` and, where the caller has one, `MemorySwapMax=`, in bytes. */
+export type Memory = { max: number; swapMax?: number };
+
+/** What the cgroup in `dir` (the session's scope) leaves for a run that starts outside it: its memory cap less what it
+ * holds now, page cache aside (the kernel takes that back first), and its swap cap less the swap it uses. So the session
+ * and its run stay inside the one cap together, never a second full one beside it. Undefined where it has no cap. */
+export function memoryLeft(dir: string): Memory | undefined {
+  const max = cgroupNumber(join(dir, "memory.max"));
+  if (max === undefined) return undefined;
+  let stat = "";
+  try {
+    stat = readFileSync(join(dir, "memory.stat"), "utf8");
+  } catch {}
+  const cache = Number(/^file (\d+)$/m.exec(stat)?.[1] ?? 0);
+  const held = Math.max(0, (cgroupNumber(join(dir, "memory.current")) ?? 0) - cache);
+  const swapMax = cgroupNumber(join(dir, "memory.swap.max"));
+  const swapLeft = swapMax === undefined ? undefined : Math.max(0, swapMax - (cgroupNumber(join(dir, "memory.swap.current")) ?? 0));
+  return { max: Math.max(0, max - held), ...(swapLeft === undefined ? {} : { swapMax: swapLeft }) };
+}
+
+/** The unit a cgroup path (`/proc/self/cgroup`'s, `/user.slice/…/user@1000.service/app.slice/run-p1-i2.scope`) is in
+ * under a user manager: the session's scope, or the node's own service where sessions run without one. Undefined
+ * outside a user manager. */
+export function callerUnit(path: string): string | undefined {
+  const parts = path.split("/");
+  const manager = parts.findIndex((p) => p.startsWith("user@") && p.endsWith(".service"));
+  const last = parts.at(-1);
+  return manager >= 0 && parts.length - 1 > manager && last !== undefined && /\.(scope|service)$/.test(last) ? last : undefined;
+}
+
+/** How a heavy run's scope is set up: its CPUs, its memory cap (memoryLeft), the unit it is bound to (callerUnit), and
+ * whether the quota's period is short (`CPUQuotaPeriodSec=10ms`, where this systemd takes it). */
+export type RunScope = { cpus: number; memory?: Memory; unit?: string; shortPeriod: boolean };
+
+/** The quota's period: a run held back waits at most this long at a time, where the default 100 ms let a run that sized
+ * itself to all 32 CPUs stall a test's 5 ms timer for up to 103 ms. */
+export const PERIOD = "10ms";
+
+/** `systemd-run`'s arguments that start a run in a scope of its own, up to the `--`: capped at `cpus` CPUs, inside what
+ * its session's memory cap has left, with the session's OOM policy (runner/scope.ts), and bound to the caller's unit: a
+ * stopped agent's run stops with it, and one whose wrapper the node's restart stops (sessions without scopes of their
+ * own run in its unit) stops with its slot. */
+export function quotaArgs(r: RunScope): string[] {
+  const args = ["--user", "--scope", "--quiet", "--collect", "--description=fleetd heavy run", `--property=CPUQuota=${r.cpus * 100}%`];
+  if (r.shortPeriod) args.push(`--property=CPUQuotaPeriodSec=${PERIOD}`);
+  args.push("--property=OOMPolicy=continue");
+  if (r.memory) {
+    args.push(`--property=MemoryMax=${r.memory.max}`);
+    if (r.memory.swapMax !== undefined) args.push(`--property=MemorySwapMax=${r.memory.swapMax}`);
+  }
+  if (r.unit !== undefined) args.push(`--property=BindsTo=${r.unit}`, `--property=After=${r.unit}`);
   args.push("--");
   return args;
 }
 
+/** This process's cgroup path, from /proc/self/cgroup's v2 line. */
+function cgroupPath(pid: number | "self" = "self"): string | undefined {
+  try {
+    return readFileSync(`/proc/${pid}/cgroup`, "utf8").split("\n").find((l) => l.startsWith("0::"))?.slice(3);
+  } catch {
+    return undefined;
+  }
+}
+
 /** How to start this run held to its slot's share: `systemd-run` and its arguments, once it has started `true` the same
- * way; undefined off Linux, without a user manager, or when that fails, and the run starts uncapped, as before. */
+ * way (with the short period, else the default one); undefined off Linux, without a user manager, or when both fail,
+ * and the run starts uncapped, as before. */
 function capped(home: string, slots: number): string[] | undefined {
   if (process.platform !== "linux" || !process.env.XDG_RUNTIME_DIR) return undefined;
   const systemdRun = Bun.which("systemd-run");
   if (!systemdRun) return undefined;
-  let cgroup = "";
-  try {
-    cgroup = readFileSync("/proc/self/cgroup", "utf8");
-  } catch {}
+  const path = cgroupPath() ?? "";
   const m = machineHere(home);
-  const args = [systemdRun, ...quotaArgs(slotShare(m.cores, m.buildSlots * m.buildJobs, slots), cgroup)];
-  const probe = Bun.spawnSync([...args, "true"], { stdout: "ignore", stderr: "pipe", timeout: 5_000 });
-  if (probe.exitCode === 0) return args;
-  process.stderr.write(`fleetd: couldn't cap this run at its slot's share of the CPUs (${probe.stderr.toString().trim() || "systemd-run failed"}): it may use every CPU\n`);
+  const memory = path ? memoryLeft(join("/sys/fs/cgroup", path)) : undefined;
+  const unit = callerUnit(path);
+  let why = "";
+  for (const shortPeriod of [true, false]) {
+    const r: RunScope = { cpus: slotShare(m.cores, m.buildSlots * m.buildJobs, slots), shortPeriod, ...(memory ? { memory } : {}), ...(unit ? { unit } : {}) };
+    const args = [systemdRun, ...quotaArgs(r)];
+    const probe = Bun.spawnSync([...args, "true"], { stdout: "ignore", stderr: "pipe", timeout: 5_000 });
+    if (probe.exitCode === 0) return args;
+    why = probe.stderr.toString().trim() || "systemd-run failed";
+  }
+  process.stderr.write(`fleetd: couldn't cap this run at its slot's share of the CPUs (${why}): it may use every CPU\n`);
+  return undefined;
+}
+
+/** Once the run `pid` is in its own scope (systemd-run moves itself there, then execs the run), watches that scope for
+ * kills by its memory cap as the session's host watches the session's (runner/host/memory.ts), and notes each where the
+ * session's hook hands it to the agent: the run's scope is outside the session's, which the host's watch can't see.
+ * Nothing outside a session (no FLEETD_RUNNER_SESSION). */
+async function watchRun(home: string, pid: number): Promise<(() => void) | undefined> {
+  const session = process.env.FLEETD_RUNNER_SESSION?.split(".")[0];
+  const mine = cgroupPath();
+  if (!session || mine === undefined) return undefined;
+  for (const end = Date.now() + 5_000; Date.now() < end; await Bun.sleep(50)) {
+    const path = cgroupPath(pid);
+    if (path === undefined) return undefined;
+    // As the node names it (place/index.ts hostDir): the host's dir is the node home's hosts/<session>.
+    if (path !== mine) return watchMemory(noteFile(join(home, "hosts", session)), join("/sys/fs/cgroup", path));
+  }
   return undefined;
 }
 
@@ -240,7 +313,11 @@ export async function main(argv: string[]): Promise<number> {
   const cap = slot === undefined ? undefined : capped(home, slots);
   // Held in this process only, never handed to the run's children: a server a test leaves running can't keep it.
   const env = { ...process.env, [HELD]: "1", [OLD.held]: "1" };
-  const code = cap ? await runInherited(cap[0]!, [...cap.slice(1), bin, ...args], env) : await runInherited(bin, args, env);
+  let stopWatch: Promise<(() => void) | undefined> | undefined;
+  const code = cap
+    ? await runInherited(cap[0]!, [...cap.slice(1), bin, ...args], env, (pid) => (stopWatch = watchRun(home, pid)))
+    : await runInherited(bin, args, env);
+  (await stopWatch)?.();
   for (const fd of slot ?? []) closeSync(fd);
   return code;
 }
