@@ -4,7 +4,8 @@ import type { StartRepo, StartView } from "./model";
 import { settingsPath } from "../../../shared/settingsPages";
 import { FLEETD_COMPUTERS } from "../../../shared/providers";
 
-const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join https://sam.fleetd.dev --code 7QK4-M2XD";
+// The code as the cloud mints it: one long token, which the line has to wrap.
+const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join https://sam.fleetd.dev --code fle_q7k4m2xdw9pt3vbn6hc8rj5ysa2ezu4gkf7lwo3xmd6ncp";
 
 const REPOS: readonly StartRepo[] = [
   { owner: "sam-dev", name: "notes-api", pushed: "Today" },
