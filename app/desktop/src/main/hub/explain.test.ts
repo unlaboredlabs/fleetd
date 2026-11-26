@@ -56,3 +56,27 @@ describe("explainAbandon", () => {
     expect(explainAbandon(tailnet, "silent").fix).toContain("Tailscale");
   });
 });
+
+// A cloud workspace that couldn't be reached was told to check its address for typos and run `fleetd doctor` (W890):
+// it has no machine, address or doctor of the person's own, so it's fleetd's cloud, the connection, and its status page.
+describe("a fleetd cloud workspace", () => {
+  const team = "https://acme.fleetd.dev";
+  it("says fleetd's cloud can't be reached, with no self-hosted advice", () => {
+    for (const loss of [
+      explainLoss(team, 1006, "", err("ENOTFOUND"), false, false, true),
+      explainLoss(team, 1006, "", err("ECONNREFUSED"), false, true, true),
+      explainLoss(team, 1006, "", err("ETIMEDOUT"), false, true, true),
+      explainLoss(team, 1006, "", err(undefined, "Unexpected server response: 502"), false, true, true),
+      explainAbandon(team, "silent", true, true, true),
+      explainAbandon(team, "not-ready", true, false, true),
+    ]) {
+      expect(loss.reason).toBe("Can't reach fleetd's cloud");
+      expect(loss.fix).toContain("status.fleetd.dev");
+      expect(loss.fix).not.toMatch(/doctor|typo|address|port|machine|Tailscale/u);
+    }
+  });
+
+  it("says a restart as for any workspace", () => {
+    expect(explainLoss(team, 1012, "updating to 0.9.1", undefined, true, true, true).reason).toBe("The workspace is restarting into a new build");
+  });
+});

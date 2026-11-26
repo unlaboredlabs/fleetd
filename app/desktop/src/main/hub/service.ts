@@ -1,4 +1,6 @@
 import type { WebContents } from "electron";
+import { cloudDomain, inDomain } from "../../shared/accounts";
+import { builtCloudConfig } from "../cloud/config";
 import { IPC } from "../../shared/channels";
 import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shared/hub";
@@ -295,7 +297,9 @@ export class HubService {
     this.#held = null;
     this.#paired = { url: hub, key };
     // The app's windows are Chromium's: WebCodecs decodes H.264 there.
-    const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame), video: true });
+    const config = builtCloudConfig();
+    const cloud = config !== null && inDomain(hub, cloudDomain(config.accountsUrl));
+    const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame), video: true, cloud });
     this.#source = client;
     client.chat(this.#chat);
     client.focus(this.#focus);
