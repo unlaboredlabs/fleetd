@@ -175,9 +175,6 @@ importers:
       libsodium-wrappers:
         specifier: 0.8.4
         version: 0.8.4
-      pdfjs-dist:
-        specifier: 6.5.438
-        version: 6.5.438
       ws:
         specifier: 8.22.0
         version: 8.22.0
@@ -248,6 +245,9 @@ importers:
       lucide-react:
         specifier: 1.59.0
         version: 1.59.0(@types/react@19.3.0)(react@19.3.1)
+      pdfjs-dist:
+        specifier: 6.5.438
+        version: 6.5.438
       radix-ui:
         specifier: 1.8.1
         version: 1.8.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

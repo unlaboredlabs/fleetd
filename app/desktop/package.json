@@ -39,7 +39,6 @@
     "@napi-rs/keyring": "2.1.1",
     "electron-updater": "6.8.9",
     "libsodium-wrappers": "0.8.4",
-    "pdfjs-dist": "6.5.438",
     "ws": "8.22.0",
     "zod": "4.6.7"
   },
@@ -65,6 +64,7 @@
     "globals": "17.13.0",
     "happy-dom": "21.0.3",
     "lucide-react": "1.59.0",
+    "pdfjs-dist": "6.5.438",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
