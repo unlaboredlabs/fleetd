@@ -1,0 +1,206 @@
+<!doctype html>
+<!-- fleetd.sh/privacy: the Privacy Policy page, one of the five pages (terms, privacy, refunds, imprint, support) that share legal.css.
+     The same page as pricing.html in type, colour, header and footer; the text is set plain and dense, like the docs. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Privacy Policy · fleetd</title>
+<meta name="description" content="What personal data fleetd cloud, fleetd’s apps and fleetd.sh collect, why, who processes it, how long it is kept, and your rights.">
+<link rel="canonical" href="https://fleetd.sh/privacy">
+<meta property="og:title" content="Privacy Policy · fleetd">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/privacy">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main class="w legal">
+  <nav class="pages" aria-label="Policies and support">
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy" aria-current="page">Privacy Policy</a>
+    <a href="/refunds">Refund Policy</a>
+    <a href="/imprint">Imprint</a>
+    <a href="/support">Support</a>
+  </nav>
+  <article class="doc" aria-labelledby="h">
+    <h1 id="h">Privacy Policy</h1>
+    <p class="when">Effective November 26, 2026</p>
+    <p>This policy explains what personal data fleetd cloud (app.fleetd.dev), fleetd’s apps and fleetd.sh collect, why, and what you can do about it.</p>
+
+    <h2 id="controller">Who is responsible</h2>
+    <p>The controller is <b>Unlabored Labs, Inc.</b>, 131 Continental Dr Suite 305, Newark, Delaware 19713, United States, <a href="mailto:support@fleetd.dev">support@fleetd.dev</a>.</p>
+    <p><b>If you run fleetd yourself</b>, your data stays on your own machines, and you are its controller. Two things still pass through us: phone notifications and update downloads. A notification is sealed end to end, so our push relay sees only a device token and text it can’t read, and keeps neither. Update downloads come from GitHub.</p>
+
+    <h2 id="collect">What we collect</h2>
+    <table>
+      <thead><tr><th scope="col">Data</th><th scope="col">What it is</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Account</th><td>Your email address, your name if you give one, and your sign-in history (time, IP address, device).</td></tr>
+        <tr><th scope="row">Workspace</th><td>Workspace name, members, roles, invites, bots and their settings, and which GitHub repositories and accounts you connect.</td></tr>
+        <tr><th scope="row">Chats and agents’ work</th><td>Messages to and from your bots, agents’ tasks, results, logs, memory and screen recordings.</td></tr>
+        <tr><th scope="row">Files</th><td>Files you or your agents upload or create on the Service.</td></tr>
+        <tr><th scope="row">Vault items</th><td>Logins, codes, cards and addresses you save. Vault items are <b>sealed with encryption</b>. They are opened only to fill them in where you or your agents use them, and the apps never show them back.</td></tr>
+        <tr><th scope="row">Usage</th><td>Computers started, their size and running time, agents at once, and errors. We use this for billing, limits and keeping the Service working.</td></tr>
+        <tr><th scope="row">Billing</th><td>Plan, credits, invoices, billing address and tax ID. Stripe holds your card. We never see the full number.</td></tr>
+        <tr><th scope="row">Support</th><td>What you write to support@fleetd.dev.</td></tr>
+        <tr><th scope="row">Phone app</th><td>A push token for your device, so notifications reach it.</td></tr>
+      </tbody>
+    </table>
+    <p>We don’t collect the content of your accounts at other providers, such as your model provider or GitHub, beyond what your agents use while they work for you.</p>
+
+    <h2 id="why">Why we use it, and on what legal basis</h2>
+    <table>
+      <thead><tr><th scope="col">Purpose</th><th scope="col">Legal basis (GDPR)</th></tr></thead>
+      <tbody>
+        <tr><td>Running the Service: accounts, workspaces, agents, chats, files, vault, notifications</td><td>Performance of our contract with you (Art. 6(1)(b))</td></tr>
+        <tr><td>Billing, invoices and tax</td><td>Contract (Art. 6(1)(b)) and legal obligation (Art. 6(1)(c))</td></tr>
+        <tr><td>Security, abuse prevention, enforcing limits and our Terms</td><td>Legitimate interests in keeping the Service and its users safe (Art. 6(1)(f))</td></tr>
+        <tr><td>Fixing faults and improving the Service from usage data</td><td>Legitimate interests (Art. 6(1)(f))</td></tr>
+        <tr><td>Answering support requests</td><td>Contract or legitimate interests (Art. 6(1)(b), (f))</td></tr>
+        <tr><td>Service emails such as sign-in codes, receipts and important changes</td><td>Contract (Art. 6(1)(b))</td></tr>
+      </tbody>
+    </table>
+    <p>We <b>don’t sell</b> your data, we <b>don’t advertise</b>, and we <b>don’t use your content to train AI models</b>.</p>
+
+    <h2 id="sharing">Who we share it with</h2>
+    <p>We use these service providers. Each processes data only on our instructions, under a data processing agreement:</p>
+    <table>
+      <thead><tr><th scope="col">Provider</th><th scope="col">What for</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">WorkOS</th><td>Sign-in and sign-in emails</td></tr>
+        <tr><th scope="row">Stripe</th><td>Payments, invoices and tax</td></tr>
+        <tr><th scope="row">Cloudflare</th><td>DNS, network protection, file storage and email routing</td></tr>
+        <tr><th scope="row">PlanetScale</th><td>Database</td></tr>
+        <tr><th scope="row">Better Stack</th><td>Uptime monitoring and alerts</td></tr>
+        <tr><th scope="row">A cloud computer provider in the EU</th><td>The computers your agents run on</td></tr>
+        <tr><th scope="row">Vercel</th><td>Hosting the fleetd.sh website</td></tr>
+      </tbody>
+    </table>
+    <p>Some other services get data only because you choose to use them:</p>
+    <ul>
+      <li><b>Apple and Google</b> deliver phone notifications. They get your device’s push token and a sealed message they can’t read.</li>
+      <li><b>Your own providers</b>, such as Anthropic and GitHub, get what your agents send them, under your own agreements with them.</li>
+    </ul>
+    <p>We may also disclose data if the law requires it, to protect people’s safety or our rights, or as part of a merger or sale of the company. If that happens, we tell you first.</p>
+
+    <h2 id="where">Where your data is</h2>
+    <p>fleetd cloud runs in the EU. Some of our providers are US companies and may process data in the US or elsewhere. Where data leaves the EU, the EEA or the UK, we rely on the EU–US Data Privacy Framework where the provider is certified, or on the EU Standard Contractual Clauses (and the UK Addendum).</p>
+
+    <h2 id="retention">How long we keep it</h2>
+    <ul>
+      <li><b>Account and workspace data</b> for as long as your account or workspace exists.</li>
+      <li><b>Screen recordings</b> for 30 days by default. A workspace can change this in Settings.</li>
+      <li><b>Deleted data.</b> When you delete a bot or a workspace, or we delete your account at your request, we delete its data from the live system. Copies in our <b>backups are kept for 30 days</b> and then deleted.</li>
+      <li><b>Billing records</b> for as long as tax and accounting law requires, usually up to 10 years.</li>
+      <li><b>Server logs</b> for 30 days.</li>
+      <li><b>Support emails</b> for as long as we need them to help you, and at most 2 years after the last message.</li>
+    </ul>
+
+    <h2 id="rights">Your rights</h2>
+    <p>You can ask us to:</p>
+    <ul>
+      <li>give you a copy of your data;</li>
+      <li>correct it;</li>
+      <li>delete it;</li>
+      <li>limit how we use it;</li>
+      <li>send it to you or someone else in a common format;</li>
+      <li>stop using it where we rely on legitimate interests.</li>
+    </ul>
+    <p>Write to <a href="mailto:support@fleetd.dev"><b>support@fleetd.dev</b></a>. We answer within one month. We may need to confirm it’s you first.</p>
+    <p>You can also complain to the data protection authority where you live or work.</p>
+
+    <h2 id="security">Security</h2>
+    <ul>
+      <li>Data is encrypted in transit.</li>
+      <li>Vault items are sealed with encryption at rest.</li>
+      <li>Each workspace’s data is kept apart from other workspaces’.</li>
+      <li>Only a few people at fleetd can reach production systems, and only when they need to.</li>
+    </ul>
+    <p>If a breach puts your data at risk, we tell you and the authorities as the law requires.</p>
+
+    <h2 id="children">Children</h2>
+    <p>fleetd isn’t meant for anyone under 18, and we don’t knowingly collect children’s data.</p>
+
+    <h2 id="cookies">Cookies</h2>
+    <p>We don’t use tracking, advertising or analytics cookies, so we don’t show a cookie banner.</p>
+    <ul>
+      <li><b>app.fleetd.dev</b> sets one cookie that keeps you signed in. It also sets a short-lived cookie (10 minutes) while you connect GitHub.</li>
+      <li><b>fleetd.sh</b> stores only your light or dark theme choice, in your browser’s local storage.</li>
+      <li><b>Stripe’s</b> checkout and <b>WorkOS’s</b> sign-in pages set their own cookies for security and fraud prevention, under their own policies.</li>
+    </ul>
+
+    <h2 id="changes">Changes</h2>
+    <p>If we change this policy in a way that matters, we tell you in advance by email or in the app. The date at the top shows the latest version.</p>
+
+    <h2 id="contact">Contact</h2>
+    <p>Unlabored Labs, Inc., 131 Continental Dr Suite 305, Newark, Delaware 19713, United States, <a href="mailto:support@fleetd.dev">support@fleetd.dev</a>.</p>
+  </article>
+</main>
+
+<footer class="w foot">
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy" aria-current="page">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/imprint">Imprint</a>
+      <a href="/support">Support</a>
+    </nav>
+  </div>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

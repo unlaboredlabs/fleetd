@@ -2,4 +2,9 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://fleetd.sh/</loc></url>
   <url><loc>https://fleetd.sh/pricing</loc></url>
+  <url><loc>https://fleetd.sh/terms</loc></url>
+  <url><loc>https://fleetd.sh/privacy</loc></url>
+  <url><loc>https://fleetd.sh/refunds</loc></url>
+  <url><loc>https://fleetd.sh/imprint</loc></url>
+  <url><loc>https://fleetd.sh/support</loc></url>
 </urlset>

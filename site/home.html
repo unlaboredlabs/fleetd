@@ -209,6 +209,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
 .foot nav{display:flex;align-items:center;gap:20px}
+.foot .fine{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
 .foot a{text-decoration:none}
 .foot a:hover{color:var(--ink)}
 /* Light or Dark: one small icon at the footer's end, the other theme's. */
@@ -584,7 +585,16 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 </main>
 
 <footer class="w foot">
-  <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/imprint">Imprint</a>
+      <a href="/support">Support</a>
+    </nav>
+  </div>
   <nav aria-label="Footer">
     <a href="/pricing">Pricing</a>
     <a href="/docs">Docs</a>

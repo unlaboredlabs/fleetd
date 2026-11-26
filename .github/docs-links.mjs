@@ -1,5 +1,5 @@
 // Every link on fleetd.sh resolves. Run by CI from the repo root:
-//   node .github/docs-links.mjs              internal: each href/src in site/home.html, site/pricing.html and the built docs' pages
+//   node .github/docs-links.mjs              internal: each href/src in site/home.html, site/pricing.html, the legal and support pages and the built docs' pages
 //                                            (site/docs/**/*.html) names a file in site/ (clean URLs as Vercel serves
 //                                            them) and an id on that page
 //                                            Also: each moved section in docs/site/src/old-anchors.mjs leads to a page
@@ -16,6 +16,11 @@ import { resolve } from "./docs-serve.mjs";
 const PAGES = [
   "site/home.html",
   "site/pricing.html",
+  "site/terms.html",
+  "site/privacy.html",
+  "site/refunds.html",
+  "site/imprint.html",
+  "site/support.html",
   ...fs
     .readdirSync("site/docs", { recursive: true })
     .filter((n) => n.endsWith(".html") && !/^(_astro|pagefind)\//u.test(n))
