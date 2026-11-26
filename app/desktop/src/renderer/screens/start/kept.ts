@@ -50,6 +50,17 @@ export const useKept = (hub: string): Kept => {
   return kept;
 };
 
+/** Teams whose Skip for now was pressed since this page loaded: a team that can't run anything yet (runs.ts) opens on
+ * Get started again after a reload, whatever is kept, but not while the person goes on past it. */
+const skippedHere = new Set<string>();
+
+export const skipHere = (hub: string): void => void skippedHere.add(hub);
+
+export const skipped = (hub: string): boolean => skippedHere.has(hub);
+
+/** For tests: a page loaded again. */
+export const forgetSkips = (): void => skippedHere.clear();
+
 /** Where Get started is for this team. */
 export const startScreen = (hub: string): Screen => ({
   id: "start",
