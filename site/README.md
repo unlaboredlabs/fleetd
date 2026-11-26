@@ -1,7 +1,10 @@
 # fleetd.sh
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
-fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
+fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. Every
+answer carries a Content-Security-Policy (`vercel.json`'s `/(.*)` headers): scripts and styles from the site itself
+(inline ones too), clips and posters from media.unlabored.net, pricing's plans from accounts.fleetd.dev, Pagefind's
+WebAssembly; a page that loads from anywhere else needs that origin added there. `home.html` is the landing page: a hero
 with the bot beside the headline and the install line, then the desktop and phone apps on a MacBook Pro and an iPhone Duo, what fleetd is (two lines set big and a paragraph), then four
 short sections, each with its own clip or still of the app (`showcase-*`), and two last ones in words: the models
 agents run on, and self-hosted or fleetd cloud, linking to `pricing.html` (`/pricing`). The header's Sign in and Sign up
