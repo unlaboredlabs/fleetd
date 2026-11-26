@@ -62,10 +62,10 @@ describe("agent-mcp", () => {
     );
   });
 
-  test("a worker sees only report, ask_lead, its brief, agents, CI, decisions, reviews, images, artifacts, attachments and browser", () => {
+  test("a worker sees only report, ask_lead, its brief, agents, CI, decisions, reviews, images, artifacts, share links, attachments and browser", () => {
     expect(names("worker")).toEqual([
       "agents", "decisions_search", "report", "ask_lead", "brief_read", "agent_message", "wait_ci", "review_read", "chat_file", "publish_artifact",
-      "artifact_read", "attachment_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential", "fill_address",
+      "share_port", "artifact_read", "attachment_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential", "fill_address",
       "vault_items", "vault_store", "request_sign_in",
     ]);
     const lead = names("lead");

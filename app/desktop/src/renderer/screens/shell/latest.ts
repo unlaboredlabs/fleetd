@@ -49,6 +49,7 @@ const BLOCK_WORDS: Record<ChatBlock["kind"], (b: ChatBlock) => string> = {
   image: (b) => (b.kind === "image" ? (b.caption ?? "Photo") : ""),
   clip: (b) => (b.kind === "clip" ? (b.caption ?? "Clip") : ""),
   file: (b) => (b.kind === "file" ? (b.caption ?? b.name ?? "File") : ""),
+  preview: (b) => (b.kind === "preview" ? (b.label ?? "A preview") : ""),
 };
 
 /** A lead's block that didn't reach a part (a fence as written) says nothing in a preview. */

@@ -46,6 +46,7 @@ export const HUB_TO_NODE = [
   "mac_call",
   "screen_control",
   "relay_dial",
+  "preview_dial",
   "session_step",
   "session_end",
 ] as const;
@@ -176,6 +177,7 @@ export const LEAD_CALLS = [
   "repo_remove",
   "project_setup",
   "project_propose",
+  "share_port",
 ] as const;
 export type LeadCallOp = (typeof LEAD_CALLS)[number];
 
@@ -227,6 +229,7 @@ export const AGENT_MCP_TOOLS = [
   { name: "review_read", op: "review_read" },
   { name: "chat_file", op: "chat_file" },
   { name: "publish_artifact", op: "artifact_publish" },
+  { name: "share_port", op: "share_port" },
   { name: "artifact_read", op: "artifact_read" },
   { name: "attachment_read", op: "attachment_read" },
   { name: "session_start", op: "session_start" },

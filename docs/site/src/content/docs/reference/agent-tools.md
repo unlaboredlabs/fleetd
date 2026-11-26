@@ -65,6 +65,7 @@ Each tool below says when only one of them gets it.
 - <span id="chat_read"></span>`chat_read`: Read the messages around one chat message. Lead only.
 - <span id="chat_file"></span>`chat_file`: Post a file in the chat, such as a screenshot.
 - <span id="publish_artifact"></span>`publish_artifact`: Publish a report that opens beside the chat.
+- <span id="share_port"></span>`share_port`: Share a dev server it started as a link only the workspace's members open. Agents only.
 - <span id="artifact_read"></span>`artifact_read`: Read a published report.
 - <span id="attachment_read"></span>`attachment_read`: Open a file you attached.
 

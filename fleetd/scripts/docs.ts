@@ -373,6 +373,7 @@ const TOOL_GROUPS: [string, [string, string][]][] = [
       ["chat_read", "Read the messages around one chat message."],
       ["chat_file", "Post a file in the chat, such as a screenshot."],
       ["publish_artifact", "Publish a report that opens beside the chat."],
+      ["share_port", "Share a dev server it started as a link only the workspace's members open."],
       ["artifact_read", "Read a published report."],
       ["attachment_read", "Open a file you attached."],
     ],

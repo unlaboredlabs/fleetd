@@ -51,6 +51,8 @@ export type NotifyTarget = z.infer<typeof NotifyTarget>;
 export const OpenTarget = z.discriminatedUnion("kind", [
   ...notifyTargets,
   z.strictObject({ kind: z.literal("pair"), hub: hubUrl, code: pairCode }),
+  /** A share link the browser couldn't open signed out: the app signs in on it and opens it again. */
+  z.strictObject({ kind: z.literal("preview"), name: z.string().regex(/^[a-z0-9]{12}$/u), to: z.string().regex(/^\/[^\r\n]{0,2000}$/u) }),
 ]);
 export type OpenTarget = z.infer<typeof OpenTarget>;
 
@@ -74,8 +76,10 @@ export const NotifyRequest = z.strictObject({
 export type NotifyRequest = z.infer<typeof NotifyRequest>;
 
 /**
- * `fleetd://pair?hub=<url-encoded>&code=<code>` (as `fleetd pair` prints it), or null for anything else. The link
- * comes from outside the app, so it only ever prefills the pairing screen; F10 asks before it pairs.
+ * `fleetd://pair?hub=<url-encoded>&code=<code>` (as `fleetd pair` prints it), `fleetd://preview?url=<a share link's
+ * address>` (its sign-in page's Open in fleetd), or null for anything else. The link comes from outside the app, so a
+ * pairing only ever prefills the pairing screen (F10 asks before it pairs), and a preview only names a link the
+ * workspace itself then gives a way into, or refuses.
  */
 export const parseDeepLink = (link: string): OpenTarget | null => {
   let url: URL;
@@ -87,6 +91,7 @@ export const parseDeepLink = (link: string): OpenTarget | null => {
   if (url.protocol !== "fleetd:") return null;
   // `fleetd://pair?…` parses with "pair" as the host; `fleetd:pair?…` with it as the path.
   const route = (url.host || url.pathname).replace(/^\/+|\/+$/gu, "");
+  if (route === "preview") return previewTarget(url.searchParams.get("url") ?? "");
   if (route !== "pair") return null;
   const parsed = OpenTarget.safeParse({
     kind: "pair",
@@ -95,3 +100,16 @@ export const parseDeepLink = (link: string): OpenTarget | null => {
   });
   return parsed.success ? parsed.data : null;
 };
+
+/** A share link's address as the app opens it: its name (the host's first label) and the path on it. */
+function previewTarget(address: string): OpenTarget | null {
+  let u: URL;
+  try {
+    u = new URL(address);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const parsed = OpenTarget.safeParse({ kind: "preview", name: u.hostname.split(".")[0] ?? "", to: `${u.pathname}${u.search}` });
+  return parsed.success ? parsed.data : null;
+}

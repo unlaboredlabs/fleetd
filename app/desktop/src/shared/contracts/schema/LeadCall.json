@@ -2616,6 +2616,19 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/SharePortCall",
+          "properties": {
+            "op": {
+              "const": "share_port",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4779,6 +4792,34 @@
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",
       "type": "string"
+    },
+    "SharePortCall": {
+      "description": "`share_port`: a lead or task shares a port on its own session's machine as a share link, for the workspace's signed-in\nmembers only. The same port again renews its link.",
+      "properties": {
+        "label": {
+          "description": "What it shows (\"The login page\").",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "minutes": {
+          "description": "How long it lasts; default 120.",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "port": {
+          "description": "The dev server's port on your machine.",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "type": "object"
     }
   },
   "$ref": "#/$defs/LeadCall",

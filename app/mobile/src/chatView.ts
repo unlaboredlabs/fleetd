@@ -1,5 +1,5 @@
 // A chat as the phone lays it out, iMessage's way: a lead message of several parts is several bubbles, and its blocks
-// are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
+// are cards (a pull request, a checklist, a table, an ask with its buttons, a file, a share link's preview; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
 import { agentName, type Tag } from "./chatTags";
@@ -14,7 +14,8 @@ export type Bubble =
   | { readonly kind: "table"; readonly title: string | undefined; readonly columns: readonly string[]; readonly rows: ReadonlyArray<readonly string[]> }
   | { readonly kind: "block"; readonly text: string }
   | { readonly kind: "image"; readonly attachmentId: string; readonly name: string; readonly caption?: string | undefined }
-  | { readonly kind: "file"; readonly attachmentId: string; readonly name: string; readonly mime: string; readonly bytes: number };
+  | { readonly kind: "file"; readonly attachmentId: string; readonly name: string; readonly mime: string; readonly bytes: number }
+  | { readonly kind: "preview"; readonly name: string; readonly label: string | undefined; readonly port: number | undefined };
 
 const BLOCK_WORDS: Readonly<Record<string, string>> = {
   chart: "A chart",
@@ -54,6 +55,8 @@ const partBubble = (text: string, p: NonNullable<NonNullable<ChatItem["message"]
       return [{ kind: "image", attachmentId: block.attachmentId, name: block.caption ?? "Image", caption: block.caption }];
     case "file":
       return [{ kind: "file", attachmentId: block.attachmentId, name: block.name ?? block.caption ?? "File", mime: block.mime ?? "", bytes: block.bytes ?? 0 }];
+    case "preview":
+      return [{ kind: "preview", name: block.name, label: block.label, port: block.port }];
     default:
       return [{ kind: "block", text: `${BLOCK_WORDS[block.kind] ?? "Something"} the desktop app shows.` }];
   }
@@ -203,6 +206,8 @@ export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author"> & 
           return b.caption ?? "Photo";
         case "file":
           return b.name;
+        case "preview":
+          return b.label ?? "A preview";
       }
     })
     .filter((s) => s !== "")

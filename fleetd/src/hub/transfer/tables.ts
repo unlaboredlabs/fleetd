@@ -95,6 +95,7 @@ export const CARRIED = [
   "review_tasks",
   "review_verdicts",
   "session_prompts",
+  "share_link_settings",
   "shell_cursors",
   "sidebar_orders",
   "skill_uses",
@@ -185,6 +186,7 @@ export const LEFT_OUT: Record<string, string> = {
   removed_node_keys: "the keys of machines the old workspace removed: none of them links to the new one",
   screen_waits: "a wait for a screen on one of the old workspace's machines, minutes long",
   session_places: "which machine's process hosts each screen session",
+  share_links: "previews of dev servers that ran on the old workspace's machines, hours long: agents share them again",
   slot_claims: "the agent slots held on the old workspace's machines; agents claim again",
   vault_keys: "the old workspace's root key ids; the new workspace records its own",
 };

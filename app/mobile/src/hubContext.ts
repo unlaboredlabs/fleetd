@@ -173,6 +173,7 @@ export type SettingsParams = {
   Memory: undefined;
   ImportMemory: undefined;
   Devices: undefined;
+  ShareLinks: undefined;
   /** Paper, Notion, Tailscale and custom MCPs (D653): everyone's, what each may change the hub says. */
   Connections: undefined;
   /** The machines, the providers the team connects and what runs where, for admins (D550). */

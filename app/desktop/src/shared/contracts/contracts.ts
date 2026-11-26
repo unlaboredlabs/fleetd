@@ -1026,7 +1026,12 @@ export type KnownAuditKind =
   | "pr.merged"
   | "workspace.settings"
   | "connection.added"
-  | "connection.removed";
+  | "connection.removed"
+  | "share_link.create"
+  | "share_link.open"
+  | "share_link.renew"
+  | "share_link.revoke"
+  | "share_link.switch";
 /** KnownAuditKind, or a value from a newer workspace or the cloud: its summary says what it was. */
 export type AuditKind = KnownAuditKind | (string & {});
 
@@ -1842,6 +1847,8 @@ export type ChatBlock = (ChartBlock & {
   kind: "file";
 } | AskBlock & {
   kind: "ask";
+} | PreviewBlock & {
+  kind: "preview";
 }) & {
   v: number;
 };
@@ -8541,6 +8548,101 @@ export type SessionPromptRef = {
   scope: PromptScope;
 };
 
+/** A port on one machine, open at its own address to the workspace's signed-in members only, until it ends. */
+export type ShareLink = {
+  createdAt: Timestamp;
+  /** Who made it: a person, or an agent and the person whose work it was. */
+  createdBy: AuditActor;
+  /** When it stops opening; renewing moves it. */
+  expiresAt: Timestamp;
+  /** What it shows, in the maker's words ("The login page"). */
+  label?: string;
+  machineId: MachineId;
+  /** 12 of a-z0-9: the first label of its address. */
+  name: string;
+  port: number;
+  /** The bot whose agent made it. */
+  projectRef?: ProjectRef;
+  /** The agent's session that made it; on fleetd's computers, which computer the port is on. */
+  threadRef?: ThreadRef;
+  /** `https://<name>.<preview address>`. It opens signed in only through `share_link_open`. */
+  url: string;
+};
+
+/**
+ * `share_port`: a person's device turns a port on one of the workspace's machines into a share link (an agent's
+ * comes from its own session's machine, through agent-mcp). A port that is already shared gives its link, renewed.
+ */
+export type SharePortInput = {
+  label?: string;
+  machineId: MachineId;
+  /** How long it lasts; default 120, at most 1440. */
+  minutes?: number;
+  port: number;
+};
+
+export type SharePortOutput = {
+  link: ShareLink;
+};
+
+export type ShareLinksListInput = { [key: string]: unknown };
+
+export type ShareLinksListOutput = {
+  /** Whether links open in this workspace: an admin's switch. */
+  enabled: boolean;
+  /** Open ones, newest first. */
+  links: ShareLink[];
+  /** Where links live (`https://preview.example.com`); absent while none is set, which a self-hosted admin sets. */
+  previewUrl?: string;
+};
+
+export type ShareLinkRenewInput = {
+  /** From now; default 120, at most 1440. */
+  minutes?: number;
+  name: string;
+};
+
+export type ShareLinkRenewOutput = {
+  link: ShareLink;
+};
+
+export type ShareLinkRevokeInput = {
+  name: string;
+};
+
+export type ShareLinkRevokeOutput = { [key: string]: unknown };
+
+/** `share_link_open`: the link's address with a one-time code that signs this person in on it for a while. */
+export type ShareLinkOpenInput = {
+  name: string;
+  /** A path on the preview to land on; default `/`. */
+  to?: string;
+};
+
+export type ShareLinkOpenOutput = {
+  /** Good once, for a minute. */
+  url: string;
+};
+
+/** The workspace's share links: on or off, and (self-hosted) where they live. Owners and admins only. */
+export type ShareLinksSettingsSetInput = {
+  enabled?: boolean;
+  /** An https origin of its own, never the workspace's address or a parent of it; empty clears it. */
+  previewUrl?: string;
+};
+
+export type ShareLinksSettingsSetOutput = {
+  enabled: boolean;
+  previewUrl?: string;
+};
+
+/** A share link's card in chat: "Open preview". The app asks for its address (`share_link_open`); none is in the block. */
+export type PreviewBlock = {
+  label?: string;
+  name: string;
+  port?: number;
+};
+
 /**
  * A field for what the provider gives back. A secret one is sealed on the admin's device, never sent in the clear and
  * never shown again.
@@ -11365,6 +11467,12 @@ export interface ToolMap {
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   setup_list: { input: SetupListInput; output: SetupListOutput };
   setup_test: { input: SetupTestInput; output: SetupTestOutput };
+  share_link_open: { input: ShareLinkOpenInput; output: ShareLinkOpenOutput };
+  share_link_renew: { input: ShareLinkRenewInput; output: ShareLinkRenewOutput };
+  share_link_revoke: { input: ShareLinkRevokeInput; output: ShareLinkRevokeOutput };
+  share_links_list: { input: ShareLinksListInput; output: ShareLinksListOutput };
+  share_links_settings_set: { input: ShareLinksSettingsSetInput; output: ShareLinksSettingsSetOutput };
+  share_port: { input: SharePortInput; output: SharePortOutput };
   sidebar_order_get: { input: SidebarOrderGetInput; output: SidebarOrderGetOutput };
   sidebar_order_set: { input: SidebarOrderSetInput; output: SidebarOrderSetOutput };
   skill_delete: { input: SkillDeleteInput; output: SkillDeleteOutput };

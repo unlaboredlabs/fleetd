@@ -31,6 +31,7 @@ const KIND_DEF: Record<string, string> = {
   clip: "AttachmentBlock",
   file: "AttachmentBlock",
   ask: "AskBlock",
+  preview: "PreviewBlock",
 };
 
 /** The rules the schema can't say (the contracts' `checked!`). */

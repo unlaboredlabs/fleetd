@@ -12,6 +12,7 @@ import { start as startScreens } from "./screens/index.ts";
 import { start as startRtc } from "./rtc/index.ts";
 import { start as startSandboxes } from "./sandbox/hosted.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
+import { start as startShare } from "./share/index.ts";
 
 export function registerAreas(node: Node): void {
   // Every session's signed-in MCP servers reach it through `fleetd mcp-relay`, wherever it runs.
@@ -31,6 +32,8 @@ export function registerAreas(node: Node): void {
   }
   startBrowser(node);
   startSessionRoute(node);
+  // Share links' streams to this machine's own ports (a runner's agents' ports are in their boxes, which the cloud reaches).
+  startShare(node);
   startScreens(node);
   startDevices(node);
   // Hosted sandboxes' keys are tested, and their limits kept, only where agents run in sandboxes (Linux).

@@ -17,6 +17,7 @@ import { currentRoute, navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, forOthers, Notifier, policyFrom, policyStale, Requests, type DueContext, type Policy } from "./notifier";
 import { notificationPrefs } from "./notificationPrefs";
 import { projectId } from "./model";
+import { openPreview } from "../chat/blocks/PreviewCard";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 
 const platform = window.fleetd.platform;
@@ -26,7 +27,7 @@ export const onItsHub = (target: NotifyTarget, hub: HubId): NotifyTarget => (tar
 
 const screenFor = (target: OpenTarget): Screen => {
   // A hub's notification names its hub; one without (posted before there were several) is the first's.
-  const at = target.kind === "notifications" || target.kind === "pair" ? undefined : (target.at ?? FIRST_HUB);
+  const at = target.kind === "notifications" || target.kind === "pair" || target.kind === "preview" ? undefined : (target.at ?? FIRST_HUB);
   const on = at === undefined ? {} : { at };
   switch (target.kind) {
     case "chat":
@@ -40,6 +41,8 @@ const screenFor = (target: OpenTarget): Screen => {
       return { id: "settings", tab: "general" };
     case "pair":
       return { id: "onboarding", hub: target.hub, code: target.code };
+    case "preview":
+      return currentRoute();
   }
 };
 
@@ -52,6 +55,7 @@ const lookingAt = (hub: string, project: ProjectKey): boolean => {
 
 /** App menu clicks run the same command as their key; clicked notifications and fleetd:// links open their item. */
 export const useMainProcess = (): void => {
+  const layer = useDataLayer();
   useEffect(() => {
     const offMenu = window.fleetd.app.onMenuCommand((id) => {
       closeOverlay();
@@ -59,13 +63,15 @@ export const useMainProcess = (): void => {
     });
     const offOpen = window.fleetd.app.onOpen((target) => {
       closeOverlay();
+      // A share link's sign-in page sent the person here: the workspace in front gives the way in, and the browser opens it.
+      if (target.kind === "preview") return void openPreview((tool, input) => layer.call(tool, input), target.name, target.to);
       navigate(screenFor(target));
     });
     return () => {
       offMenu();
       offOpen();
     };
-  }, []);
+  }, [layer]);
 };
 
 /**

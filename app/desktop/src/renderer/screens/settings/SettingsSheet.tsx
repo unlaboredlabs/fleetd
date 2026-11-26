@@ -14,6 +14,7 @@ import {
   Layers,
   LayoutGrid,
   ListChecks,
+  Link2,
   LockKeyhole,
   MonitorSmartphone,
   Search,
@@ -82,6 +83,7 @@ const HUB_PAGES: ReadonlyArray<{
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
   { tab: "hub.signin", label: HUB_PAGES_SHOWN.signin, icon: <ShieldCheck /> },
   { tab: "hub.audit", label: HUB_PAGES_SHOWN.audit, icon: <ScrollText /> },
+  { tab: "hub.share", label: HUB_PAGES_SHOWN.share, icon: <Link2 /> },
   { tab: "hub.agents", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
   { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
 ];

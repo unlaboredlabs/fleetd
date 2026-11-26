@@ -155,6 +155,28 @@ const auditList = (f: Fixture): void => {
   f.answer("audit_list", undefined, { events: rows, more: true });
 };
 
+/** Settings › Workspace › Share links: on, at the workspace's own preview name, an agent's link and Alice's. */
+const shareLinks = (f: Fixture): void => {
+  const at = (minutes: number) => new Date(Date.parse(f.now) + minutes * 60_000).toISOString();
+  const links: JsonObject[] = [
+    {
+      name: "k7f3q9m2x8ab",
+      url: "https://k7f3q9m2x8ab.preview.example.com",
+      machineId: "devbox",
+      port: 5173,
+      label: "Checkout redesign",
+      createdBy: { kind: "agent", name: "An agent" },
+      createdAt: at(-20),
+      expiresAt: at(100),
+      projectRef: { machineId: "devbox", projectId: "bot-storefront" },
+      threadRef: { machineId: "devbox", threadId: "th-storefront-1" },
+    },
+    { name: "p2r8w4c6d1ze", url: "https://p2r8w4c6d1ze.preview.example.com", machineId: "buildbox", port: 3000, createdBy: by(alice), createdAt: at(-50), expiresAt: at(70) },
+  ];
+  f.answer("share_links_list", undefined, { enabled: true, links, previewUrl: "https://preview.example.com" });
+};
+const by = (p: JsonObject) => ({ kind: "person", personId: p["personId"] ?? "", name: p["name"] ?? "" });
+
 /** The owner's hub as `me` sees it, with every write answered as the hub would. */
 function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: boolean, membersUseHubApi = true): Fixture {
   return answerHub(Fixture.from(from, name, note), me, admin, membersUseHubApi);
@@ -172,6 +194,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   f.answer("usage_status", undefined, usageStatus);
   f.answer("people_list", undefined, people(me));
   if (admin) auditList(f);
+  if (admin) shareLinks(f);
   // Settings › You › General, Name: the hub keeps a name as typed, trimmed, and refuses an empty one in its own words.
   const renamed = `${asText(me["name"])} Jr.`;
   f.answer("person_name_set", { name: renamed }, { person: { ...me, name: renamed } });
@@ -237,7 +260,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
 function oldHub(from: Fixture): Fixture {
   const f = Fixture.from(from, "admin-old-hub", "A workspace from before people: its admin key reaches the Workspace group, and People and Invites ask for an update");
   f.answer("hub_info", undefined, { version: "0.8.0", protocol: 1, busy: [], admin: true });
-  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "audit_list"]) {
+  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "audit_list", "share_links_list"]) {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the workspace's MCP tool list." });
   }
   // Its MCP servers are older than people: Every project shows them, none here.

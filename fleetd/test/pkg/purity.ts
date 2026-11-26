@@ -163,11 +163,19 @@ export function exported(): { name: string; path: string }[] {
 
 /**
  * What an entry (its name in `exports`) may do beyond pure: the fakes are clients of a server at an address, and the
- * box side (`./box/…`, `./browser/…`, `./desktop/…`, `./device/…`) drives a sandbox box over its sockets, WebSockets and fetch. Neither touches a file, a process
- * or the machine's environment.
+ * box side (`./box/…`, `./browser/…`, `./desktop/…`, `./device/…`) drives a sandbox box over its sockets, WebSockets and fetch. A share link's proxy
+ * (`./hub/share_links/proxy`) speaks HTTP (node:http) over the stream its caller opens, and opens none itself. None touches a
+ * file, a process or the machine's environment.
  */
 export const allowed = (name: string): Taint[] =>
-  name.startsWith("./fakes/") || name.startsWith("./box/") || name.startsWith("./browser/") || name.startsWith("./desktop/") || name.startsWith("./device/") ? ["network"] : [];
+  name.startsWith("./fakes/") ||
+  name.startsWith("./box/") ||
+  name.startsWith("./browser/") ||
+  name.startsWith("./desktop/") ||
+  name.startsWith("./device/") ||
+  name === "./hub/share_links/proxy"
+    ? ["network"]
+    : [];
 
 /**
  * The npm packages an entry may import: the browser's (`./browser/…`, a box-side kind: an agent's browser driven

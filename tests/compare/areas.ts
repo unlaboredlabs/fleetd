@@ -210,6 +210,10 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   vault_move: "not called: it moves an item set aside at the upgrade, which no tool makes",
   hub_restart: "not called: it restarts the hub the run is calling, which drops every connection the run holds",
   hub_move_start: "not called: it moves the hub into a fleetd cloud team, which a run doesn't reach, and pauses the hub the run is calling",
+  share_port: "not called: a share link needs the workspace's preview address, a wildcard name a run doesn't have",
+  share_link_renew: "not called: it renews a share link, which only share_port makes",
+  share_link_revoke: "not called: it stops a share link, which only share_port makes",
+  share_link_open: "not called: it opens a share link, which only share_port makes",
 };
 
 /**

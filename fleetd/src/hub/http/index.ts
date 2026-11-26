@@ -9,6 +9,7 @@ import type { Registry } from "../api/registry.ts";
 import { hook } from "../automations/webhook.ts";
 import { nodeLink } from "../link/socket.ts";
 import { relay } from "../machine_roles/relay.ts";
+import { previewDialRoute, previewNameOf, servePreview } from "../share_links/serve.ts";
 import { mcp } from "../mcp/http.ts";
 import { oauthCallback } from "../mcp_oauth/callback.ts";
 import { dialRoute } from "../tailnet/route.ts";
@@ -31,6 +32,7 @@ export const ROUTES: [method: "GET" | "POST" | "ANY", path: string, route: Route
   ["POST", "/pair/mac", macPair],
   ["GET", "/node/link", nodeLink],
   ["GET", "/relay/{token}", relay],
+  ["GET", "/preview/{token}", previewDialRoute],
   ["GET", "/node/tailnet/dial", dialRoute],
   ["POST", "/hooks/{automation_id}/{secret}", hook],
   ["GET", "/oauth/callback", oauthCallback],
@@ -73,6 +75,16 @@ export function serve(hub: Hub, tools: Registry, port = hub.config.listen.port):
     development: false,
     error: onError,
     async fetch(req, server) {
+      // A preview's host (`<name>.<preview address>`) is a share link's, and never reaches the workspace's own routes.
+      const preview = previewNameOf(hub, req);
+      if (preview !== undefined) {
+        try {
+          return await servePreview(hub, req, server, preview);
+        } catch (error) {
+          console.error("workspace http: a share link's request failed:", error);
+          return new Response("The preview failed", { status: 502 });
+        }
+      }
       const path = new URL(req.url).pathname;
       for (const r of compiled) {
         const match = r.pattern.exec(path);

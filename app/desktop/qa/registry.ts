@@ -273,6 +273,7 @@ export const fixtures = [
   "bubbles-agent",
   "bubbles-ask",
   "bubbles-sources",
+  "bubbles-preview",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
@@ -2590,7 +2591,7 @@ export const screens: readonly Screen[] = [
   },
   // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
   // PR card with its diff, and an ask waiting on you.
-  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources"], variant: "bubbles" },
+  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-agent", "bubbles-ask", "bubbles-sources", "bubbles-preview"], variant: "bubbles" },
   // The tagged chat (a project's trial): a quiet line over each run names its order and, over the lead's, whom it is
   // for; the closed order's messages stay as bubbles where they were. With one order open no tag names it; with the
   // trial off the chat is today's.
@@ -4516,6 +4517,9 @@ export const screens: readonly Screen[] = [
   // The audit log: a morning of the workspace, newest first, by name, a member's refused change in red, Older for the
   // rest; and a workspace from before it, which says to update.
   { id: "settings.hub.audit", route: "#/settings/hub/audit", fixtures: ["admin-owner", "admin-old-hub"] },
+  // Share links: on, at the workspace's preview name, an agent's link and a person's, each with Open, Renew and Stop,
+  // and Share a port under them; and a workspace from before them, which says to update.
+  { id: "settings.hub.share", route: "#/settings/hub/share", fixtures: ["admin-owner", "admin-old-hub"] },
   // The Vault: the team's logins, cards and addresses with the set-aside section under them; as a member; one list on
   // a hub from before the team vault; and an empty one, its own add beside its words. A team card only its creator or an admin may show or change, opened.
   // A project's variables and its order's; and Every project › Vault, the vault key alone.
