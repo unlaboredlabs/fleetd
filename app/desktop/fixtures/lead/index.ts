@@ -308,8 +308,11 @@ function setupChanged(f: Fixture): Fixture {
     msg(1, "human", "Add our API repo to this bot, call the bot Storefront, and point agents at the staging API.", 600),
     msg(2, "system", "Added the repo api", 540, { setupChanged: { kind: "repo_added", names: ["api"] } }),
     msg(3, "system", "Renamed the bot to Storefront", 530, { setupChanged: { kind: "title" } }),
-    msg(4, "system", "Set the variable API_BASE", 520, { setupChanged: { kind: "env", names: ["API_BASE"], undone: true } }),
-    msg(5, "lead", "The api repo is cloned and part of the bot, and the bot is called Storefront. Agents get API_BASE for staging.", 500),
+    // Long enough to fill the row: Undone keeps its one line beside it.
+    msg(4, "system", "Set the variables API_BASE, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, SENTRY_DSN and FEATURE_FLAGS_URL for the bot's agents", 520, {
+      setupChanged: { kind: "env", names: ["API_BASE", "STRIPE_PUBLISHABLE_KEY", "STRIPE_WEBHOOK_SECRET", "SENTRY_DSN", "FEATURE_FLAGS_URL"], undone: true },
+    }),
+    msg(5, "lead", "The api repo is cloned and part of the bot, and the bot is called Storefront. Agents get the staging variables.", 500),
   ];
   const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: false, lastSeq: 5, lastMessageAt: t(500) });
   for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);

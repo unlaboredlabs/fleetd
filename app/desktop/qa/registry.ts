@@ -1130,6 +1130,11 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(2);
       await expect(page.getByRole("button", { name: "Open" })).toHaveCount(3);
     },
+    // Beside a line that fills the row, Undone stays one word on one line, never "Undo" over "ne".
+    check: async (page) => {
+      const word = await page.getByText("Undone", { exact: true }).boundingBox();
+      expect(word?.height, "Undone's height: one line").toBeLessThanOrEqual(18);
+    },
   },
   // The line above the box says what the lead waits on, and Show brings the open approval into view.
   {
