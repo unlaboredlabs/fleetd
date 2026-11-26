@@ -320,6 +320,8 @@ export type Resolved = {
   exe: string;
   /** How to run it again. */
   again: string;
+  /** The same with --no-service, for a machine with no systemd user service manager; undefined: it has it already. */
+  againByHand?: string;
   enroll: Enroll;
   claudeConfigDir?: string;
 };
@@ -403,6 +405,13 @@ export function resolve(a: AddArgs, exe: string): Resolved {
         : local
           ? "fleetd machine add --local"
           : `fleetd machine add ${host}`;
+  const againByHand = a.noService
+    ? undefined
+    : a.enroll.kind === "token"
+      ? joinAgain({ ...a, noService: true }, hubUrl, a.enroll.token, machineId)
+      : joining
+        ? "fleetd init --no-service"
+        : `${again} --no-service`;
   return {
     machineId,
     local,
@@ -419,6 +428,7 @@ export function resolve(a: AddArgs, exe: string): Resolved {
     binary,
     exe,
     again,
+    ...(againByHand === undefined ? {} : { againByHand }),
     enroll: a.enroll,
     ...(a.claudeConfigDir === undefined ? {} : { claudeConfigDir: a.claudeConfigDir }),
   };
@@ -564,6 +574,12 @@ export type Added = {
   notes: string[];
 };
 
+/** A Linux step that runs systemctl failed for want of systemd: no systemctl (exit 127), or no user manager to talk to. */
+const noSystemd = (platform: string, command: string, r: { code: number; stdout: string; stderr: string }) =>
+  platform === "linux" &&
+  command.includes("systemctl") &&
+  (r.code === 127 || /not been booted with systemd|failed to connect to bus|systemctl: (command )?not found/i.test(`${r.stdout}\n${r.stderr}`));
+
 /** Runs the plan `prepare` made: records the machine, runs each step, waits until its node is online, checks claude. */
 export async function execute(
   r: Resolved,
@@ -615,7 +631,9 @@ export async function execute(
       const fix =
         step.stdin?.kind === "enrollToken" && r.joining
           ? "the code is single use and lasts 15 minutes: on the workspace's machine, run fleetd pair --worker for a new one"
-          : `fix that, then run ${r.again}; finished steps are skipped`;
+          : r.againByHand !== undefined && noSystemd(plan.platform, step.command, result)
+            ? `this machine has no systemd user service to run its node (a container, or WSL without systemd): run ${r.againByHand}, then start the node with ${q(plan.layout.bin)} node run --home ${q(plan.layout.nodeHome)}`
+            : `fix that, then run ${r.again}; finished steps are skipped`;
       throw Stop.fail(`step ${i + 1} failed (exit ${result.code}):\n${tail(`${result.stdout}\n${result.stderr}`)}\nFix: ${fix}.`);
     }
     stepsDone = Date.now();

@@ -103,8 +103,11 @@ export class Ui {
 
 /** `why. Fix: what` split; a problem without a fix is its own fix, the same text (callers compare them). */
 export function splitFix(problem: string): [string, string] {
-  const at = problem.indexOf(" Fix: ");
-  if (at >= 0) return [problem.slice(0, at).trim().replace(/\.+$/, ""), problem.slice(at + 6).trim().replace(/\.+$/, "")];
+  // A failed step's Fix starts a line of its own, after the step's output.
+  const at = /\s+Fix: /.exec(problem);
+  if (at !== null) {
+    return [problem.slice(0, at.index).trim().replace(/\.+$/, ""), problem.slice(at.index + at[0].length).trim().replace(/\.+$/, "")];
+  }
   const said = problem.trim().replace(/\.+$/, "");
   return [said, said];
 }
@@ -340,7 +343,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
   }
   const said = release();
   if (added === undefined) {
-    failedWithLog(list, machineId, "could not join", said, `a used or expired code: on the workspace's machine, fleetd pair --worker ${machineId} prints a new command`);
+    failedWithLog(list, machineId, "could not join", said, "fix the cause above, then run the join line again");
     return workerEnd(list, "", false);
   }
   nodeLine(list, added.machineId, added, `joined ${hub.trim()}`);
@@ -419,7 +422,10 @@ export function failedWithLog(list: Checklist, title: string, what: string, said
     return;
   }
   const [why, ownFix] = splitFix(last.slice(8));
-  list.failed(title, `${what}: ${why.split("\n")[0]}`, why === ownFix ? fix : ownFix);
+  // A failed step's message: "step 4 failed (exit 127):", its output, then its Fix; shown with the output's last line.
+  const [head = "", ...output] = why.split("\n").filter((l) => l.trim() !== "");
+  const line = output.length === 0 ? head : `${head.replace(/:$/, "")}: ${output.at(-1)!.trim()}`;
+  list.failed(title, `${what}: ${line}`, why === ownFix ? fix : ownFix);
 }
 
 /** `machine add`'s notes (linger, an untested claude, …) as ! lines; the login note is the claude line's. */
