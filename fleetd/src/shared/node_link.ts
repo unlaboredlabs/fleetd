@@ -352,8 +352,12 @@ export const HOLD_LEASE_SECS = 60;
  */
 export type NodeManager = { user: string; uid: number; linger: boolean; restarts: boolean };
 
+/** A node that runs as root, where Claude Code won't run agents; `systemd`: the machine was booted with it. Absent on
+ * fleetd's own computers (IS_SANDBOX), for a node that doesn't run as root, and from older nodes. */
+export type NodeRoot = { systemd: boolean };
+
 /** `manager`: absent off Linux, from a node that isn't a systemd user service, and from older nodes. */
-export type NodeProbe = { gitEmail?: string; gitEmailFrom?: "env" | "git_config"; manager?: NodeManager };
+export type NodeProbe = { gitEmail?: string; gitEmailFrom?: "env" | "git_config"; manager?: NodeManager; root?: NodeRoot };
 
 /** Node -> hub, one per `node_action`. Not camelCase: its sign-in URL is `login_url` on the wire. */
 export type NodeActionResult = {

@@ -28,7 +28,9 @@ It needs macOS 12 or newer, and updates itself. To run agents or a workspace on 
 - **`git`** on the workspace's machine.
 - **GitHub**: the workspace's own GitHub App, which you create in setup, or `gh` logged in on the workspace.
 
-You don't need `sudo`.
+You don't need `sudo`, and fleetd doesn't run as root: Claude Code won't run agents as root. Logged in as root on
+Linux (most servers' default), the installer offers to make a user named `fleetd` and installs as that user. Without
+a terminal it changes nothing and prints the commands to do the same.
 
 ## What it installs
 

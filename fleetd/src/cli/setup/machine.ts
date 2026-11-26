@@ -607,6 +607,7 @@ export async function execute(
       home: facts.home,
       configHome: facts.configHome,
       uid: facts.uid,
+      ...(plan.runByHand === undefined ? {} : { runByHand: plan.runByHand }),
     };
     try {
       writeSetup(r.home, { ...r.state, machines: { ...r.state.machines, [r.machineId]: record } });

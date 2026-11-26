@@ -178,6 +178,13 @@ export function undoManagerScript(user: string, uid: number, dropIn: string): st
   return `rm -f ${file}; rmdir ${file.slice(0, file.lastIndexOf("/"))} 2>/dev/null; ${linger}systemctl daemon-reload`;
 }
 
+/** This process runs as root, where Claude Code won't run agents, outside fleetd's own computers (whose boxes tell
+ * claude they are a sandbox, IS_SANDBOX); and whether the machine was booted with systemd. Undefined otherwise. */
+export function runsAsRoot(): { systemd: boolean } | undefined {
+  if (process.getuid?.() !== 0 || process.env.IS_SANDBOX) return undefined;
+  return { systemd: existsSync("/run/systemd/system") };
+}
+
 /** Whether systemd brings this user's service manager back by itself, read from inside it: undefined off Linux, when
  * this process isn't a systemd user service, and when systemd can't be asked. */
 export function readManager(): NodeManager | undefined {

@@ -191,6 +191,15 @@ test("a degraded machine gets the one fix for its cause", () => {
     "mac is offline (last seen 2026-11-08T09:00:00.000Z).",
     "launchctl kickstart -k gui/501/sh.fleetd.node",
   ]);
+  // Set up with --no-service, where there is no systemd: the command that starts its node, never systemctl.
+  const byHand = { sshHost: "", local: true, platform: "linux" as const, uid: 0, runByHand: "/root/.fleetd/bin/fleetd node run --home /root/.fleetd/node" };
+  const stopped = c.machineOnline({ machineId: "box", status: "offline", lastSeenAt: "2026-11-08T09:00:00.000Z" }, byHand);
+  expect([stopped.fix?.label, stopped.fix?.command]).toEqual([
+    "Start the fleetd node on box: it runs without a service",
+    "/root/.fleetd/bin/fleetd node run --home /root/.fleetd/node",
+  ]);
+  // "Starting…" ends its sentence already.
+  expect(c.machineOnline({ ...degraded, degradedReason: "Starting…" }, undefined).message).toBe("mac is degraded: Starting…");
 });
 
 const sealed = (machineId: string): ClaudeSealedOn => ({ machineId, fingerprint: "0123abcd" }) as ClaudeSealedOn;

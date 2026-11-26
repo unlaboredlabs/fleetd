@@ -12,6 +12,8 @@ export type MachineSetup = {
   local: boolean;
   platform: Platform;
   uid: number;
+  /** The command that starts its node, set up with --no-service: no service runs it. */
+  runByHand?: string;
 };
 
 export type HubSetup = {
@@ -48,7 +50,13 @@ function decode(v: unknown): HubSetup {
         throw new Error(`unknown variant \`${String(m.platform)}\`, expected \`linux\` or \`darwin\``);
       }
       if (m.local !== undefined && typeof m.local !== "boolean") throw new Error(`invalid machine ${id}: local`);
-      out.machines[id] = { sshHost: m.sshHost, local: m.local === true, platform: m.platform, uid: m.uid };
+      out.machines[id] = {
+        sshHost: m.sshHost,
+        local: m.local === true,
+        platform: m.platform,
+        uid: m.uid,
+        ...(typeof m.runByHand === "string" ? { runByHand: m.runByHand } : {}),
+      };
     }
   }
   return out;
@@ -78,9 +86,11 @@ export function addCommand(m: MachineSetup): string {
 }
 
 /** The command that restarts a fleetd service, named as the CLI's setup names its units. The workspace's has a fleetd
- * command of its own, so a person never needs its unit's old name (fleetd-hub). */
+ * command of its own, so a person never needs its unit's old name (fleetd-hub). A node set up with --no-service (no
+ * systemd there) has no unit: the command that starts it. */
 export function restartCommand(role: string, setup: MachineSetup | undefined): string {
   if (role === "hub") return "fleetd workspace restart";
+  if (setup?.runByHand !== undefined) return setup.runByHand;
   return setup?.platform === "darwin"
     ? `launchctl kickstart -k gui/${setup.uid}/sh.fleetd.${role}`
     : `systemctl --user restart fleetd-${role}.service`;
