@@ -39,6 +39,7 @@ import { onHome } from "../split";
 import { useBeside, useStrip } from "../ui/pane";
 import { SheetRoom } from "../ui/StripRoom";
 import { linkStatus } from "../link";
+import { chatStatus } from "../chatStatus";
 import { useHubWord } from "./linkHeader";
 import { useCanStop } from "../stopProbe";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
@@ -290,24 +291,25 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const linkWord = useHubWord().word;
   // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId, paired.cloud === true)}`;
-  const status = link?.busy === true ? (linkWord?.text ?? quiet) : link !== undefined ? "Offline" : working ? "Working…" : waitsOnMe(chatState, state.me) ? "Waiting for you" : quiet;
+  const machineOffline = project !== undefined && state.machines.some((m) => m.machineId === project.machineId && m.status === "offline");
+  const { text: status, busy } = chatStatus({ link, linkWord: linkWord?.text, working, machineOffline, waitsOnMe: waitsOnMe(chatState, state.me), quiet });
   // Its bot: done a moment after the lead's turn ends, as the desktop's chat title.
   const bot = useBot(chatKey, useJustDone(working));
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
   // iOS's bar, in the Duo's side-strip poses only: its Back and Info in the strip, the title in it as on Android.
   useLayoutEffect(() => {
     if (Platform.OS !== "ios") return;
-    navigation.setOptions(inStrip ? stripBar(t, () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />, openInfo) : { headerShown: false });
-  }, [navigation, inStrip, t, title, status, working, link, project?.avatar, bot, openInfo]);
+    navigation.setOptions(inStrip ? stripBar(t, () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={busy} onPress={openInfo} />, openInfo) : { headerShown: false });
+  }, [navigation, inStrip, t, title, status, busy, project?.avatar, bot, openInfo]);
   // Android's stack draws the bar.
   useEffect(() => {
     if (Platform.OS === "ios") return;
     navigation.setOptions({
-      headerTitle: () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />,
+      headerTitle: () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={busy} onPress={openInfo} />,
       title,
     });
     // A picture set or removed (here or on another device) draws the header again: its id is all that changes.
-  }, [navigation, title, status, working, link, project?.avatar, bot, openInfo]);
+  }, [navigation, title, status, busy, project?.avatar, bot, openInfo]);
 
   const list = useRef<FlatList<ThreadRow>>(null);
   // The list's native tag, for the bars' scroll edge effect: it is mounted once the screen is.
@@ -822,7 +824,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           >
             {inStrip ? null : (
               <ChatBar top={barTop} onBack={goBack} onInfo={openInfo}>
-                <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
+                <ChatTitle picture={project} bot={bot} title={title} status={status} busy={busy} onPress={openInfo} />
               </ChatBar>
             )}
           </EdgeEffect>
