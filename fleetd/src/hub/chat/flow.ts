@@ -436,13 +436,14 @@ function waits(hub: Hub, r: ProjectRef, gone: Gone): Gone {
   return { message: gone.message, ...(waiting === undefined ? {} : { waiting }) };
 }
 
-/** Why nothing reaches the machine's lead now, and what brings it back; undefined while it is linked. */
-function machineAway(hub: Hub, m: MachineId): string | undefined {
+/** Why nothing reaches the machine's lead now, what's safe and what brings it back; undefined while it is linked. The
+ * chat shows its first sentence, so that one says it plainly: no "node", which people needn't know. */
+export function machineAway(hub: Hub, m: MachineId): string | undefined {
   if (!store(hub).machineGet(m)) {
     return `${m} isn't one of this workspace's machines now (it was removed), so its lead can't take this. It goes in once ${m} joins again: on the workspace's machine, run \`fleetd pair --worker ${m}\`, then run what it prints on ${m} with --rejoin.`;
   }
   if (!writeQueue(hub).isConnected(m)) {
-    return `${m} is offline: its node isn't connected. It goes in when ${m} is back. If ${m} is on, Repair it in ${settingsPath()} › Machines.`;
+    return `${m} is offline, so your message waits and goes in when it's back. If ${m} is on, Repair it in ${settingsPath()} › Machines.`;
   }
   return undefined;
 }

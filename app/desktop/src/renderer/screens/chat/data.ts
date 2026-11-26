@@ -26,6 +26,8 @@ export interface ChatData {
   readonly warning: string | undefined;
   /** Blocked by this machine's usage pause, which Resume lifts. */
   readonly usagePausedOn: string | undefined;
+  /** Blocked while its machine is offline or degraded: the one Open machine opens. */
+  readonly machineDown: string | undefined;
   /** The newest page couldn't be read (before any page landed): the chat shows why, with retry. */
   readonly loadError: HubError | undefined;
   readonly retry: () => void;
@@ -49,9 +51,11 @@ export function useChatData(project: ProjectRef): ChatData {
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
   const blocked = state === "blocked" ? (row?.blockedReason ?? "") : undefined;
   const usagePausedOn = state === "blocked" ? row?.usagePausedOn : undefined;
+  const machineStatus = useData((s) => s.machines[project.machineId]?.status);
+  const machineDown = state === "blocked" && machineStatus !== undefined && machineStatus !== "online" ? project.machineId : undefined;
   const warning = row?.warning;
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, blocked, warning, usagePausedOn, leadWorking, loadError, retry, title, missing, loadOlder };
+  return { view, blocked, warning, usagePausedOn, machineDown, leadWorking, loadError, retry, title, missing, loadOlder };
 }

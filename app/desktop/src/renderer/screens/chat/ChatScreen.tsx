@@ -39,7 +39,7 @@ import { usePanelHandle } from "../shell/panel";
 import { useCommands } from "../palette";
 import { display } from "../../../shared/shortcuts";
 import { usePersonNames } from "../admin/names";
-import { useHubRole } from "../admin/role";
+import { useHubRole, useSettledAdministers } from "../admin/role";
 import s from "./view.module.css";
 
 /** The search field loads with its first ⌘F, not with the chat. */
@@ -85,6 +85,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const [arrived, setArrived] = useState<Arrivals>();
   // Whose messages are yours: in a chat the team shares, someone else's show their name.
   const me = useHubRole().me?.personId;
+  // Machines is the workspace's page: only an admin is sent to it.
+  const admin = useSettledAdministers();
+  const down = data.machineDown;
+  const openMachine = down === undefined || !admin ? undefined : () => navigate({ id: "settings", tab: "hub.machines", machine: down });
   const names = usePersonNames();
   // The tagged chat (the project's trial): tags name its open orders, a lens shows one order.
   const tagsOn = useData((d) => d.projects[key]?.chatTags === true);
@@ -559,6 +563,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                   blocked={view?.held === true ? undefined : data.blocked}
                   which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
                   resume={view?.held === true ? undefined : data.usagePausedOn}
+                  onOpenMachine={view?.held === true ? undefined : openMachine}
                   onShow={showNext}
                   looks={looks}
                   onLook={showLook}

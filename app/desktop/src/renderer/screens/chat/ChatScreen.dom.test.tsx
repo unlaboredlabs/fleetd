@@ -2,7 +2,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ProjectStatusRow } from "../../../shared/contracts";
+import type { MachineStatus, ProjectStatusRow } from "../../../shared/contracts";
+import { parseHash } from "../shell/routes";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, liveLane, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -36,12 +37,17 @@ afterEach(() => {
  * The chat on a live hub whose Status row for the project is `row`, its lead's lane `lead` when given. `working`: the
  * hub's chat state says the lead works (by default, when it has a lane); `messages`: the chat's, oldest first.
  */
-const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof liveLane>, at: { working?: boolean; messages?: readonly unknown[] } = {}) => {
+const mount = async (
+  row: Partial<ProjectStatusRow>,
+  lead?: ReturnType<typeof liveLane>,
+  at: { working?: boolean; messages?: readonly unknown[]; machine?: MachineStatus; hubInfo?: unknown } = {},
+) => {
   const working = at.working ?? lead !== undefined;
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const answers: Readonly<Record<string, unknown>> = {
     status_get: { rows: [{ projectRef: project, title: "storefront", asOf: AT, agentsRunning: 0, state: "idle", ...row }] },
     orders_board: { orders: [] },
+    ...(at.hubInfo === undefined ? {} : { hub_info: at.hubInfo }),
     usage_resume: { resumed: 2, status: { machineId: project.machineId, breaker: { state: "closed" } } },
     chat_history: {
       messages: at.messages ?? [{ messageId: "m1", projectRef: project, seq: 1, author: "human", state: "final", text: "Add dark mode", createdAt: AT }],
@@ -78,7 +84,9 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
   });
   act(() => {
     send(live());
-    send(snapshot(1));
+    const snap = snapshot(1);
+    if (at.machine !== undefined && snap.t === "snapshot") snap.snapshot.machines = snap.snapshot.machines.map((m) => ({ ...m, status: at.machine as MachineStatus }));
+    send(snap);
     if (lead !== undefined) send({ t: "live", frame: { at: AT, full: true, lanes: [lead] } });
   });
   for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
@@ -130,6 +138,22 @@ it("offers Resume on the blocked line when its machine's usage pause is why, and
   // Another reason offers none.
   act(() => root?.unmount());
   await mount({ state: "blocked", blockedReason: "devbox is offline" });
+  expect(host.querySelector("[data-attention] button")).toBeNull();
+});
+
+it("opens the machine from the blocked pill while its machine is offline, for an admin; a member gets the words alone", async () => {
+  window.location.hash = "";
+  await mount({ state: "blocked", blockedReason: "devbox is offline" }, undefined, { machine: "offline" });
+  expect(line()).toBe("Blocked: devbox is offline" + "Open machine");
+  // The words themselves open it: the pill is what people press.
+  act(() => host.querySelector<HTMLElement>("[data-attention] span")?.click());
+  expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines", machine: "devbox" });
+  window.location.hash = "";
+  act(() => host.querySelector<HTMLButtonElement>("[data-attention] button")?.click());
+  expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines", machine: "devbox" });
+  act(() => root?.unmount());
+  await mount({ state: "blocked", blockedReason: "devbox is offline" }, undefined, { machine: "offline", hubInfo: { admin: false } });
+  expect(line()).toBe("Blocked: devbox is offline");
   expect(host.querySelector("[data-attention] button")).toBeNull();
 });
 
