@@ -5,6 +5,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import { HOST_NOUN } from "../../shared/screens_wire.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { SIMS_DEFAULT } from "../../node/mac_tool/protocol.ts";
 
 /** Memory to allow per session when sizing a machine's session cap: a browser or an emulator. */
 export const MEM_PER_SESSION = 2 * 2 ** 30;
@@ -23,7 +24,8 @@ export const TURN_WAIT_MS = IDLE_MS;
 /** How long a hosted session's place outlives its end: its runner may still be uploading its recording. */
 export const KEEP_HOSTED_MS = 7 * 86_400_000;
 
-export type Roles = { agents: boolean; sessions: boolean; maxSessions: number | undefined };
+/** `maxSims`: on a Mac that lends simulators, how many at once a person set; absent, the default. */
+export type Roles = { agents: boolean; sessions: boolean; maxSessions: number | undefined; maxSims?: number };
 
 export const rolesList = (r: Roles): MachineRole[] => [
   ...(r.agents ? (["agents"] as const) : []),
@@ -70,6 +72,8 @@ export type Runner = {
   held: number;
   /** Its node signs Antigravity in from the app (`antigravity_login`). */
   antigravityLogin?: boolean;
+  /** It lends iOS simulators: the agents' Mac, or a Mac that runs agents (`own_mac`). */
+  lendsSims?: boolean;
 };
 
 export const ready = (r: Runner, host: SessionHost) => r.hosts?.some((h) => h.host === host && h.ready);
@@ -188,6 +192,7 @@ export function entry({ runner, roles, why }: RunnerRow): MachineRolesEntry {
     hostsOthers: runner.hostsOthers,
     ...(runner.othersNote !== undefined && roles.sessions ? { hostsOthersNote: runner.othersNote } : {}),
     ...(runner.antigravityLogin === true ? { antigravityLogin: true } : {}),
+    ...(runner.lendsSims === true ? { sims: { max: roles.maxSims ?? SIMS_DEFAULT, ...(roles.maxSims === undefined ? {} : { set: roles.maxSims }) } } : {}),
   };
 }
 

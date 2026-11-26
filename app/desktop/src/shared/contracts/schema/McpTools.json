@@ -11121,7 +11121,7 @@
           "items": {
             "$ref": "#/$defs/HostCheck"
           },
-          "maxItems": 5,
+          "maxItems": 8,
           "type": "array"
         },
         "hostsOthers": {
@@ -11185,6 +11185,27 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "sims": {
+          "description": "A Mac that lends iOS simulators (the agents' Mac, or one that runs agents): how many at once.",
+          "properties": {
+            "max": {
+              "description": "How many run at once: a person's setting, else the default.",
+              "maximum": 8,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "set": {
+              "description": "A person's setting; absent: the default.",
+              "maximum": 8,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "max"
+          ],
+          "type": "object"
         }
       },
       "required": [
@@ -11237,6 +11258,10 @@
           "description": "Drop the session cap: it hosts what it fits again.",
           "type": "boolean"
         },
+        "autoSims": {
+          "description": "Drop the simulator setting: the Mac runs its default number at once again.",
+          "type": "boolean"
+        },
         "macTool": {
           "description": "The agents' Mac only: \"Agents may use this Mac\", for every project's agents (leads never).",
           "type": "boolean"
@@ -11247,6 +11272,12 @@
         "maxSessions": {
           "description": "The most sessions it hosts at once, in place of what it fits.",
           "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxSims": {
+          "description": "On a Mac that lends iOS simulators: how many run at once, in place of its default (2).",
+          "maximum": 8,
           "minimum": 1,
           "type": "integer"
         },

@@ -19,7 +19,8 @@ Open **Settings › Workspace › Machines**. It has these groups:
 
 - **Machines**: every machine, with a dot (grey when well, amber when it needs you) and what runs there now, or
   what's wrong. Click a row to open its page.
-- **What runs where**: **Mac machine**, where Mac screens and iOS simulators run, and **Keep screen recordings for**.
+- **What runs where**: **Mac machine**, where Mac screens and iOS simulators run (the agents' Mac, or a Mac that runs
+  agents), and **Keep screen recordings for**.
   On a cloud workspace, **Linux machine** too ([fleetd's computers](/docs/cloud-machines)).
 - **Updates**: whether everything is up to date, with **Update** ([Updating](/docs/updating-and-uninstall)).
 
@@ -143,6 +144,15 @@ fleetd machine set mac1 --roles sessions --max-sessions 2
 ```
 
 `sessions` means screens. A machine with screens only runs no agents; it hosts screens for agents on every machine.
+
+## One Mac {#one-mac}
+
+A Mac can be your only machine. Its agents get its own Xcode and iOS simulators through the `mac` command, with no
+second Mac: see [One Mac](/docs/agents-mac#one-mac). Its page's **Screens** group sets how many simulators run at once
+(two by default).
+
+A separate [agents' Mac](/docs/agents-mac) is for teams whose agents run on Linux machines. An agent on a Mac always
+uses its own Mac.
 
 ## When new agents wait {#guard}
 

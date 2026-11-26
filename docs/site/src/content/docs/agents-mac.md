@@ -8,6 +8,35 @@ This page is for setting up one Mac that every agent can use for Xcode builds, i
 Agents keep running on their own machines and reach the Mac with the `mac` command. No agent runs on the Mac itself,
 and it gets none of your bots' secrets. A Mac nobody else uses, such as a Mac mini, works best.
 
+If your agents already run on a Mac, you don't need a second one: see [One Mac](#one-mac).
+
+## One Mac {#one-mac}
+
+A Mac that runs agents lends them its own Xcode and iOS simulators. Its agents use the same `mac` commands, on that
+same Mac:
+
+- `mac run` runs in the agent's worktree. `mac push` has nothing to copy, and `mac pull` copies within the worktree.
+- `mac sim start` gives the agent one of that Mac's own simulators, from its own warm pool. agent-device drives it,
+  and it shows under **Screens** like any agent's simulator.
+- `mac run`, `mac push` and `mac sim start` print one line saying which Mac they used.
+
+Nothing to set up beyond Xcode (the [Xcode block](#xcode) once, and an iOS runtime). The first `mac sim start` makes
+the Mac's golden simulator, once: it takes a few minutes, and `mac sim start` says to try again until it's ready. From
+then on one simulator stays booted and ready for the next agent. If Node.js isn't on the Mac, fleetd installs its own copy for agent-device.
+
+At most two simulators run at once, the ready one included. Change it on the Mac's page, under **Screens › iOS
+simulators at once**.
+
+Which Mac an agent uses:
+
+| The agent runs on | `mac` uses |
+|---|---|
+| A Mac | That Mac, even when an agents' Mac is joined |
+| Any other machine | The agents' Mac, as before |
+
+A Mac lends its simulators only to its own agents, never to agents on other machines. **Agents may use this Mac**
+switches the agents' Mac alone.
+
 ## Set it up {#setup}
 
 ### From the fleetd app {#app}
@@ -106,8 +135,9 @@ after 30 minutes.
 
 - For another model: `mac sim start --device "iPad Pro 13-inch (M5)"`.
 - When all simulators are in use, agents wait in line, first come first served.
-- The Mac runs about one simulator per 3 GB of memory past 8 GB. Set `"mac": {"simulators": N}` in its
-  [node.json](#node-json) to change it.
+- The Mac runs at most two simulators at once, the one kept ready included, or one with less than 11 GB of memory.
+  Change it on the Mac's page in **Settings › Workspace › Machines**, under **Screens › iOS simulators at once**. Each
+  takes about 3 GB.
 
 ### Watch or take over a simulator {#sim-screens}
 
@@ -193,5 +223,5 @@ give every bot, or use [a user of its own](#own-user).
 | Key | Does |
 |---|---|
 | `"agentsMac": true` | Makes this Mac the agents' Mac. Set by `--mac`. |
-| `"mac": {"simulators": N}` | How many simulators run at once |
+| `"mac": {"simulators": N}` | How many simulators run at once, unless **iOS simulators at once** is set |
 | `"ios": {"deviceType": "…"}` | The default simulator model |

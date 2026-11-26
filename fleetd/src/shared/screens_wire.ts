@@ -37,6 +37,8 @@ export const CAP_SESSION_SEAL = "session_seal";
 export const CAP_PROJECT_SIGNINS = "project_signins";
 export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
+/** A Mac that runs agents and lends its own agents its `mac` tool: its iOS simulators, jobs in their worktrees. */
+export const CAP_OWN_MAC = "own_mac";
 /** The node answers `screen_control` on its phone screens (W804). */
 export const CAP_SCREEN_CONTROL = "screen_control";
 
@@ -122,7 +124,9 @@ export type MacCaller = { machineId: MachineId; projectId: ProjectId; taskId?: T
  * simulator.
  */
 export type SimScreen = { hostKey: string; sessionId: BrowserSessionId };
-export type MacCallFrame = { id: string; caller: MacCaller; sealed: string; screen?: SimScreen };
+/** `sims`: how many simulators the Mac runs at once, as its screens settings say; null, its own default (absent
+ * from an older hub). */
+export type MacCallFrame = { id: string; caller: MacCaller; sealed: string; screen?: SimScreen; sims?: number | null };
 /** A person's device control on a phone screen they have control of (`screen_control`). */
 export type ScreenControlFrame = { id: string; sessionId: BrowserSessionId; control: ScreenControl; value?: string; by: string };
 

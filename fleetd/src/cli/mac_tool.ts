@@ -1,6 +1,7 @@
 // `fleetd mac`, the `mac` on every agent session's PATH: the agents' Mac, from an
-// agent on any machine. Each command goes to the agent's own node, which seals it to the Mac. `mac run` prints the
-// command's output as it comes and exits with its exit code.
+// agent on any machine, or on a Mac that runs agents that Mac itself. Each command goes to the agent's own node, which
+// seals it to the Mac. `mac run` prints the command's output as it comes and exits with its exit code; it, `mac push`
+// and `mac sim start` first say on stderr which Mac they use (`which`).
 //
 // In a hosted box (fleetd's computers), the worktree is in the box and no node is: there the node's half runs in this
 // process (`FLEETD_MAC_HOME`, its folder), and only its `mac_where` and `mac_send` go up the box's node.sock.
@@ -63,7 +64,7 @@ export async function run(args: string[]): Promise<number> {
       }
       return usage(`mac sim start [--device <type>] [--no-wait] | mac sim end | mac sim ${SIM_CONTROLS.join("|")} ...`);
     case "agent-device":
-      return runCommand(["agent-device", ...rest.map(shQuote)], [], false);
+      return runCommand(["agent-device", ...rest.map(shQuote)], [], false, false);
     default:
       return usage(`mac has no command ${args[0]}`);
   }
@@ -238,9 +239,19 @@ const u64OrNull = (v: unknown) => (typeof v === "number" && Number.isInteger(v) 
 /** serde_json's `Value` display: a number or string as JSON. */
 const display = (v: unknown) => (v === undefined ? "null" : JSON.stringify(v));
 
+/** The line saying which Mac a command used: the agent's own, or the agents' Mac. */
+export function which(result: any): string {
+  const mac = result?.mac;
+  if (typeof mac?.name !== "string") return "";
+  return mac.here === true
+    ? `mac: on this Mac (${mac.name}), the one you run on: jobs run in your worktree, no push needed\n`
+    : `mac: on the agents' Mac (${mac.name})\n`;
+}
+
 export function shown(result: any): string {
   switch (result?.step) {
     case "push":
+      if (result.mac?.here === true) return `nothing to push: jobs run in your worktree (${typeof result.folder === "string" ? result.folder : "?"})\n`;
       return `pushed: ${typeof result.folder === "string" ? result.folder : "?"} (${Math.ceil(u64(result.sentBytes) / 1024)} KB sent)\n`;
     case "ps": {
       const jobs: any[] = Array.isArray(result.jobs) ? result.jobs : [];
@@ -285,6 +296,7 @@ export function ordinal(n: number): string {
 
 function printDone(a: Answer): number {
   if ("ok" in a) {
+    if (a.ok.step === "push" || a.ok.step === "sim_start") process.stderr.write(which(a.ok));
     process.stdout.write(shown(a.ok));
     return 0;
   }
@@ -292,12 +304,14 @@ function printDone(a: Answer): number {
   return a.code;
 }
 
-async function runCommand(line: string[], env: object[], background: boolean): Promise<number> {
+/** `say`: the line saying which Mac first (not for the forwarding agent-device's every command). */
+async function runCommand(line: string[], env: object[], background: boolean, say = true): Promise<number> {
   const a = await call({ step: "run", args: line, env, background }, STEP_WAIT_MS);
   if (!("ok" in a)) {
     process.stderr.write(a.text);
     return a.code;
   }
+  if (say) process.stderr.write(which(a.ok));
   const job = u64(a.ok.job) >>> 0;
   if (background) {
     process.stdout.write(`job ${job} runs on the Mac: mac logs ${job} -f follows it, mac kill ${job} ends it\n`);

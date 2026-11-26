@@ -3,7 +3,7 @@
 // the hub placed. A session the agent's machine can't take goes to the online machine with the most free slots.
 import type { Database } from "bun:sqlite";
 import type { HostCheck } from "../../shared/contracts.ts";
-import { CAP_SESSION_HOST, CAP_SESSION_SEAL } from "../../shared/screens_wire.ts";
+import { CAP_OWN_MAC, CAP_SESSION_HOST, CAP_SESSION_SEAL } from "../../shared/screens_wire.ts";
 import { CAP_ANTIGRAVITY_LOGIN } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -52,12 +52,17 @@ export {
 
 export function rolesOn(c: Database, m: string): Roles {
   const row = c
-    .query<{ agents: number; sessions: number; max_sessions: number | null }, [string]>(
-      "SELECT agents, sessions, max_sessions FROM machine_roles WHERE machine_id = ?",
+    .query<{ agents: number; sessions: number; max_sessions: number | null; max_sims: number | null }, [string]>(
+      "SELECT agents, sessions, max_sessions, max_sims FROM machine_roles WHERE machine_id = ?",
     )
     .get(m);
   return row
-    ? { agents: row.agents !== 0, sessions: row.sessions !== 0, maxSessions: row.max_sessions ?? undefined }
+    ? {
+        agents: row.agents !== 0,
+        sessions: row.sessions !== 0,
+        maxSessions: row.max_sessions ?? undefined,
+        ...(row.max_sims === null ? {} : { maxSims: row.max_sims }),
+      }
     : { agents: true, sessions: true, maxSessions: undefined };
 }
 
@@ -67,10 +72,10 @@ export const machineRoles = (hub: Hub) =>
 
 export function setRoles(c: Database, m: string, r: Roles): void {
   c.query(
-    `INSERT INTO machine_roles (machine_id, agents, sessions, max_sessions) VALUES (?1, ?2, ?3, ?4)
+    `INSERT INTO machine_roles (machine_id, agents, sessions, max_sessions, max_sims) VALUES (?1, ?2, ?3, ?4, ?5)
      ON CONFLICT (machine_id) DO UPDATE SET agents = excluded.agents, sessions = excluded.sessions,
-       max_sessions = excluded.max_sessions`,
-  ).run(m, r.agents ? 1 : 0, r.sessions ? 1 : 0, r.maxSessions ?? null);
+       max_sessions = excluded.max_sessions, max_sims = excluded.max_sims`,
+  ).run(m, r.agents ? 1 : 0, r.sessions ? 1 : 0, r.maxSessions ?? null, r.maxSims ?? null);
 }
 
 function setting(c: Database, key: string): number | undefined {
@@ -188,6 +193,7 @@ export function runners(hub: Hub): RunnerRow[] {
       max,
       held: heldOn(c, m.machineId, now),
       ...(nodes.can(m.machineId, CAP_ANTIGRAVITY_LOGIN) ? { antigravityLogin: true } : {}),
+      ...(m.agentsMac === true || (m.status !== "offline" && nodes.can(m.machineId, CAP_OWN_MAC)) ? { lendsSims: true } : {}),
     };
     return { runner, roles, why };
   });

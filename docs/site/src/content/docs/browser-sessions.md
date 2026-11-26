@@ -13,7 +13,7 @@ agent opens one when it needs it, works in it, and closes it when done. Every sc
 | Browser | Any machine | agent-browser |
 | Linux desktop | Linux | the desktop tool |
 | Android | Linux with KVM | agent-device |
-| iOS simulator | [The agents' Mac](/docs/agents-mac#sim) | agent-device |
+| iOS simulator | [The agents' Mac](/docs/agents-mac#sim), or [a Mac that runs agents](/docs/agents-mac#one-mac) | agent-device |
 | Agents' Mac | The agents' Mac | the desktop tool, agent-desktop |
 
 ## The Screens page {#page}

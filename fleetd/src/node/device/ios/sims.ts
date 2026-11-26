@@ -14,7 +14,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ToolError } from "../../../shared/errors.ts";
-import { simBudget } from "../../mac_tool/protocol.ts";
+import { SIMS_DEFAULT, SIMS_MAX, simBudget } from "../../mac_tool/protocol.ts";
 import { Queue } from "../../mac_tool/queue.ts";
 import type { SimScreen as SimScreenKey } from "../../../shared/screens_wire.ts";
 import { controlPath, release, sessionDir } from "../agent_device.ts";
@@ -92,6 +92,8 @@ export class MacSims {
   readonly queue = new Queue();
   /** The simulators' screens, where the Mac shows them (its link to the hub). */
   screens: SimScreens | undefined;
+  /** How many at once the machine's screens settings say, as the hub's last `mac_call` carried it. */
+  cap: number | undefined;
 
   constructor(
     /** The node's home: the wrapper's config for each agent, the golden's set. */
@@ -102,11 +104,14 @@ export class MacSims {
     private readonly mem: () => number = memBytes,
   ) {
     this.helpers = new Helpers(home);
+    // The warm clone is one of the Mac's simulators at once: it boots only while there is room for it beside those held.
+    simulators.room = (pooled) => this.held.size + pooled < this.budget();
   }
 
-  /** How many simulators agents may hold at once: the setting, else from the Mac's memory; at least 1. */
+  /** How many simulators agents may hold at once: the machine's screens settings, else node.json's, else SIMS_DEFAULT
+   * or fewer on a small Mac; 1 to SIMS_MAX. */
   budget(): number {
-    return Math.max(this.setting ?? simBudget(this.mem()), 1);
+    return Math.min(Math.max(this.cap ?? this.setting ?? Math.min(SIMS_DEFAULT, simBudget(this.mem())), 1), SIMS_MAX);
   }
 
   /**
@@ -231,7 +236,9 @@ export class MacSims {
     this.save();
     release(this.home, simKey(agent));
     // Its screen's video is finished before the simulator goes.
-    void (this.screens?.close(agent, note) ?? Promise.resolve()).finally(() => held.lent.discard());
+    void (this.screens?.close(agent, note) ?? Promise.resolve())
+      .finally(() => held.lent.discard())
+      .finally(() => this.simulators.refill());
     return true;
   }
 

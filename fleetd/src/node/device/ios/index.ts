@@ -157,6 +157,9 @@ export class Simulators {
   readonly simctl: Simctl;
   /** Told when simulators start answering here. */
   onReady: (() => void) | undefined;
+  /** Whether the pool may boot another warm clone now, given how many of its own are up (MacSims: with those held,
+   * fewer than the Mac runs at once). */
+  room: (pooled: number) => boolean = () => true;
 
   constructor(
     readonly home: string,
@@ -207,7 +210,7 @@ export class Simulators {
 
   /** Makes the pool and starts filling it. */
   private ready(golden: Golden): void {
-    const pool = new Pool(this.simctl, this.home, golden, 1, this.options.runner ?? startRunner);
+    const pool = new Pool(this.simctl, this.home, golden, 1, this.options.runner ?? startRunner, (pooled) => this.room(pooled));
     pool.refill();
     this.prep = { at: "ready", pool };
     this.onReady?.();
@@ -220,6 +223,11 @@ export class Simulators {
 
   usable(): boolean {
     return this.prep.at === "ready";
+  }
+
+  /** Boots the warm clone again where there is room for it now (a simulator went). */
+  refill(): void {
+    if (this.prep.at === "ready") this.prep.pool.refill();
   }
 
   /** Where this Mac's simulators stand, for the doctor (the heartbeat's `load.ios`). */

@@ -7,6 +7,10 @@
 // over and recorded there, and the Mac reports it under the place's key in the agent's name.
 //
 // At each sweep the hub names the tasks that ended to the Mac (`tellEnded`), whose folders there go.
+//
+// Which Mac is `macFor`'s (machine_roles/mac.ts): an agent on a Mac that runs agents uses that Mac itself, and `mac_where`
+// says so (`here`); every other agent uses the agents' Mac. Each `mac_call` carries how many simulators the Mac runs at
+// once, as its screens settings say (`sims`).
 import { ToolError } from "../../shared/errors.ts";
 import type { MacCaller, MacResultFrame, MacSendCall } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
@@ -17,8 +21,10 @@ import { isoMs } from "../store/time.ts";
 import { sweep } from "../sweep/index.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { request } from "../machine_roles/calls.ts";
-import { macMachine } from "../machine_roles/mac.ts";
-import { newKey, simPlace } from "../machine_roles/places.ts";
+import { macFor } from "../machine_roles/mac.ts";
+import { newKey, rolesOn, simPlace } from "../machine_roles/places.ts";
+import { CAP_OWN_MAC } from "../../shared/screens_wire.ts";
+import { link } from "../link/index.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 
 export const OPS = ["mac_where", "mac_send"] as const;
@@ -46,7 +52,7 @@ const ENDED_WAIT = 120_000;
 export async function tellEnded(hub: Hub): Promise<void> {
   const macs = store(hub)
     .machinesList()
-    .filter((m) => m.agentsMac === true && m.status !== "offline")
+    .filter((m) => m.status !== "offline" && (m.agentsMac === true || link(hub).can(m.machineId, CAP_OWN_MAC)))
     .map((m) => m.machineId);
   if (macs.length === 0) return;
   const tasks = TaskRecords.endedSince(hub.db.conn, isoMs(hub.clock.now() - ENDED_DAYS * 86_400_000));
@@ -67,32 +73,33 @@ function callerOf(caller: LeadCaller): void {
   }
 }
 
-function theMac(hub: Hub): { machineId: string; key: string | undefined } {
-  const machineId = macMachine(hub);
-  if (!machineId) {
+function theMac(hub: Hub, caller: LeadCaller): { machineId: string; here: boolean; key: string | undefined } {
+  const mac = macFor(hub, caller.projectRef.machineId);
+  if (!mac) {
     throw new ToolError(
       "machine_offline",
       "No agents' Mac is online: none joined this workspace, it's turned off, or it's waiting for its account to log in again after a restart.",
       `do without the Mac and say so in your result; an admin connects one in ${settingsPath()} › Machines`,
     );
   }
-  return { machineId, key: store(hub).machineGet(machineId)?.boxPubKey };
+  return { ...mac, key: store(hub).machineGet(mac.machineId)?.boxPubKey };
 }
 
 function where(hub: Hub, caller: LeadCaller) {
   callerOf(caller);
-  const { machineId, key } = theMac(hub);
+  const { machineId, here, key } = theMac(hub, caller);
   if (!key) {
-    throw new ToolError("failed", `${machineId}, the agents' Mac, has no key to seal to.`, "ask an admin to update fleetd on the Mac");
+    throw new ToolError("failed", `${machineId}, ${here ? "this Mac" : "the agents' Mac"}, has no key to seal to.`, "ask an admin to update fleetd on the Mac");
   }
-  return { machineId, boxPubKey: key };
+  return { machineId, boxPubKey: key, name: store(hub).machineGet(machineId)?.name ?? machineId, ...(here ? { here: true } : {}) };
 }
 
 async function send(hub: Hub, caller: LeadCaller, call: MacSendCall) {
   callerOf(caller);
-  const { machineId } = theMac(hub);
+  const { machineId, here } = theMac(hub, caller);
+  const named = here ? "this Mac" : "the agents' Mac";
   if (machineId !== call.machineId) {
-    throw new ToolError("invalid", `${call.machineId} is not the agents' Mac any more; ${machineId} is.`, "run the command again");
+    throw new ToolError("invalid", `${call.machineId} is not the Mac your mac commands use any more; ${machineId} is.`, "run the command again");
   }
   const who: MacCaller = {
     machineId: caller.projectRef.machineId,
@@ -115,17 +122,21 @@ async function send(hub: Hub, caller: LeadCaller, call: MacSendCall) {
         caller: who,
         sealed: call.sealed,
         ...(screen ? { screen: { hostKey: screen.key, sessionId: screen.sessionId! } } : {}),
+        ...sims(hub, machineId),
       },
       SEND_WAIT,
     );
   } catch (e) {
     throw new ToolError(
       "machine_offline",
-      `${machineId}, the agents' Mac, did not answer: ${(e as Error).message}.`,
+      `${machineId}, ${named}, did not answer: ${(e as Error).message}.`,
       "try again shortly; if it keeps failing, do without the Mac and say so in your result",
     );
   }
   if (answer.sealed !== undefined) return { sealed: answer.sealed };
   if (answer.error) throw new ToolError(answer.error.code, answer.error.message, answer.error.fix);
-  throw new ToolError("failed", `${machineId}, the agents' Mac, sent an empty answer.`);
+  throw new ToolError("failed", `${machineId}, ${named}, sent an empty answer.`);
 }
+
+/** The `mac_call`'s `sims`: how many simulators Mac `m` runs at once as its screens settings say, null for its default. */
+export const sims = (hub: Hub, m: string): { sims: number | null } => ({ sims: rolesOn(hub.db.conn, m).maxSims ?? null });

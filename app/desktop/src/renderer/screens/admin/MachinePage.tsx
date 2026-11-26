@@ -173,7 +173,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
               {roles?.antigravityLogin === true ? <AntigravityRow machineId={machineId} /> : null}
             </SettingsSection>
           )}
-          {machine !== undefined && roles !== undefined && (roles.mac !== undefined || roles.roles.includes("sessions")) ? (
+          {machine !== undefined && roles !== undefined && (roles.mac !== undefined || roles.sims !== undefined || roles.roles.includes("sessions")) ? (
             <SettingsSection title="Screens" reveal="hub.screens">
               <MachineScreens machine={roles} />
             </SettingsSection>

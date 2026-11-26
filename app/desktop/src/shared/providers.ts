@@ -119,7 +119,13 @@ export const LINUX_NONE = "Add a machine with the plus above, or connect a provi
 export const MAC_NONE = "Add a Mac for agents with the plus above.";
 
 /** The machines a kind of screen can run on, as machine_roles has them. */
-type Machine = { roles: ReadonlyArray<string>; mac?: { on: boolean } | undefined; hosts?: ReadonlyArray<{ host: string; off?: string; ready: boolean }> | undefined };
+type Machine = {
+  roles: ReadonlyArray<string>;
+  mac?: { on: boolean } | undefined;
+  /** A Mac that lends iOS simulators (the agents' Mac, or a Mac that runs agents). */
+  sims?: unknown;
+  hosts?: ReadonlyArray<{ host: string; off?: string; ready: boolean }> | undefined;
+};
 
 /**
  * Whether any of the team's machines runs `kind`: one for agents; one that hosts screens and can run the kind, ready
@@ -127,7 +133,9 @@ type Machine = { roles: ReadonlyArray<string>; mac?: { on: boolean } | undefined
  */
 export const machinesRun = (kind: Capability, machines: ReadonlyArray<Machine>): boolean => {
   if (kind === "agents") return machines.some((m) => m.mac === undefined && m.roles.includes("agents"));
-  if (kind === "ios") return machines.some((m) => m.mac?.on === true);
+  if (kind === "ios") return machines.some((m) => m.mac?.on === true || m.sims !== undefined);
+  // The Mac machine row: a Mac that runs agents lends them its simulators, with no agents' Mac.
+  if (kind === "mac" && machines.some((m) => m.sims !== undefined)) return true;
   return machines.some((m) => (m.roles.includes("sessions") || m.mac !== undefined) && (m.hosts ?? []).some((h) => h.host === kind && h.off !== "unsupported"));
 };
 

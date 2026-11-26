@@ -2,13 +2,13 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/activity.ts";
-import { answer, here, UNAVAILABLE } from "../src/cli/mac_tool.ts";
+import { answer, here, shown, UNAVAILABLE, which } from "../src/cli/mac_tool.ts";
 import { hubCall } from "../src/node/browser/node.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
-import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
-import { self, start as startMac, startedIn, worktreeOf } from "../src/node/mac_tool/index.ts";
+import { FOLDER_DAYS, Host, shellLine, sweep } from "../src/node/mac_tool/host.ts";
+import { isOwnMac, self, start as startMac, startedIn, worktreeOf } from "../src/node/mac_tool/index.ts";
 import { binDir, forwarder, forwarderDir, installForwarder, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
-import { sealStep } from "../src/node/mac_tool/protocol.ts";
+import { openAnswer, sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { publicKeyOf } from "../src/shared/sealed_box.ts";
 import { tempHome } from "./helpers.ts";
@@ -17,19 +17,25 @@ import { testNode } from "./node_helpers.ts";
 const cleanups: (() => void)[] = [];
 afterEach(() => cleanups.splice(0).reverse().forEach((fn) => fn()));
 
-/** An agent's node, a stand-in for the agents' Mac in a temp folder, and the hub's two calls between them. */
-function setup() {
+/** An agent's node, a stand-in for the agents' Mac in a temp folder, and the hub's two calls between them. `own`: the
+ * agent's machine is the Mac itself, as the hub's `mac_where` names a Mac that runs agents to its own agents; `sims`,
+ * the `mac_call`'s simulators at once. */
+function setup({ own = false, sims }: { own?: boolean; sims?: number | null } = {}) {
   const macHome = tempHome();
   const secret = crypto.getRandomValues(new Uint8Array(32));
   const host = new Host(join(macHome.dir, "mac"), new NodeBoxKey(secret));
+  if (own) host.own = "devbox";
   const agent = testNode("devbox");
   const caller = { machineId: "devbox", projectId: "p1", taskId: "T7", threadId: "t1" };
   const sent: Record<string, unknown>[] = [];
   agent.link.answer = async (op, args) => {
     if (op === "mac_send") sent.push(args);
-    if (op === "mac_where") return { machineId: "mac1", boxPubKey: Buffer.from(publicKeyOf(secret)).toString("base64") };
+    if (op === "mac_where") {
+      const key = Buffer.from(publicKeyOf(secret)).toString("base64");
+      return own ? { machineId: "devbox", boxPubKey: key, name: "Ada's MacBook", here: true } : { machineId: "mac1", boxPubKey: key, name: "Mac mini" };
+    }
     if (op === "mac_send") {
-      const answer = await host.answer({ id: "c1", caller, sealed: String(args.sealed) });
+      const answer = await host.answer({ id: "c1", caller, sealed: String(args.sealed), ...(sims === undefined ? {} : { sims }) });
       if (answer.error) throw Object.assign(new Error(answer.error.message), { toJSON: () => answer.error });
       return { sealed: answer.sealed! };
     }
@@ -81,7 +87,7 @@ test("push, run, logs and pull: the agent's worktree on the Mac, its job's outpu
   expect(ps.jobs).toEqual([expect.objectContaining({ job: run.job, running: false, exitCode: 0 })]);
 
   const file = await client.call("t1", wt, { step: "pull", path: "build/out/a.txt", to: "from-mac.txt" });
-  expect(file).toEqual({ step: "pull", path: join(wt, "from-mac.txt"), bytes: 6 });
+  expect(file).toEqual({ step: "pull", path: join(wt, "from-mac.txt"), bytes: 6, mac: { name: "Mac mini" } });
   expect(readFileSync(join(wt, "from-mac.txt"), "utf8")).toBe("built\n");
   await client.call("t1", wt, { step: "pull", path: "build" });
   expect(readFileSync(join(wt, "build", "out", "a.txt"), "utf8")).toBe("built\n");
@@ -90,6 +96,79 @@ test("push, run, logs and pull: the agent's worktree on the Mac, its job's outpu
   await expect(client.call("t1", wt, { step: "pull", path: join(wt, "app.txt") })).rejects.toThrow("outside your folder on the Mac");
   await expect(client.call("t1", wt, { step: "pull", path: "app.txt", to: "../x" })).rejects.toThrow("outside your worktree");
 }, 30_000);
+
+test("on the agent's own Mac: no push, its jobs run in its worktree, and its pulls read from there", async () => {
+  const { client, wt, macRoot } = setup({ own: true });
+  writeFileSync(join(wt, "app.txt"), "v1\n");
+  const pushed = await client.call("t1", wt, { step: "push" });
+  expect(pushed).toEqual({ step: "push", folder: wt, sentBytes: 0, mac: { name: "Ada's MacBook", here: true } });
+  expect(existsSync(join(macRoot, "T7", "repo"))).toBe(false);
+  // A change made after is what the job sees: it runs in the worktree itself.
+  writeFileSync(join(wt, "app.txt"), "v2\n");
+  const run = (await client.call("t1", wt, { step: "run", args: ["cat app.txt && pwd -P && echo built > made.txt && echo $FLEETD_MAC_REPO"] })) as { job: number };
+  let out = "";
+  let offset = 0;
+  for (let i = 0; i < 20 && !out.endsWith(`${wt}\n`); i++) {
+    const logs = (await client.call("t1", wt, { step: "logs", job: run.job, offset })) as { dataB64: string; offset: number; done: boolean };
+    out += Buffer.from(logs.dataB64, "base64").toString();
+    offset = logs.offset;
+    if (logs.done) break;
+  }
+  const real = Bun.spawnSync(["realpath", wt]).stdout.toString().trim();
+  expect(out).toBe(`v2\n${real}\n${wt}\n`);
+  expect(readFileSync(join(wt, "made.txt"), "utf8")).toBe("built\n");
+  // A pull copies within the worktree; the job's own folder (its logs, its screenshots) stays reachable too.
+  const pulled = (await client.call("t1", wt, { step: "pull", path: "made.txt", to: "out/made.txt" })) as { path: string };
+  expect(pulled.path).toBe(join(wt, "out", "made.txt"));
+  expect(readFileSync(pulled.path, "utf8")).toBe("built\n");
+  await expect(client.call("t1", wt, { step: "pull", path: "/etc/hosts" })).rejects.toThrow("outside your folder on the Mac");
+}, 30_000);
+
+test("a job's login shell puts the job's own PATH back in front of the system's", () => {
+  const argv = shellLine(["xcodebuild", "-version"]);
+  if (argv[0] === "/bin/zsh") expect(argv).toEqual(["/bin/zsh", "-lc", 'PATH="$FLEETD_MAC_PATH:$PATH"; xcodebuild -version']);
+  else expect(argv).toEqual(["/bin/sh", "-c", "xcodebuild -version"]);
+});
+
+test("which Mac: a Mac that runs agents lends them its own, and each command says which it used", () => {
+  const plain = testNode("laptop");
+  cleanups.push(plain.done);
+  expect(isOwnMac(plain.node, "darwin")).toBe(true);
+  expect(isOwnMac(plain.node, "linux")).toBe(false);
+  expect(isOwnMac({ ...plain.node, config: { ...plain.node.config, agentsMac: true } } as never, "darwin")).toBe(false);
+  expect(isOwnMac({ ...plain.node, config: { ...plain.node.config, runner: true } } as never, "darwin")).toBe(false);
+  expect(which({ step: "run", job: 1, mac: { name: "Ada's MacBook", here: true } })).toBe(
+    "mac: on this Mac (Ada's MacBook), the one you run on: jobs run in your worktree, no push needed\n",
+  );
+  expect(which({ step: "run", job: 1, mac: { name: "Mac mini" } })).toBe("mac: on the agents' Mac (Mac mini)\n");
+  expect(shown({ step: "push", folder: "/w/repo", sentBytes: 0, mac: { name: "Ada's MacBook", here: true } })).toBe("nothing to push: jobs run in your worktree (/w/repo)\n");
+});
+
+test("a step names a worktree only for the Mac's own agents, and only one that is there", async () => {
+  const { host, secret, caller } = setup();
+  const key = Buffer.alloc(32, 1);
+  const wt = tempHome();
+  cleanups.push(wt.done);
+  let n = 0;
+  /** The job's folder for a `run` naming `worktree`, or the Mac's refusal. */
+  const ranIn = async (worktree: string) => {
+    const envelope = { thread: "t1", atMs: Date.now(), nonce: `w${++n}`, answerKey: key.toString("base64"), step: { step: "run" as const, args: ["pwd -P"], env: [], background: true }, worktree };
+    const a = await host.answer({ id: String(n), caller, sealed: sealStep(publicKeyOf(secret), envelope) });
+    const [answer] = openAnswer(key, a.sealed!)!;
+    if (answer.error) return answer.error.message;
+    await Bun.sleep(300);
+    return readFileSync(join(host.root, "T7", "jobs", `${(answer.done as { job: number }).job}.log`), "utf8").trim();
+  };
+  const real = (p: string) => Bun.spawnSync(["realpath", p]).stdout.toString().trim();
+  // The agents' Mac ignores it: its jobs run in the agent's own folder there.
+  expect(await ranIn(wt.dir)).toBe(real(join(host.root, "T7")));
+  // A Mac that runs agents takes it from its own machine's agents alone.
+  host.own = "mac9";
+  expect(await ranIn(wt.dir)).toBe(real(join(host.root, "T7")));
+  host.own = "devbox";
+  expect(await ranIn(wt.dir)).toBe(real(wt.dir));
+  expect(await ranIn("/no/such/worktree")).toBe("/no/such/worktree is no worktree on this Mac");
+});
 
 test("the Mac takes a step once, only for the session the hub names, sealed to its own key", async () => {
   const { host, secret, caller } = setup();
@@ -132,15 +211,43 @@ test("mac sim start puts the forwarding agent-device first on the session's PATH
     end: () => true,
   } as never;
   const fwd = forwarderDir(agentHome, "t1");
-  expect(await client.call("t1", wt, { step: "sim_start" })).toEqual({ step: "sim_start", udid: "U1", device: "iPhone 17" });
+  expect(await client.call("t1", wt, { step: "sim_start" })).toEqual({ step: "sim_start", udid: "U1", device: "iPhone 17", mac: { name: "Mac mini" } });
   const script = readFileSync(join(fwd, "agent-device"), "utf8");
   expect(script).toContain("exec '/pinned/fleetd-bun-1' mac agent-device \"$@\"");
   expect(statSync(join(fwd, "agent-device")).mode & 0o777).toBe(0o700);
   expect(launchEnv(agentHome, "t1", "/usr/bin")[0]?.[1]).toBe(`${fwd}:${binDir(agentHome)}:/usr/bin`);
-  expect(await client.call("t1", wt, { step: "sim_end" })).toEqual({ step: "sim_end", ended: true });
+  expect(await client.call("t1", wt, { step: "sim_end" })).toEqual({ step: "sim_end", ended: true, mac: { name: "Mac mini" } });
   expect(existsSync(fwd)).toBe(false);
   // Only the start asks the hub for the simulator's screen.
   expect(sent.map((s) => s.sim)).toEqual([true, undefined]);
+});
+
+test("a Mac that runs agents makes its simulators at the first mac sim start, at the number its screens settings say", async () => {
+  const { host, client, wt } = setup({ own: true, sims: 3 });
+  let made = 0;
+  let budget: number | undefined;
+  const sims = {
+    held: new Map(),
+    cap: undefined as number | undefined,
+    touch: () => {},
+    ran: () => {},
+    env: () => undefined,
+    start: async () => {
+      budget = sims.cap;
+      return { step: "sim_start", udid: "U1", device: "iPhone 17" };
+    },
+    end: () => true,
+  };
+  host.simsWanted = async () => {
+    made++;
+    return sims as never;
+  };
+  await client.call("t1", wt, { step: "run", args: ["true"] });
+  expect(made).toBe(0);
+  expect(await client.call("t1", wt, { step: "sim_start" })).toMatchObject({ step: "sim_start", udid: "U1", mac: { here: true } });
+  expect([made, budget]).toEqual([1, 3]);
+  await client.call("t1", wt, { step: "sim_start" });
+  expect(made).toBe(1);
 });
 
 test("the Mac sweeps agents' folders nothing touched for FOLDER_DAYS, with their snapshots, and keeps the rest", async () => {

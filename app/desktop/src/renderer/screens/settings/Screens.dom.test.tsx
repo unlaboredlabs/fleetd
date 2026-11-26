@@ -225,3 +225,30 @@ it("the agents' Mac says only of its own screen", async () => {
   expect(mac?.textContent).toContain("An idle Mac screen ends after 5 minutes, so the next agent gets it.");
   expect(mac?.textContent).not.toContain("Chrome");
 });
+
+// A Mac that lends iOS simulators (the agents' Mac, or a Mac that runs agents) says how many run at once: 2 by
+// default, a person's number in place of it, and the default again.
+it("a Mac that lends simulators picks how many run at once; a Linux machine has no such row", async () => {
+  const laptop: MachineRolesEntry = { ...devbox, machineId: "laptop", name: "Ada's MacBook", sims: { max: 2 } };
+  listed = [devbox, laptop];
+  await render();
+  expect(row("devbox")?.querySelector("[data-screens-sims]")).toBeNull();
+  const sims = row("laptop")?.querySelector<HTMLElement>("[data-screens-sims]");
+  expect(sims?.textContent).toContain("iOS simulators at once");
+  const picker = sims?.querySelector<HTMLElement>("[role='combobox']");
+  if (!picker) throw new Error("no picker");
+  expect(picker.textContent).toContain("Default (2)");
+  await act(async () => {
+    picker.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  const three = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "3");
+  if (!three) throw new Error("no 3");
+  await act(async () => {
+    three.click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(calls.filter((c) => c.tool === "machine_roles_set").map((c) => c.input)).toEqual([{ machineId: "laptop", maxSims: 3 }]);
+});

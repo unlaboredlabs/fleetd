@@ -49,3 +49,13 @@ export const idleLine = (m: MachineRolesEntry): string => {
 /** Retention's choices, and `current` among them when it is another. */
 export const daysChoices = (current: number) =>
   [...new Set([7, 14, 30, 60, 90, 180, 365, current])].sort((a, b) => a - b).map((n) => ({ value: String(n), label: `${String(n)} days` }));
+
+/** The most iOS simulators a Mac's screens settings offer (node/mac_tool SIMS_MAX), and its default (SIMS_DEFAULT). */
+export const SIMS_MAX = 8;
+export const SIMS_DEFAULT = 2;
+
+/** "iOS simulators at once"'s choices: the default, then 1 to SIMS_MAX. */
+export const simChoices = () => [
+  { value: "default", label: `Default (${String(SIMS_DEFAULT)})` },
+  ...Array.from({ length: SIMS_MAX }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
+];

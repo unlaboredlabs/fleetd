@@ -318,10 +318,21 @@ test("mac sim start lends a warm clone within the Mac's budget of 2, and mac sim
     simctl: new Simctl(setDir(home.dir), xcrun),
     runner: async (_home, lent) => void started.push(lent.udid),
   });
+  // 2 at most by default, fewer on a small Mac; the machine's screens settings come before node.json's.
+  const unused = new Simulators(home.dir, { enabled: true }, { simctl: new Simctl(setDir(home.dir), xcrun) });
+  expect(new MacSims(home.dir, unused, undefined, () => 16 * 2 ** 30).budget()).toBe(2);
+  const big = new MacSims(home.dir, unused, undefined, () => 64 * 2 ** 30);
+  expect(big.budget()).toBe(2);
+  expect(new MacSims(home.dir, unused, undefined, () => 8 * 2 ** 30).budget()).toBe(1);
+  big.cap = 4;
+  expect(big.budget()).toBe(4);
+  const set = new MacSims(home.dir, unused, 3, () => 64 * 2 ** 30);
+  expect(set.budget()).toBe(3);
+  set.cap = 1;
+  expect(set.budget()).toBe(1);
   const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
   cleanups.push(() => sims.shutdown());
   expect(sims.budget()).toBe(2);
-  expect(new MacSims(home.dir, simulators, undefined, () => 16 * 2 ** 30).budget()).toBe(2);
 
   await simulators.start();
   // The clone a stopped node left goes; the golden stays.
@@ -345,11 +356,16 @@ test("mac sim start lends a warm clone within the Mac's budget of 2, and mac sim
   const env = jobEnv(a, "/c", [], { PATH: "/usr/bin" }, (path) => sims.env(a.name, path));
   expect(env.FLEETD_MAC_SIM).toBe(udid);
   expect(env.PATH!.startsWith(join(home.dir, "device/ios/bin:"))).toBe(true);
+  // A login shell's path_helper puts the system's folders first; the job puts its own back in front.
+  expect(env.FLEETD_MAC_PATH).toBe(env.PATH);
 
   await until(() => simulators.warm() === 1);
   const b = host.agent({ machineId: "devbox", projectId: "p1", threadId: "tb", taskId: "T2" });
   await host.step(b, { step: "sim_start" });
-  await until(() => simulators.warm() === 1);
+  // Two held are the Mac's two at once: no warm clone boots behind them.
+  await Bun.sleep(200);
+  expect(simulators.warm()).toBe(0);
+  expect(readFileSync(log, "utf8").split("\n").filter((l) => /^boot /.test(l))).toHaveLength(2);
   // A third agent finds every simulator of the budget in use.
   const c = host.agent({ machineId: "devbox", projectId: "p2", threadId: "tc", taskId: "T3" });
   await expect(host.step(c, { step: "sim_start" })).rejects.toThrow("All 2 of the Mac's iOS simulators are in use by other agents.");
@@ -358,6 +374,8 @@ test("mac sim start lends a warm clone within the Mac's budget of 2, and mac sim
   expect((await host.step(a, { step: "sim_end" }))[0]).toEqual({ step: "sim_end", ended: false });
   await until(() => readFileSync(log, "utf8").includes(`delete ${udid}`));
   expect(existsSync(simConfig(home.dir, "T1"))).toBe(false);
+  // The one that went makes room for the warm clone again.
+  await until(() => simulators.warm() === 1);
   expect((await host.step(c, { step: "sim_start" }))[0]).toMatchObject({ step: "sim_start" });
   expect(sims.activity().map((s) => s.agent)).toEqual(["T2", "T3"]);
 
@@ -719,7 +737,8 @@ test("a node restart ends no simulator an agent holds: the next node takes it ov
   await until(() => one.simulators.warm() === 1);
   const b = one.host.agent({ machineId: "devbox", projectId: "p1", threadId: "tb", taskId: "T2" });
   const lost = ((await one.host.step(b, { step: "sim_start" }))[0] as { udid: string }).udid;
-  await until(() => one.simulators.warm() === 1);
+  // The two held are the Mac's two at once: none boots warm behind them.
+  expect(one.simulators.warm()).toBe(0);
 
   // It stops: the warm clone goes, the held ones run on, video and person's control included; nothing ends at the hub.
   await one.sims.stop();

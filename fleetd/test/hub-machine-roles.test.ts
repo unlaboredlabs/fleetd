@@ -299,9 +299,9 @@ test("the agents' Mac: mac_where names it, mac_send passes a sealed step on and 
   const who = agent("devbox", "p1", "T4");
   expect((await t.calls.call(who, { op: "mac_where" })).error?.code).toBe("machine_offline");
   t.link.link("mac1", ["mac_tool"]);
-  expect((await t.calls.call(who, { op: "mac_where" })).result).toEqual({ machineId: "mac1", boxPubKey: KEY });
+  expect((await t.calls.call(who, { op: "mac_where" })).result).toEqual({ machineId: "mac1", boxPubKey: KEY, name: "mac1" });
   t.link.answer = async (machine: string, frame: Record<string, unknown>) => {
-    expect(frame).toMatchObject({ t: "mac_call", caller: { machineId: "devbox", projectId: "p1", taskId: "T4", threadId: "t1" }, sealed: "c3RlcA==" });
+    expect(frame).toMatchObject({ t: "mac_call", caller: { machineId: "devbox", projectId: "p1", taskId: "T4", threadId: "t1" }, sealed: "c3RlcA==", sims: null });
     return { id: (frame as { id: string }).id, sealed: `answer from ${machine}` };
   };
   const sent = await t.calls.call(who, { op: "mac_send", machineId: "mac1", threadId: "t1", sealed: "c3RlcA==" });
@@ -311,6 +311,84 @@ test("the agents' Mac: mac_where names it, mac_send passes a sealed step on and 
   await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "mac1", macTool: false });
   expect((await t.calls.call(who, { op: "mac_where" })).error?.code).toBe("machine_offline");
   await tick();
+});
+
+test("an agent on a Mac that runs agents uses that Mac; agents elsewhere use the agents' Mac, as before", async () => {
+  setup();
+  addMachine(t.hub, "mac1", { agentsMac: true, boxPubKey: KEY, name: "Mac mini" });
+  addMachine(t.hub, "laptop", { boxPubKey: KEY, name: "Ada's MacBook" });
+  addProject(t.hub, "laptop", "p2");
+  t.link.link("mac1", ["mac_tool"]);
+  const onLaptop = agent("laptop", "p2", "T5");
+  const onDevbox = agent("devbox", "p1", "T4");
+  // A Mac whose node doesn't lend its tool (an older one) sends its agents to the agents' Mac.
+  t.link.link("laptop", ["browser"]);
+  expect((await t.calls.call(onLaptop, { op: "mac_where" })).result).toMatchObject({ machineId: "mac1", name: "Mac mini" });
+  // Lending it: its own agents get it, even with the agents' Mac online; everyone else's go on to the agents' Mac.
+  t.link.link("laptop", ["browser", "own_mac"]);
+  expect((await t.calls.call(onLaptop, { op: "mac_where" })).result).toEqual({ machineId: "laptop", boxPubKey: KEY, name: "Ada's MacBook", here: true });
+  expect((await t.calls.call(onDevbox, { op: "mac_where" })).result).toEqual({ machineId: "mac1", boxPubKey: KEY, name: "Mac mini" });
+  // The admin's switch for the agents' Mac leaves a Mac's own agents alone.
+  await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "mac1", macTool: false });
+  expect((await t.calls.call(onLaptop, { op: "mac_where" })).result).toMatchObject({ machineId: "laptop", here: true });
+  expect((await t.calls.call(onDevbox, { op: "mac_where" })).error?.code).toBe("machine_offline");
+  await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "mac1", macTool: true });
+
+  const frames: [string, Record<string, unknown>][] = [];
+  t.link.answer = async (machine: string, frame: Record<string, unknown>) => {
+    frames.push([machine, frame]);
+    return { id: (frame as { id: string }).id, sealed: "answer" };
+  };
+  // A step goes back to the agent's own machine, with a screen there for a simulator start; never to another's Mac.
+  expect((await t.calls.call(onLaptop, { op: "mac_send", machineId: "laptop", threadId: "t1", sealed: "c3RlcA==", sim: true })).result).toEqual({ sealed: "answer" });
+  const [to, frame] = frames[0]!;
+  expect(to).toBe("laptop");
+  expect(frame).toMatchObject({ t: "mac_call", caller: { machineId: "laptop", projectId: "p2", taskId: "T5" }, sims: null });
+  const screen = frame.screen as { hostKey: string; sessionId: string };
+  expect(t.calls.hosts("laptop", screen.hostKey)).toEqual({ agent: { kind: "task", taskId: "T5" }, projectRef: { machineId: "laptop", projectId: "p2" }, threadId: "t1" });
+  expect((await t.calls.call(onLaptop, { op: "mac_send", machineId: "mac1", threadId: "t1", sealed: "c3RlcA==" })).error?.code).toBe("invalid");
+  expect((await t.calls.call(onDevbox, { op: "mac_send", machineId: "laptop", threadId: "t1", sealed: "c3RlcA==" })).error?.code).toBe("invalid");
+  expect(frames).toHaveLength(1);
+  // Offline, it's no Mac for anyone: its agents can't run, and the agents' Mac answers others as before.
+  t.hub.db.conn.query("UPDATE machines SET data = json_set(data, '$.status', 'offline') WHERE machine_id = 'laptop'").run();
+  expect((await t.calls.call(onLaptop, { op: "mac_where" })).result).toMatchObject({ machineId: "mac1" });
+});
+
+test("a workspace whose only machine is a Mac: its agents get that Mac, at the number of simulators its screens settings say", async () => {
+  t = testHub();
+  startBrowser(t.hub);
+  startRoles(t.hub);
+  addMachine(t.hub, "laptop", { boxPubKey: KEY, name: "Ada's MacBook" });
+  addProject(t.hub, "laptop", "p1");
+  const who = agent("laptop", "p1", "T5");
+  t.link.link("laptop", ["browser"]);
+  expect((await t.calls.call(who, { op: "mac_where" })).error?.code).toBe("machine_offline");
+  t.link.link("laptop", ["browser", "own_mac"]);
+  expect((await t.calls.call(who, { op: "mac_where" })).result).toMatchObject({ machineId: "laptop", here: true });
+  // Its screens settings: 2 by default, a person's number in place of it, back to the default.
+  const read = async () =>
+    ((await t.tools.call(t.hub, caller("admin"), "machine_roles", {})) as { output: { machines: { machineId: string; sims?: unknown }[] } }).output.machines.find((m) => m.machineId === "laptop");
+  expect((await read())?.sims).toEqual({ max: 2 });
+  expect(await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "laptop", maxSims: 9 })).toMatchObject({ error: { kind: "invalid" } });
+  await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "laptop", maxSims: 1 });
+  expect((await read())?.sims).toEqual({ max: 1, set: 1 });
+  const frames: Record<string, unknown>[] = [];
+  t.link.answer = async (_machine: string, frame: Record<string, unknown>) => {
+    frames.push(frame);
+    return { id: (frame as { id: string }).id, sealed: "answer" };
+  };
+  await t.calls.call(who, { op: "mac_send", machineId: "laptop", threadId: "t1", sealed: "c3RlcA==", sim: true });
+  expect(frames[0]).toMatchObject({ sims: 1 });
+  // Its roles stay as they were.
+  expect(await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "laptop", autoSims: true })).toMatchObject({
+    output: { machine: { roles: ["agents", "sessions"], sims: { max: 2 } } },
+  });
+  // A Linux machine lends none, so it has no such setting to show.
+  addMachine(t.hub, "box3");
+  t.link.link("box3", ["browser"]);
+  const box3 = ((await t.tools.call(t.hub, caller("admin"), "machine_roles", {})) as { output: { machines: { machineId: string }[] } }).output.machines.find((m) => m.machineId === "box3");
+  expect(box3).toBeDefined();
+  expect(box3).not.toHaveProperty("sims");
 });
 
 test("a mac sim start goes with a screen of its own: the Mac reports it in the agent's name, and it carries none of its calls", async () => {

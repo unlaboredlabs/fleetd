@@ -5,6 +5,8 @@
 //
 // iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them;
 // a `sim_start`'s frame carries the screen the hub made for the simulator it lends (sim_screen.ts).
+// On a Mac that runs agents itself (`own`, its machine's id), its own agents' steps carry their worktree: their jobs
+// run there, with no push, and their pulls read from it; a step from any other machine never names one.
 // What agents do on the Mac goes to the menu bar (`activity`, ./activity.ts). A task's folder goes, with its snapshot
 // in the mirror and what it left running there, once the hub says the task ended (`ended`), else once nothing touched
 // it for FOLDER_DAYS (`sweep`); build caches and idle agents' folders go while the disk is short (`relieve`), and a
@@ -112,9 +114,10 @@ const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
 const WRITES = new Set(["put", "checkout", "run", "sim_start"]);
 const failed = (what: string, e: unknown) => new ToolError("failed", `${what}: ${e instanceof Error ? e.message : String(e)}`);
 
-/** An agent's folder on the Mac, by task (else by session), and the project it works on. */
-export type Agent = { dir: string; project: string; name: string };
-const repoOf = (a: Agent) => join(a.dir, "repo");
+/** An agent's folder on the Mac, by task (else by session), and the project it works on; on its own Mac, the
+ * worktree its jobs run in (`repo`). */
+export type Agent = { dir: string; project: string; name: string; repo?: string };
+const repoOf = (a: Agent) => a.repo ?? join(a.dir, "repo");
 
 /** `argv`, awaited off the event loop: a checkout of a whole tree never stalls the Mac's link or its other jobs. */
 async function run(argv: string[], stdin?: Blob): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -131,10 +134,14 @@ async function git(dir: string, args: string[]): Promise<string> {
 
 type Job = { command: string; background: boolean; startedMs: number; child: Subprocess; log: string; exit: number | undefined; followed: number };
 
-/** A job's shell: zsh as a login shell where there is one, so the agent's tools are on the PATH. */
+/**
+ * A job's shell: zsh as a login shell where there is one, so the agent's tools are on the PATH. A login shell's
+ * path_helper (/etc/zprofile) puts the system's folders first, so the job's own PATH (`jobEnv`, its `xcodebuild`
+ * and agent-device first) goes back in front of it.
+ */
 export function shellLine(args: string[]): string[] {
   const line = args.join(" ");
-  return existsSync("/bin/zsh") ? ["/bin/zsh", "-lc", line] : ["/bin/sh", "-c", line];
+  return existsSync("/bin/zsh") ? ["/bin/zsh", "-lc", `PATH="$FLEETD_MAC_PATH:$PATH"; ${line}`] : ["/bin/sh", "-c", line];
 }
 
 /** A job's environment: KEPT from the node's, the agent's folders, and the variables it named. */
@@ -157,7 +164,7 @@ export function jobEnv(
     PATH: `${join(agent.dir, "bin")}:${path}${brew}`,
     TMPDIR: join(agent.dir, "tmp"),
     FLEETD_MAC_DIR: agent.dir,
-    FLEETD_MAC_REPO: join(agent.dir, "repo"),
+    FLEETD_MAC_REPO: repoOf(agent),
     FLEETD_MAC_DERIVED_DATA: join(agent.dir, "DerivedData"),
     FLEETD_MAC_CACHE: cache,
     // Manners, not a fence: the Mac's node takes no calls from its jobs.
@@ -165,6 +172,8 @@ export function jobEnv(
   });
   // The agent's simulator: agent-device's wrapper first on the PATH, pointed at it, and for plain simctl its udid and set.
   for (const [k, v] of sim?.(env.PATH!) ?? []) env[k] = v;
+  // What the login shell puts back in front of its own (`shellLine`).
+  env.FLEETD_MAC_PATH = env.PATH!;
   for (const { name, value } of named) env[name] = value;
   return env;
 }
@@ -181,6 +190,12 @@ export class Host {
   private readonly jobs = new Map<string, { project: string; next: number; jobs: Map<number, Job> }>();
   /** The Mac's iOS simulators, where it has them (node/device/ios). */
   sims: MacSims | undefined;
+  /** On a Mac that runs agents: its machine's id, whose agents' steps name their worktree. */
+  own: string | undefined;
+  /** How many simulators at once the machine's screens settings say, as the hub's last `mac_call` carried it. */
+  simCap: number | undefined;
+  /** On a Mac that runs agents, its simulators made at the first `sim_start` that wants one: none before. */
+  simsWanted: (() => Promise<MacSims | undefined>) | undefined;
   /** Xcode's own DerivedData (`~/Library/Developer/Xcode/DerivedData`), for the builds that went past an agent's. */
   xcodeData: string | undefined;
   /** The free bytes on the disk that holds `path`. */
@@ -200,6 +215,11 @@ export class Host {
     private readonly key: { open(sealed: Uint8Array): Uint8Array | null },
     private readonly clock: () => number = Date.now,
   ) {}
+
+  /** What the Mac is called in what agents read. */
+  private called(): string {
+    return this.own === undefined ? "The agents' Mac" : "This Mac";
+  }
 
   private cache(): string {
     return join(this.root, ".cache");
@@ -222,7 +242,8 @@ export class Host {
     try {
       // Room first: on a full disk even the agent's folder can't be made.
       if (WRITES.has(envelope.step.step)) await this.room();
-      const agent = this.agent(frame.caller);
+      const agent = this.agent(frame.caller, this.worktree(frame.caller, envelope.worktree));
+      if (frame.sims !== undefined) this.simCap = frame.sims ?? undefined;
       // Any step of the agent's keeps its simulator.
       this.sims?.touch(agent.name);
       const [done, after] = await this.step(agent, envelope.step, raw, frame.screen);
@@ -256,8 +277,15 @@ export class Host {
     return [envelope, raw];
   }
 
+  /** The worktree a step of the Mac's own agents names: an existing folder, from this machine only. */
+  private worktree(caller: MacCaller, named: string | undefined): string | undefined {
+    if (named === undefined || this.own === undefined || caller.machineId !== this.own) return undefined;
+    if (!isAbsolute(named) || !existsSync(named) || !statSync(named).isDirectory()) throw refuse(`${named} is no worktree on this Mac`);
+    return named;
+  }
+
   /** The caller's folder, made with its `bin/` the first time: by task, else by session. */
-  agent(caller: MacCaller): Agent {
+  agent(caller: MacCaller, repo?: string): Agent {
     const named = caller.taskId ?? caller.threadId;
     const name = safePart(named);
     if (!name) throw refuse(`${named} can't name a folder`);
@@ -274,7 +302,7 @@ export class Host {
     } catch (e) {
       throw failed("the agent's folder on the Mac was not made", e);
     }
-    return { dir, project, name };
+    return { dir, project, name, ...(repo === undefined ? {} : { repo }) };
   }
 
   private mirror(project: string): string {
@@ -316,12 +344,14 @@ export class Host {
       case "kill":
         return [{ step: "kill", job: step.job, killed: this.kill(agent.name, step.job) }, none];
       case "get":
-        return await get(agent.dir, repoOf(agent), step.path, step.offset, step.raw ?? false);
+        return await get(agent.dir, repoOf(agent), step.path, step.offset, step.raw ?? false, agent.repo !== undefined);
       case "sim_start":
+        this.sims ??= await this.simsWanted?.();
+        if (this.sims) this.sims.cap = this.simCap;
         if (!this.sims) {
           throw new ToolError(
             "failed",
-            "The agents' Mac has no iOS simulators: its golden simulator isn't made.",
+            `${this.called()} has no iOS simulators: its golden simulator isn't made.`,
             `do without a simulator and say so; an admin finishes the Mac's setup in ${settingsPath()} › Machines`,
           );
         }
@@ -564,7 +594,7 @@ export class Host {
     const freed = gone.length === 0 ? "fleetd found none of its own folders, builds or caches left to free" : `fleetd freed ${named} first`;
     throw new ToolError(
       "failed",
-      `The agents' Mac has ${gb(left)} free on its disk, under the ${gb(FLOOR)} a job, push or simulator needs; ${freed}.`,
+      `${this.called()} has ${gb(left)} free on its disk, under the ${gb(FLOOR)} a job, push or simulator needs; ${freed}.`,
       `do without the Mac and say so in your result; a person frees space on it (${settingsPath("Machines")} shows its disk)`,
     );
   }
@@ -881,8 +911,9 @@ async function checkoutNow(mirror: string, repo: string, name: string, snapshot:
   return { step: "checkout", folder: repo };
 }
 
-/** A path the agent named: inside its own folder only, relative ones from `repo/`. */
-export function inside(dir: string, repo: string, path: string): string {
+/** A path the agent named: inside its own folder only (or, on its own Mac, `worktree` too: its `repo`), relative
+ * ones from `repo/`. */
+export function inside(dir: string, repo: string, path: string, worktree = false): string {
   const full = isAbsolute(path) ? path : join(repo, path);
   let real: string;
   try {
@@ -896,15 +927,16 @@ export function inside(dir: string, repo: string, path: string): string {
   } catch {
     // As it is.
   }
-  if (real !== home && !real.startsWith(`${home}/`)) {
+  const under = (top: string) => real === top || real.startsWith(`${top}/`);
+  if (!under(home) && !(worktree && under(realpathSync(repo)))) {
     throw refuse(`${path} is outside your folder on the Mac (${dir})`, "copy it into your folder with mac run first");
   }
   return real;
 }
 
 /** One piece of a file in the agent's folder, or of a folder packed as a tar.gz (the first piece packs it). */
-export async function get(dir: string, repo: string, path: string, offset: number, raw: boolean): Promise<[Done, Uint8Array]> {
-  const real = inside(dir, repo, path);
+export async function get(dir: string, repo: string, path: string, offset: number, raw: boolean, worktree = false): Promise<[Done, Uint8Array]> {
+  const real = inside(dir, repo, path, worktree);
   const folder = statSync(real).isDirectory();
   let source = real;
   if (folder) {
