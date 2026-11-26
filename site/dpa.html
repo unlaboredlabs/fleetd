@@ -1,0 +1,212 @@
+<!doctype html>
+<!-- fleetd.sh/dpa: the Data Processing Agreement (GDPR Art. 28) for fleetd cloud. A draft the person reviews before any page links it: noindex, out of sitemap.xml, and the other pages
+     neither list it nor link it. Same layout as the legal pages (legal.css); [confirm] marks what is still to check. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Data Processing Agreement · fleetd</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="fleetd cloud’s Data Processing Agreement under GDPR Article 28, with the EU Standard Contractual Clauses.">
+<link rel="canonical" href="https://fleetd.sh/dpa">
+<meta property="og:title" content="Data Processing Agreement · fleetd">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/dpa">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main class="w legal">
+  <nav class="pages" aria-label="Policies and support">
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy">Privacy Policy</a>
+    <a href="/refunds">Refund Policy</a>
+    <a href="/imprint">Imprint</a>
+    <a href="/support">Support</a>
+    <a href="/security" class="gap">Security</a>
+    <a href="/subprocessors">Subprocessors</a>
+    <a href="/dpa" aria-current="page">Data Processing Agreement</a>
+  </nav>
+  <article class="doc" aria-labelledby="h">
+    <h1 id="h">Data Processing Agreement</h1>
+    <p class="when">Draft for review, November 26, 2026</p>
+    <p class="draft"><b>Draft for review.</b> This agreement is not in force yet and is not linked from the site. Items marked <mark class="confirm">[confirm]</mark> need a decision before it goes live.</p>
+    <p>This Data Processing Agreement (“DPA”) is part of the <a href="/terms">Terms of Service</a> between you, the customer, and Unlabored Labs, Inc. It applies whenever fleetd cloud (app.fleetd.dev) processes personal data for you under the EU General Data Protection Regulation (“GDPR”), the UK GDPR or the Swiss Federal Act on Data Protection. It applies automatically, with no signature needed. If you want a signed copy, write to <a href="mailto:support@fleetd.dev">support@fleetd.dev</a> <mark class="confirm">[confirm]</mark>.</p>
+    <p>It doesn’t cover fleetd you run yourself: that data stays on your machines and we don’t process it.</p>
+
+    <h2 id="parties">1. Who is who</h2>
+    <ul>
+      <li><b>You</b> are the controller of the personal data you and your workspace’s members and agents put into fleetd cloud (“Customer Personal Data”). Where you act for someone else, you are their processor and we are your subprocessor, and this DPA applies the same way.</li>
+      <li><b>We</b>, Unlabored Labs, Inc., 131 Continental Dr Suite 305, Newark, Delaware 19713, United States, are your processor.</li>
+      <li>Words used here and defined in the GDPR (such as “personal data”, “processing”, “controller”, “processor” and “data subject”) have the GDPR’s meaning. A “subprocessor” is a company we engage to process Customer Personal Data. A “Personal Data Breach” is a breach of security that leads to the accidental or unlawful destruction, loss, alteration, unauthorised disclosure of, or access to, Customer Personal Data.</li>
+    </ul>
+    <p>We are the controller, not the processor, of what we need to run our business: your account, billing records and support emails. Our <a href="/privacy">Privacy Policy</a> covers those.</p>
+
+    <h2 id="instructions">2. Your instructions</h2>
+    <ul>
+      <li>We process Customer Personal Data only on your documented instructions: these Terms and this DPA, and what you, your members and your bots ask the service to do through its settings and features. Annex 1 describes the processing.</li>
+      <li>If the law requires other processing, we tell you first, unless the law forbids that.</li>
+      <li>If we think an instruction breaks data protection law, we tell you, and may pause it until you confirm or change it.</li>
+      <li>You are responsible for having a legal basis for the data you put in, and for what your agents do with it.</li>
+    </ul>
+
+    <h2 id="people">3. Our people</h2>
+    <p>Only staff who need to, to run or support the service, can reach Customer Personal Data. Each is bound to keep it confidential. Staff access to a workspace’s content is logged in that workspace’s audit log, as <a href="/security#staff">Security</a> describes.</p>
+
+    <h2 id="security">4. Security</h2>
+    <p>We keep the technical and organisational measures in Annex 2 for the whole time we process Customer Personal Data. We may improve them, but never lower the overall protection they give.</p>
+
+    <h2 id="subprocessors">5. Subprocessors</h2>
+    <ul>
+      <li>You give us general authorisation to engage subprocessors. The current ones are listed on <a href="/subprocessors">Subprocessors</a> (Annex 3).</li>
+      <li>We tell workspace owners by email, and update that page, at least <b>30 days</b> before a new subprocessor starts processing Customer Personal Data.</li>
+      <li>You can object on reasonable data protection grounds within those 30 days. We then work with you in good faith on a change. If we can’t find one, you can end the affected plan and we refund what you prepaid for the time left.</li>
+      <li>Each subprocessor is bound by a written contract with data protection obligations no less protective than this DPA. We remain responsible to you for their work.</li>
+    </ul>
+
+    <h2 id="assistance">6. Helping you</h2>
+    <ul>
+      <li><b>People’s rights.</b> The service lets you find, export, correct and delete data in your workspace. Where that isn’t enough for a request from a data subject, we help you answer it. If a data subject writes to us about your workspace, we pass it to you and don’t answer it ourselves, unless the law requires it.</li>
+      <li><b>Assessments.</b> We give you the information you reasonably need for a data protection impact assessment or a consultation with a supervisory authority about the service.</li>
+    </ul>
+
+    <h2 id="breach">7. Personal Data Breaches</h2>
+    <ul>
+      <li>We tell you without undue delay, and within <b>72 hours</b>, after we become aware of a Personal Data Breach affecting your Customer Personal Data. We tell the workspace’s owners and admins by email.</li>
+      <li>We say what we know: what happened, the kinds and rough number of people and records affected, the likely effects, what we have done and what we propose. Where we don’t know everything yet, we tell you in stages.</li>
+      <li>We take reasonable steps to contain it and limit its effects, and help you meet your own duties to notify authorities and people.</li>
+      <li>Telling you about a breach is not an admission of fault.</li>
+    </ul>
+
+    <h2 id="end">8. Deletion and return</h2>
+    <ul>
+      <li>While your workspace exists, you can delete its data, or the whole workspace, yourself. An owner can get an export of the workspace by writing to <a href="mailto:support@fleetd.dev">support@fleetd.dev</a>, as a file that loads into fleetd run on your own machines <mark class="confirm">[confirm: no export button yet]</mark>.</li>
+      <li>When you delete your workspace, or our agreement ends, we delete Customer Personal Data from the live service within <b>30 days</b> <mark class="confirm">[confirm]</mark>. Copies in backups are deleted within 30 days after that, as backups expire. Deleting a workspace deletes its keys at once, so sealed data in backups can no longer be opened.</li>
+      <li>We keep data longer only where the law requires it, and then only that data, kept confidential.</li>
+    </ul>
+
+    <h2 id="audits">9. Information and audits</h2>
+    <ul>
+      <li>We make available the information you reasonably need to show that we meet this DPA: <a href="/security">Security</a>, this page, and answers to your security questionnaire.</li>
+      <li>If that isn’t enough, or a supervisory authority asks, you may audit us once a year, with 30 days’ written notice, during working hours, at your cost, by yourself or an independent auditor bound to confidentiality <mark class="confirm">[confirm]</mark>. An audit can’t see other customers’ data.</li>
+      <li>We have no SOC 2 or ISO 27001 report yet. When we do, we offer it in place of an audit.</li>
+    </ul>
+
+    <h2 id="transfers">10. Transfers out of the EU, the EEA, the UK and Switzerland</h2>
+    <ul>
+      <li>fleetd cloud stores your data in the EU. We are a US company, and some subprocessors are in the US, so data can be reached from or processed outside the EU.</li>
+      <li>For each transfer of Customer Personal Data from the EEA to us, the EU Standard Contractual Clauses (Commission Implementing Decision (EU) 2021/914, “SCCs”) are incorporated into this DPA by reference: <b>Module 2</b> (controller to processor) where you are a controller, and <b>Module 3</b> (processor to processor) where you are a processor. You are the data exporter and we are the data importer.</li>
+      <li>For the SCCs: clause 7 (docking) applies; under clause 9, option 2 (general authorisation) applies with the 30 days’ notice of section 5; the optional wording in clause 11 does not apply; under clause 13, the supervisory authority is yours; under clauses 17 and 18, the SCCs are governed by the law of Ireland and disputes go to the courts of Ireland <mark class="confirm">[confirm]</mark>. Annexes 1 to 3 of this DPA fill in the SCCs’ annexes.</li>
+      <li>For transfers from the UK, the UK International Data Transfer Addendum to the SCCs applies, with its tables filled in from this DPA. For transfers from Switzerland, the SCCs apply with the Federal Act on Data Protection in place of the GDPR, and the Swiss Federal Data Protection and Information Commissioner as the authority.</li>
+      <li>Where a subprocessor is certified under the EU–US Data Privacy Framework, we may rely on that instead.</li>
+      <li>If a public authority asks us for Customer Personal Data, we tell you, unless the law forbids it, and challenge requests we believe are unlawful.</li>
+    </ul>
+
+    <h2 id="general">11. General</h2>
+    <ul>
+      <li>This DPA lasts as long as we process Customer Personal Data for you.</li>
+      <li>If this DPA and the Terms conflict on data protection, this DPA wins. If the SCCs and anything else conflict, the SCCs win.</li>
+      <li>Each party’s liability under this DPA is subject to the limits in the Terms, except where the SCCs or the law don’t allow a limit.</li>
+      <li>Apart from the SCCs, this DPA is governed by the law that governs the Terms.</li>
+      <li>We may update this DPA when the law or our service changes. We tell you at least 30 days before a change that reduces your protection takes effect.</li>
+    </ul>
+
+    <h2 id="annex-1">Annex 1: The processing</h2>
+    <ul class="facts">
+      <li><span>Data exporter</span><span>The customer, as named in its fleetd cloud account, acting as controller (or processor).</span></li>
+      <li><span>Data importer</span><span>Unlabored Labs, Inc., as above, acting as processor. Contact: <a href="mailto:support@fleetd.dev">support@fleetd.dev</a>.</span></li>
+      <li><span>Subject matter</span><span>Providing fleetd cloud: a workspace where people and AI agents chat, work on code and other tasks, and use the customer’s accounts and tools.</span></li>
+      <li><span>Duration</span><span>For as long as the customer uses fleetd cloud, then until deletion under section 8.</span></li>
+      <li><span>Nature and purpose</span><span>Hosting, storing, transmitting, displaying and running agents on the customer’s data, only to provide, secure and support the service.</span></li>
+      <li><span>Data subjects</span><span>The customer’s workspace members and invited people, and anyone whose personal data appears in the customer’s chats, files, repositories or other content.</span></li>
+      <li><span>Personal data</span><span>Names, email addresses, roles and devices of members; chats, tasks, agents’ work, logs, files and screen recordings; vault items (logins, cards, addresses, variables), sealed; usage and audit records.</span></li>
+      <li><span>Sensitive data</span><span>None is intended. The customer shouldn’t put special categories of data into the service unless it has assessed that. Vault items are sealed as Annex 2 describes.</span></li>
+      <li><span>Frequency</span><span>Continuous, while the customer uses the service.</span></li>
+      <li><span>Retention</span><span>As the customer sets and deletes it; screen recordings 30 days by default; backups 30 days; deletion under section 8.</span></li>
+      <li><span>Subprocessors</span><span>As in Annex 3, for the purposes listed there.</span></li>
+    </ul>
+
+    <h2 id="annex-2">Annex 2: Security measures</h2>
+    <p>The measures are described in full on <a href="/security">Security</a>. In short:</p>
+    <ul>
+      <li><b>Hosting and access:</b> servers in the EU with no SSH and no inbound port, reached only through Cloudflare Tunnel; daily security updates; checked software; deploys tried on one server first and rolled back on failure.</li>
+      <li><b>Encryption:</b> TLS in transit; secrets sealed in the apps before they’re sent; vault items and tokens sealed with AES-256-GCM under per-workspace keys; disk encryption at the database and storage providers; sealed backups.</li>
+      <li><b>Separation:</b> each workspace’s data is kept apart by the database itself (row-level security), checked at every restore drill; on fleetd’s computers each bot has its own computer.</li>
+      <li><b>Access control:</b> sign-in through WorkOS with re-authentication at each sign-in; roles in each workspace; devices revoked at once when a member is removed; staff access only when needed, behind Cloudflare Access, with content downloads logged in the workspace’s audit log.</li>
+      <li><b>Availability:</b> backups every 6 hours kept 30 days, a restore drill that checks every row, a status page and alerts to a person.</li>
+      <li><b>Incidents:</b> detection by continuous checks, containment, notice under section 7, and a public account of what happened.</li>
+      <li><b>Deletion:</b> self-serve deletion; deleting a workspace deletes its keys.</li>
+    </ul>
+
+    <h2 id="annex-3">Annex 3: Subprocessors</h2>
+    <p>The list on <a href="/subprocessors">Subprocessors</a>, with each one’s purpose, data and location, as it stands on the date you accept this DPA and as updated under section 5.</p>
+  </article>
+</main>
+
+<footer class="w foot">
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/imprint">Imprint</a>
+      <a href="/support">Support</a>
+      <a href="https://status.fleetd.dev">Status</a>
+    </nav>
+  </div>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

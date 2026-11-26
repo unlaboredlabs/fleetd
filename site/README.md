@@ -91,6 +91,12 @@ The legal pages, `terms.html`, `privacy.html`, `refunds.html` and `imprint.html`
 then the text set plain like the docs, beside a list of the five. Every page's footer links them. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
 their word, and move a page's Effective date when its text changes.
 
+`security.html`, `subprocessors.html` and `dpa.html` (`/security`, `/subprocessors`, `/dpa`) are drafts for the person's
+review: the same layout, listing themselves after the five, `noindex`, out of `sitemap.xml`, and linked from no other
+page. Each opens with a "Draft for review" note, and `<mark class="confirm">` marks what is still to check. Once the
+person says go: take off the note, the marks and `noindex`, add them to the five pages' lists, the footers and
+`sitemap.xml`, and uncomment the line under the providers in `privacy.html`.
+
 ## Refreshing the clips
 
 Each section of `home.html` has its own clip, a few seconds of the app on the `showcase-order` fixture
