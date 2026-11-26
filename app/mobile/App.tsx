@@ -46,6 +46,7 @@ import { Devices } from "./src/screens/Devices";
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Memory } from "./src/screens/Memory";
 import { Billing } from "./src/screens/Billing";
+import { Usage, UsageDetail } from "./src/screens/Usage";
 import { Machines } from "./src/screens/Machines";
 import { Connections } from "./src/screens/Connections";
 import { providerName } from "./src/machines";
@@ -724,6 +725,8 @@ function SettingsScreens() {
       <SettingsStack.Screen name="Connections" component={Connections} options={large("Connections")} />
       <SettingsStack.Screen name="Machines" component={Machines} options={large("Machines")} />
       <SettingsStack.Screen name="Billing" component={Billing} options={large("Billing")} />
+      <SettingsStack.Screen name="Usage" component={Usage} options={large("Usage")} />
+      <SettingsStack.Screen name="UsageDetail" component={UsageDetail} options={({ route }) => ({ ...pushed(t, route.params.title), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="Providers" component={Providers} options={large("Providers")} />
       <SettingsStack.Screen name="Claude" component={Claude} options={{ ...pushed(t, "Anthropic"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Google" component={Google} options={{ ...pushed(t, "Google"), headerLargeTitleEnabled: false }} />

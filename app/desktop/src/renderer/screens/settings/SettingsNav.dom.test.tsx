@@ -250,12 +250,12 @@ const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']"
 it("has the Hub group for an admin only, and Vault only on a hub with the vault", async () => {
   const bots = ["All bots", "docs", "storefront"];
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["General", "Accounts", "Memory", "Workspaces & devices", ...bots, "People", "Machines", "Providers", "Audit log", "Bot defaults", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Workspaces & devices", ...bots, "People", "Usage", "Machines", "Providers", "Audit log", "Bot defaults", "Setup"]);
   expect(groups()).toEqual(["You", "Bots", "Workspace"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Workspaces & devices", ...bots, "People", "Machines", "Providers", "Audit log", "Bot defaults", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Workspaces & devices", ...bots, "People", "Usage", "Machines", "Providers", "Audit log", "Bot defaults", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
@@ -334,6 +334,7 @@ const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: strin
   ["#/settings/project-vault?for=devbox/docs", "settings.project-vault", null, "docs"],
   ["#/settings/prompts?for=devbox/docs", "settings.prompts", null, "docs"],
   ["#/settings/hub/people", "settings.hub.people", null, "People"],
+  ["#/settings/hub/usage", "settings.hub.usage", null, "Usage"],
   ["#/settings/hub/machines", "settings.hub.machines", null, "Machines"],
   ["#/settings/hub/providers", "settings.hub.providers", null, "Providers"],
   ["#/settings/hub/audit", "settings.hub.audit", null, "Audit log"],

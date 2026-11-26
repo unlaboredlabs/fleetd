@@ -103,6 +103,7 @@ export const SETTINGS_TABS = [
   "prompts",
   "project-vault",
   "hub.people",
+  "hub.usage",
   "hub.machines",
   "hub.providers",
   "hub.billing",

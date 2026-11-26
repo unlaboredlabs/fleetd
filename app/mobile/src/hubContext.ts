@@ -6,6 +6,7 @@ import type { AccountPreview } from "./accountDelete";
 import type { BillingFailure, Got } from "./billing";
 import type { KeptHub, SavedAccount } from "./cloud/account";
 import type { AgentProviderId, PairFailure, SkillOrigin } from "./desktop";
+import type { WorkspaceUsageCounts } from "../../desktop/src/shared/contracts";
 import type { OnSignedIn } from "./screens/Cloud";
 import type { AgentMessage } from "./screens/dms/model";
 import type { VaultItemSummary, VaultKind } from "./screens/vault/types";
@@ -188,6 +189,10 @@ export type SettingsParams = {
   Google: undefined;
   /** A fleetd cloud team's plan, credits, computer time and spend cap, for its owners and admins. */
   Billing: undefined;
+  /** Who uses the workspace, what it ships and what it costs, for its owners and admins (Usage.tsx). */
+  Usage: undefined;
+  /** One person's or bot's every figure over the period. */
+  UsageDetail: { title: string; counts: WorkspaceUsageCounts; currency?: string; days: 7 | 30 | 90; person: boolean };
 } & VaultParams;
 /** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;

@@ -208,6 +208,7 @@ export function Settings() {
       <UpdateFleetd />
       {machinesShown(state.admin) ? (
         <ListSection>
+          <ListRow title="Usage" onPress={() => navigation.navigate("Usage")} />
           <ListRow title="Machines" onPress={() => navigation.navigate("Machines")} />
           {claudeShown(state.admin) ? <ListRow title="Providers" onPress={() => navigation.navigate("Providers")} /> : null}
           {billingShown(paired, state.admin, billing) ? <ListRow title="Billing" onPress={() => navigation.navigate("Billing")} /> : null}

@@ -248,3 +248,4 @@ export {
 export { appearanceWord, CONTROL_WORD, foldWord, latLon, otherAppearance, PLACES, POSTURE, railOf, shotName, stripOf, TEXT_SIZES, textSizeWord, type StripControl } from "../../desktop/src/renderer/screens/sessions/strip";
 export { bodyOf, flatOf, poseOf, type Body, type Pose } from "../../desktop/src/renderer/screens/sessions/deviceModel";
 export { moveOf, turnBetween } from "../../desktop/src/renderer/screens/sessions/turn";
+export { before, change, columnsOf, count, hours, idle, money, onCloud, PERIODS, ticks, wait, type Column, type Period } from "../../desktop/src/shared/usage";

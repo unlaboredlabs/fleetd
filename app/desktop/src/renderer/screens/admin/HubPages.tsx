@@ -37,6 +37,7 @@ import { AddMachineButton, MachineList, useTeamMachines } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { ProvidedComputers } from "./Provided";
 import { People } from "./People";
+import { Usage } from "./Usage";
 import { SetupPage } from "./SetupPage";
 import { SigninPage } from "./Signin";
 import { Updates } from "./Updates";
@@ -144,6 +145,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
   switch (tab) {
     case "hub.people":
       return <People me={me} />;
+    case "hub.usage":
+      return <Usage />;
     // The task profiles are a part of Providers, under each provider (settings/route.ts).
     case "hub.providers":
     case "hub.profiles":
