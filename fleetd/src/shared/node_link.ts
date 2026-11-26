@@ -97,6 +97,9 @@ export const CAP_SESSION_SEAL = "session_seal";
 export const CAP_CLAUDE_ACCOUNTS = "claude_accounts";
 /** `claude_account_reseal`: the node seals a Claude account it holds to another machine's box key (the hub's runner). */
 export const CAP_CLAUDE_RESEAL = "claude_reseal";
+/** `claude_account_test` with `trial`: the node tries a sealed key it doesn't keep, so the workspace refuses a key Claude
+ * refuses before saving it. */
+export const CAP_CLAUDE_KEY_TRIAL = "claude_key_trial";
 export const CAP_ONEPASSWORD = "onepassword";
 export const CAP_ONEPASSWORD_CARDS = "onepassword_cards";
 /** `vault_adopt`, `vault_import_read`, `vault_import_search`, and fills from the vault (node_link.rs CAP_VAULT). */

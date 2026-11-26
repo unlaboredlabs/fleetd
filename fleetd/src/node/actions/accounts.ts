@@ -86,17 +86,7 @@ export function applySecret(file: string, what: string, set: ClaudeSecretSet | u
     const held = readSecret(file, what);
     if (!held) throw new Error(`this machine holds no ${what}: seal it again`);
     value = held.value;
-  } else {
-    if (!boxKey) throw new Error("this node takes no secrets: it has no box key");
-    const plain = openB64(boxKey, set.sealed);
-    if (!plain) throw new Error(`${what} was not sealed to this machine's current box key: seal it to its boxPubKey again`);
-    const text = utf8(plain);
-    plain.fill(0);
-    if (text === undefined) throw new Error(`${what} is not UTF-8 text`);
-    value = text.trim();
-    if (!value) throw new Error(`${what} is empty`);
-    if (Buffer.byteLength(value) > VALUE_MAX || hasControl(value)) throw new Error(`${what} is not one line of at most 4 KiB`);
-  }
+  } else value = opened(set.sealed, what, boxKey);
   const saved: AccountFile = { value, ...(set.endpoint !== undefined ? { endpoint: set.endpoint } : {}) };
   try {
     mkdirPrivate(dirname(file));
@@ -112,6 +102,20 @@ export function applySecret(file: string, what: string, set: ClaudeSecretSet | u
     bytes.fill(0);
   }
   return fingerprintOf(value);
+}
+
+/** A secret sealed to this machine's box key, opened: one line of at most 4 KiB, or an error naming `what`. */
+export function opened(sealed: string, what: string, boxKey: NodeBoxKey | undefined): string {
+  if (!boxKey) throw new Error("this node takes no secrets: it has no box key");
+  const plain = openB64(boxKey, sealed);
+  if (!plain) throw new Error(`${what} was not sealed to this machine's current box key: seal it to its boxPubKey again`);
+  const text = utf8(plain);
+  plain.fill(0);
+  if (text === undefined) throw new Error(`${what} is not UTF-8 text`);
+  const value = text.trim();
+  if (!value) throw new Error(`${what} is empty`);
+  if (Buffer.byteLength(value) > VALUE_MAX || hasControl(value)) throw new Error(`${what} is not one line of at most 4 KiB`);
+  return value;
 }
 
 /** The account's secret sealed to another machine's box key `to` (standard base64 of 32 bytes), for the hub's runner
@@ -301,7 +305,17 @@ export async function tryAccountApi(env: Env, fetcher: Fetcher = fetch): Promise
     throw new Error(`${base} didn't answer: ${(error as Error).message}`);
   }
   const body = (await response.text()).slice(0, 300);
-  if (!response.ok) throw new Error(`${base} refused it (HTTP ${response.status}): ${body}`);
+  if (!response.ok) throw new EndpointRefused(`${base} refused it (HTTP ${response.status}): ${body}`, response.status);
+}
+
+/** tryAccountApi's endpoint answered, with an error: `status` says whether it refused the key itself (401, 403). */
+export class EndpointRefused extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
 /** What a Test's `claude -p --output-format json` said: it worked when it exited 0 with a result that is no error. */

@@ -299,3 +299,33 @@ test("a 1Password token is saved, tested and lists cards through the Rust node's
   expect(refused).toEqual({ kind: "onepassword_tested", vaults: [], error: "1Password: invalid service account token ***OP_SERVICE_ACCOUNT_TOKEN***" });
   expect(await ok("onepassword_token", { personId: "p_bbbbbbbb" })).toEqual({ kind: "onepassword_saved" });
 });
+
+// S3 of the Nov 26 sweep: an invalid workspace key was saved anyway. The workspace now has the node try a sealed key
+// it doesn't keep first, on the endpoint's free model list.
+test("a workspace key is tried before it is saved: a refusal says so, and the key is kept nowhere", async () => {
+  const api = Bun.serve({
+    port: 0,
+    fetch: (req) =>
+      req.headers.get("x-api-key") === "sk-good"
+        ? Response.json({ data: [{ id: "claude-haiku" }] })
+        : new Response('{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', { status: 401 }),
+  });
+  try {
+    const endpoint = `http://127.0.0.1:${api.port}`;
+    const bad = await ok("claude_account_test", { account: { kind: "hub" }, trial: { sealed: sealed("sk-bad"), endpoint } });
+    expect(bad).toMatchObject({ kind: "claude_account_tested", ok: false, refused: true });
+    expect(bad.error).toContain("HTTP 401");
+    expect(bad.error).not.toContain("sk-bad");
+    expect(await ok("claude_account_test", { account: { kind: "hub" }, trial: { sealed: sealed("sk-good"), endpoint } })).toEqual({ kind: "claude_account_tested", ok: true });
+    expect(existsSync(join(nodeHome, "claude-accounts", "hub.json"))).toBe(false);
+    // An endpoint that doesn't answer says nothing of the key: no refusal.
+    const gone = Bun.serve({ port: 0, fetch: () => new Response("") });
+    const port = gone.port;
+    gone.stop(true);
+    const silent = await ok("claude_account_test", { account: { kind: "hub" }, trial: { sealed: sealed("sk-x"), endpoint: `http://127.0.0.1:${port}` } });
+    expect(silent.ok).toBe(false);
+    expect(silent.refused).toBeUndefined();
+  } finally {
+    api.stop(true);
+  }
+});

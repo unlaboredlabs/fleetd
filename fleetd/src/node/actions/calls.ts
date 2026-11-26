@@ -14,7 +14,7 @@ import type { VaultImportCandidate, VaultImportError } from "../../shared/contra
 import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { applyAccount, applyGeminiKey, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount, tryAccountApi } from "./accounts.ts";
+import { API_KEY_ENV, applyAccount, applyGeminiKey, BASE_URL_ENV, EndpointRefused, endpointSilent, envFor, hubModels, opened, putOn, resealAccount, tryAccount, tryAccountApi } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
@@ -138,6 +138,27 @@ function projectToken(home: string, projectId: string): string | undefined {
   return projectVars(home, projectId).find(([name, value]) => name === TOKEN_ENV && secrets.has(value))?.[1];
 }
 
+/** A workspace key tried before it is saved (`claude_account_test` with `trial`): its endpoint lists one model for it,
+ * which costs nothing and runs no model. `refused` when the endpoint refused the key itself; any other failure (no
+ * answer, a gateway with no model list) says nothing of the key. The key is kept nowhere. */
+async function trialKey(sealed: string, endpoint: string | undefined, boxKey: NodeBoxKey | undefined): Promise<SessionOutput> {
+  let key: string;
+  try {
+    key = opened(sealed, "the workspace's API key", boxKey);
+  } catch (error) {
+    return { kind: "claude_account_tested", ok: false, error: (error as Error).message };
+  }
+  const via = endpoint === undefined ? fetch : endpointFetch(endpoint).fetcher;
+  const env: Env = { [API_KEY_ENV]: key, ...(endpoint === undefined ? {} : { [BASE_URL_ENV]: endpoint }) };
+  try {
+    await tryAccountApi(env, via);
+    return { kind: "claude_account_tested", ok: true };
+  } catch (error) {
+    const refused = error instanceof EndpointRefused && (error.status === 401 || error.status === 403);
+    return { kind: "claude_account_tested", ok: false, error: new Masker([[API_KEY_ENV, key]]).text((error as Error).message), ...(refused ? { refused } : {}) };
+  }
+}
+
 export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op: CallOp }>): Promise<SessionOutput> {
   const home = ctx.home;
   switch (call.op) {
@@ -184,6 +205,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       return { kind: "claude_account_resealed", ...(sealed ? { sealed } : {}) };
     }
     case "claude_account_test": {
+      if (call.trial?.sealed !== undefined) return trialKey(call.trial.sealed, call.trial.endpoint, ctx.boxKey);
       const env = ctx.runnerEnv();
       let account: ReturnType<typeof envFor>;
       try {
