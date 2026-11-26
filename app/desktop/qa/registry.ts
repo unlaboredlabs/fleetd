@@ -243,6 +243,7 @@ export const fixtures = [
   // status-rows with search blocked by a usage pause on buildbox: the reason with Resume, over the composer
   // (fixtures/topbar).
   "topbar-paused",
+  "topbar-offline",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   // The Factory (fixtures/factory): a repo whose reads fail beside one on a plain git host, and a range with no merges.
@@ -1184,6 +1185,19 @@ export const screens: readonly Screen[] = [
       const line = page.locator("[data-say]").locator('[data-attention="blocked"]');
       await expect(line).toContainText("Blocked: paused until Sun 23:40 UTC");
       await expect(line.getByRole("button", { name: /^Resume/u })).toBeVisible();
+    },
+    check: bandIsOneRow("say"),
+  },
+  // A project blocked by its machine offline: the reason over the composer, with Open machine (search, on buildbox).
+  {
+    id: "chat",
+    route: "#/project/buildbox/558dc655-fbca-48f0-abf1-6977a0709ea9",
+    fixtures: ["topbar-offline"],
+    variant: "machine-offline",
+    open: async (page) => {
+      const line = page.locator("[data-say]").locator('[data-attention="blocked"]');
+      await expect(line).toContainText("Blocked: buildbox is offline");
+      await expect(line.getByRole("button", { name: "Open machine" })).toBeVisible();
     },
     check: bandIsOneRow("say"),
   },
