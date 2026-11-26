@@ -259,7 +259,7 @@ it("says why nothing runs while fleetd's computers are held, in Billing's words 
   // No plan and no credits: the service's own words and fix.
   billing = read(BILLING_SAMPLES.none);
   await render();
-  expect(section()?.textContent).toContain("This workspace has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
+  expect(section()?.textContent).toContain("Bots on your own machines are free: this workspace has no plan and no credits for fleetd's computers. To run bots on fleetd's computers, pick a plan or buy credits.");
 });
 
 it("on a cloud that doesn't answer the pick yet, still says agents run on fleetd's computers", async () => {

@@ -100,7 +100,7 @@ describe("the service's billing answer", () => {
 describe("what the page says in each state", () => {
   it("no plan: the service's line with Add credits, and nothing used", () => {
     const s = state("none");
-    expect(topLine(s)).toEqual({ tone: "danger", message: "This workspace has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.", fix: "buy" });
+    expect(topLine(s)).toEqual({ tone: "danger", message: "Bots on your own machines are free: this workspace has no plan and no credits for fleetd's computers. To run bots on fleetd's computers, pick a plan or buy credits.", fix: "buy" });
     expect(planWord(s)).toBe("No plan");
     expect(planLine(s, SAMPLE_NOW)).toBeNull();
     expect(usageRows(s)).toEqual([]);
@@ -187,7 +187,7 @@ describe("the page's figures", () => {
     };
     expect(heldLine(read(BILLING_SAMPLES.cap))).toContain("spend cap");
     expect(heldLine(read(BILLING_SAMPLES.cap))).not.toContain("credits");
-    expect(heldLine(read(BILLING_SAMPLES.none))).toBe("This workspace has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
+    expect(heldLine(read(BILLING_SAMPLES.none))).toBe("Bots on your own machines are free: this workspace has no plan and no credits for fleetd's computers. To run bots on fleetd's computers, pick a plan or buy credits.");
     expect(heldLine({ ...read(BILLING_SAMPLES.plan), notice: null, held: "empty", credits: { ...read(BILLING_SAMPLES.plan).credits, leftCents: 0 } })).toBe(
       "No credits left, so bots on fleetd's computers are stopped. Add credits or pick a plan.",
     );
