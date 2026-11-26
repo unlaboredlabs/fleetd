@@ -480,7 +480,7 @@ function accountEntry(
     return hubEntry(
       name,
       "warn",
-      `${what} isn't on ${list}, so nothing runs on it there.`,
+      `${what} isn't on ${list}, so nothing runs on it there: it goes only to the machines online when it's saved.`,
       manual(`Save it again while ${list} ${missing.length === 1 ? "is" : "are"} online`),
     );
   }

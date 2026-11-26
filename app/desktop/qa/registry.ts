@@ -69,6 +69,7 @@ export const fixtures = [
   // a member.
   "admin-owner",
   "admin-admin",
+  "admin-owner-here",
   "admin-member",
   // ...and a hub from before people, whose People and Invites ask for an update.
   "admin-old-hub",
@@ -4523,13 +4524,25 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.hub.people",
     route: "#/settings/hub/people",
-    fixtures: ["admin-owner"],
+    fixtures: ["admin-owner", "admin-owner-here"],
     variant: "created",
     open: async (page) => {
       await page.getByRole("button", { name: "Invite someone" }).click();
       await page.getByRole("textbox", { name: "Name" }).fill("Eve Park");
       await page.getByRole("button", { name: "Create invite link" }).click();
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
+    },
+  },
+  // Making someone an owner asks first: an admin can't take it back.
+  {
+    id: "settings.hub.people",
+    route: "#/settings/hub/people",
+    fixtures: ["admin-owner"],
+    variant: "make-owner",
+    open: async (page) => {
+      await page.getByRole("combobox", { name: "Bob Okafor's role" }).click();
+      await page.getByRole("option", { name: "Owner" }).click();
+      await page.getByRole("dialog", { name: "Make Bob Okafor an owner?" }).waitFor();
     },
   },
   // W469 and W603: Hub › Machines at its Updates (a page of its own once: its link lands there): the everyday status (up to date, Update automatically on), a ready build it installs

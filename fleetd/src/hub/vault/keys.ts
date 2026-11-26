@@ -7,7 +7,7 @@
 //   until an owner or admin unlocks it.
 // Every mode holds a key set: the active key, and during a rotation the one it replaces (`retired`).
 import { createHash, scryptSync, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { gcmOpen, gcmSeal, newKey } from "./crypto.ts";
 
@@ -277,6 +277,20 @@ export class VaultKeys {
       throw e;
     }
     for (const k of before) if (k.id !== keep) k.key.fill(0);
+  }
+
+  /**
+   * Deletes the key set for good (`fleetd uninstall --purge`): its copy in the keychain when it's kept there, then its
+   * folder. Whether there was one.
+   */
+  async destroy(): Promise<boolean> {
+    if (!existsSync(this.dir)) return false;
+    try {
+      const shape = JSON.parse(readFileSync(this.path, "utf8")) as FileShape;
+      if (shape.mode === "keyring") await this.secrets().delete({ service: shape.service, name: shape.account });
+    } catch {}
+    rmSync(this.dir, { recursive: true, force: true });
+    return true;
   }
 
   /** Takes a key back from its recovery code, as key `id` (the one whose check blob it opened). */

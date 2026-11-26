@@ -190,17 +190,20 @@ export const lineWords = (state: LineState, machineId: string): string =>
  * Why a join line made for `hubUrl` works only on the hub's own computer (a hub on 127.0.0.1, say), with the fix;
  * undefined when another machine can reach that address.
  */
-export const onlyHereLine = (hubUrl: string): string | undefined => {
+export const onlyHereLine = (hubUrl: string): string | undefined =>
+  onlyHere(hubUrl)
+    ? `The workspace is only at ${hubUrl}, which no other machine reaches, so this line works only on the workspace's own computer. For another machine, give the workspace its tailnet or LAN address in ${settingsPath(false, "Setup")} › Where the workspace listens, then make the line again.`
+    : undefined;
+
+/** Whether `hubUrl` is on this computer only (127.0.0.1, localhost, every interface), out of every other one's reach. */
+export const onlyHere = (hubUrl: string): boolean => {
   let host: string;
   try {
     host = new URL(hubUrl).hostname.toLowerCase().replace(/^\[|\]$/gu, "");
   } catch {
-    return undefined;
+    return false;
   }
-  const loopback = host === "localhost" || host.endsWith(".localhost") || /^127\./u.test(host) || host === "::1" || host === "0.0.0.0" || host === "::";
-  return loopback
-    ? `The workspace is only at ${hubUrl}, which no other machine reaches, so this line works only on the workspace's own computer. For another machine, give the workspace its tailnet or LAN address in ${settingsPath(false, "Setup")} › Where the workspace listens, then make the line again.`
-    : undefined;
+  return host === "localhost" || host.endsWith(".localhost") || /^127\./u.test(host) || host === "::1" || host === "0.0.0.0" || host === "::";
 };
 
 /** A Mac setup code as shown: `123 456`. */

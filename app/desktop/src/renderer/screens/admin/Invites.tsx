@@ -8,6 +8,8 @@ import { Button, copyText, Input, Radio, RadioGroup, Text, Truncate } from "../.
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { expiresLine, nameProblem, ROLE_HELP, roleWord } from "./model";
+import { onlyHere } from "../addMachine/model";
+import { settingsPath } from "../../../shared/settingsPages";
 import { HintLines, SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import s from "../settings/settings.module.css";
@@ -117,6 +119,11 @@ function CreatedLink({ created }: { created: InviteCreateOutput }) {
       <Text size="sm" tone="quiet">
         {`Shown only now. Send it to ${name}; their fleetd app opens it and joins. Without the link, they enter ${created.hubUrl} and the code ${created.code}.`}
       </Text>
+      {onlyHere(created.hubUrl) ? (
+        <Text size="sm" tone="danger">
+          {`${name} can't open it yet: the workspace is only at ${created.hubUrl}, which no other computer reaches. Give it its tailnet or LAN address in ${settingsPath(false, "Setup")} › Where the workspace listens, then make the invite again.`}
+        </Text>
+      ) : null}
       {copied === false ? (
         <Text size="sm" tone="danger">
           Couldn't copy it. Select the link and copy it by hand.

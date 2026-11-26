@@ -41,6 +41,15 @@ describe("a person deletes their cloud account", () => {
       "You leave acme.",
       "solo is deleted with it, as you're its only member: its bots, chats, memory and vault go for good.",
       "Your plan on solo stops now, with no refund for the rest of the month.",
+      "Download your invoices from Manage billing first: after this only support can send them.",
+      "Your sign-in and its history are erased. Billing records the law requires are kept.",
+    ]);
+    // Credits left there are said, and a refund still possible before the delete.
+    expect(deleteAccountLines({ ...bob.preview, leaves: [], deletes: [{ name: "solo", plan: null, creditsCents: 496, refundable: true }] })).toEqual([
+      "solo is deleted with it, as you're its only member: its bots, chats, memory and vault go for good.",
+      "$4.96 of credits left on solo will be lost.",
+      "Bought some in the last 14 days? Write to support@fleetd.dev for a refund before you delete.",
+      "Download your invoices from Manage billing first: after this only support can send them.",
       "Your sign-in and its history are erased. Billing records the law requires are kept.",
     ]);
     expect(blockedLine(bob.preview)).toBeNull();
@@ -121,6 +130,9 @@ describe("a person deletes their cloud account", () => {
     expect(parseRequest(IPC.cloudDeleteAccount, ["x".repeat(321)]).ok).toBe(false);
     expect(parseRequest(IPC.cloudAccountPreview, []).ok).toBe(true);
     expect(readPreview({ email: "a@b.c", deletes: [{ name: "x" }], leaves: [], blocked: [] })).toEqual({ email: "a@b.c", deletes: [{ name: "x", plan: null }], leaves: [], blocked: [] });
+    expect(readPreview({ email: "a@b.c", deletes: [{ name: "x", plan: null, creditsCents: 120, refundable: true }], leaves: [], blocked: [] })?.deletes).toEqual([
+      { name: "x", plan: null, creditsCents: 120, refundable: true },
+    ]);
     expect(readPreview({ email: "a@b.c", deletes: [], leaves: [1], blocked: [] })).toBeNull();
     expect(emailMatches(" Bob@Acme.example", "bob@acme.example")).toBe(true);
     expect(emailMatches("", "")).toBe(false);

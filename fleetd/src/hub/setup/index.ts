@@ -255,13 +255,14 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       "people",
       "people",
       "Invite people",
-      "Each person gets their own sign-in, chats and bots; you choose who is an admin.",
+      "Each person gets their own sign-in and works in the same bots and chats as everyone; you choose who is an admin.",
       { kind: "optional" },
       {
         parts: [
           part(
             "Invite someone",
-            "The invite is a link and a code, for one person, good for 7 days. Send it to them yourself.",
+            "The invite is a link and a code, for one person, good for 7 days. Send it to them yourself. They join at " +
+              "the workspace's address, so it needs one their computer reaches: see Where the workspace listens.",
             [],
             [command("On the workspace", "fleetd invite --name <name>", "--role admin for another admin.")],
           ),

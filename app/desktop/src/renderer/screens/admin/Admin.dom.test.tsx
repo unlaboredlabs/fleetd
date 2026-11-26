@@ -313,6 +313,23 @@ it("lists the people with their roles and devices, and changes a role", async ()
   if (admin === undefined) throw new Error("no Admin option");
   await click(admin);
   expect(sent("person_set")).toEqual([{ personId: "p_cccccccc", role: "admin" }]);
+  // Owner asks first: only an owner can take it back.
+  await act(async () => {
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  const owner = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Owner");
+  if (owner === undefined) throw new Error("no Owner option");
+  await click(owner);
+  await settle();
+  expect(sent("person_set")).toHaveLength(1);
+  expect(document.body.textContent).toContain("Make Bob Okafor an owner?");
+  await click(button("Make owner"));
+  expect(sent("person_set")).toEqual([
+    { personId: "p_cccccccc", role: "admin" },
+    { personId: "p_cccccccc", role: "owner" },
+  ]);
 });
 
 it("removes a person once confirmed", async () => {

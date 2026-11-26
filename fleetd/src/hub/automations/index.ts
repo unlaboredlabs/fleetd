@@ -21,6 +21,7 @@ import type {
   AutomationWatch,
   HubEvent,
   HubEventType,
+  PersonRef,
   ProjectRef,
   ThreadRef,
   Workstream,
@@ -85,6 +86,8 @@ export type NewAutomation = {
   webhook: boolean;
   /** A keyId, "human" or "lead:<machineId>/<projectId>". */
   by: string;
+  /** The person, for "human": the log names them. */
+  person?: PersonRef;
   /** The person wrote it or said yes to it (`Automation.confirmed`). */
   confirmed: boolean;
   /** Makes a retry return the automation the first call made. */
@@ -203,8 +206,9 @@ export class Automations {
     }
   }
 
-  private changedEvent(a: Automation, change: string, by: string): void {
-    this.event(a, "automation.changed", `Automation “${a.name}” ${change}`, { change, by });
+  private changedEvent(a: Automation, change: string, by: string, person?: PersonRef): void {
+    const who = person === undefined ? "" : `, by ${person.name}`;
+    this.event(a, "automation.changed", `Automation “${a.name}” ${change}${who}`, { change, by, ...(person ? { person } : {}) });
   }
 
   // ---- storage -------------------------------------------------------------------------------------------------------
@@ -397,13 +401,13 @@ export class Automations {
         secret === undefined ? null : hex(secretHash(secret)),
         JSON.stringify(a),
       );
-    this.changedEvent(a, "created", input.by);
+    this.changedEvent(a, "created", input.by, input.person);
     this.signal();
     return [a, secret];
   }
 
   /** Applies `edit`; a new webhook's secret is returned once. */
-  update(id: string, edit: Edit, by: string): [Automation, string | undefined] {
+  update(id: string, edit: Edit, by: string, person?: PersonRef): [Automation, string | undefined] {
     let a = this.row(id);
     if (!a) throw notFound(id);
     a = { ...a };
@@ -428,7 +432,7 @@ export class Automations {
     a.updatedAt = isoMs(now);
     this.put(a);
     if (edit.webhook === false || secret !== undefined) this.setHash(id, secret);
-    this.changedEvent(a, "edited", by);
+    this.changedEvent(a, "edited", by, person);
     this.signal();
     return [this.withLastRun(a), secret];
   }
@@ -466,7 +470,7 @@ export class Automations {
    * changed since the card showed it (`shown`: its `prompt` and `schedule` as the card's JSON has them). Whether it is
    * marked now.
    */
-  confirm(id: string, shown: unknown, by: string): boolean {
+  confirm(id: string, shown: unknown, by: string, person?: PersonRef): boolean {
     const a = this.row(id);
     if (!a) throw notFound(id);
     const o = shown !== null && typeof shown === "object" && !Array.isArray(shown) ? (shown as Record<string, unknown>) : {};
@@ -475,7 +479,7 @@ export class Automations {
     if (a.confirmed !== true) {
       const marked = { ...a, confirmed: true, updatedAt: isoMs(this.now()) };
       this.put(marked);
-      this.changedEvent(marked, "was let run on its own", by);
+      this.changedEvent(marked, "was let run on its own", by, person);
     }
     return true;
   }
@@ -484,7 +488,7 @@ export class Automations {
    * Paused: its schedule and webhook start nothing. Resumed: the schedule goes on from now; what it missed while
    * paused doesn't run, and a one-time schedule whose time passed meanwhile is refused until it has a new one.
    */
-  pause(id: string, paused: boolean, by: string): Automation {
+  pause(id: string, paused: boolean, by: string, person?: PersonRef): Automation {
     const found = this.row(id);
     if (!found) throw notFound(id);
     if (found.paused === paused) return this.withLastRun(found);
@@ -494,32 +498,32 @@ export class Automations {
     else delete a.nextRunAt;
     a.updatedAt = isoMs(now);
     this.put(a);
-    this.changedEvent(a, paused ? "paused" : "resumed", by);
+    this.changedEvent(a, paused ? "paused" : "resumed", by, person);
     this.signal();
     return this.withLastRun(a);
   }
 
   /** A new webhook secret; the old URL stops working at once. */
-  rotate(id: string, by: string): [Automation, string] {
+  rotate(id: string, by: string, person?: PersonRef): [Automation, string] {
     const found = this.row(id);
     if (!found) throw notFound(id);
     const secret = newSecret();
     const a = { ...found, webhook: true, updatedAt: isoMs(this.now()) };
     this.put(a);
     this.setHash(id, secret);
-    this.changedEvent(a, "has a new webhook URL", by);
+    this.changedEvent(a, "has a new webhook URL", by, person);
     return [this.withLastRun(a), secret];
   }
 
   /** Deletes it and its runs; an order a run opened stays an order. */
-  delete(id: string, by: string): void {
+  delete(id: string, by: string, person?: PersonRef): void {
     const a = this.row(id);
     if (!a) throw notFound(id);
     this.hub.db.transaction((c) => {
       c.query("DELETE FROM automation_runs WHERE automation_id = ?").run(id);
       c.query("DELETE FROM automations WHERE automation_id = ?").run(id);
     });
-    this.changedEvent(a, "deleted", by);
+    this.changedEvent(a, "deleted", by, person);
     this.signal();
   }
 

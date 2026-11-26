@@ -71,6 +71,7 @@ export function register(tools: Registry): void {
       webhook: input.webhook === true,
       ...(input.watch === undefined ? {} : { watch: input.watch }),
       by: by(caller),
+      ...(caller.person ? { person: caller.person } : {}),
       // Made in the app, the person wrote it.
       confirmed: isHuman(caller),
       clientRequestId: input.clientRequestId,
@@ -103,6 +104,7 @@ export function register(tools: Registry): void {
         ...(confirmed === undefined ? {} : { confirmed }),
       },
       by(caller),
+      caller.person,
     );
     const webhook = url(hub, automation, secret);
     return { ...(webhook === undefined ? {} : { next: URL_ONCE }), automation, ...(webhook === undefined ? {} : { webhookUrl: webhook }) };
@@ -110,20 +112,20 @@ export function register(tools: Registry): void {
 
   tools.add("automation_pause", (hub, caller, input) => {
     const a = changeable(hub, caller, input.automationId);
-    const automation = automations(hub).pause(a.automationId, input.paused, by(caller));
+    const automation = automations(hub).pause(a.automationId, input.paused, by(caller), caller.person);
     const next = input.paused ? "Paused: its schedule and webhook start nothing; Run now still runs it." : "Resumed: its schedule goes on from now.";
     return { automation, next };
   });
 
   tools.add("automation_rotate", (hub, caller, input) => {
     const a = changeable(hub, caller, input.automationId);
-    const [automation, secret] = automations(hub).rotate(a.automationId, by(caller));
+    const [automation, secret] = automations(hub).rotate(a.automationId, by(caller), caller.person);
     return { webhookUrl: webhookUrl(hub.url(), automation.automationId, secret), automation, next: `${URL_ONCE} The old URL no longer works.` };
   });
 
   tools.add("automation_delete", (hub, caller, input) => {
     const a = changeable(hub, caller, input.automationId);
-    automations(hub).delete(a.automationId, by(caller));
+    automations(hub).delete(a.automationId, by(caller), caller.person);
     return { ok: true, next: "Deleted with its run history; orders its runs opened stay." };
   });
 

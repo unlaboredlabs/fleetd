@@ -3,7 +3,7 @@ import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_SIGNINS_FORGET } from "../../shared/node_link.ts";
 import { requireBotAdmin } from "../api/bot_admin.ts";
-import { isHuman, requireRole } from "../api/grants.ts";
+import { isHuman, requireRole, whoOf } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
@@ -33,14 +33,15 @@ function summaryOf(hub: Hub, r: ProjectRef): ProjectSummary {
   return p;
 }
 
-function changed(hub: Hub, project: ProjectSummary, summary: string): void {
+/** A project's settings changed; `caller`, for a safety setting, is named as who changed it. */
+function changed(hub: Hub, project: ProjectSummary, summary: string, caller?: Caller): void {
   events(hub).append({
     at: isoMs(hub.clock.now()),
     type: "project.settings",
     machineId: project.machineId,
     projectId: project.projectId,
-    summary,
-    data: { title: project.title, archivedAt: project.archivedAt ?? null },
+    summary: caller === undefined ? summary : `${summary}, by ${whoOf(caller)}`,
+    data: { title: project.title, archivedAt: project.archivedAt ?? null, ...(caller?.person ? { by: caller.person } : {}) },
   });
 }
 
@@ -175,7 +176,7 @@ export function register(tools: Registry): void {
     // An older app's model and effort are taken and ignored: the checker runs on the hub's (W467).
     checker.setApprovals(hub.db.conn, r, input.mode);
     const approvals = checker.approvals(hub.db.conn, r);
-    changed(hub, project, `${project.title}'s approvals: ${approvals.mode}`);
+    changed(hub, project, `${project.title}'s approvals: ${approvals.mode}`, caller);
     return { approvals };
   });
 

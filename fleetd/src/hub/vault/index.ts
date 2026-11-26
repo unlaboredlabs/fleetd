@@ -11,6 +11,7 @@
 // - order (variables): as its project; its creator or an admin changes it, its creator reveals it;
 // - person: an item set aside by the one-team-vault migration. Only its owner lists, reveals, moves or deletes it;
 //   nothing fills or delivers it.
+import { existsSync } from "node:fs";
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isHuman } from "../api/grants.ts";
@@ -64,6 +65,16 @@ export class Vault {
         return;
       }
       try {
+        // A key file gone while items are sealed under it is lost, not new: a fresh key would open none of them, and
+        // what was saved under it would be lost once the right one came back. Only an empty vault starts over.
+        const fresh = !existsSync(this.keys.path);
+        if (fresh && this.store.sealedCount() > 0) {
+          throw new VaultKeyError(
+            "vault_key_missing",
+            `the vault key file ${this.keys.path} is gone, and the vault's items are sealed under it`,
+          );
+        }
+        if (fresh) this.store.forgetKeys();
         await this.keys.load(true);
         this.problem = undefined;
         if (!this.keys.locked) this.store.recordKeys(this.hub.clock.now());

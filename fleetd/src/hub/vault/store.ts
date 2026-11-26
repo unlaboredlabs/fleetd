@@ -231,6 +231,16 @@ export class VaultStore {
   // --- keys ---
 
   /** Records each loaded key's check blob, once. */
+  /** How many items (trash included) are sealed under the vault's keys. */
+  sealedCount(): number {
+    return this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM vault_items").get()?.n ?? 0;
+  }
+
+  /** Forgets the recorded keys of a vault that holds nothing, before it makes a fresh one. */
+  forgetKeys(): void {
+    this.db.query("DELETE FROM vault_keys").run();
+  }
+
   recordKeys(now: number): void {
     for (const k of this.keys.all()) {
       this.db

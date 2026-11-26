@@ -248,6 +248,10 @@ describe("activity and errors", () => {
       detail: "amaz0n.com · not one of its sites",
     });
     expect(auditLine(entry({ action: "reveal", data: { by: "human:laptop" } }), names)).toEqual({ title: "Shown", detail: "laptop" });
+    expect(auditLine(entry({ action: "reveal", outcome: "refused", data: { message: "only its creator or an admin can show it" } }), names)).toEqual({
+      title: "Show refused",
+      detail: "only its creator or an admin can show it",
+    });
   });
 
   it("says how an import card went, and the vault's own refusals in the person's words", () => {

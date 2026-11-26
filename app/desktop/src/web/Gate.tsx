@@ -5,7 +5,9 @@
 import { useState, type ReactNode } from "react";
 import { invitationLine } from "../shared/accounts";
 import type { BotState } from "../shared/bot";
+import type { AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
 import { Bot, Button, Text } from "../renderer/ui";
+import { DeleteAccountDialog } from "../renderer/screens/settings/DeleteAccountDialog";
 import st from "../renderer/screens/start/start.module.css";
 import s from "./gate.module.css";
 import type { WebFailure, WebInvitation } from "./session";
@@ -28,6 +30,11 @@ export interface GateActions {
   /** A team of the person's own (someone who came by an invitation has none); its refusal, or null once made. */
   readonly makeTeam: () => Promise<WebFailure | null>;
   readonly signOut: () => void;
+  /** What deleting the account would take, and the delete: for one in no workspace, with nowhere else to do it. */
+  readonly accountPreview: () => Promise<AccountPreviewOutcome>;
+  readonly deleteAccount: (email: string) => Promise<DeleteAccountOutcome>;
+  /** The account is gone: the page starts over, signed out. */
+  readonly deleted: () => void;
 }
 
 /** The page: the bot and its title where Get started has them (under the app's top bar's height), then the box. */
@@ -127,8 +134,12 @@ function Invitations({ view, actions }: { view: GateView & { at: "invited" }; ac
   );
 }
 
-/** In no team (one who came by an invitation and said Not now): a team of their own, or a teammate's invite. */
+/**
+ * In no team (one who came by an invitation and said Not now, or was removed from theirs): a team of their own, a
+ * teammate's invite, or deleting the account. A removal is the page's headline: it is why there is no workspace.
+ */
 function NoTeam({ email, removed, actions }: { email: string; removed: string | undefined; actions: GateActions }) {
+  const [deleting, setDeleting] = useState(false);
   // Undefined while it is being made, and once made while the app opens on it (a second press would make another);
   // a refusal says why in place of the line.
   const [refused, setRefused] = useState<WebFailure | null | undefined>(null);
@@ -137,10 +148,15 @@ function NoTeam({ email, removed, actions }: { email: string; removed: string | 
     void actions.makeTeam().then((failure) => setRefused(failure ?? undefined));
   };
   return (
-    <Stage id="web.no-team" bot="idle" title="No workspace yet">
-      {removed === undefined ? null : <Text tone="quiet">{removed}</Text>}
-      <Text strong>{`${email} isn't in a fleetd workspace`}</Text>
-      <Text tone="quiet">{refused ? `${refused.message} ${refused.fix ?? ""}`.trim() : "Make one of your own, or ask a teammate to invite this email."}</Text>
+    <Stage id="web.no-team" bot="idle" title={removed === undefined ? "No workspace yet" : removed.replace(/\.$/u, "")}>
+      <Text strong>{removed === undefined ? `${email} isn't in a fleetd workspace` : `Signed in as ${email}`}</Text>
+      <Text tone="quiet">
+        {refused
+          ? `${refused.message} ${refused.fix ?? ""}`.trim()
+          : removed === undefined
+            ? "Make one of your own, or ask a teammate to invite this email."
+            : "Make a workspace of your own, or ask a teammate to invite this email."}
+      </Text>
       <div className={st.actions}>
         <Button variant="primary" size="md" disabled={refused === undefined} onClick={make}>
           Make a workspace
@@ -148,7 +164,18 @@ function NoTeam({ email, removed, actions }: { email: string; removed: string | 
         <Button size="md" onClick={actions.signOut}>
           Sign out
         </Button>
+        <Button size="md" variant="quiet" disabled={refused === undefined} onClick={() => setDeleting(true)}>
+          Delete account…
+        </Button>
       </div>
+      <DeleteAccountDialog
+        email={email}
+        open={deleting}
+        onClose={() => setDeleting(false)}
+        preview={actions.accountPreview}
+        remove={actions.deleteAccount}
+        onDeleted={actions.deleted}
+      />
     </Stage>
   );
 }

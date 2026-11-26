@@ -10,7 +10,7 @@ import type { GateView } from "./Gate";
 import { createWebShell, followBrowser, followFreshBuild } from "./shell";
 import { followNewBuild } from "./build";
 import { heldOnReload } from "../renderer/src/held";
-import { afterKeptStart, NOT_LISTED_YET, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
+import { afterKeptStart, carriedRemovals, freshMark, NOT_LISTED_YET, withCarried, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
@@ -97,6 +97,12 @@ const show = async (view: GateView) => {
               clearWebCache(window.localStorage);
               void webCall(window.fetch.bind(window), "POST", "/web/sign-out").then(() => window.location.assign("/"));
             },
+            accountPreview: async () => (await import("./account")).readAccount(window.fetch.bind(window)),
+            deleteAccount: async (email) => (await import("./account")).deleteWebAccount(window.fetch.bind(window), email),
+            deleted: () => {
+              clearWebCache(window.localStorage);
+              window.location.assign("/");
+            },
           }}
         />
       </UiProvider>
@@ -139,8 +145,10 @@ const keepShell = () => {
   else window.addEventListener("load", register, { once: true });
 };
 
-/** Set before a reload that must read the session before it starts (afterKeptStart said `fresh`). */
+/** Set before a reload that must read the session before it starts (afterKeptStart said `fresh`): the removals it read. */
 const FRESH = "fleetd.web.fresh";
+/** The removals the reload carried over (the cloud said them to the kept start's read), for boot's gate. */
+let carried: string[] = [];
 
 /**
  * A page opened again starts at once from the account this browser kept (cache.ts): the app shows the kept bot list
@@ -149,7 +157,9 @@ const FRESH = "fleetd.web.fresh";
  * from the session.
  */
 const bootKept = (): boolean => {
-  const fresh = window.sessionStorage.getItem(FRESH) !== null;
+  const mark = window.sessionStorage.getItem(FRESH);
+  const fresh = mark !== null;
+  carried = carriedRemovals(mark);
   window.sessionStorage.removeItem(FRESH);
   const kept = fresh ? null : keptSession(window.localStorage);
   if (kept === null) return false;
@@ -159,7 +169,7 @@ const bootKept = (): boolean => {
     if (next === "keep" && read.ok) keepSession(window.localStorage, read.session);
     else if (next === "fresh") {
       if (!read.ok && read.signedOut === true) clearWebCache(window.localStorage);
-      window.sessionStorage.setItem(FRESH, "1");
+      window.sessionStorage.setItem(FRESH, freshMark(read));
       window.location.reload();
     }
   });
@@ -174,7 +184,8 @@ const boot = async () => {
     void show(read.signedOut === true ? { at: "signed-out" } : { at: "failed", failure: read.failure });
     return;
   }
-  const { session } = read;
+  const session = withCarried(read.session, carried);
+  carried = [];
   const said = removed.read(session);
   const line = said === undefined ? {} : { removed: said };
   if (session.invitations.length > 0 && !answered) void show({ at: "invited", email: session.email, invitations: session.invitations, ...line });

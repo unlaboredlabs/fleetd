@@ -48,8 +48,10 @@ import {
   serialize,
   textOf,
   waiters,
+  waitingIn,
   waitsFor,
 } from "./rules.ts";
+import { ownerOn } from "../people/store.ts";
 
 /** How many of the latest lead and people's messages a question for one person may still wait in. */
 const WAIT_WINDOW = 100;
@@ -707,7 +709,9 @@ export class Chat {
         .flatMap((m): ChatOpenItem[] => {
           if (!m.item || !itemOpen(m.item)) return [];
           const kind = (m.item as { kind?: string }).kind === "command_approval" ? "command_approval" : "secret_request";
-          return [{ messageId: m.messageId, kind, ...(m.for ? { for: m.for.personId } : {}) } as ChatOpenItem];
+          // A card for someone since removed is the owner's, as `handOn` makes it from their removal on.
+          const person = m.for === undefined ? undefined : this.onHub(m.for.personId) ? m.for.personId : ownerOn(this.db.conn)?.personId;
+          return [{ messageId: m.messageId, kind, ...(person ? { for: person } : {}) } as ChatOpenItem];
         })
         .slice(0, CHAT_OPEN_ITEMS_MAX);
       parts = { version, ...(recent.length > 0 ? { last: recent[recent.length - 1] } : {}), openItems, waiting: waiters(this.asked(r), open) };
@@ -755,6 +759,33 @@ export class Chat {
     );
     const first = tail[0]?.seq ?? Number.POSITIVE_INFINITY;
     return [...this.sinceHuman(r).filter((m) => m.seq < first), ...tail];
+  }
+
+  /**
+   * What waits on `from` (removed from the workspace) in every chat, its open cards and unanswered questions, waits on
+   * `to` from now on: each is announced again, and each chat says so in a line. The chats it changed.
+   */
+  handOn(from: PersonRef, to: PersonRef): ProjectRef[] {
+    const chats = this.db.conn
+      .query<{ machine_id: string; project_id: string }, [string]>(
+        `SELECT DISTINCT machine_id, project_id FROM chat_messages WHERE json_extract(data, '$.for.personId') = ?1`,
+      )
+      .all(from.personId);
+    const changed: ProjectRef[] = [];
+    for (const { machine_id: machineId, project_id: projectId } of chats) {
+      const r = { machineId, projectId };
+      const waiting = waitingIn(this.asked(r), this.openItems(r)).filter((m) => m.for?.personId === from.personId);
+      if (waiting.length === 0) continue;
+      for (const m of waiting) {
+        m.for = to;
+        m.updatedAt = this.nowTs();
+        this.put(m);
+        this.announce(m);
+      }
+      this.systemLine(r, `${from.name} was removed from the workspace, so what waited on them waits on ${to.name} now.`);
+      changed.push(r);
+    }
+    return changed;
   }
 
   private onHub(person: string): boolean {

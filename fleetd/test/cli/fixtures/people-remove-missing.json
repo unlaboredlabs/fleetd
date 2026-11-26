@@ -1,5 +1,5 @@
 {
   "code": 1,
   "stdout": "",
-  "stderr": "fleetd: no person p_ID\n"
+  "stderr": "fleetd: No person p_ID on this workspace\n"
 }

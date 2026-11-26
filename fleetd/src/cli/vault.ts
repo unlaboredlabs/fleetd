@@ -8,7 +8,7 @@ import { isLiveHubHome, liveHubRefusal, resolveHome } from "./common.ts";
 import { type CliResult, err, ok } from "./result.ts";
 import { openHub } from "./store.ts";
 import { VAULT_USAGE } from "./usages.ts";
-import { checkOpens } from "../hub/vault/crypto.ts";
+import { checkOpens, rewrap } from "../hub/vault/crypto.ts";
 import { keyDir, keyFromRecoveryCode, type KeyMode, recoveryCode, VaultKeyError, VaultKeys } from "../hub/vault/keys.ts";
 
 
@@ -30,6 +30,42 @@ async function loaded(home: string): Promise<VaultKeys> {
     if (pass === undefined || !keys.unlock(pass)) throw new VaultKeyError("vault_locked", "that passphrase doesn't open the vault key");
   }
   return keys;
+}
+
+/** Key `id`'s check blob, as the workspace recorded it. */
+function check(home: string, id: string): Uint8Array {
+  const db = openHub(home);
+  try {
+    const row = db.conn.query<{ check_blob: Uint8Array }, [string]>("SELECT check_blob FROM vault_keys WHERE key_id = ?").get(id);
+    return new Uint8Array(row?.check_blob ?? []);
+  } finally {
+    db.conn.close();
+  }
+}
+
+/**
+ * Seals every item of key `id` that opens under `stand` (the key made in place of the lost one) under `right`, in one
+ * transaction; those sealed under `right` already stay. How many it sealed again.
+ */
+function reseal(home: string, id: string, stand: Uint8Array, right: Uint8Array): number {
+  const db = openHub(home);
+  try {
+    return db.conn.transaction(() => {
+      const rows = db.conn
+        .query<{ item_id: string; version: number; sealed: Uint8Array }, [string]>("SELECT item_id, version, sealed FROM vault_items WHERE key_id = ?")
+        .all(id);
+      let n = 0;
+      for (const row of rows) {
+        const sealed = rewrap(stand, right, id, { itemId: row.item_id, version: row.version }, new Uint8Array(row.sealed));
+        if (!sealed) continue;
+        db.conn.query("UPDATE vault_items SET sealed = ? WHERE item_id = ? AND version = ?").run(sealed, row.item_id, row.version);
+        n++;
+      }
+      return n;
+    })();
+  } finally {
+    db.conn.close();
+  }
 }
 
 export async function vaultCommand(argv: string[]): Promise<CliResult> {
@@ -87,17 +123,26 @@ export async function vaultCommand(argv: string[]): Promise<CliResult> {
           db.conn.close();
         }
         if (!hit) return fail(1, "that code isn't the key this vault was sealed with");
+        const found = hit;
         const keys = new VaultKeys(keyDir(home));
+        // A key made in place of a lost one (an older workspace did, under the same id): what was saved under it since
+        // is sealed again under the restored key, so nothing is lost.
+        let stand: Uint8Array | undefined;
         if (existsSync(keys.path) && !args.flag("force")) {
+          let held: Uint8Array | undefined;
           try {
             await keys.load(false);
-            if (!keys.locked && keys.key(hit.key_id)) return ok(`The vault key ${hit.key_id} is already in place.\n`);
+            held = keys.locked ? undefined : keys.key(found.key_id);
           } catch {}
-          return fail(1, `${keys.path} holds another key: move it aside or run with --force to replace it`);
+          if (held && checkOpens(held, found.key_id, check(home, found.key_id))) return ok(`The vault key ${found.key_id} is already in place.\n`);
+          if (!held || keys.all().length !== 1) return fail(1, `${keys.path} holds another key: move it aside or run with --force to replace it`);
+          stand = held;
         }
-        await keys.restore(hit.key_id, key, hit.created_ms);
+        const resealed = stand ? reseal(home, found.key_id, stand, key) : 0;
+        await keys.restore(found.key_id, key, found.created_ms);
         key.fill(0);
-        return ok(`The vault key ${hit.key_id} is back in ${keys.path}. ${RESTART}\n`);
+        const kept = resealed > 0 ? ` ${resealed === 1 ? "1 item" : `${resealed} items`} saved while it was missing ${resealed === 1 ? "is" : "are"} sealed under it again.` : "";
+        return ok(`The vault key ${found.key_id} is back in ${keys.path}.${kept} ${RESTART}\n`);
       }
       default:
         return fail(2, `unknown vault command '${command ?? ""}'\n\nusage:\n${VAULT_USAGE}`);

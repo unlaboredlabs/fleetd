@@ -66,6 +66,8 @@ export interface BillingState {
   readonly notice: BillingNotice | null;
   /** The caller is an owner or admin: buys, opens the portal and sets the cap. */
   readonly canBuy: boolean;
+  /** The workspace has paid at Stripe, so the portal has something to show; absent from an older cloud. */
+  readonly customer?: boolean;
   /** `agentsAtOnce`: the agents the plan runs at once on fleetd's computers, from a cloud that sends it. */
   readonly plans: ReadonlyArray<{ readonly key: string; readonly name: string; readonly priceCents: number; readonly creditsCents: number; readonly agentsAtOnce?: number }>;
   readonly topUps: ReadonlyArray<{ readonly key: string; readonly priceCents: number; readonly creditsCents: number }>;
@@ -158,11 +160,17 @@ export const readBilling = (json: unknown): BillingState | null => {
     held,
     notice: n,
     canBuy: o.canBuy,
+    ...(typeof o.customer === "boolean" ? { customer: o.customer } : {}),
     plans,
     topUps,
     rates,
   };
 };
+
+/** Whether Billing offers the portal (Manage billing): once the workspace has paid at Stripe; from an older cloud that
+ * doesn't say, once it shows anything bought (fleetd's own credits read as bought there). */
+export const portalShown = (state: BillingState): boolean =>
+  state.customer ?? (state.plan !== null || state.credits.leftCents !== 0 || state.credits.expiring !== null || state.held === "empty");
 
 /** `{ url }`, checkout's or the portal's page: only an https address, which the apps open in the browser. */
 export const readPage = (json: unknown): string | null => {

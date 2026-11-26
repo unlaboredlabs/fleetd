@@ -9,6 +9,7 @@ import { fleetdDir, relocated } from "../../shared/home.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 import { ArgError, parse } from "../args.ts";
 import { type Failure, type GitIdentity, ioMessage, isLiveHubHome, isNoreply, liveHubRefusal, mkdirPrivate, parseGitIdentity, readSetup, resolveHome, type SetupState, writeSetup } from "../common.ts";
+import { keyDir, VaultKeys } from "../../hub/vault/keys.ts";
 import { machineLayout, machineLayoutAt, planMachineRemove } from "./machine_plan.ts";
 import { currentExe, DEFAULT_LISTEN, listeners, localDirs, localPlatform, localUid, parseListen, type Platform, type Probe, probeListen, processesHolding, say, SETUP_USAGE } from "./shared.ts";
 import { type InitOptions, joinedHere, openStep, run } from "./wizard.ts";
@@ -383,6 +384,13 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
     return fail(`cannot delete ${home}: ${ioMessage(error)}`);
   }
   say(`deleted ${home}`);
+  // The vault's key sits beside the home, not in it: with an old copy of the database it would open every item.
+  const keys = new VaultKeys(keyDir(home));
+  try {
+    if (await keys.destroy()) say(`deleted the vault's key in ${keys.dir}`);
+  } catch (error) {
+    return fail(`cannot delete the vault's key in ${keys.dir}: ${ioMessage(error)}`);
+  }
   return 0;
 }
 

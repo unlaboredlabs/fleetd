@@ -40,8 +40,11 @@ export const notAgentKey = () => new ToolError("invalid", "expected an agent key
 export function keyRefusal(row: { prefix: string; revoked_ms: unknown; person_removed: unknown } | undefined): ToolError | undefined {
   const forbidden = (message: string) => new ToolError("forbidden", message, CREATE_KEY_FIX);
   if (!row) return forbidden("unknown agent key");
+  // Removing a person revokes their devices' keys too: what they're told is that they were removed, not how.
+  if (row.person_removed) {
+    return new ToolError("forbidden", "You were removed from this workspace, so this device is signed out", "Ask one of its owners or admins to invite you again.");
+  }
   if (row.revoked_ms !== null) return forbidden(`agent key ${row.prefix} was revoked`);
-  if (row.person_removed) return forbidden(`the person key ${row.prefix} belongs to was removed from the workspace`);
   return undefined;
 }
 

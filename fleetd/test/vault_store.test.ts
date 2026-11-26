@@ -52,6 +52,9 @@ test("team items: anyone adds one; its creator or an admin shows, changes or del
   const asMember = (await list(k.memberDevice)).find((i) => i.itemId === ada.itemId)!;
   expect([asMember.canEdit, asMember.canReveal]).toEqual([false, false]);
   expect((await refusal(reveal(k.memberDevice, ada.itemId, ["number"]))).code).toBe("forbidden");
+  // The refusal is in the item's activity, with who tried.
+  const tried = await k.call<{ entries: { action: string; outcome: string; personId?: string }[] }>(k.ownerDevice, "vault_audit", { itemId: ada.itemId });
+  expect(tried.entries[0]).toMatchObject({ action: "reveal", outcome: "refused", personId: k.member.personId });
   expect((await refusal(k.call(k.memberDevice, "vault_delete", { itemId: ada.itemId }))).code).toBe("forbidden");
   // A login's sites changed by someone who can't show it would fill its password wherever they pick.
   const adas = await save(k.ownerDevice, { kind: "login", label: "Bank", sites: ["bank.example"], sealed: k.sealToHub(LOGIN) });

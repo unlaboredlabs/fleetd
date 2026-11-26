@@ -146,17 +146,17 @@ export async function run(hub: Hub): Promise<void> {
 }
 
 /** Erases what the hub keeps of the project `r`, its rows and its files, and its mark. Run once its node has forgotten it. */
-export function erase(hub: Hub, r: ProjectRef): void {
+export function erase(hub: Hub, r: ProjectRef, removed?: string): void {
   aProject(r);
   // Its tasks' rows go below, so their slots are given back here, while the board still knows whose they are.
   hub.peek<Slots>("slots")?.forgetProject(r);
-  eraseIn(hub.db, hub.config.home, r);
+  eraseIn(hub.db, hub.config.home, r, removed);
 }
 
 /** `erase` in the hub database `db` whose home is `home`: `fleetd machine remove` erases a machine's projects too. */
-export function eraseIn(db: HubDb, home: string, r: ProjectRef): void {
+export function eraseIn(db: HubDb, home: string, r: ProjectRef, removed?: string): void {
   aProject(r);
-  const { recordings, blobs } = db.transaction((c) => rows(c, r));
+  const { recordings, blobs } = db.transaction((c) => rows(c, r, removed));
   // A hub with no home (an in-memory one) keeps no files: never a path relative to where it runs.
   if (home !== "") {
     for (const id of recordings) gone(join(home, "browser", id));
@@ -172,7 +172,7 @@ export function eraseIn(db: HubDb, home: string, r: ProjectRef): void {
 }
 
 /** Deletes the project's rows; the ids of its screen recordings and the files of its attachments, for their files. */
-function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<string> } {
+function rows(c: Database, r: ProjectRef, removed?: string): { recordings: string[]; blobs: Set<string> } {
   const [m, p, key] = [r.machineId, r.projectId, projectKey(r)];
   const strings = (sql: string, ...args: (string | number)[]) =>
     c
@@ -240,11 +240,12 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
          OR (json_extract(data, '$.data.projectRef.machineId') = ?1
              AND json_extract(data, '$.data.projectRef.projectId') = ?2))`,
   ).run(m, p);
-  // Without its name, as nothing else of it stays: the removal says only which id went from which machine.
+  // Nothing else of it stays: the removal says only which bot went from which machine, and who removed it
+  // (`removed`), else just that a bot on the machine went.
   c.query(
     `UPDATE events SET data = json_set(json_remove(data, '$.data'), '$.summary', ?3)
      WHERE type = 'project.removed' AND machine_id = ?1 AND json_extract(data, '$.projectId') = ?2`,
-  ).run(m, p, `A bot on ${m} was removed`);
+  ).run(m, p, removed ?? `A bot on ${m} was removed`);
   return { recordings, blobs };
 }
 

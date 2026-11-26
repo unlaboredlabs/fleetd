@@ -26,6 +26,7 @@ import {
   money,
   noBuyWhy,
   planChoice,
+  portalShown,
   readTeamBilling,
   sells,
   setTeamCap,
@@ -188,7 +189,7 @@ export function Billing() {
     );
   const soon = expiringSoon(state, nowMs);
   const rows = usageRows(state);
-  const paidBefore = state.plan !== null || state.credits.leftCents !== 0 || state.credits.expiring !== null || state.held === "empty";
+  const paidBefore = portalShown(state);
   const plan = state.plan;
   const ends = plan === null ? null : (plan.periodEnd ?? plan.paidThrough);
   return scroll(

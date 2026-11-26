@@ -10,7 +10,8 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { pairCodes } from "../pair/codes.ts";
 import { deepLink } from "../pair/urls.ts";
 import * as avatar from "./avatar.ts";
-import { announce, change, forgetPerson } from "./events.ts";
+import { announce, change } from "./events.ts";
+import { removeFromWorkspace, unknownPerson } from "./leave.ts";
 import * as name from "./name.ts";
 import { administers, cleanName } from "./roles.ts";
 import { people, refOf } from "./store.ts";
@@ -39,8 +40,6 @@ function requireAdministrator(hub: Hub, caller: Caller): Person {
   );
 }
 
-const unknownPerson = (id: string) =>
-  new ToolError("not_found", `No person ${id} on this workspace.`, "Call people_list to see the workspace's people.");
 
 /** What an admin may hand out: an owner gives any role; an admin, admin or member. */
 function mayGrant(by: Person, role: HubRole): void {
@@ -161,28 +160,7 @@ export function register(tools: Registry): void {
     return { person: after };
   });
 
-  tools.add("person_remove", async (hub, caller, input) => {
-    const by = requireAdministrator(hub, caller);
-    const all = people(hub);
-    const id = input.personId;
-    const found = all.get(id);
-    if (!found || found.removedAt !== undefined) throw unknownPerson(id);
-    if (found.role === "owner") {
-      if (by.role !== "owner") throw new ToolError("forbidden", "Only an owner removes an owner.", "Ask an owner.");
-      if (all.owners() <= 1) {
-        throw new ToolError("invalid", `${found.name} is the workspace's only owner.`, "Make someone else an owner first.");
-      }
-    }
-    const removed = all.remove(id);
-    if (!removed) throw unknownPerson(id);
-    const { person, revoked } = removed;
-    // Their devices' open app connections close now, not at their next call.
-    hub.auth.revokedSome();
-    // Their Claude subscription, 1Password token and GitHub connection go too.
-    await forgetPerson(hub, person.personId);
-    announce(hub, change("removed", refOf(person), refOf(by)), `${by.name} removed ${person.name} from the workspace`);
-    return { person, revoked };
-  });
+  tools.add("person_remove", async (hub, caller, input) => removeFromWorkspace(hub, input.personId, requireAdministrator(hub, caller)));
 
   tools.add("device_revoke", (hub, caller, input) => {
     const notFound = () =>

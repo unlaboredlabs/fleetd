@@ -266,12 +266,26 @@ function hubs(base: (name: "chat-empty") => Fixture): Fixture {
   return f;
 }
 
+/** The same workspace on this computer's loopback only (127.0.0.1, no tailnet): the invite made there names that address. */
+function ownerHere(f: Fixture): Fixture {
+  const eve = person("p_eeeeeeee", "Eve Park", "member", f.now);
+  const here = "http://127.0.0.1:4790";
+  return f.answer("invite_create", undefined, {
+    invite: { inviteId: "inv_bbbbbbbb", person: ref(eve), state: "open", createdAt: f.now, expiresAt: "2026-10-26T10:30:00.000Z", createdBy: ref(sam) },
+    code: "K7QM-4XWD",
+    link: `fleetd://pair?hub=${encodeURIComponent(here)}&code=K7QM-4XWD`,
+    hubUrl: here,
+  });
+}
+
 export default defineGroup({
   fixtures: (base) => [
     hubs(base),
     oldHub(base("chat-empty")),
     hub(base("chat-empty"), "admin-owner", "Sam owns the workspace: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("chat-empty"), "admin-admin", "The same workspace as Alice, an admin: Sam the owner is out of her reach", alice, true),
+    // A workspace only this computer reaches (127.0.0.1, no tailnet): an invite made there can't be opened elsewhere.
+    ownerHere(hub(base("chat-empty"), "admin-owner-here", "Sam's workspace listening on 127.0.0.1 only: an invite says a teammate can't open it", sam, true)),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
     hub(base("chat-empty"), "admin-member", "The same workspace as Bob, a member: no Workspace group anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
