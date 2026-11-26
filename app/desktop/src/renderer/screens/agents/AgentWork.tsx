@@ -6,12 +6,13 @@
 import { Square } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
+import { actionLabel } from "../../../shared/steps";
 import { useAgentWork, useData, useDataLayer } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
 import { Button, cx, EmptyState, Markdown, profileLine, ROLE_WORD, Text, toast, Truncate, VirtualList } from "../../ui";
 import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
-import { MiddleCut, SteadyActivityLine } from "../live/parts";
+import { SteadyActivityLine } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { AgentSession } from "../sessions/AgentSession";
 import { DmCard } from "../dms/DmCard";
@@ -21,7 +22,8 @@ import { withDms, type AgentMessage } from "../dms/model";
 import { describe, onOfflineMachine } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
-import { actionLine, agentState, nowLine, STATE_WORD, workPlace } from "./model";
+import { agentState, nowLine, STATE_WORD, workPlace } from "./model";
+import { StepRow } from "./StepRow";
 import { RolePill, StateDot, WorkPlaceTag } from "./parts";
 import s from "./agents.module.css";
 
@@ -86,7 +88,9 @@ export function AgentWork({ id }: { id: string }) {
   const writing = row?.live?.activity?.activity.kind === "writing" ? work.streaming : undefined;
   const feed = useMemo((): readonly FeedItem[] | undefined => {
     if (work.steps === undefined) return undefined;
-    const steps = taskId === undefined ? work.steps : withDms(work.steps, dms, taskId);
+    // A step that touched nothing (a tool's own help, a shell fragment) isn't one.
+    const done = work.steps.filter((st) => st.kind !== "action" || actionLabel(st.action) !== undefined);
+    const steps = taskId === undefined ? done : withDms(done, dms, taskId);
     return writing === undefined || writing.text === "" ? steps : [...steps, { kind: "writing", id: `w:${writing.messageId}`, text: writing.text }];
   }, [work.steps, writing, dms, taskId]);
 
@@ -257,28 +261,6 @@ function Step({ item }: { item: Exclude<FeedItem, { kind: "dm" }> }) {
       </div>
     );
   }
-  const line = actionLine(item);
-  return (
-    <div className={s.action}>
-      <span className={s.verb}>
-        <Text size="xs" tone="quiet">
-          {line.words}
-        </Text>
-      </span>
-      <span className={cx(s.machine, line.tone === "danger" && s.failed)}>
-        {line.prose === true ? (
-          <Text size="xs" tone="inherit" className={s.prose}>
-            {line.machine}
-          </Text>
-        ) : (
-          <MiddleCut text={line.machine} />
-        )}
-      </span>
-      {line.outcome !== undefined ? (
-        <Text size="xs" tone="danger">
-          {line.outcome}
-        </Text>
-      ) : null}
-    </div>
-  );
+  const label = actionLabel(item.action);
+  return label === undefined ? null : <StepRow label={label} output={item.action.outputTail} />;
 }

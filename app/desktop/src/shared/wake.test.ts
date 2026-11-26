@@ -16,7 +16,9 @@ import {
   tryAgainLabel,
   waitingFor,
   endedAt,
-  wakeDots,
+  atWork,
+  turnClock,
+  workingLine,
   wakeOf,
   wakePose,
   wakeShown,
@@ -88,7 +90,7 @@ describe("a cloud bot waking", () => {
     expect(w).toEqual({ phase: "held", reason: "The lead can’t start now: this workspace reached its spend cap.", start: true });
     expect(wakeWords(w, T)).toEqual({ words: "The lead can’t start now: this workspace reached its spend cap." });
     expect(wakePose(w, true)).toBe("idle");
-    expect(wakeDots(w)).toBe(false);
+    expect(atWork(w)).toBe(false);
     // The bot rests, as the row shows it, never at work while nothing runs: the lead still "works" on its start.
     expect(startOf(w)).toBe("held");
     expect(botStateOf({ needs: false, blocked: false, running: 0, doing: "Starting its computer", done: false, start: startOf(w) })).toBe("idle");
@@ -99,12 +101,14 @@ describe("a cloud bot waking", () => {
     expect(startOf(some({ waiting: true, held: "devbox is offline." }))).toBeUndefined();
   });
 
-  test("after the start, it stays in the reply's place through the thinking and the first words of a cold turn only", () => {
+  test("after the start, it stays in the reply's place through the thinking, the first words and the rest of the turn", () => {
     expect(wakeOf(at({ working: true, cold: true, activity: { kind: "thinking" } }))).toEqual({ phase: "thinking" });
     expect(wakeOf(at({ working: true, cold: true, activity: { kind: "read", path: "a.ts" } }))).toEqual({ phase: "working" });
     expect(wakeOf(at({ working: true, cold: true, writing: true }))).toEqual({ phase: "writing" });
-    // A turn of an awake bot: nothing new.
-    expect(wakeOf(at({ working: true, activity: { kind: "thinking" } }))).toBeUndefined();
+    // A turn of an awake bot, with nothing of yours waiting (an agent's news, an automation): the bot at work all the same.
+    expect(wakeOf(at({ working: true, activity: { kind: "thinking" } }))).toEqual({ phase: "thinking" });
+    // A reply streaming has the bot in its place, never anonymous dots.
+    expect(wakeOf(at({ writing: true }))).toEqual({ phase: "writing" });
     expect(wakeShown({ phase: "asleep" })).toBe(false);
     expect(wakeShown({ phase: "writing" })).toBe(true);
   });
@@ -137,7 +141,8 @@ describe("a cloud bot waking", () => {
     // The reply is whole; the lead reads a file and briefs an agent after it.
     expect(cold.see("a", true, { kind: "read", path: "a.ts" }, true)).toBe(false);
     expect(cold.see("a", true, { kind: "tool", name: "brief", server: "fleetd" }, false)).toBe(false);
-    expect(wakeOf(at({ working: true, cold: false, activity: { kind: "read", path: "a.ts" } }))).toBeUndefined();
+    // The bot stays after the reply, at work, for the rest of the turn.
+    expect(wakeOf(at({ working: true, cold: false, activity: { kind: "read", path: "a.ts" } }))).toEqual({ phase: "working" });
     // A start, even after a reply, makes it cold again.
     expect(cold.see("a", true, starting(), true)).toBe(true);
   });
@@ -176,7 +181,7 @@ describe("a bot whose machine is offline", () => {
   test("mid-turn, says so and that the lead carries on, no dots; with nothing running, that it can't start", () => {
     const working = some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" }, offline: true });
     expect(working).toEqual({ phase: "held", reason: "Its machine is offline. The lead carries on when it’s back." });
-    expect(wakeDots(working)).toBe(false);
+    expect(atWork(working)).toBe(false);
     // Status's reason, when it has one, said the lead's way: never "can't start" for a lead that had started.
     const blocked = { blocked: heldWords({ blocked: "factory-a is offline" }), blockedWhy: "factory-a is offline" };
     expect(some({ working: true, cold: true, waiting: true, asked: T, offline: true, ...blocked })).toEqual({ phase: "held", reason: "factory-a is offline. The lead carries on when it’s back." });
@@ -185,9 +190,9 @@ describe("a bot whose machine is offline", () => {
     expect(some({ waiting: true, asked: T, offline: true })).toEqual({ phase: "held", reason: "Machine offline." });
     // Back online: the lead's own state again.
     expect(some({ working: true, cold: true, waiting: true, asked: T, activity: { kind: "thinking" } })).toEqual({ phase: "thinking" });
-    // Asleep, or nothing of yours to answer: nothing new.
+    // Asleep: asleep. At work on a turn of its own: the same plain line, never a step that keeps counting (W949).
     expect(wakeOf(at({ asleep: true, offline: true }))).toEqual({ phase: "asleep" });
-    expect(wakeOf(at({ working: true, offline: true }))).toBeUndefined();
+    expect(wakeOf(at({ working: true, offline: true }))).toEqual({ phase: "held", reason: "Its machine is offline. The lead carries on when it’s back." });
   });
 });
 
@@ -242,7 +247,7 @@ describe("the bot in the reply's place on every turn", () => {
     expect(wakeOf(at({ waiting: true, asked, endedAt: T + 5_000, held: "devbox is offline." }))).toBeUndefined();
   });
 
-  test("the hub's follow-up turn on it, after a quiet one, has the bot and its dots again", () => {
+  test("the hub's follow-up turn on it, after a quiet one, has the bot at work again", () => {
     const asked = T + 1_000;
     expect(some({ working: true, waiting: true, asked, endedAt: T + 5_000, idleKnown: true, activity: { kind: "thinking" } })).toEqual({ phase: "thinking" });
   });
@@ -250,7 +255,7 @@ describe("the bot in the reply's place on every turn", () => {
   test("a start that never comes says so, and what to do, never a wait that goes on or ends without a word", () => {
     const unstarted = some({ waiting: true, asked: T, endedAt: T - 60_000, idleKnown: true, stale: true });
     expect(unstarted).toEqual({ phase: "unstarted" });
-    expect(wakeDots(unstarted)).toBe(false);
+    expect(atWork(unstarted)).toBe(false);
     expect(wakePose(unstarted, true)).toBe("idle");
     expect(wakeWords(unstarted, T)?.words).toBe("The lead didn’t start on this. Restart it, then send your message again.");
     expect(restartNote({ ok: true })).toBe("Restarting the lead. Send your message again in a moment.");
@@ -263,29 +268,35 @@ describe("the bot in the reply's place on every turn", () => {
     expect(wakeOf(at({ waiting: true, asked: T, stale: true }))).toBeUndefined();
   });
 
-  test("received at once with the typing dots, thinking and working the same way, words only past a slow start", () => {
+  test("received at once, then the lead's step and time beside the bot as it thinks and works, never dots", () => {
     const received = some({ waiting: true, asked: T });
     expect(received).toEqual({ phase: "received", since: T });
     expect(wakeShown(received)).toBe(true);
-    expect(wakeDots(received)).toBe(true);
+    expect(atWork(received)).toBe(false);
     expect(wakePose(received, true)).toBe("thinking");
     expect(wakeWords(received, T + 3_000)).toBeUndefined();
     expect(wakeWords(received, T + START_SLOW_MS + 2_000)).toEqual({ words: "Waiting for the lead to start", count: "12s" });
     // Sent just now, its own time not back yet.
     expect(some({ waiting: true })).toEqual({ phase: "received", since: undefined });
-    // A turn of an awake bot answering you: the bot thinks, then works, with the dots, and stays through its first words.
+    // A turn of an awake bot answering you: the bot thinks, then works, its step and the time so far beside it.
     const thinking = some({ working: true, waiting: true, activity: { kind: "thinking" } });
     expect(thinking).toEqual({ phase: "thinking" });
-    expect(wakeDots(thinking)).toBe(true);
+    expect(atWork(thinking)).toBe(true);
     expect(wakeWords(thinking, T)).toBeUndefined();
-    expect(wakeDots(some({ working: true, waiting: true, activity: { kind: "edit", path: "a.ts" } }))).toBe(true);
+    expect(workingLine(thinking, undefined, T, T + 4_000)).toEqual({ words: "Thinking", count: "0:04" });
+    const working = some({ working: true, waiting: true, activity: { kind: "edit", path: "a.ts" } });
+    expect(workingLine(working, "Editing a.ts", T, T + 42_000)).toEqual({ words: "Editing a.ts", count: "0:42" });
+    expect(workingLine(working, undefined, undefined, T)).toEqual({ words: "Working" });
     const writing = some({ working: true, waiting: true, writing: true });
     expect(writing).toEqual({ phase: "writing" });
-    expect(wakeDots(writing)).toBe(false);
+    expect(workingLine(writing, "Editing a.ts", T, T + 190_000)).toEqual({ words: "Writing", count: "3:10" });
+    // Anything else is wakeWords' to say.
+    expect(atWork(received)).toBe(false);
+    expect(workingLine(received, undefined, T, T)).toBeUndefined();
+    expect(turnClock(3_725_000)).toBe("1:02:05");
   });
 
-  test("gone once nothing waits: the reply landed, a quiet turn ended it, or the message is long past", () => {
-    expect(wakeOf(at({ working: true, waiting: false, activity: { kind: "thinking" } }))).toBeUndefined();
+  test("gone once nothing waits and the lead is idle: the reply landed, a quiet turn ended it, or the message is long past", () => {
     expect(wakeOf(at({ waiting: false }))).toBeUndefined();
     expect(wakeOf(at({ waiting: true, stale: true }))).toBeUndefined();
     // A lead at work on a stale ask is still at work on it.
@@ -298,7 +309,7 @@ describe("the bot in the reply's place on every turn", () => {
     expect(wakeWords(w, T + 1_000)).toEqual({ words: "Waking up" });
   });
 
-  test("what holds the lead up says why in one plain line, in place of the dots", () => {
+  test("what holds the lead up says why in one plain line, in place of its step", () => {
     expect(heldWords({ leadWaiting: "factory-a is offline: its node isn't connected. It goes in when factory-a is back. Repair it in Settings › Machines." })).toBe(
       "factory-a is offline: its node isn't connected.",
     );
@@ -307,7 +318,7 @@ describe("the bot in the reply's place on every turn", () => {
     expect(heldWords({})).toBeUndefined();
     const held = some({ waiting: true, blocked: "The lead can’t start now: devbox is offline." });
     expect(held).toEqual({ phase: "held", reason: "The lead can’t start now: devbox is offline." });
-    expect(wakeDots(held)).toBe(false);
+    expect(atWork(held)).toBe(false);
     expect(wakePose(held, true)).toBe("idle");
     expect(wakeWords(held, T)).toEqual({ words: "The lead can’t start now: devbox is offline." });
     // Even long past: it still holds.
@@ -327,9 +338,9 @@ describe("Claude not serving the lead's turn", () => {
   test("past 20 s of retries, one plain line beside the bot, by why; gone once Claude answers", () => {
     const w = some({ working: true, waiting: true, asked, activity: retrying("overloaded"), activitySince: T + 1_000 });
     expect(w).toEqual({ phase: "working", retry: { reason: "overloaded", since: T + 1_000 } });
-    // A blip says nothing: the dots alone.
+    // A blip says nothing of its own: the row's step and time.
     expect(wakeWords(w, T + 1_000 + RETRY_SAID_MS - 1)).toBeUndefined();
-    expect(wakeDots(w)).toBe(true);
+    expect(atWork(w)).toBe(true);
     expect(wakeWords(w, T + 1_000 + RETRY_SAID_MS)).toEqual({ words: "Claude is overloaded, retrying…" });
     expect(wakeWords(some({ working: true, waiting: true, asked, activity: retrying("429"), activitySince: T }), T + 60_000)?.words).toBe("Claude is busy (rate-limited), retrying…");
     expect(wakeWords(some({ working: true, waiting: true, asked, activity: retrying("500"), activitySince: T }), T + 60_000)?.words).toBe("Claude isn’t answering, retrying…");
@@ -349,7 +360,7 @@ describe("Claude not serving the lead's turn", () => {
     expect(wakeWords(w, T + 64_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying…" });
   });
 
-  test("a hub that doesn't say since when: the dots, as before", () => {
+  test("a hub that doesn’t say since when: the row’s step and time, as before", () => {
     const w = some({ working: true, waiting: true, asked, activity: retrying("overloaded") });
     expect(w).toEqual({ phase: "working" });
     expect(wakeWords(w, T + 600_000)).toBeUndefined();

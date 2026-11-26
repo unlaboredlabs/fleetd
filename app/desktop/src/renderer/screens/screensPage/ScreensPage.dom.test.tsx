@@ -159,7 +159,7 @@ it("names each live screen's kind and machine and its agent's latest step, and o
   await mount();
   const tiles = [...(group("Live")?.querySelectorAll("a") ?? [])];
   expect(tiles.map((t) => t.querySelector("[class*='label']")?.textContent)).toEqual(["storefrontAgents’ Mac", "storefrontAndroid · buildbox", "storefrontBrowser · devbox"]);
-  expect(tiles[2]?.textContent).toContain("Clicked @e3");
+  expect(tiles[2]?.textContent).toContain("Clicked on the page");
   expect(tiles[1]?.textContent).toContain("Yours to drive");
   expect(tiles[2]?.getAttribute("href")).toBe("#/screens/devbox/storefront/B-new");
 });

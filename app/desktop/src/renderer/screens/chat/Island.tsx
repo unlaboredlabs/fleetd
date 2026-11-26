@@ -48,8 +48,10 @@ export function Island({ project, warning }: { project: ProjectRef; warning: str
   // The lead at work, as the composer's Stop has it (live, or last known offline), with no words and no agents' glyphs
   // to say so: its glyph, still while offline.
   const atWork = useData(selectLeadAtWork(projectKey(project)));
-  const lead = waking || atWork === undefined || step !== undefined || strip !== undefined ? undefined : atWork;
   const dms = countWords(useDmTotal(project));
+  // While the bot says it in the reply's place, the glyph only gives the island a face for the agents' DMs, which it
+  // alone would open, so they stay in reach.
+  const lead = (waking && dms === undefined) || atWork === undefined || step !== undefined || strip !== undefined ? undefined : atWork;
   // The card has something to show: the agents, main's reason or the agents' DMs. Without, the island is no button.
   const opens = strip !== undefined || warning !== undefined || dms !== undefined;
   const box = useRef<HTMLDivElement>(null);

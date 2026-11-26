@@ -112,7 +112,8 @@ it("renders the composer and nothing else while you type", async () => {
   // The screen is all there, so a render of any of it below would count.
   for (const name of EXPENSIVE) expect(renders.counts.get(name), name).toBeGreaterThan(0);
   expect(host.querySelectorAll("[data-index]").length).toBeGreaterThanOrEqual(8);
-  expect(host.querySelector("[data-island]")).not.toBeNull();
+  // The lead at work: its bot at the chat's end says its step (WakeRow.tsx), which typing mustn't draw again either.
+  expect(host.querySelector("[data-wake]")).not.toBeNull();
 
   const box = host.querySelector<HTMLTextAreaElement>("textarea[aria-label^='Message']");
   if (box === null) throw new Error("no composer");

@@ -1,0 +1,81 @@
+/* A step in plain words (StepRow.tsx): on a quiet rail, so a run of them reads down at a glance. */
+.step {
+  min-width: 0;
+  max-width: var(--measure);
+  border-left: 1px solid var(--hairline);
+}
+.line {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px var(--space-2) 3px var(--space-3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  color: var(--text);
+}
+button.line {
+  cursor: pointer;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+button.line:hover,
+button.line[aria-expanded="true"] {
+  background: var(--row-hover);
+}
+button.line:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* A thought or a note: quiet, and whole. */
+.prose {
+  color: var(--quiet);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.failed {
+  flex: none;
+  color: var(--danger);
+}
+.failed::before {
+  content: "· ";
+}
+.time {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-size: var(--meta-size);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+/* What it was, whole, in the machine voice. */
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px var(--space-2) 6px var(--space-3);
+}
+.raw,
+.output {
+  display: block;
+  max-height: 9.5em;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--quiet);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.output {
+  color: var(--faint);
+}

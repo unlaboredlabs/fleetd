@@ -23,29 +23,29 @@ describe("a cloud bot waking on the phone", () => {
     expect(botOf(held, KEY)).toBe("idle");
   });
 
-  it("stands in the reply's place from its start through its lead's thinking, as the desktop's", () => {
+  it("stands in the reply's place from its start and for the whole of its lead's turn, as the desktop's", () => {
     const k = "devbox/w2";
     const r = { machineId: "devbox", projectId: "w2" };
     const at = (leadWorking: boolean, activity?: object) =>
       ({ chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking, lastSeq: 1 } }, leadActivity: activity === undefined ? {} : { [leadLaneId(r)]: activity } }) as never;
-    // An awake bot's turn: nothing new.
-    expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();
+    // An awake bot's turn: the bot at work, as on any turn (W949).
+    expect(wakeIn(at(true, { kind: "thinking" }), k)).toEqual({ phase: "thinking" });
     expect(wakeIn(at(false), k)).toBeUndefined();
     expect(wakeIn(at(true, { kind: "starting", text: "Starting its computer", step: "files", startedAt: "2026-11-22T10:00:00.000Z" }), k)).toEqual({ phase: "waking", step: "files", since: Date.parse("2026-11-22T10:00:00.000Z") });
     expect(wakeIn(at(true, { kind: "thinking" }), k)).toEqual({ phase: "thinking" });
     expect(wakeIn(at(true, { kind: "writing" }), k, true)).toEqual({ phase: "writing" });
-    // Its reply lands and its lead works on: the bot leaves the reply's place, and the turn line says what it does.
+    // Its reply lands and its lead works on: the bot stays, its step beside it.
     const landed = (activity: object) =>
       ({
         ...(at(true, activity) as object),
         chats: { [k]: { messages: [{ author: "human", state: "final" }, { author: "lead", state: "final" }] } },
         sends: {},
       }) as never;
-    expect(wakeIn(landed({ kind: "read", path: "a.ts" }), k)).toBeUndefined();
-    expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();
-    // Its turn over, the next one starts warm.
+    expect(wakeIn(landed({ kind: "read", path: "a.ts" }), k)).toEqual({ phase: "working" });
+    expect(wakeIn(at(true, { kind: "thinking" }), k)).toEqual({ phase: "thinking" });
+    // Its turn over: gone; the next one has it again, warm.
     expect(wakeIn(at(false), k)).toBeUndefined();
-    expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();
+    expect(wakeIn(at(true, { kind: "thinking" }), k)).toEqual({ phase: "thinking" });
   });
 
   it("counts a wake from the person's message at the earliest, as the desktop's", () => {
@@ -129,13 +129,14 @@ describe("a cloud bot waking on the phone", () => {
       ({ ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }), chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1, leadIdleAt: "1970-01-01T00:00:00.000Z", ...over } }, chats: { [k]: { messages: [...messages, ...more], leadWaiting: {} } } }) as never;
     // Its computer asleep while the new session starts: it wakes under your message.
     expect(wakeIn(state({ leadAsleep: true }), k, false, t0 + 15_000)).toEqual({ phase: "waking", step: undefined, since: t0 });
-    // An awake one's new session not at work yet: the dots.
+    // An awake one's new session not at work yet: the bot, received.
     expect(wakeIn(state({}), k, false, t0 + 15_000)).toEqual({ phase: "received", since: t0 });
     // At work on it, another line of fleetd's own beside it: thinking.
     expect(wakeIn(state({ leadWorking: true, leadIdleAt: undefined }, [line("m3", "2026-11-22T10:00:30.000Z")]), k, false, t0 + 31_000)).toEqual({ phase: "thinking" });
-    // The reply: gone.
+    // The reply, its lead still at work: the bot stays at the end, at work; once its turn ends, gone.
     const reply = { messageId: "m4", author: "lead", state: "final", createdAt: "2026-11-22T10:00:41.000Z" };
-    expect(wakeIn(state({ leadWorking: true, leadIdleAt: undefined }, [reply]), k, false, t0 + 42_000)).toBeUndefined();
+    expect(wakeIn(state({ leadWorking: true, leadIdleAt: undefined }, [reply]), k, false, t0 + 42_000)).toEqual({ phase: "thinking" });
+    expect(wakeIn(state({ leadWorking: false, leadIdleAt: "2026-11-22T10:00:42.000Z" }, [reply]), k, false, t0 + 43_000)).toBeUndefined();
   });
 
   // The review of #2131: the phone locked through a quiet turn, the snapshot it reopens with says when the turn ended.

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // A cloud bot waking (W792): while its computer starts, its bot stands in the reply's place with the step's word, and
-// the island over the composer doesn't say it again; once its lead thinks, the bot alone; its working look stands in
-// for the typing dots while the first words stream; a failed try says why, and Try again asks the hub to start now.
+// the island over the composer doesn't say it again; once its lead thinks, the bot says so, then its step in plain words
+// for the rest of the turn (W949), never typing dots; a failed try says why, and Try again asks the hub to start now.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -109,25 +109,26 @@ it("the bot stands in the reply's place while its computer starts, and the islan
   expect(host.textContent).not.toContain("Starting its computer at boat.dev");
   await n.lead({ kind: "starting", text: "Putting its files on its computer", step: "files", startedAt: AT });
   expect(wake()?.textContent).toContain("Getting its files");
-  // Its lead thinks: the bot alone, no word.
+  // Its lead thinks: the bot says so.
   await n.lead({ kind: "thinking" });
   expect(wake()?.dataset["wake"]).toBe("thinking");
-  expect(wake()?.textContent).toBe("");
-  // Its first words stream: the bot stands in for the typing dots.
+  expect(wake()?.getAttribute("aria-label")).toBe("Thinking");
+  // Its first words stream: the bot says it writes, and no dots stand in for them.
   act(() => n.send(event(2, "chat.message", { projectRef: project, messageId: "m2", seq: 2, author: "lead", state: "streaming", message: { ...ASK, messageId: "m2", seq: 2, author: "lead", state: "streaming", text: "" } })));
   await n.lead({ kind: "writing" });
   expect(wake()?.dataset["wake"]).toBe("writing");
+  expect(wake()?.getAttribute("aria-label")).toBe("Writing");
   expect(host.querySelector("[data-typing]")).toBeNull();
-  // The reply lands, and the lead works on after it: the bot is gone from under the reply, and the island says what the
-  // lead does, as on any turn.
+  // The reply lands, and the lead works on after it: the bot stays under the reply, saying what the lead does.
   const reply = { ...ASK, messageId: "m2", seq: 2, author: "lead", state: "final", text: "The photos load at full size on phones." };
   act(() => n.send(event(3, "chat.message", { projectRef: project, messageId: "m2", seq: 2, author: "lead", state: "final", message: reply })));
   await n.lead({ kind: "read", path: "src/checkout/photos.ts" });
   expect(host.textContent).toContain("The photos load at full size on phones.");
-  expect(wake()).toBeNull();
-  // The island holds a line a second at least before the next (shared/steady.ts).
+  expect(wake()?.dataset["wake"]).toBe("working");
+  // The line holds a second at least before the next (shared/steady.ts).
   await act(() => new Promise((done) => setTimeout(done, HOLD_MS + 100)));
-  expect(host.querySelector("[data-island]")?.textContent).toContain("photos.ts");
+  expect(wake()?.getAttribute("aria-label")).toBe("Reading photos.ts");
+  expect(host.querySelector("[data-island]")).toBeNull();
   expect(host.textContent).not.toContain("Starting its computer");
 });
 
@@ -173,17 +174,22 @@ it("Try again that starts nothing says why in the row: the hub's word, or that n
   }
 });
 
-// W852: an awake bot's turn on your message has the bot in the reply's place too, with its typing dots: one sign that
-// the lead is on it, so the island says nothing of the lead, its step in words included.
-it("an awake bot's turn on your message: the bot with its typing dots, and nothing of it in the island", async () => {
+// W852, W949: an awake bot's turn on your message has the bot in the reply's place too, its step in plain words beside
+// it: one sign that the lead is on it, so the island says nothing of the lead. Pressed, the line opens the turn's steps.
+it("an awake bot's turn on your message: the bot with its step in words, and nothing of it in the island", async () => {
   layout();
   const n = await mount();
   await n.lead({ kind: "edit", path: "src/a.ts" });
   expect(wake()?.dataset["wake"]).toBe("working");
-  expect(wake()?.querySelector("[data-typing]")).not.toBeNull();
-  expect(wake()?.textContent).toBe("");
+  expect(wake()?.querySelector("[data-typing]")).toBeNull();
   await act(() => new Promise((done) => setTimeout(done, HOLD_MS + 100)));
+  const line = wake()?.querySelector("button");
+  expect(wake()?.getAttribute("aria-label")).toBe("Editing a.ts");
   expect(host.querySelector("[data-island]")).toBeNull();
+  act(() => line?.click());
+  await flush();
+  expect(line?.getAttribute("aria-expanded")).toBe("true");
+  expect(document.querySelector("[aria-label='The lead’s steps this turn'][role='dialog']")).not.toBeNull();
 });
 
 it("opened after a quiet turn ended while the app was away: the hub's leadIdleAt says so, and no bot waits", async () => {
@@ -215,13 +221,13 @@ it("past 20 s of Claude's retries, a plain line beside the bot says so; gone onc
     );
     return flush();
   };
-  // A blip: the dots alone.
+  // A blip: the bot at work, nothing more said.
   await retrying(AT, later(5));
   expect(wake()?.dataset["wake"]).toBe("working");
-  expect(wake()?.textContent).toBe("");
+  expect(wake()?.getAttribute("aria-label")).toBe("Working");
   await retrying(AT, later(25));
   expect(wake()?.textContent).toBe("Claude is overloaded, retrying…");
-  // Claude answers: the line goes.
+  // Claude answers: the line goes, and the bot says it thinks.
   await n.lead({ kind: "thinking" }, later(30));
-  expect(wake()?.textContent).toBe("");
+  expect(wake()?.getAttribute("aria-label")).toBe("Thinking");
 });

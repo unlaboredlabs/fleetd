@@ -4,6 +4,7 @@
 // Pure, so it is unit-tested.
 import type { AgentRole, GlyphState } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
+import { browserTargetName, pageName } from "../../../shared/steps";
 import { fmtElapsed, parseMs } from "../live/format";
 
 /**
@@ -81,8 +82,10 @@ export interface SessionAction {
   /** What the agent typed (`type`), what it read (`read`), or the reason it asked or stopped (`ask`, `fail`). */
   readonly text?: string;
   readonly credential?: CredentialRef;
-  /** False when the step failed. */
+  /** False when the step itself failed: never for a command chained after it (hub.ts stepOf). */
   readonly ok?: boolean;
+  /** Why it failed, as the browser said: "failed: Element not found: @e9". */
+  readonly failed?: string;
   /** The CSS selector of what it acted on (as the node read it, or as the command named it): found in its snapshot. */
   readonly selector?: string;
   /** Where what it acted on was, in the video frame's pixels (1280×800): outlined on the video at its moment. */
@@ -284,63 +287,59 @@ export const sessionGroups = (sessions: readonly BrowserSession[]): readonly Ses
   return groups.filter((g) => g.sessions.length > 0);
 };
 
-/** A step in words: the verb, then what it acted on (a URL or a label in mono, quoted words in prose). */
+/** A step in words, plain (shared/steps.ts): what it did on the page, never a ref, a selector or a URL. */
 export interface ActionLine {
   readonly who: "agent" | "you";
   readonly words: string;
-  /** A URL or path, shown in mono after the words. */
-  readonly machine?: string;
+  /** What it acted on as the command named it (a URL, a selector, a ref), for its tooltip: never in the words. */
+  readonly raw?: string;
   readonly tone: "default" | "quiet" | "warning" | "danger";
   /** A login filled from a vault: shown with a key. */
   readonly login?: true;
 }
 
-const path = (url: string): string => {
-  try {
-    const u = new URL(url);
-    return `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
-  } catch {
-    return url;
-  }
+/**
+ * A step in words; `name`, what it acted on as the page named it ("Search", "Email"), when the replay found it there.
+ * It says "failed" only when the step itself failed (hub.ts stepOf), with why when the browser said.
+ */
+export const actionLine = (a: SessionAction, name?: string): ActionLine => {
+  const line = wordsOf(a, name);
+  if (a.ok !== false) return line;
+  return { ...line, words: `${line.words} · ${a.failed ?? "failed"}`, tone: "danger" };
 };
 
-const VAULT = { "1password": "1Password" } as const;
-
-export const actionLine = (a: SessionAction): ActionLine => {
-  const line = wordsOf(a);
-  // A step that failed says so, in the danger colour.
-  return a.ok === false ? { ...line, words: `${line.words} · failed`, tone: "danger" } : line;
-};
-
-const wordsOf = (a: SessionAction): ActionLine => {
+const wordsOf = (a: SessionAction, found: string | undefined): ActionLine => {
   const who = a.by === "person" ? "you" : "agent";
   const target = a.target ?? "";
-  // A selector or an agent-browser ref is machine text: in mono after the words.
-  const named = (words: string): ActionLine => ({ who, words, ...(target === "" ? {} : { machine: target }), tone: "default" });
+  const raw = target === "" ? {} : { raw: target };
+  // The element by the page's name for it, else the command's own words for it ("text=Search"), never a ref.
+  const name = found ?? browserTargetName(target);
   switch (a.kind) {
     case "start":
       return { who, words: "Started a fresh browser", tone: "quiet" };
     case "press":
       return { who, words: `Pressed ${target}`, tone: "default" };
     case "wait":
-      return named("Waited for");
+      return { who, words: "Waited for the page", tone: "default", ...raw };
     case "command":
-      return named(a.text ?? "Ran");
-    case "open":
-      return { who, words: who === "you" ? "You opened" : "Opened", machine: path(target), tone: "default" };
-    case "click":
-      // A selector or ref in mono; a button's own words in quotes.
-      if (a.selector !== undefined || target.startsWith("@")) return named(who === "you" ? "You clicked" : "Clicked");
-      return { who, words: `${who === "you" ? "You clicked" : "Clicked"} “${target}”`, tone: "default" };
+      return { who, words: a.text ?? "Used the browser", tone: "default", ...raw };
+    case "open": {
+      // The page by its title (what it answered, else what the next capture found), else its site.
+      const page = pageName(a.text ?? a.page?.title, target) ?? "a page";
+      return { who, words: `${who === "you" ? "You opened" : "Opened"} ${page}`, tone: "default", ...raw };
+    }
+    case "click": {
+      const verb = who === "you" ? "You clicked" : "Clicked";
+      return { who, words: name === undefined ? `${verb} on the page` : `${verb} “${name}”`, tone: "default", ...raw };
+    }
     case "type":
       // A person's keys are never logged, only the field they went to.
-      if (who === "you") return { who, words: `You typed in ${target}`, tone: "default" };
-      if (a.selector !== undefined || target.startsWith("@")) return named(`Typed “${a.text ?? ""}” in`);
-      return { who, words: `Typed “${a.text ?? ""}” in ${target}`, tone: "default" };
+      if (who === "you") return { who, words: name === undefined ? "You typed into the page" : `You typed into “${name}”`, tone: "default", ...raw };
+      return { who, words: `Typed “${a.text ?? ""}”${name === undefined ? "" : ` into “${name}”`}`, tone: "default", ...raw };
     case "fill_login":
-      return { who, words: `Filled login for ${a.credential?.site ?? target} from ${VAULT[a.credential?.source ?? "1password"]}`, tone: "default", login: true };
+      return { who, words: `Signed in to ${a.credential?.site ?? target} from the vault`, tone: "default", login: true };
     case "read":
-      return { who, words: a.text === undefined ? `Read ${target}` : `Read ${target}: ${a.text}`, tone: "default" };
+      return { who, words: "Read the page", tone: "default", ...raw };
     case "ask":
       return { who, words: `Asked you to take over: ${a.text ?? ""}`, tone: "warning" };
     case "take_over":

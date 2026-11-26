@@ -28,6 +28,11 @@
           "description": "The command, path or tool.",
           "maxLength": 200,
           "type": "string"
+        },
+        "target": {
+          "description": "A tool call's: what it acted on, a file's path, a search's pattern, a page's URL or a web search's words. Absent from older workspaces.",
+          "maxLength": 200,
+          "type": "string"
         }
       },
       "required": [

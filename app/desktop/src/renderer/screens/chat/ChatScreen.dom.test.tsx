@@ -30,7 +30,23 @@ afterEach(() => {
   act(() => root?.unmount());
   root = undefined;
   host.remove();
+  vi.restoreAllMocks();
 });
+
+// happy-dom has no layout: the list's scroller is 600 px tall and each row 50 px, so every row renders, the bot at the
+// chat's end (WakeRow.tsx) included.
+const layout = () => {
+  const heightOf = (el: Element) => (el.getAttribute("role") === "list" ? 600 : el instanceof HTMLElement && el.dataset["index"] !== undefined ? 50 : 0);
+  const proto = HTMLElement.prototype;
+  const realRect = proto.getBoundingClientRect.bind(proto);
+  vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const h = heightOf(this);
+    return h ? new DOMRect(0, 0, 400, h) : realRect.call(this);
+  });
+  vi.spyOn(proto, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return heightOf(this);
+  });
+};
 
 /**
  * The chat on a live hub whose Status row for the project is `row`, its lead's lane `lead` when given. `working`: the
@@ -141,21 +157,23 @@ it("says only that it is blocked when the hub gave no reason, and nothing when i
   expect(line()).toBeNull();
 });
 
-it("says what the lead is doing in the island over the composer, never as a row of the conversation", async () => {
+// W949: the lead's step in plain words beside its bot in the reply's place, for the whole turn, its reply answered or
+// not; never in the island over the composer as well.
+it("says what the lead is doing beside its bot at the chat's end, in plain words, after its reply too", async () => {
+  layout();
   const reading = { activity: { kind: "read" as const, path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }, since: AT };
-  // The lead answered and reads on: nothing of yours waits on it, so the bot isn't in the reply's place to say it.
   const messages = [
     { messageId: "m1", projectRef: project, seq: 1, author: "human", state: "final", text: "Add dark mode", createdAt: AT },
     { messageId: "m2", projectRef: project, seq: 2, author: "lead", state: "final", text: "On it.", createdAt: AT },
   ];
   await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: reading }), { messages });
-  const island = host.querySelector("[data-band] > [data-island]");
-  // Its file's name as code; the whole name is held, the shown copy cut to the room it has. With no agents, main green
-  // and no DMs its card would be empty: it says the step, and is no button.
-  expect(island?.querySelector("[role='group']")?.getAttribute("aria-label")).toBe("Reading `half-cent-edge-cases.ts`");
-  expect(island?.querySelector("button")).toBeNull();
-  expect([...(island?.querySelectorAll("code") ?? [])].map((c) => c.textContent)).toContain("half-cent-edge-cases.ts");
-  expect(host.querySelector("[data-index] [data-island]")).toBeNull();
+  const row = host.querySelector("[data-index] [data-wake]");
+  expect(row?.getAttribute("data-wake")).toBe("working");
+  // The file by its name, never its path; a button that opens the turn's steps.
+  expect(row?.getAttribute("aria-label")).toBe("Reading half-cent-edge-cases.ts");
+  expect(row?.querySelector("button")).not.toBeNull();
+  expect(row?.textContent).not.toContain("src/checkout");
+  expect(host.querySelector("[data-band] > [data-island]")).toBeNull();
 });
 
 /** The lead's Stop beside Send, and the island over the composer. */
@@ -165,38 +183,32 @@ const island = () => host.querySelector("[data-band] > [data-island]");
 // The human's screenshot (2026-11-15): "start", then "1-16" sent as a steer while the turn ran, nothing from the lead
 // yet. The composer showed Stop and "It reads this at its next step.", the band over it nothing at all: the island
 // said only a step with more words than "Working", so a turn with none (or only thinking) drew no island.
-it("shows the lead at work in the island whenever the composer shows Stop, with no words where its step has none", async () => {
+it("shows the lead at work whenever the composer shows Stop: its bot at the chat's end, with a word for its step", async () => {
+  layout();
   const human = (seq: number, text: string, delivery: string) => ({ messageId: `m${String(seq)}`, projectRef: project, seq, author: "human", state: "final", text, createdAt: AT, delivery });
-  // The lead answered and works on: nothing of yours waits, so the bot isn't in the reply's place (WakeRow.tsx).
+  // The lead answered and works on: the bot stays in the reply's place for the rest of the turn.
   const answered = (seq: number) => ({ messageId: `m${String(seq)}`, projectRef: project, seq, author: "lead", state: "final", text: "On it.", createdAt: AT });
   const steered = [human(1, "start", "turn"), human(2, "1-16", "steer"), answered(3)];
   const asked = [human(1, "Add dark mode", "turn"), answered(2)];
-  const states: readonly [string, Parameters<typeof mount>[1], Parameters<typeof mount>[2]][] = [
-    ["a turn with no step yet, after a steer", undefined, { working: true, messages: steered }],
-    ["a turn with no step yet", undefined, { working: true, messages: asked }],
-    ["a lane at work with no activity", liveLane(leadLaneId(project), "working"), { messages: asked }],
-    ["thinking", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }), { messages: asked }],
-    ["writing", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "writing" }, since: AT } }), { messages: asked }],
+  const states: readonly [string, Parameters<typeof mount>[1], Parameters<typeof mount>[2], string][] = [
+    ["a turn with no step yet, after a steer", undefined, { working: true, messages: steered }, "Thinking"],
+    ["a turn with no step yet", undefined, { working: true, messages: asked }, "Thinking"],
+    ["a lane at work with no activity", liveLane(leadLaneId(project), "working"), { messages: asked }, "Thinking"],
+    ["thinking", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }), { messages: asked }, "Thinking"],
+    ["writing", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "writing" }, since: AT } }), { messages: asked }, "Writing"],
   ];
-  for (const [state, lead, at] of states) {
+  for (const [state, lead, at, words] of states) {
     await mount({ state: "working" }, lead, at);
     expect(stop(), state).not.toBeNull();
-    expect(island(), state).not.toBeNull();
-    // Only its glyph, at work: no caption the avatar's motion already says.
-    expect(island()?.querySelector("[data-state='working'], [data-state='thinking']"), state).not.toBeNull();
-    expect(island()?.textContent, state).toBe("");
-    expect(island()?.querySelector("button"), state).toBeNull();
+    expect(host.querySelector("[data-index] [data-wake]")?.getAttribute("aria-label"), state).toBe(words);
+    // One sign of it: the island over the composer doesn't say it again.
+    expect(island(), state).toBeNull();
     act(() => root?.unmount());
   }
-  // Your message waits on it: the bot with its typing dots in the reply's place says so (wake.dom.test.tsx), and the
-  // island doesn't again.
-  await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }));
-  expect(stop()).not.toBeNull();
-  expect(island()).toBeNull();
-  act(() => root?.unmount());
-  // Idle: no Stop, no island.
+  // Idle: no Stop, no bot at the end, no island.
   await mount({ state: "idle" });
   expect(stop()).toBeNull();
+  expect(host.querySelector("[data-wake]")).toBeNull();
   expect(island()).toBeNull();
 });
 

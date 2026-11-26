@@ -9,7 +9,10 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
 import { parseMs } from "../live/format";
 import type { ProjectKey } from "../shell/routes";
+import { browserFailed, browserPart, browserSaid, openedTitle, shellWords } from "../../../shared/steps";
 import { actionLine, type BrowserSession, type PhoneDevice, type ScreenWaiting, type SessionAction, type SessionState } from "./model";
+
+export { shellWords } from "../../../shared/steps";
 
 /** The hub feature that says it serves sessions (panel/tabs.ts gates the view on it too). */
 export const FEATURE = "browser_sessions";
@@ -124,58 +127,9 @@ export interface HubDom {
   readonly html: string;
 }
 
-/** A command line's words, as a shell would split them (quotes and backslashes), stopping at a pipe or a `;`. */
-export const shellWords = (line: string): string[] => {
-  const out: string[] = [];
-  let word = "";
-  let started = false;
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i] ?? "";
-    if (quote !== null) {
-      if (c === quote) quote = null;
-      else if (c === "\\" && quote === '"' && i + 1 < line.length) word += line[++i] ?? "";
-      else word += c;
-    } else if (c === "'" || c === '"') {
-      quote = c;
-      started = true;
-    } else if (c === "\\" && i + 1 < line.length) {
-      word += line[++i] ?? "";
-      started = true;
-    } else if (/\s/u.test(c) || c === "|" || c === ";" || c === "&") {
-      if (started) out.push(word);
-      word = "";
-      started = false;
-      if (c !== " " && c !== "\t" && c !== "\n") out.push(c);
-    } else {
-      word += c;
-      started = true;
-    }
-  }
-  if (started) out.push(word);
-  return out;
-};
-
-/** agent-browser's flags that take a value, before its command. */
-const VALUE_FLAGS = new Set(["--session", "--profile", "--cdp", "--port", "--timeout"]);
-
-/** What agent-browser was told in a command line (its command and what follows), or [] when it isn't one. */
-export const browserWords = (command: string): string[] => {
-  const words = shellWords(command);
-  const at = words.findIndex((w) => w === "agent-browser" || w.endsWith("/agent-browser"));
-  if (at < 0) return [];
-  const rest: string[] = [];
-  for (let i = at + 1; i < words.length; i++) {
-    const w = words[i] ?? "";
-    if (w === "|" || w === ";" || w === "&") break;
-    if (rest.length === 0 && w.startsWith("--")) {
-      if (!w.includes("=") && VALUE_FLAGS.has(w)) i++;
-      continue;
-    }
-    rest.push(w);
-  }
-  return rest;
-};
+/** What agent-browser was told in a command line (its command and what follows), or [] when it drives no page: the
+ * weightiest of the line's browser commands, as the step's words say it (shared/steps.ts browserPart). */
+export const browserWords = (command: string): string[] => browserPart(command) ?? [];
 
 /** A CSS selector, not one of agent-browser's own refs (`@e3`) or locators (`text=…`). */
 const cssOf = (target: string | undefined): string | undefined =>
@@ -194,23 +148,23 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v !== 
 const field = (args: unknown, key: string): string | undefined => (typeof args === "object" && args !== null ? str((args as Record<string, unknown>)[key]) : undefined);
 
 const COMMAND_WORDS: Readonly<Record<string, string>> = {
-  hover: "Hovered over",
-  check: "Checked",
-  uncheck: "Unchecked",
-  scroll: "Scrolled",
-  scrollintoview: "Scrolled to",
+  hover: "Pointed at the page",
+  check: "Ticked a box",
+  uncheck: "Unticked a box",
+  scroll: "Scrolled the page",
+  scrollintoview: "Scrolled the page",
   screenshot: "Took a screenshot",
   back: "Went back",
   forward: "Went forward",
   reload: "Reloaded the page",
-  eval: "Ran a script in the page",
+  eval: "Ran a script on the page",
   close: "Closed the browser",
-  upload: "Uploaded a file to",
-  drag: "Dragged",
+  upload: "Uploaded a file",
+  drag: "Dragged on the page",
 };
 
 /** An agent-browser command as a step. */
-const commandStep = (base: Pick<SessionAction, "at" | "by" | "ok">, words: readonly string[], result: string | undefined): SessionAction => {
+const commandStep = (base: Pick<SessionAction, "at" | "by" | "ok" | "failed">, words: readonly string[], result: string | undefined): SessionAction => {
   const [verb = "", a, b] = words;
   const sel = cssOf(a);
   const withSel = sel === undefined ? {} : { selector: sel };
@@ -229,7 +183,7 @@ const commandStep = (base: Pick<SessionAction, "at" | "by" | "ok">, words: reado
     case "key":
       return { ...base, kind: "press", target: a ?? "" };
     case "select":
-      return { ...base, kind: "command", text: `Chose “${b ?? ""}” in`, target: a ?? "", ...withSel };
+      return { ...base, kind: "command", text: b === undefined || b === "" ? "Chose an option" : `Chose “${b}”`, target: a ?? "", ...withSel };
     case "snapshot":
       return { ...base, kind: "read", target: "the page" };
     case "get": {
@@ -246,26 +200,38 @@ const commandStep = (base: Pick<SessionAction, "at" | "by" | "ok">, words: reado
     case "wait":
       return { ...base, kind: "wait", target: words.slice(1).join(" "), ...withSel };
     default: {
-      const said = COMMAND_WORDS[verb.toLowerCase()];
-      return { ...base, kind: "command", text: said ?? verb, target: words.slice(1).join(" "), ...withSel };
+      // Anything else in the browser's own words (shared/steps.ts), never its verb as typed.
+      const said = COMMAND_WORDS[verb.toLowerCase()] ?? browserSaid(words, "past")?.text ?? "Used the browser";
+      return { ...base, kind: "command", text: said, target: words.slice(1).join(" "), ...withSel };
     }
   }
 };
 
-/** One line of actions.jsonl as a step; the 1Password reference a fill names is never part of it. */
-export const stepOf = (a: HubAction): SessionAction => {
+/** One line of actions.jsonl as a step, or undefined for one that touched no page (agent-browser's own help, a line
+ * with no browser command in it); the 1Password reference a fill names is never part of it. */
+export const stepOf = (a: HubAction): SessionAction | undefined => {
   const step = stepWithout(a);
   const t = a.target;
-  if (t === undefined) return step;
+  if (step === undefined || t === undefined) return step;
   // What the node saw the step act on outranks what the command named: a ref (`@e3`) has a selector here too.
   return { ...step, ...(t.selector === "" ? {} : { selector: t.selector }), ...(t.frameBox === undefined ? {} : { box: t.frameBox }) };
 };
 
-const stepWithout = (a: HubAction): SessionAction => {
+const stepWithout = (a: HubAction): SessionAction | undefined => {
   const base = { at: a.offsetMs, by: "agent" as const, ...(a.ok ? {} : { ok: false }) };
   switch (a.tool) {
-    case "agent-browser":
-      return commandStep(base, browserWords(field(a.args, "command") ?? ""), a.result);
+    case "agent-browser": {
+      const command = field(a.args, "command") ?? "";
+      const words = browserPart(command);
+      if (words === undefined) return undefined;
+      // Failed only when the browser said so, or the line was that one command: the shell's exit may be a command
+      // chained after it (`… && rg x`), and a page that loaded is never "failed".
+      const failed = browserFailed(command, a.ok, a.result);
+      const step = commandStep({ at: a.offsetMs, by: "agent", ...(failed === undefined ? {} : { ok: false, failed }) }, words, a.result);
+      // An open's page by the title agent-browser answered with.
+      const title = step.kind === "open" ? openedTitle(a.result) : undefined;
+      return title === undefined ? step : { ...step, text: title };
+    }
     case "session_start":
       return { ...base, kind: "start" };
     case "session_end":
@@ -351,8 +317,8 @@ export const stepWords = (step: BrowserAction): string => {
       return `${DESKTOP_WORDS[action] ?? "Used the desktop"}${failed}`;
     }
     default: {
-      const line = actionLine(stepOf({ ...(step as HubAction), ok: true }));
-      return `${line.machine === undefined ? line.words : `${line.words} ${line.machine}`}${failed}`;
+      const said = stepOf(step);
+      return said === undefined ? "Working in the page" : actionLine(said).words;
     }
   }
 };
@@ -379,10 +345,11 @@ export const jsonLines = <T>(text: string): T[] =>
 export const stepsOf = (actions: readonly HubAction[], doms: readonly HubDom[]): SessionAction[] =>
   actions
     .toSorted((a, b) => a.seq - b.seq)
-    .map((a) => {
+    .flatMap((a) => {
       const step = stepOf(a);
+      if (step === undefined) return [];
       const page = pageFor(doms, a.seq, step.kind === "open" || step.kind === "start");
-      return page === undefined ? step : { ...step, page: { url: page.url, title: page.title, html: page.html } };
+      return [page === undefined ? step : { ...step, page: { url: page.url, title: page.title, html: page.html } }];
     });
 
 const EMPTY: readonly HubSession[] = [];

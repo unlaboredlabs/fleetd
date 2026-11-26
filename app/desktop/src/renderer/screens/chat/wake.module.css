@@ -1,5 +1,5 @@
-/* The bot in the reply's place (WakeRow.tsx): at a bubble's left edge, the lead's typing bubble beside it while it
-   takes your message and works, or one quiet line saying what holds it up. */
+/* The bot in the reply's place (WakeRow.tsx): at a bubble's left edge, one quiet line beside it: the lead's step and
+   its turn's time while it works, or what holds it up. */
 .row {
   max-width: calc(var(--measure) + 2 * var(--pad));
   margin: 0 auto;
@@ -21,10 +21,93 @@
   width: 36px;
   height: 36px;
 }
-/* The lead's typing bubble (Bubble.tsx TypingBubble), as its replies sit: the bot stands at its foot. */
-.dots {
+/* The lead's step and its turn's time, a button that opens the turn's last steps: quiet at rest, a soft box on hover. */
+.line {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  line-height: 20px;
+  color: var(--quiet);
+  cursor: pointer;
+  transition: background-color var(--dur-quick) var(--ease-snap), color var(--dur-quick) var(--ease-snap);
+}
+.line:hover,
+.line[data-state="open"] {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.line:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+/* The turn's time so far, after a quiet dot, counting without moving the words. */
+.clock {
   flex: none;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.clock::before {
+  content: "·";
+  margin: 0 6px;
+}
+/* The turn's last steps, over the line. */
+.steps {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+}
+.stepList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stepItem {
   display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: var(--text-md);
+  line-height: 20px;
+  color: var(--quiet);
+}
+/* The step it is on now: in full voice. */
+.stepItem:last-child {
+  color: var(--text);
+}
+.stepText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.stepFailed {
+  flex: none;
+  color: var(--danger);
+}
+.stepFailed::before {
+  content: "· ";
+}
+.stepAt {
+  flex: none;
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: var(--meta-size);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.stepsNote {
+  padding: 4px 8px;
+  font-size: var(--text-md);
+  line-height: 20px;
+  color: var(--quiet);
 }
 .words {
   display: inline-flex;
@@ -67,7 +150,7 @@
 }
 .act:focus-visible {
   border-radius: var(--radius-sm);
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 .act:disabled {
@@ -95,7 +178,12 @@
 .in {
   animation: riseIn 420ms var(--ease-spring) both;
 }
+/* The words leaving hold no room: the line is as wide as the words coming in, so the time beside them moves at once
+   rather than after the old words have gone. */
 .out {
+  position: absolute;
+  top: 0;
+  left: 0;
   animation: riseOut 300ms var(--ease-out) both;
 }
 @keyframes riseIn {

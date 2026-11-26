@@ -2,7 +2,7 @@
 // a read follows the session, fetches the outputs its snapshot cut, and the tools answer from it.
 import { expect, test } from "bun:test";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
-import { actionsOf, newView, applyThreadEvent, tailOf, nodeRetrySummary } from "../src/hub/executor/thread_view.ts";
+import { actionsOf, newView, applyThreadEvent, tailOf, nodeRetrySummary, toAction } from "../src/hub/executor/thread_view.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { SessionOutput, SessionSummary, ThreadEvent } from "../src/shared/sessions.ts";
 import { AT, key, kit } from "./work-kit.ts";
@@ -241,4 +241,15 @@ test("actions are the agent's work, newest first; the tail mixes messages and ac
   expect(messages[1]?.[1].kind === "message" && messages[1][1].role).toBe("user");
   expect(nodeRetrySummary(2, 3, 30000, "overloaded")).toBe("node retry 2/3 in 30 s: overloaded");
   expect(nodeRetrySummary(1, 3, 1500, "network")).toBe("node retry 1/3 in 1500 ms: network");
+});
+
+test("a tool call's action names what it acted on, for the apps' plain words; one with nothing to name has none", () => {
+  const tool = (toolName: string, cls: object | undefined) =>
+    toAction({ id: "t", runId: "r1", status: "completed", title: "", startedAt: AT, completedAt: AT, updatedAt: AT, kind: { type: "tool", toolName, input: null, ...(cls === undefined ? {} : { class: cls }) } } as never);
+  expect(tool("Read", { type: "read", path: "/w/src/index.html" })).toMatchObject({ kind: "tool_call", summary: "Read", target: "/w/src/index.html" });
+  expect(tool("Grep", { type: "search", pattern: "toFixed" })?.target).toBe("toFixed");
+  expect(tool("WebFetch", { type: "web", url: "https://en.wikipedia.org/wiki/Web_browser" })?.target).toBe("https://en.wikipedia.org/wiki/Web_browser");
+  expect(tool("WebSearch", { type: "web", query: "grok bot" })?.target).toBe("grok bot");
+  expect(tool("mcp__fleetd__spawn_agent", { type: "mcp", server: "fleetd", tool: "spawn_agent" })).not.toHaveProperty("target");
+  expect(tool("Skill", undefined)).not.toHaveProperty("target");
 });

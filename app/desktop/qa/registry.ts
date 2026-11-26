@@ -742,12 +742,11 @@ const atTheEnd = async (page: Page) => {
 };
 
 /** The island says the lead works by its glyph alone (W669): no words, nothing to open. */
-const leadGlyphAlone = async (page: Page) => {
-  const island = page.locator("[data-band] > [data-island]");
-  await expect(island).toBeVisible();
-  await expect(island.locator("[data-state='working'], [data-state='thinking']")).toHaveCount(1);
-  await expect(island).toHaveText("");
-  await expect(island.locator("button")).toHaveCount(0);
+/** The lead at work with nothing else to say over the composer: its bot at the chat's end says it (W949), and the
+ * island isn't drawn to say it again. */
+const leadAtTheEndAlone = async (page: Page) => {
+  await expect(page.locator("[data-band] > [data-island]")).toHaveCount(0);
+  await expect(page.locator("[data-wake]")).toHaveCount(1);
 };
 
 /**
@@ -1056,8 +1055,8 @@ export const screens: readonly Screen[] = [
   // long it took.
   { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting"], variant: "activity", check: islandHolds },
   { id: "chat", route: CHAT, fixtures: ["lead-worked"], variant: "activity" },
-  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: the island has its
-  // glyph alone, no words, at the end and scrolled up over the pictures.
+  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: its bot at the chat's
+  // end says so (W949), and nothing over the composer does again, at the end and scrolled up over the pictures.
   {
     id: "chat",
     route: CHAT,
@@ -1066,13 +1065,14 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await atTheEnd(page);
-      await leadGlyphAlone(page);
+      await expect(page.locator("[data-wake]")).toBeVisible();
+      await expect(page.locator("[data-wake]")).toHaveAttribute("aria-label", /^(Thinking|Working)/u);
+      await leadAtTheEndAlone(page);
     },
-    check: islandHolds,
   },
   // The human's screenshot (W669): "start", then "1-16" as a steer, nothing from the lead yet. The composer shows Stop
-  // and says the lead reads it at its next step; the bot stands in the reply's place with its typing dots (W852), so
-  // the island doesn't show the lead's glyph again.
+  // and says the lead reads it at its next step; the bot stands in the reply's place saying what it does, never dots
+  // (W852, W949), so the island doesn't show the lead's glyph again.
   {
     id: "chat",
     route: CHAT,
@@ -1083,7 +1083,8 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Stop the lead and its agents" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Message the lead" })).toHaveAttribute("placeholder", /It reads this at its next step/u);
       await atTheEnd(page);
-      await expect(page.locator("[data-wake] [data-typing]")).toBeVisible();
+      await expect(page.locator("[data-wake]")).toBeVisible();
+      await expect(page.locator("[data-wake] [data-typing]")).toHaveCount(0);
       await expect(page.locator("[data-band] > [data-island]")).toHaveCount(0);
     },
   },
@@ -1098,7 +1099,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("list", { name: "Conversation with the lead" }).hover();
       await page.mouse.wheel(0, -200);
       await expect(page.getByRole("button", { name: /Latest/u })).toBeVisible();
-      await leadGlyphAlone(page);
+      await leadAtTheEndAlone(page);
     },
   },
   // The night's memory refresh: one summary line with Undo all, and opened, a row per change, one of them opened to
@@ -4337,7 +4338,7 @@ export const screens: readonly Screen[] = [
     variant: "no-video",
     open: async (page) => {
       await page.getByRole("button", { name: "Steps", exact: true }).click();
-      await expect(page.getByText("Filled login for staging.shop.example.com from 1Password")).toBeVisible();
+      await expect(page.getByText("Signed in to staging.shop.example.com from the vault")).toBeVisible();
       await page.getByRole("button", { name: "The page at 0:04" }).click();
       await expect(page.getByText("filled from 1Password, hidden")).toBeVisible();
     },

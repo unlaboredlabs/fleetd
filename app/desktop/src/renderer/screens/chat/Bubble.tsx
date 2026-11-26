@@ -1,6 +1,6 @@
 // A message as bubbles: the lead's on the left, yours on the right in the accent, a run from one author drawn as one
 // stack, its inner corners tight. A lead message the hub split shows one bubble per part, its blocks as
-// cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
+// cards. While the lead writes, its bot stands in the reply's place saying so (WakeRow.tsx) until the text is whole. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.
 import { Check, Paperclip, Pin, PinOff, Reply, Send, SmilePlus, Tag } from "lucide-react";
@@ -8,10 +8,8 @@ import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
-import { useData, useToolQuery } from "../../src/data/react";
-import { MACHINE_OFFLINE } from "../live/words";
+import { useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { useWake } from "./wake";
 import { useSeen } from "../live";
 import {
   Button,
@@ -27,7 +25,6 @@ import {
   Text,
   Tooltip,
   Truncate,
-  useBeatRef,
 } from "../../ui";
 import { useBubbleActions } from "./actions";
 import { fmtBytes, imageFit, pngDensity } from "./attachments";
@@ -129,21 +126,6 @@ export function useEnter(arrival: Arrival | undefined, step = 0): { className?: 
 
 /** One to three emoji and nothing else: shown large, without a bubble, as a messaging app does. */
 const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
-
-/** The lead writing: three square cells, one lit at a time, on the app's beat (view.module.css). Also the bot's, in the
- * reply's place, while its lead takes your message and works on it (WakeRow.tsx). */
-export function TypingBubble({ label = "The lead is writing" }: { label?: string }) {
-  const dots = useBeatRef<HTMLSpanElement>(true);
-  return (
-    <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label={label} data-typing>
-      <span ref={dots} className={s.typing} aria-hidden>
-        {[0, 1, 2].map((d) => (
-          <span key={d} className={s.dot} />
-        ))}
-      </span>
-    </div>
-  );
-}
 
 function TapbackPicker({ current, onPick }: { current: Tapback | undefined; onPick: (t: Tapback) => void }) {
   const [open, setOpen] = useState(false);
@@ -341,39 +323,6 @@ function BubbleLine(props: {
 /** What Not needed sends, under the questions the lead waits on: the lead reads it as your answer. */
 export const SKIP = "Not needed: skip that and go on without an answer.";
 
-/** The lead writing, as a line: it enters with the message, and its text takes its place once written, without entering again. */
-function TypingLine({ enter }: { enter: Arrival | undefined }) {
-  const e = useEnter(enter);
-  return (
-    <div className={cx(s.line, e.className)} style={e.style}>
-      <TypingBubble />
-    </div>
-  );
-}
-
-/** The lead writing: the typing bubble, unless its bot stands in the reply's place, woken for this turn (WakeRow.tsx). */
-function Typing({ project, enter }: { project: ProjectRef | undefined; enter: Arrival | undefined }) {
-  const waking = useWake(project === undefined ? "" : projectKey(project), true)?.phase === "writing";
-  // Its machine offline: nothing is written there until it is back, so the dots don't keep moving (S9).
-  const offline = useData((d) => project !== undefined && d.machines[project.machineId]?.status === "offline");
-  if (waking) return null;
-  return offline ? <OfflineLine enter={enter} /> : <TypingLine enter={enter} />;
-}
-
-/** In the typing bubble's place while the lead's machine is offline: the bubble, still, with the words. */
-function OfflineLine({ enter }: { enter: Arrival | undefined }) {
-  const e = useEnter(enter);
-  return (
-    <div className={cx(s.line, e.className)} style={e.style}>
-      <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" data-typing-offline="">
-        <Text size="sm" tone="quiet">
-          {MACHINE_OFFLINE}
-        </Text>
-      </div>
-    </div>
-  );
-}
-
 export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {
   const i = r.item;
   const actions = useBubbleActions();
@@ -424,9 +373,8 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             </Truncate>
           </button>
         ) : null}
-        {typing ? (
-          <Typing project={lead ? actions?.project : undefined} enter={enter} />
-        ) : (
+        {/* Streaming, nothing yet: the bot stands in the reply's place saying it writes (WakeRow.tsx), never dots. */}
+        {typing ? null : (
           bubbles.map((b, n) => {
             // A message about several orders: a bubble whose order isn't the one before it says which, as a run would.
             const own = n > 0 && tags?.named === true ? partAbout(i, b.key) : undefined;

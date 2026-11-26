@@ -1,6 +1,6 @@
 // Pure view of one thread for thread_tail, actions_list and agent_work,
 // built from the node's bounded thread snapshot (the newest window of the session) plus the live events after it.
-import type { ItemStatus, PendingPermission, RunInfo, ThreadEvent, ThreadItem, ThreadMessage } from "../../shared/sessions.ts";
+import type { ItemStatus, PendingPermission, RunInfo, ThreadEvent, ThreadItem, ThreadMessage, ToolClass } from "../../shared/sessions.ts";
 import { jsPrefix, keepTail } from "../../shared/text.ts";
 import { parseMs } from "../store/time.ts";
 import { failureClass, normalizeIso } from "./shell_mapper.ts";
@@ -24,6 +24,8 @@ export type Action = {
   outputTail?: string;
   exitCode?: number;
   failed: boolean;
+  /** A tool call's: what it acted on (a path, a pattern, a URL or a search's words), for the apps' plain words. */
+  target?: string;
 };
 
 /** The hub's TailItem: a message or an action. */
@@ -107,8 +109,10 @@ export function toAction(item: ThreadItem): Action | undefined {
       return base("command", k.command, k.output, k.exitCode);
     case "file_change":
       return base("file_change", k.path, undefined, undefined);
-    case "tool":
-      return base("tool_call", title(k.toolName), k.output, undefined);
+    case "tool": {
+      const target = toolTarget(k.class);
+      return { ...base("tool_call", title(k.toolName), k.output, undefined), ...(target === undefined ? {} : { target: jsPrefix(target, 200) }) };
+    }
     case "api_retry": {
       const s = k.errorStatus !== undefined ? ` ${k.errorStatus}` : "";
       return base("other", `API retry ${k.attempt}/${k.maxRetries}:${s} ${k.error}`, undefined, undefined);
@@ -124,6 +128,13 @@ export function toAction(item: ThreadItem): Action | undefined {
     default:
       return undefined;
   }
+}
+
+/** What a tool call acted on, by its class: a file's path, a search's pattern, a page's URL or a web search's words. */
+function toolTarget(c: ToolClass | undefined): string | undefined {
+  const t = c?.type === "read" ? c.path : c?.type === "search" ? c.pattern : c?.type === "web" ? (c.url ?? c.query) : undefined;
+  const s = t?.trim();
+  return s === undefined || s === "" ? undefined : s;
 }
 
 /** Rust's stable sort, newest first by `at`. */

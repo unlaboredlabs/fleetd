@@ -186,33 +186,6 @@ export const workPlace = (row: Pick<AgentRow, "pr" | "branch">): WorkPlace | und
   return undefined;
 };
 
-export interface StepLine {
-  readonly words: string;
-  /** The command, path or tool, set in mono. */
-  readonly machine: string;
-  readonly tone: "quiet" | "danger";
-  /** After the machine text: "failed", "exit 1". */
-  readonly outcome?: string | undefined;
-  /** Words, not a command or path (a start's step, a retry, an error): wrapped whole, never cut in the middle. */
-  readonly prose?: true | undefined;
-}
-
-const VERB: Readonly<Record<string, readonly [running: string, done: string]>> = {
-  command: ["running", "ran"],
-  file_change: ["editing", "edited"],
-  tool_call: ["using", "used"],
-};
-
-/** One action as a quiet line in the past tense ("ran npm test"), or the present while it runs. */
-export const actionLine = (step: Extract<WorkStep, { kind: "action" }>): StepLine => {
-  const { action } = step;
-  const [running, done] = VERB[action.kind] ?? ["", ""];
-  const words = action.status === "running" ? running : done;
-  const prose = action.kind === "other" ? { prose: true as const } : {};
-  if (!action.failed) return { words, machine: action.summary, tone: "quiet", ...prose };
-  return { words, machine: action.summary, tone: "danger", outcome: action.exitCode === undefined ? "failed" : `failed, exit ${String(action.exitCode)}`, ...prose };
-};
-
 /**
  * One row of the Elsewhere group: work on the project's repo and base that isn't its own agents'. `tag` stands where
  * an agent's role does; `meta` says who holds it and until when, whose it is, or how it landed.
