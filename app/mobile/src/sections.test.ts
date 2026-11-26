@@ -6,6 +6,7 @@ import {
   addSection,
   labelActions,
   labelWords,
+  lineBelow,
   memorySections,
   moveChat,
   moveSection,
@@ -435,5 +436,22 @@ describe("Sections in the phone's prefs", () => {
       sectionsPending: [],
       folded: ["s1"],
     });
+  });
+});
+
+describe("the hairlines between chats", () => {
+  const chat = (id: string) => ({ t: "chat", row: row(id) }) as const;
+  const lines = [chat("a"), chat("b"), chat("c"), { t: "section" } as const, chat("d")];
+  const under = (open: string | undefined) => lines.map((_, i) => lineBelow(lines, i, open === undefined ? undefined : `m1/${open}`));
+
+  it("runs between two chats, not above a section's label or under the last chat", () => {
+    expect(under(undefined)).toEqual([true, true, false, false, false]);
+  });
+
+  it("is hidden on both sides of the chat open beside the list, and only there", () => {
+    // Seen on the Duo: with b open, the line between a and b still showed, touching b's highlight.
+    expect(under("b")).toEqual([false, false, false, false, false]);
+    expect(under("a")).toEqual([false, true, false, false, false]);
+    expect(under("c")).toEqual([true, false, false, false, false]);
   });
 });

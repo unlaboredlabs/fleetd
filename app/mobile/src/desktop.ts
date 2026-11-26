@@ -269,4 +269,4 @@ export { appearanceWord, CONTROL_WORD, foldWord, latLon, otherAppearance, PLACES
 export { bodyOf, flatOf, poseOf, type Body, type Pose } from "../../desktop/src/renderer/screens/sessions/deviceModel";
 export { FrameCounts, GRAPH_H, GRAPH_W, graphOf, groupsOf, HISTORY, verdictOf, type Group, type GraphSecond, type PerfNow, type Row, type Verdict, type ViewerSecond } from "../../desktop/src/renderer/screens/sessions/perfModel";
 export { moveOf, turnBetween } from "../../desktop/src/renderer/screens/sessions/turn";
-export { before, change, columnsOf, count, hours, idle, money, onCloud, PERIODS, ticks, wait, type Column, type Period } from "../../desktop/src/shared/usage";
+export { against, before, change, columnsOf, count, hours, idle, money, onCloud, PERIODS, ticks, wait, type Column, type Period } from "../../desktop/src/shared/usage";

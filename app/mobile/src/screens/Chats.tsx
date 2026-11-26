@@ -27,7 +27,7 @@ import { pinnedSplit } from "../pinnedGrid";
 import { MAX_PINNED, pinsOf, sectionsOf, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
-import { sectionLines, type SectionLine } from "../sections";
+import { lineBelow, sectionLines, type SectionLine } from "../sections";
 import { phaseOf, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
@@ -375,8 +375,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
         // Every chat pinned: the grid is the list, with nothing under it.
         ListEmptyComponent={split.grid.length > 0 ? undefined : empty}
         renderItem={({ item: line, index }) => {
-          const next = lines[index + 1];
-          const separator = next !== undefined && next.t !== "head" && next.t !== "section";
+          const separator = lineBelow(lines, index, beside?.openKey);
           return (
             <Animated.View {...(arrived.has(line.key) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
               {line.t === "head" ? (
@@ -564,7 +563,7 @@ const SwipingChat = memo(function SwipingChat({ row, separator, open, acts: late
           accessibilityState={{ selected: open }}
           style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : null)}
         >
-          <ChatRowFace row={row} separator={separator && !open} lifted={lifted} open={open} />
+          <ChatRowFace row={row} separator={separator} lifted={lifted} open={open} />
         </HoldMenu>
       )}
     </SwipeRow>
@@ -594,6 +593,7 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
   const mine = !accentLine && text.startsWith("You: ");
   // A reply you haven't read: its bot is done.
   const bot = useBot(row.key, unread || row.markedUnread);
+  const beside = useBeside() !== null;
   return (
     <View style={styles.row}>
       {/* Open beside the list: a faint rounded box inset from the edges, not a slab across the row. */}
@@ -635,7 +635,7 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
             ) : null}
           </View>
         </View>
-        {separator ? <Animated.View style={[styles.separator, { backgroundColor: t.separator }, line]} /> : null}
+        {separator ? <Animated.View style={[styles.separator, beside && styles.separatorBeside, { backgroundColor: t.separator }, line]} /> : null}
       </View>
     </View>
   );
@@ -703,6 +703,8 @@ const styles = StyleSheet.create({
   marks: { flexDirection: "row", alignItems: "center", gap: 4, height: 20 },
   match: { fontWeight: "600" },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
+  /** Beside a chat, the line ends where the open row's highlight does (`open`), as iOS's sidebar lists inset theirs. */
+  separatorBeside: { right: space.sm },
   open: { position: "absolute", left: space.sm, right: space.sm, top: 2, bottom: 2, borderRadius: 12, borderCurve: "continuous" },
   me: { width: ME_BOX, height: ME_BOX },
   meFace: { position: "absolute", left: (ME_BOX - ME) / 2, top: (ME_BOX - ME) / 2, width: ME, height: ME },

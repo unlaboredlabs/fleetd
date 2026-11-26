@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspaceUsageCounts, WorkspaceUsageDay } from "./contracts";
-import { change, columnsOf, count, hours, idle, money, onCloud, ticks, wait } from "./usage";
+import { against, change, columnsOf, count, hours, idle, money, onCloud, ticks, wait } from "./usage";
 
 const day = (date: string, n: number, spend?: number): WorkspaceUsageDay => ({
   date,
@@ -35,6 +35,19 @@ describe("the Usage page's figures", () => {
     // Nothing before to compare with: no change shown.
     expect(change(5, 0, "up")).toBeUndefined();
     expect(change(undefined, 5, "up")).toBeUndefined();
+  });
+
+  it("says a count that was small before as the two counts, not a share", () => {
+    // Seen on the phone: 1 approval before and 133 now read "↑ 13200% against the 30 days before".
+    expect(change(133, 1, "none", "count")).toEqual({ text: "up from 1", tone: "quiet", plain: true });
+    expect(change(22, 0, "down", "count")).toEqual({ text: "up from none", tone: "danger", plain: true });
+    expect(change(2, 9, "up", "count")).toEqual({ text: "down from 9", tone: "danger", plain: true });
+    expect(change(4, 4, "up", "count")).toEqual({ text: "same as 4", tone: "quiet", plain: true });
+    expect(change(0, 0, "up", "count")).toBeUndefined();
+    expect(against(change(133, 1, "none", "count")!, 30)).toBe("up from 1 in the 30 days before");
+    // Ten or more before: a share as ever.
+    expect(change(1289, 169, "none", "count")).toEqual({ text: "↑ 663%", tone: "quiet" });
+    expect(against(change(1289, 169, "none", "count")!, 30)).toBe("↑ 663% against the 30 days before");
   });
 
   it("draws a column a day up to a month, and a week a column past it", () => {
