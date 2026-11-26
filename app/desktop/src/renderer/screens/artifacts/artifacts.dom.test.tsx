@@ -169,7 +169,7 @@ it("lists the artifacts newest first, each one line: its title and when; its for
   expect(window.location.hash).toBe("#/project/devbox/shop/artifacts/dependency-sweep");
 });
 
-it("lists the files sent in the chat under the artifacts, each opening in this computer's app or saved", async () => {
+it("lists the files sent in the chat under the artifacts, each opening in the wide panel or saved", async () => {
   await mount(view(null));
   expect(host.querySelector("section[aria-label='Files'] [data-group-label]")?.textContent).toBe("Files2");
   const rows = [...host.querySelectorAll<HTMLElement>("[data-file]")];
@@ -179,8 +179,10 @@ it("lists the files sent in the chat under the artifacts, each opening in this c
   expect(document.querySelector("[role='tooltip']")?.textContent).toBe("PDF · 2 KB");
   act(() => rows[0]?.blur());
   await click(rows[0]);
+  // A PDF fleetd shows itself: in the panel, not this computer's app.
+  expect(window.location.hash).toBe("#/project/devbox/shop/artifacts/file/F7");
   await click(host.querySelector("[aria-label='Save checkout-after.png']"));
-  expect(opened).toEqual(["open F7", "save F3"]);
+  expect(opened).toEqual(["save F3"]);
 });
 
 it("shows the files alone when nothing is published, and the empty state only when neither is there", async () => {

@@ -39,6 +39,7 @@
     "@napi-rs/keyring": "2.1.1",
     "electron-updater": "6.8.9",
     "libsodium-wrappers": "0.8.4",
+    "pdfjs-dist": "6.5.438",
     "ws": "8.22.0",
     "zod": "4.6.7"
   },

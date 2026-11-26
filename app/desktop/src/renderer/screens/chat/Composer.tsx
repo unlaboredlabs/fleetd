@@ -14,13 +14,13 @@ interface ProjectRef {
 }
 
 import { ArrowUp, Check, Paperclip, Reply, RotateCw, Square, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AttachmentRef, ChatAbout } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectLeadAtWork, selectLeadWorking } from "../../src/data/selectors";
-import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
+import { Button, cx, IdChip, preloadable, preloadWhenIdle, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
 import { composerSendOn } from "../live/steerModel";
@@ -34,6 +34,10 @@ import { hubName } from "../shell/model";
 import c from "./composer.module.css";
 
 const IN_CHAT = '[data-screen="chat"], [data-screen^="chat."]';
+
+// A picture's square comes after the first chat, once the app is idle.
+const PictureChipView = preloadable(() => import("./PictureChip").then((m) => m.PictureChip));
+preloadWhenIdle(PictureChipView);
 
 /** A folder among the dropped items: that's a project to add, not a file for the lead. */
 const hasFolder = (data: DataTransfer): boolean =>
@@ -289,26 +293,36 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
         ) : null}
         {draft.attached.length > 0 ? (
           <div className={c.chips}>
-            {draft.attached.map((a) => (
-              <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
-                <Truncate expand="none" size="xs" tone="inherit">
-                  {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
-                </Truncate>
-                {a.upload && !a.upload.ok && a.file !== undefined ? (
-                  <button type="button" className={c.remove} aria-label={`Try ${a.name} again`} onClick={() => drafts.retry(projectKey, a.local)}>
-                    <RotateCw className={c.removeIcon} aria-hidden />
+            {draft.attached.map((a) =>
+              a.thumb !== undefined ? (
+                <Suspense key={a.local} fallback={null}>
+                  <PictureChipView
+                    a={{ ...a, thumb: a.thumb }}
+                    onRetry={a.upload && !a.upload.ok && a.file !== undefined ? () => drafts.retry(projectKey, a.local) : undefined}
+                    onRemove={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
+                  />
+                </Suspense>
+              ) : (
+                <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
+                  <Truncate expand="none" size="xs" tone="inherit">
+                    {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
+                  </Truncate>
+                  {a.upload && !a.upload.ok && a.file !== undefined ? (
+                    <button type="button" className={c.remove} aria-label={`Try ${a.name} again`} onClick={() => drafts.retry(projectKey, a.local)}>
+                      <RotateCw className={c.removeIcon} aria-hidden />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={c.remove}
+                    aria-label={`Remove ${a.name}`}
+                    onClick={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
+                  >
+                    <X className={c.removeIcon} aria-hidden />
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={c.remove}
-                  aria-label={`Remove ${a.name}`}
-                  onClick={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
-                >
-                  <X className={c.removeIcon} aria-hidden />
-                </button>
-              </span>
-            ))}
+                </span>
+              ),
+            )}
           </div>
         ) : null}
         <div className={c.lead}>
