@@ -212,6 +212,11 @@ function forOrRecipients(c: Database, person: PersonRef | undefined, project: Pr
  */
 function peopleFor(hub: Hub, event: HubEvent, shape: NoticeShape, message: ChatMessage | undefined, request: HumanRequest | undefined): PersonId[] {
   const c = hub.db.conn;
+  // A deleted bot's people, read before it went (projects/remove.ts), still on the hub.
+  const told = event.type === "project.erased" ? (event.data as { people?: unknown } | undefined)?.people : undefined;
+  if (Array.isArray(told)) {
+    return told.filter((p): p is string => typeof p === "string" && c.query("SELECT 1 FROM people WHERE person_id = ? AND removed_ms IS NULL").get(p) !== null);
+  }
   if (shape.kind === "message") return forOrRecipients(c, message?.for, shape.project);
   if (shape.kind === "approval") return forOrRecipients(c, request ? requestFor(hub, request) : undefined, shape.project);
   const order = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;

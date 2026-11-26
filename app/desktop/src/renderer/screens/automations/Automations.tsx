@@ -10,6 +10,7 @@ import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, type Scope } from "../settings/editor";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { AddButton, GroupNote, PageHead, RowMenu, scopeName, SettingsRow, SettingsSection, useProjects } from "../settings/parts";
+import { BOT_ADMIN_ONLY, useBotLocked } from "../settings/botAdmin";
 import { replaceRoute, type SettingsRoute } from "../settings/route";
 import settings from "../settings/settings.module.css";
 import { describeCron } from "./cron";
@@ -46,6 +47,8 @@ export function Automations({ route }: { route: SettingsRoute }) {
   const list = useToolQuery("automation_list", { projectRef: ref ?? { machineId: "", projectId: "" } }, { enabled: live && ref !== undefined });
   const [editing, setEditing] = useState<string | null>(null);
   const [url, setUrl] = useState<{ name: string; url: string } | null>(null);
+  // A member sees them and runs one now; only an admin makes, changes, pauses or deletes one.
+  const locked = useBotLocked();
 
   useEffect(() => {
     replaceRoute({ tab: "automations", for: route.for });
@@ -75,7 +78,8 @@ export function Automations({ route }: { route: SettingsRoute }) {
         {ref && list.data ? <Watching projectRef={ref} watchers={all.filter(isWatcher)} watchable={list.data.watchable} /> : null}
         <SettingsSection
           title={ref && list.data ? "Automations" : undefined}
-          aside={ref && editing === "new" ? undefined : <AddButton label="New automation" disabled={!ref} onClick={() => setEditing("new")} />}
+          intro={locked && ref ? BOT_ADMIN_ONLY : undefined}
+          aside={(ref && editing === "new") || locked ? undefined : <AddButton label="New automation" disabled={!ref} onClick={() => setEditing("new")} />}
         >
           {list.isLoadingError ? (
             <SettingsRow
@@ -96,7 +100,7 @@ export function Automations({ route }: { route: SettingsRoute }) {
                   </li>
                 ) : (
                   <li key={a.automationId}>
-                    <Card automation={a} onEdit={() => setEditing(a.automationId)} onUrl={(u) => setUrl(u)} />
+                    <Card automation={a} locked={locked} onEdit={() => setEditing(a.automationId)} onUrl={(u) => setUrl(u)} />
                   </li>
                 ),
               )}
@@ -136,7 +140,7 @@ function WebhookUrl(props: { name: string; url: string; onDone: () => void }) {
 }
 
 /** One automation: its triggers, state and last run, its actions, and (opened) its runs. */
-function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { name: string; url: string }) => void }) {
+function Card(props: { automation: Automation; locked: boolean; onEdit: () => void; onUrl: (u: { name: string; url: string }) => void }) {
   const a = props.automation;
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -213,6 +217,7 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
         <Button variant="ghost" aria-expanded={history} onClick={() => setHistory(!history)}>
           {history ? "Hide runs" : "Runs"}
         </Button>
+        {props.locked ? null : (
         <RowMenu
           label={a.name}
           disabled={busy}
@@ -242,6 +247,7 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
             { label: "Delete", onSelect: () => setDeleting(true), danger: true },
           ]}
         />
+        )}
       </div>
       <div role="status">
         {echo ? (

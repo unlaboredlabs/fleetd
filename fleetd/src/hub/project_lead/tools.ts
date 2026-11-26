@@ -2,6 +2,7 @@
 import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_SIGNINS_FORGET } from "../../shared/node_link.ts";
+import { requireBotAdmin } from "../api/bot_admin.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownProject } from "../api/refusals.ts";
@@ -170,6 +171,7 @@ export function register(tools: Registry): void {
       );
     }
     const project = summaryOf(hub, r);
+    requireBotAdmin(hub, caller, r, "approvals");
     // An older app's model and effort are taken and ignored: the checker runs on the hub's (W467).
     checker.setApprovals(hub.db.conn, r, input.mode);
     const approvals = checker.approvals(hub.db.conn, r);

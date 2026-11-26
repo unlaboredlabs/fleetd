@@ -16,6 +16,7 @@ import { capRaisedText, fleetLine, machineLine, projectLine } from "../../shared
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
+import { requireBotAdmin } from "../api/bot_admin.ts";
 import { requireRole, refused } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
 import { allowsEverywhere, unknownMachine, unknownProject } from "../api/refusals.ts";
@@ -169,6 +170,7 @@ export async function capSet(hub: Hub, caller: Caller, input: CapSetInput): Prom
   if (input.project) {
     requireRole(caller, "operate", input.project.projectRef.machineId);
     if (!hubStore.projectGet(input.project.projectRef)) throw unknownProject(input.project.projectRef);
+    requireBotAdmin(hub, caller, input.project.projectRef, "max_agents");
   }
   const outcome = await setCaps(hub, {
     ...(input.cap !== undefined ? { cap: input.cap } : {}),

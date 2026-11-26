@@ -26,6 +26,7 @@ import {
   sourceLine,
   type MachineAgents,
 } from "./agentsModel";
+import { BOT_ADMIN_ONLY, useBotLocked } from "./botAdmin";
 import { errorText, useHubCall, useLive } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { parseScope, projectRefOf } from "./editor";
@@ -212,6 +213,7 @@ const NO_INPUT = {};
 /** One project's Max agents: the slider, which applies when you let go, and what the change does. */
 export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string }) {
   const live = useLive();
+  const locked = useBotLocked();
   const call = useHubCall();
   // What holds it past its max: its machine's cap and the hosted limits it goes on to, or the provider its Runs on
   // picked, whose limit alone holds its agents (the hub's slot board places them so).
@@ -236,10 +238,10 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       title={props.title ?? "Max agents"}
       titleId={`${id}-label`}
       hint="The most agents this bot runs at once. At 1, the lead works through its tasks in order."
-      line={sourceLine(props.slots, a, props.projectRef.machineId, hold)}
+      line={`${sourceLine(props.slots, a, props.projectRef.machineId, hold)}${locked ? ` ${BOT_ADMIN_ONLY}` : ""}`}
       control={
         <>
-          {a.own ? (
+          {a.own && !locked ? (
             <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(a.cap)}>
               Use the default
             </Button>
@@ -248,7 +250,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
         </>
       }
     >
-      <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
+      <CapSlider id={id} max={a.top} disabled={!live || locked || a.top <= 1} state={state} />
       <MachineHolds note={machineHolds(a, value, props.projectRef.machineId, hold)} link={holdsLink(a, props.projectRef.machineId, hold, cloud)} machineId={props.projectRef.machineId} />
       <ResultLine
         id={id}

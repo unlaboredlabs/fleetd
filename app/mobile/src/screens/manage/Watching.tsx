@@ -7,6 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { RefreshControl, ScrollView, Switch } from "react-native";
 import {
+  BOT_ADMIN_ONLY,
   EVERY_OPTIONS,
   isWatcher,
   kindLabel,
@@ -23,7 +24,7 @@ import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
-import { CheckRow, confirmDestructive, errorWords, FieldRow, Problem, sheetOptions, useRead } from "./parts";
+import { CheckRow, confirmDestructive, errorWords, FieldRow, Note, Problem, sheetOptions, useBotLocked, useRead } from "./parts";
 
 const ABOUT = "Each looks at your software on a schedule and says one line in the chat only when something is off.";
 
@@ -36,6 +37,8 @@ export function Watching({ navigation, route }: ChatInfoProps<"Watching">) {
   const key = route.params.key;
   const ref = refOf(key);
   const live = state.hub.phase === "live";
+  // A member sees the watchers; only an admin adds, changes, pauses or deletes one.
+  const locked = useBotLocked();
   const read = useRead(() => Promise.all([session.call("automation_list", { projectRef: ref }), session.call("profiles_list", { projectRef: ref })]), [session, key]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<HubError | null>(null);
@@ -84,21 +87,23 @@ export function Watching({ navigation, route }: ChatInfoProps<"Watching">) {
                 accessory={
                   <Switch
                     value={!a.paused}
-                    disabled={!live || busy !== null}
+                    disabled={!live || locked || busy !== null}
                     onValueChange={(on) => void toggle(a, on)}
                     accessibilityLabel={`Watch ${a.name}`}
                   />
                 }
-                {...(live ? { onPress: () => navigation.navigate("Watcher", { key, automationId: a.automationId }) } : {})}
+                {...(live && !locked ? { onPress: () => navigation.navigate("Watcher", { key, automationId: a.automationId }) } : {})}
               />
             )),
-            ...(kinds.length === 0
+            ...(locked && watchers.length === 0 ? [<ListRow key="none" title="Nothing watched yet" />] : []),
+            ...(kinds.length === 0 || locked
               ? []
               : [<ListRow key="add" icon="plus" title="Add Watcher" chevron={false} {...(live ? { onPress: () => navigation.navigate("Watcher", { key }) } : {})} />]),
           ]
         )}
       </ListSection>
       <Problem text={list?.ok === false ? errorWords(list.error) : error === null ? undefined : `Not changed: ${errorWords(error)}`} />
+      {locked ? <Note>{BOT_ADMIN_ONLY}</Note> : null}
     </ScrollView>
   );
 }

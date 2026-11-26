@@ -26,11 +26,26 @@ This prints the link, plus a code and address they can type in instead.
 
 | Role | Can |
 |---|---|
-| Member | Work in every bot: chat, approve, enter secrets |
-| Admin | All that, plus invite people, change roles and change workspace settings |
+| Member | Work in every bot: chat, start work, approve, enter secrets, run an automation now |
+| Admin | All that, plus change a bot's safety settings, delete a bot, invite people, change roles and change workspace settings |
 | Owner | All that, plus manage other owners |
 
 Every bot is open to everyone on the workspace. The **Workspace** settings show only to owners and admins.
+
+### A bot's safety settings {#bot-safety}
+
+Only owners and admins change these, in the apps, from a terminal or through a lead:
+
+- **Approvals**: how its risky actions are approved.
+- **Who merges** and **How it merges**, with the merge rules.
+- **Max agents**.
+- **Payments**: the card it pays with.
+- **Automations and watchers**: making, editing, pausing or deleting one.
+- **Delete bot**.
+
+A member sees each one as it is set, with "Only admins can change this." The workspace refuses a member's change too. A lead asked by a member to change one of these says it can't.
+
+When an admin deletes a bot, everyone else who wrote in its chat or started its work is told who deleted it.
 
 ## Manage people {#manage}
 

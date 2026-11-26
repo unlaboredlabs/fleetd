@@ -11,6 +11,7 @@ import type { Hub } from "../api/hub.ts";
 import { hubZone, POLICY_TZ_KEY, zone } from "../attention/index.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
+import { requireLeadForAdmin } from "../api/bot_admin.ts";
 import { ownerOn } from "../people/store.ts";
 import { automations, type Edit, fromCall, WEBHOOK_BODY_MAX } from "./index.ts";
 
@@ -77,6 +78,10 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
   // A schedule without a zone runs in the person's (D288).
   const personZone = () => zoneOfChat(hub, r);
   const id = str(call.automationId) ?? "";
+  // A lead changes them only for an owner or admin, as the app does (W926).
+  if (call.op === "automation_create" || call.op === "automation_update" || call.op === "automation_delete") {
+    requireLeadForAdmin(hub, r, "automations");
+  }
   switch (call.op) {
     case "automation_create": {
       const schedule = call.schedule as AutomationScheduleCall | undefined;

@@ -107,8 +107,11 @@ export type ApprovalHooks = {
   allowSite(project: ProjectRef, site: string, by: string): Promise<void>;
   /** The project's own automation `id`, for `automation_confirm`'s card. */
   ownAutomation(project: ProjectRef, id: string): Promise<Automation | undefined>;
-  /** The person approved `automation_confirm`'s card showing `shown`: whether the automation is marked confirmed. */
-  automationConfirm(project: ProjectRef, shown: unknown, by: string): Promise<boolean>;
+  /**
+   * The person approved `automation_confirm`'s card showing `shown`: whether the automation is marked confirmed (only
+   * an owner's or admin's approval marks it).
+   */
+  automationConfirm(project: ProjectRef, shown: unknown, by: string, person?: PersonRef): Promise<boolean>;
   /** The card for a lead's `project_propose`: exactly what approving it makes, or why the proposal is refused. */
   projectProposal(project: ProjectRef, input: unknown): Promise<PromptVerdict>;
   /**

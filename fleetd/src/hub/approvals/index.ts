@@ -526,7 +526,7 @@ export class Approvals {
         } catch {
           shown = undefined;
         }
-        if (shown !== undefined) await this.deps.hooks.automationConfirm(projectOf(answered), shown, by);
+        if (shown !== undefined) await this.deps.hooks.automationConfirm(projectOf(answered), shown, by, caller.person);
       }
       // A new project is the person's alone to make: their approval of the card makes it here, as theirs, before the
       // lead's call runs. Not made, the lead hears why in place of the go-ahead.

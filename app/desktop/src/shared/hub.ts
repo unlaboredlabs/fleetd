@@ -127,3 +127,12 @@ export function administers(info: Pick<HubInfoOutput, "admin" | "me"> | undefine
  * that leaves nothing out, as every self-run one does.
  */
 export const serves = (info: { readonly leftOut?: readonly string[] | undefined } | undefined, tool: string): boolean => info?.leftOut?.includes(tool) !== true;
+
+/** What the apps show a member beside a bot's safety settings, which only the workspace's owners and admins change. */
+export const BOT_ADMIN_ONLY = "Only admins can change this.";
+
+/**
+ * Whether a person in `role` is held off a bot's safety settings (approvals, who merges, max agents, its card, its
+ * automations, deleting it): a member. No role known (a workspace from before people) holds no one off.
+ */
+export const botLocked = (role: string | undefined): boolean => role !== undefined && role !== "owner" && role !== "admin";

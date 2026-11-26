@@ -152,7 +152,8 @@ test("project_settings_set and project_set: a person picks who merges and the ru
   const tools = new Registry();
   registerAll(tools);
   const call = async (tool: string, input: unknown, human = true) => {
-    const out = (await tools.call(t.hub, caller("operate", human), tool, input)) as { output?: any; error?: { message?: string; error?: Error } };
+    // An agent key with admin: refused all the same, as only a person picks.
+    const out = (await tools.call(t.hub, caller(human ? "operate" : "admin", human), tool, input)) as { output?: any; error?: { message?: string; error?: Error } };
     if (out.error) throw new Error(out.error.error?.message ?? out.error.message ?? "refused");
     return out.output;
   };

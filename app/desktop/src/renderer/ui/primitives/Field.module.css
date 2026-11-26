@@ -140,6 +140,14 @@
   border-color: var(--hairline);
   color: var(--faint);
 }
+/* A pick that can't be changed still reads as the pick. */
+.checkbox[data-state="checked"]:disabled,
+.checkbox[data-state="indeterminate"]:disabled,
+.radio[data-state="checked"]:disabled {
+  background: var(--faint);
+  border-color: var(--faint);
+  color: var(--on-accent);
+}
 .radioDot {
   width: 6px;
   height: 6px;

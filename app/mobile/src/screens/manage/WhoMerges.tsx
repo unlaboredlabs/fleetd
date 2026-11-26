@@ -7,6 +7,7 @@
 import { useLayoutEffect, useState } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import {
+  BOT_ADMIN_ONLY,
   linesOf,
   MERGE_MODE_WORDS,
   MERGE_MODES,
@@ -28,7 +29,7 @@ import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { readMergeFacts, readRules, setMergeMode, setRules, setWhoMerges, turnOffUpToDate } from "./api";
-import { CheckRow, errorWords, FieldRow, Problem, sheetOptions, useRead } from "./parts";
+import { CheckRow, errorWords, FieldRow, Note, Problem, sheetOptions, useBotLocked, useRead } from "./parts";
 
 export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   const t = useTheme();
@@ -51,6 +52,7 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
   const live = state.hub.phase === "live";
+  const locked = useBotLocked();
   const shown = picked !== null && picked.over === saved ? picked.to : saved;
   const mode = pickedMode !== null && pickedMode.over === savedMode ? pickedMode.to : savedMode;
   const rule = mode === "verify_after" && facts.value?.ok === true ? facts.value.value.upToDate[0] : undefined;
@@ -118,9 +120,9 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   };
 
   useLayoutEffect(() => {
-    navigation.setOptions(sheetOptions(t, undefined, shown === "people" && dirty ? { label: "Save", enabled: live, busy, onPress: () => void save() } : undefined));
+    navigation.setOptions(sheetOptions(t, undefined, shown === "people" && dirty && !locked ? { label: "Save", enabled: live, busy, onPress: () => void save() } : undefined));
     // `save` reads what these are.
-  }, [navigation, t, shown, dirty, live, busy, itselfText, personText]);
+  }, [navigation, t, shown, dirty, locked, live, busy, itselfText, personText]);
 
   return (
     <ScrollView
@@ -132,16 +134,17 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
     >
       <ListSection footer={WHO_MERGES_WORDS[shown]}>
         {WHO_MERGES.map((m) => (
-          <CheckRow key={m.value} title={m.label} checked={shown === m.value} disabled={!live || busy} onPress={() => void pick(m.value)} />
+          <CheckRow key={m.value} title={m.label} checked={shown === m.value} disabled={!live || locked || busy} onPress={() => void pick(m.value)} />
         ))}
       </ListSection>
+      {locked ? <Note>{BOT_ADMIN_ONLY}</Note> : null}
       {shown === "people" && rules !== undefined ? (
         <>
           <ListSection header="Merges itself when every file matches">
-            <FieldRow value={itselfText} onChangeText={setItself} multiline autoCapitalize="none" clearButtonMode="never" editable={live && !busy} accessibilityLabel="Merges itself" />
+            <FieldRow value={itselfText} onChangeText={setItself} multiline autoCapitalize="none" clearButtonMode="never" editable={live && !locked && !busy} accessibilityLabel="Merges itself" />
           </ListSection>
           <ListSection header="Always a person when any file matches" footer={RULES_WORDS}>
-            <FieldRow value={personText} onChangeText={setPerson} multiline autoCapitalize="none" clearButtonMode="never" editable={live && !busy} accessibilityLabel="Always a person" />
+            <FieldRow value={personText} onChangeText={setPerson} multiline autoCapitalize="none" clearButtonMode="never" editable={live && !locked && !busy} accessibilityLabel="Always a person" />
           </ListSection>
         </>
       ) : null}
@@ -150,9 +153,9 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
         footer={[shared === undefined ? undefined : sharedText(shared), rule === undefined ? MERGE_MODE_WORDS[mode] : upToDateText(rule, admin)].filter(Boolean).join(" ")}
       >
         {MERGE_MODES.map((m) => (
-          <CheckRow key={m.value} title={m.label} checked={mode === m.value} disabled={!live || busy} onPress={() => void pickMode(m.value)} />
+          <CheckRow key={m.value} title={m.label} checked={mode === m.value} disabled={!live || locked || busy} onPress={() => void pickMode(m.value)} />
         ))}
-        {rule !== undefined && rule.canTurnOff && admin ? <ListRow title="Turn off up-to-date branches" chevron={false} {...(live && !busy ? { onPress: () => void turnOff(rule.repo) } : {})} /> : null}
+        {rule !== undefined && rule.canTurnOff && admin && !locked ? <ListRow title="Turn off up-to-date branches" chevron={false} {...(live && !busy ? { onPress: () => void turnOff(rule.repo) } : {})} /> : null}
       </ListSection>
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : error === null ? undefined : `Not changed: ${errorWords(error)}`} />
     </ScrollView>

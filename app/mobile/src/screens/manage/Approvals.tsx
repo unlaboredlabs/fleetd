@@ -4,7 +4,7 @@
 // in the chat. Reads and writes the project's approvals tools (PROJECT_TOOLS).
 import { useState } from "react";
 import { RefreshControl, ScrollView } from "react-native";
-import { APPROVAL_MODES, FLOORS, type ApprovalMode, type HubError } from "../../desktop";
+import { APPROVAL_MODES, BOT_ADMIN_ONLY, FLOORS, type ApprovalMode, type HubError } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
@@ -12,7 +12,7 @@ import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { useNow } from "../time";
 import { readApprovals, setApprovalMode } from "./api";
-import { CheckRow, errorWords, Note, Problem, useRead } from "./parts";
+import { CheckRow, errorWords, Note, Problem, useBotLocked, useRead } from "./parts";
 import { approvedRows } from "./ApprovedLog";
 import { APPROVED_SHOWN, foldApproved, moreApproved, showAllWord } from "../../desktop";
 
@@ -28,6 +28,7 @@ export function Approvals({ navigation, route }: ChatInfoProps<"Approvals">) {
   const [busy, setBusy] = useState<ApprovalMode | null>(null);
   const [error, setError] = useState<HubError | null>(null);
   const live = state.hub.phase === "live";
+  const locked = useBotLocked();
   const view = read.value?.ok === true ? read.value.value : undefined;
 
   const pick = async (mode: ApprovalMode) => {
@@ -53,10 +54,11 @@ export function Approvals({ navigation, route }: ChatInfoProps<"Approvals">) {
         {saved === undefined ? (
           <ListRow title={read.value?.ok === false ? "Couldn't read its approvals" : "Reading…"} />
         ) : (
-          APPROVAL_MODES.map((m) => <CheckRow key={m.mode} title={m.label} detail={m.description} checked={(busy ?? saved.mode) === m.mode} disabled={!live || busy !== null} onPress={() => void pick(m.mode)} />)
+          APPROVAL_MODES.map((m) => <CheckRow key={m.mode} title={m.label} detail={m.description} checked={(busy ?? saved.mode) === m.mode} disabled={!live || locked || busy !== null} onPress={() => void pick(m.mode)} />)
         )}
       </ListSection>
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : error === null ? undefined : `Not changed: ${errorWords(error)}`} />
+      {locked ? <Note>{BOT_ADMIN_ONLY}</Note> : null}
       {saved === undefined ? null : <Note>{FLOORS}</Note>}
 
       {view === undefined ? null : (

@@ -17,7 +17,7 @@ import { asks, HAS_ORDER, HAS_WORDS, NO_QUERY, othersOf, toggleHas, WHEN_WORDS, 
 import { findPinsShown } from "../../messagePins";
 import { DaySheet, FindView, useChatFind } from "./ChatFind";
 import { listTime } from "../../chatView";
-import { isArchived, mergesOf, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
+import { BOT_ADMIN_ONLY, isArchived, mergesOf, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { NEW_SCREEN } from "../../screen";
 import { space, type, useTheme, type Palette } from "../../theme";
@@ -29,7 +29,7 @@ import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, withPart, type Info as InfoRead } from "./api";
 import { agentLines, checklist, deleteBlocked, deleteWords, leadValue, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
-import { confirmDestructive, errorWords, Problem } from "./parts";
+import { confirmDestructive, errorWords, Problem, useBotLocked } from "./parts";
 import { skillsShown } from "./skillsModel";
 import { artifactsShown } from "../artifacts/model";
 import { vaultShown } from "../vault/model";
@@ -103,6 +103,8 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const skills = skillsShown(state.hub);
   const dms = dmsShown(state.hub);
   const live = state.hub.phase === "live";
+  // Deleting a bot is an admin's: a member sees the row off, with why.
+  const locked = useBotLocked();
   const key = `${p.machineId}/${p.projectId}`;
   // Read again when its machine comes back or goes: what its node holds is as of the read.
   const status = state.machines.find((m) => m.machineId === p.machineId)?.status;
@@ -357,8 +359,8 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         />
       </ListSection>
 
-      <ListSection footer="Erases it and everything fleetd keeps for it. Its folder stays unless you tick it.">
-        <ListRow title="Delete Bot" destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
+      <ListSection footer={locked ? `Erases it and everything fleetd keeps for it. ${BOT_ADMIN_ONLY}` : "Erases it and everything fleetd keeps for it. Its folder stays unless you tick it."}>
+        <ListRow title="Delete Bot" destructive off={locked} chevron={false} {...(busy === null && live && !locked ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
       </ListSection>
       <TypedDelete words={typing} name={p.title} onCancel={() => setTyping(null)} onDelete={doDelete} />
       {daySheet}

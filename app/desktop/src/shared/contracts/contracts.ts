@@ -3459,6 +3459,7 @@ export type KnownHubEventType =
   | "project.add_failed"
   | "project.fetch_failed"
   | "project.settings"
+  | "project.erased"
   | "thread.waiting"
   | "wake.missed"
   | "write.delivered"

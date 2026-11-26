@@ -15,6 +15,7 @@ import { when } from "../live/when";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { SettingsList, SettingsListRow, SettingsRow } from "./parts";
 import { ImportDialog, VaultEditor } from "./VaultForms";
+import { BOT_ADMIN_ONLY } from "./botAdmin";
 import { rowLine, vaultServed } from "./vaultModel";
 import { vaultError } from "./vaultParts";
 import s from "./settings.module.css";
@@ -31,7 +32,7 @@ const VAULT_HELP =
 /** A picked card's name: a vault card's label, never its raw `vault:` id. */
 const pickedName = (card: { ref: string; label?: string }): string => card.label ?? (card.ref.startsWith("vault:") ? "a card no longer in the vault" : cardLabel(card));
 
-export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
+export function PaymentsSetting({ projectRef, locked = false }: { projectRef: Ref; locked?: boolean }) {
   const vault = useData((d) => vaultServed(d.features));
   const live = useLive();
   const nowMs = useNow(true, 60_000);
@@ -85,14 +86,12 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
             ? live
               ? "Loading…"
               : "Not connected."
-            : card === undefined
-              ? "No card: the lead can't pay at a checkout."
-              : `Pays with ${pickedName(card)}.`
+            : `${card === undefined ? "No card: the lead can't pay at a checkout." : `Pays with ${pickedName(card)}.`}${locked ? ` ${BOT_ADMIN_ONLY}` : ""}`
       }
       hint={vault ? VAULT_HELP : PAYMENTS_HELP}
       lineTone={read.isLoadingError ? "danger" : "quiet"}
       control={
-        read.data === undefined ? undefined : picking && vault ? (
+        read.data === undefined || locked ? undefined : picking && vault ? (
           <Button variant="secondary" disabled={saving} onClick={() => setPicking(false)}>
             Cancel
           </Button>

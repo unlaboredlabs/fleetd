@@ -22,6 +22,7 @@ import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { BotConnections } from "../connections/BotConnections";
 import { ApprovalsSetting } from "./Approvals";
+import { BOT_ADMIN_ONLY, useBotLocked } from "./botAdmin";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
 import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
@@ -147,6 +148,8 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
   const ref = { machineId: project.machineId, projectId: project.projectId };
   const summary = useData((d) => d.projects[projectKey(ref)]);
   const vault = useData((d) => vaultServed(d.features));
+  // A member sees its safety settings and Delete, off, with one line saying so.
+  const locked = useBotLocked();
   // A folder rather than a git repo: the hub knows no repo of its own.
   const plain = !(summary?.repos ?? []).some((r) => isOwn(r, ref));
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
@@ -204,16 +207,16 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
         )}
         {summary?.issueOrders !== undefined ? <IssueOrdersSetting projectRef={ref} on={summary.issueOrders} /> : null}
       </RepoSection>
-      <SettingsSection title="Safety">
-        <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings?.mergeRules} />
-        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} shared={settings?.mergeShared} />
-        <ApprovalsSetting projectRef={ref} />
+      <SettingsSection title="Safety" intro={locked ? BOT_ADMIN_ONLY : undefined}>
+        <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings?.mergeRules} locked={locked} />
+        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} shared={settings?.mergeShared} locked={locked} />
+        <ApprovalsSetting projectRef={ref} locked={locked} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">
         <BotConnections projectRef={ref} />
         <SigninsSetting projectRef={ref} kept={settings?.signinsKept} />
         <SkillsSetting projectRef={ref} />
-        <PaymentsSetting projectRef={ref} />
+        <PaymentsSetting projectRef={ref} locked={locked} />
       </SettingsSection>
       <SettingsSection title="Trial">
         <ChatTagsSetting projectRef={ref} on={summary?.chatTags === true} />
@@ -228,11 +231,13 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
               ? `${project.machineId} was removed from this workspace, so no machine holds its files: deleting only forgets it in fleetd.`
               : `Stops it and erases everything fleetd keeps for it, its worktrees too. ${plain ? "Its folder stays unless you tick it when you delete." : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}`
           }
-          line={unknown !== null ? `Deleting needs its machine to list its worktrees first: ${unknown}` : null}
+          line={locked ? BOT_ADMIN_ONLY : unknown !== null ? `Deleting needs its machine to list its worktrees first: ${unknown}` : null}
           control={
-            <DangerButton disabled={reading || unknown !== null || checking} onClick={() => void open()}>
-              {checking ? "Checking its worktrees…" : "Delete bot…"}
-            </DangerButton>
+            locked ? undefined : (
+              <DangerButton disabled={reading || unknown !== null || checking} onClick={() => void open()}>
+                {checking ? "Checking its worktrees…" : "Delete bot…"}
+              </DangerButton>
+            )
           }
         >
           <Problem text={blocked} />

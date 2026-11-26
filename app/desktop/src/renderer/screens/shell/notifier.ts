@@ -75,6 +75,15 @@ export const kindOf = (type: string): NotifyKind =>
           ? "machine"
           : "other";
 
+/**
+ * Whether an event names whom it is for (`data.people`, a deleted bot's other people) and `me` isn't one of them: no
+ * notification here. Without a person known (a workspace from before people), it is everyone's.
+ */
+export const forOthers = (event: Readonly<Record<string, unknown>>, me: string | undefined): boolean => {
+  const people = record(event["data"])?.["people"];
+  return me !== undefined && Array.isArray(people) && !people.includes(me);
+};
+
 /** Reads a hub event (the /app protocol's HubEvent) defensively: anything off-shape is not for attention. */
 export const attentionEvent = (event: Readonly<Record<string, unknown>>): AttentionEvent | null => {
   const data = record(event["data"]);
