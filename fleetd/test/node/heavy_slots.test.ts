@@ -299,8 +299,9 @@ describe("each slot's share of the CPUs", () => {
     mkdirSync(join(m.home, "hosts"));
     // The session: a scope with a 256 MB cap and no swap, as the node starts each session's (runner/scope.ts).
     const grow = join(m.home, "grow");
-    // As a check: it runs a while, one of its steps grows past the cap, and the check goes on to its end.
-    writeFileSync(grow, `#!/bin/sh\necho "start $1" >>"$HOME_DIR/log"\nsleep 1.5\npython3 -I -c 'import time; b = [bytearray(16 << 20) for _ in range(32) if not time.sleep(0.2)]'\necho "survived $?" >>"$HOME_DIR/log"\nsleep 2\n`);
+    // As a check that stops at its first failed step: it runs a while, one step grows past the cap, and the run ends at
+    // once, its scope with it.
+    writeFileSync(grow, `#!/bin/sh\necho "start $1" >>"$HOME_DIR/log"\nsleep 1.5\npython3 -I -c 'import time; b = [bytearray(16 << 20) for _ in range(32) if not time.sleep(0.2)]'\necho "survived $?" >>"$HOME_DIR/log"\n`);
     chmodSync(grow, 0o755);
     const env: Record<string, string | undefined> = { ...process.env, HOME_DIR: m.home, FLEETD_RUNNER_SESSION: "t6141test.1.1" };
     delete env[HELD];
