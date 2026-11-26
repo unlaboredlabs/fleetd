@@ -71,3 +71,13 @@ test("a link that keeps up is never cut, and its frames lag by only the trip", (
   expect(r.fps).toBeGreaterThan(29);
   expect(r.lagP95 / 75).toBeLessThan(1.5);
 });
+
+test("the link's measures say nothing before its first ack, then its round trip", () => {
+  let now = 0;
+  const sender = new FrameSender<null>({ send: () => undefined, key: () => undefined, budget: () => undefined }, undefined, false, () => now);
+  sender.offer({ seq: 1, bytes: 1000, h264: false, key: false, data: null });
+  expect(sender.stats()).toBeUndefined();
+  now = 40;
+  sender.ack(1);
+  expect(sender.stats()).toMatchObject({ rttMs: 40, skipped: 0 });
+});

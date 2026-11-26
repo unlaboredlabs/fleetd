@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { forget, note, stamp } from "../src/node/screen/perf.ts";
+import { forget, note, relay, stamp } from "../src/node/screen/perf.ts";
 
 const frame = (seq: number) => ({ sessionId: "perf-s", seq, width: 1280, height: 800, control: "agent", jpegB64: "x".repeat(4000) }) as never as Parameters<typeof stamp>[0];
 
@@ -41,5 +41,32 @@ describe("screen perf stamps away from the screen's machine", () => {
     expect(last).not.toHaveProperty("cores");
     expect(last).not.toHaveProperty("cpuPct");
     expect(last).not.toHaveProperty("memPct");
+  });
+});
+
+describe("screen perf stamps of frames sent again or made elsewhere", () => {
+  it("counts the newest frame sent again for a new watcher once", () => {
+    forget("perf-s");
+    let last;
+    for (let i = 1; i <= 40; i++) {
+      const f = frame(i);
+      stamp(f, i * (1000 / 30));
+      // Each frame again, as a watch `on` sends the newest anew.
+      stamp(frame(i), i * (1000 / 30) + 1);
+      if (f.perf !== undefined) last = f.perf;
+    }
+    expect(last).toMatchObject({ sent: 31, seq: 31, madeFps: 30 });
+  });
+  it("leaves a relayed session's frames with the measures they came with", () => {
+    forget("perf-s");
+    relay("perf-s", true);
+    const came = { sent: 7, seq: 7, madeFps: 30, madeKbps: 900, encoder: "x264" };
+    for (let i = 1; i <= 40; i++) {
+      const f = frame(i);
+      if (i === 35) f.perf = came;
+      stamp(f, i * (1000 / 30), () => ({ cores: 64, cpuPct: 99 }));
+      expect(f.perf).toBe(i === 35 ? came : undefined);
+    }
+    relay("perf-s", false);
   });
 });

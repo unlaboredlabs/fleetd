@@ -175,7 +175,8 @@ export function graphOf(
 }
 
 export type Tone = "success" | "warning" | "quiet";
-export type Verdict = { word: string; line: string; tone: Tone };
+/** `detail`: why, where the line alone doesn't say. */
+export type Verdict = { word: string; line: string; detail?: string; tone: Tone };
 export type Row = { label: string; value: string; note?: string; tone?: Tone };
 export type Group = { label: string; rows: Row[] };
 
@@ -209,6 +210,9 @@ const CAP: Record<NonNullable<ScreenPerf["capBy"]>, string> = {
   asked: "as this window draws",
 };
 
+/** "Slowed here" takes at least this many frames a second lost here. */
+export const MIN_LOST_HERE = 2;
+
 /** A tenth of the frames this viewer could have shown, lost, is slow. */
 export const LOST_SHARE = 0.1;
 
@@ -236,7 +240,8 @@ export function verdictOf(now: PerfNow | undefined, drawsAtMost?: number): Verdi
   if (!viewer.measured)
     return {
       word: "Not measured",
-      line: `Its machine doesn’t send measures: ${perSecond(viewer.drawn)} shown here`,
+      line: `${perSecond(viewer.drawn)} shown here`,
+      detail: "This machine doesn’t send measures yet",
       tone: "quiet",
     };
   const perf = now.perfAgeMs !== undefined && now.perfAgeMs < STALE_MS ? now.perf : undefined;
@@ -254,7 +259,9 @@ export function verdictOf(now: PerfNow | undefined, drawsAtMost?: number): Verdi
   const way = Math.min(link?.skipped ?? 0, viewer.made);
   const reached = drawsAtMost === undefined ? viewer.made - way : Math.min(viewer.arrived, drawsAtMost);
   const here = Math.max(0, reached - viewer.drawn);
-  if (could >= 5 && way + here >= could * LOST_SHARE) {
+  // Here only from two frames lost: at a few frames a second a tenth is under one, and the newest frame still drawing as
+  // the second is read would tip it alone.
+  if (could >= 5 && way + here >= could * LOST_SHARE && (way >= here || here >= MIN_LOST_HERE)) {
     if (way >= here)
       return {
         word: "Slowed on the way",

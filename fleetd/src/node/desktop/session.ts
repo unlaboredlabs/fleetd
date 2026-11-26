@@ -586,10 +586,13 @@ export class Session {
     }
     if (this.closed) return run.stop();
     this.picture = run;
+    // Its frames come stamped from the box: they go on as they come.
+    perf.relay(this.id, true);
     run.control(this.controlNow);
     run.watch(this.watching());
     const why = await run.ended;
     this.picture = undefined;
+    perf.relay(this.id, false);
     if (this.closed || why === undefined) return;
     console.warn(`desktop ${this.id}: the screen is read from here: ${why}`);
     return this.capture();

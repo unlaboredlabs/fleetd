@@ -37,7 +37,7 @@ export function PerfStrip({ now, kind, open, onOpen }: { now: PerfNow | undefine
     onOpen(!open);
   };
   return (
-    <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel={`${verdict.word}. ${verdict.line}`} accessibilityHint={open ? "Hides the measures" : "Shows every measure"} accessibilityState={{ expanded: open }}>
+    <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel={`${verdict.word}. ${verdict.line}${verdict.detail === undefined ? "" : `. ${verdict.detail}`}`} accessibilityHint={open ? "Hides the measures" : "Shows every measure"} accessibilityState={{ expanded: open }}>
           <Glass appear style={[styles.strip, open && styles.stripOpen]}>
             <View style={styles.line}>
               <Text style={[type.footnote, styles.strong, { color: tone }]} numberOfLines={1}>
@@ -50,7 +50,9 @@ export function PerfStrip({ now, kind, open, onOpen }: { now: PerfNow | undefine
             <Graph history={now?.history ?? []} height={14} />
             {!open ? null : (
               <View style={styles.more}>
-                <Text style={[type.caption, { color: t.secondary }]}>{verdict.line}</Text>
+                <Text style={[type.caption, { color: t.secondary }]}>
+                  {verdict.detail === undefined ? verdict.line : `${verdict.line}. ${verdict.detail}.`}
+                </Text>
                 <View style={styles.grid}>
                   {rows.map((r) => (
                     <View key={r.label} style={styles.cell}>

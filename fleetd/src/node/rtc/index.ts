@@ -22,7 +22,7 @@ import { RTC_INPUT_EVERY_MS, type BrowserControlFrame, type BrowserRtcFrame, typ
 import { FrameSender } from "../../hub/browser/flow.ts";
 import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
 import type { Node } from "../api.ts";
-import { stamp } from "../screen/perf.ts";
+import { stamp, type MachineNow } from "../screen/perf.ts";
 import { machineNow } from "../screen/perf_machine.ts";
 
 /** Peers open on this node at once: a person's few windows, with room to spare. */
@@ -46,6 +46,9 @@ export type RtcSeams = {
   /** A person's input for the screens, as if it came from the hub. */
   input(sessionId: string, input: BrowserInput): void;
   report(report: BrowserRtcReport): void;
+  /** The machine the measures say the screen runs on (../screen/perf_machine.ts, absent); null for none: a box's own
+   * reads would be its host's. */
+  machine?: ((now: number) => MachineNow) | null;
 };
 
 /** The few calls of werift's channel a peer makes; tests give their own. */
@@ -167,7 +170,8 @@ class Peer {
     if (!ch || ch.readyState !== "open") return;
     const { h264B64, jpegB64, perf: _perf, ...head } = frame;
     const data = Buffer.from(h264B64 ?? jpegB64 ?? "", "base64");
-    const perf = this.perf === undefined ? undefined : { ...this.perf, link: this.sender.stats() };
+    const link = this.perf === undefined ? undefined : this.sender.stats();
+    const perf = this.perf === undefined ? undefined : { ...this.perf, ...(link === undefined ? {} : { link }) };
     this.perf = undefined;
     ch.send(JSON.stringify({ ...head, ...(perf === undefined ? {} : { perf }), t: "frame", kind: h264B64 === undefined ? "jpeg" : "h264", bytes: data.length } satisfies RtcFromNode));
     for (let at = 0; at < data.length; at += RTC_CHUNK) ch.send(data.subarray(at, at + RTC_CHUNK));
@@ -223,7 +227,7 @@ export class Peers {
   frame(frame: BrowserFrame): boolean {
     const id = frame.sessionId;
     // Every kind's frames pass here: the second's measures go on the next of each screen's (../screen/perf.ts).
-    stamp(frame, performance.now(), machineNow);
+    stamp(frame, performance.now(), this.seams.machine === null ? undefined : (this.seams.machine ?? machineNow));
     this.newest.set(id, frame);
     this.toldControl.delete(id);
     let open = false;

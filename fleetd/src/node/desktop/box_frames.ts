@@ -156,6 +156,8 @@ export async function serve(o: ServeOptions): Promise<void> {
         watch: (frame) => watchAs(frame),
         input: (_id, input) => session.queueInput(input),
         report: (r) => send(s, { rtc: r }),
+        // A box's CPU and memory as it reads them are its host's: none said.
+        machine: null,
       },
       o.peer,
     );
@@ -216,6 +218,8 @@ function liveOf(f: BrowserFrame): LiveFrame {
     height: f.height,
     ...(f.jpegB64 !== undefined ? { jpegB64: f.jpegB64 } : {}),
     ...(f.h264B64 !== undefined ? { h264B64: f.h264B64, key: f.key === true } : {}),
+    // Its measures, stamped here by the peers' frame (../rtc): the holder passes them on as they are.
+    ...(f.perf !== undefined ? { perf: f.perf } : {}),
   };
 }
 
