@@ -236,6 +236,12 @@ export function stored(a: Automation): Automation {
   };
 }
 
+/** A message's first line as a run's `said`: its first non-empty line, Markdown marks off, at most 300 characters. */
+export function firstLine(text: string): string {
+  const line = text.split("\n").map((l) => l.replace(/^[#>*\-\s]+/u, "").replace(/[*_`]+/gu, "").trim()).find((l) => l !== "") ?? "";
+  return [...line].length > 300 ? `${[...line].slice(0, 299).join("")}…` : line;
+}
+
 /** The run as its row's `data` holds it, keys in the Rust struct's order. */
 export function storedRun(r: AutomationRun): AutomationRun {
   const o: Record<string, unknown> = { runId: r.runId, automationId: r.automationId, trigger: r.trigger, at: r.at, state: r.state };

@@ -47,6 +47,7 @@ import { checkWatch, cronOf, lastDay, named, PRESETS, watchers } from "../watche
 import {
   atMs,
   AUTOMATIONS_PER_PROJECT,
+  firstLine,
   hex,
   invalid,
   kept,
@@ -67,6 +68,7 @@ import {
 
 export {
   AUTOMATIONS_PER_PROJECT,
+  firstLine,
   fromCall,
   nextAfter,
   orderText,
@@ -82,12 +84,6 @@ const RUNS_SEEN = 32;
 
 /** How long after a run's order closed the lead's message still counts as the run's. */
 const MESSAGE_AFTER_MS = 60_000;
-
-/** A message's first line as a run's `said`: its first non-empty line, Markdown marks off, at most 300 characters. */
-export function firstLine(text: string): string {
-  const line = text.split("\n").map((l) => l.replace(/^[#>*\-\s]+/u, "").replace(/[*_`]+/gu, "").trim()).find((l) => l !== "") ?? "";
-  return [...line].length > 300 ? `${[...line].slice(0, 299).join("")}…` : line;
-}
 
 /** A new automation: the app's automation_create or the lead's. */
 export type NewAutomation = {
