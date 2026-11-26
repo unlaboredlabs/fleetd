@@ -23,11 +23,18 @@ export const GLYPHS: Record<FileGlyph, LucideIcon> = {
 
 export type CardFile = { readonly attachmentId: string; readonly name: string; readonly mime: string; readonly bytes: number | undefined };
 
+/** A caption worth showing under the card: none when it only says the file's name again, which the card shows. */
+export const ownCaption = (caption: string | undefined, name: string): string | undefined => {
+  const said = caption?.trim().replace(/^`(.*)`$/u, "$1");
+  return said === undefined || said === "" || said.toLowerCase() === name.trim().toLowerCase() ? undefined : caption;
+};
+
 export function FileCard({ project, file, caption }: { project: ProjectRef | undefined; file: CardFile; caption?: string | undefined }) {
   const { hub } = useDataLayer();
   const [busy, setBusy] = useState<"open" | "save" | undefined>(undefined);
   const glyph = glyphOf(file.mime);
   const Glyph = GLYPHS[glyph];
+  const said = ownCaption(caption, file.name);
   const meta = file.bytes === undefined ? kindOf(file.mime) : `${kindOf(file.mime)} · ${fmtBytes(file.bytes)}`;
   const act = async (what: "open" | "save") => {
     if (project === undefined || busy !== undefined) return;
@@ -63,9 +70,9 @@ export function FileCard({ project, file, caption }: { project: ProjectRef | und
           </span>
         ) : null}
       </div>
-      {caption !== undefined ? (
+      {said !== undefined ? (
         <Text size="xs" tone="quiet">
-          {caption}
+          {said}
         </Text>
       ) : null}
     </div>
