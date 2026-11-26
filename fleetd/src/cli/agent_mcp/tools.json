@@ -2020,7 +2020,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Ask a person to take your browser over for what only they can do: a captcha, a login confirmation, a judgement call. reason: what they should do, in one line; they watch the page live. Carry on or end your turn: while they drive, agent-browser answers that a person has control; you are told when they hand it back, and the page is as they left it.",
+   "description": "Ask a person to take your browser over for what a form can't do: a captcha, a passkey, a device approval, a judgement call; a login: request_sign_in. reason: what they should do, in one line; they watch the page live. Carry on or end your turn; while they drive, agent-browser answers that a person has control; you are told when they hand it back, and the page is as they left it.",
    "inputSchema": {
     "properties": {
      "reason": {
@@ -2042,7 +2042,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Fill a login field of your browser session from fleetd's vault without seeing the value: item (its label or id, from vault_items), field username, password or otp (a one-time code), target the field's CSS selector. It fills only on the item's own site, then submits the form; submit: false for a field before the last (a username before its password). From the first fill on, the session refuses reading values back. ref (op://<vault>/<item>/<field>) instead of item and field works for one release. Never ask anyone for a password: a login not in the vault, the person adds in Settings › Vault.",
+   "description": "Fill a login field of your browser session from fleetd's vault without seeing the value: item (its label or id, from vault_items), field username, password or otp (a one-time code), target the field's CSS selector. It fills only on the item's own site, then submits the form; submit: false for a field before the last (a username before its password). From the first fill on, the session refuses reading values back. ref (op://<vault>/<item>/<field>) instead of item and field works for one release. Never ask anyone for a password: a login not in the vault goes through request_sign_in.",
    "inputSchema": {
     "properties": {
      "field": {
@@ -2449,7 +2449,7 @@
    "lead": true,
    "worker": true,
    "browser": true,
-   "description": "Sign in on a login page: site (the page's host), each field's CSS selector (username, password, otp), why. A vault login fills at once; else the person fills a secure form in chat, saved to the vault; you're woken once it's filled, never seeing it. A code asked next: call again with otp.",
+   "description": "Sign in on a login page: site, each field's CSS selector (username, password, otp), why. A vault login fills at once; else the person fills a secure form in chat, saved to the vault; you're woken once it's filled, never seeing it. A code asked next: call again with otp.",
    "inputSchema": {
     "properties": {
      "otp": {
