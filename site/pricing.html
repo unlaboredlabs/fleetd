@@ -250,7 +250,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <h3 data-f="name">Solo</h3>
         <p class="price"><b data-f="price">$20</b><span>a month</span></p>
         <ul>
-          <li><span data-f="included">$30</span> <span>of computer time, <span data-f="hours">500 hours</span></span></li>
+          <li><span data-f="included">$30</span> <span>of computer time</span></li>
+          <li><span data-f="hours">500 hours</span> <span>at <span data-f="least-rate">$0.06</span> an hour</span></li>
           <li><span data-f="agents">25</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
@@ -259,7 +260,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <h3 data-f="name">Team</h3>
         <p class="price"><b data-f="price">$50</b><span>a month</span></p>
         <ul>
-          <li><span data-f="included">$60</span> <span>of computer time, <span data-f="hours">1,000 hours</span></span></li>
+          <li><span data-f="included">$60</span> <span>of computer time</span></li>
+          <li><span data-f="hours">1,000 hours</span> <span>at <span data-f="least-rate">$0.06</span> an hour</span></li>
           <li><span data-f="agents">100</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
@@ -268,7 +270,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <h3 data-f="name">Scale</h3>
         <p class="price"><b data-f="price">$200</b><span>a month</span></p>
         <ul>
-          <li><span data-f="included">$260</span> <span>of computer time, <span data-f="hours">4,300 hours</span></span></li>
+          <li><span data-f="included">$260</span> <span>of computer time</span></li>
+          <li><span data-f="hours">4,300 hours</span> <span>at <span data-f="least-rate">$0.06</span> an hour</span></li>
           <li><span data-f="agents">300</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
@@ -438,6 +441,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
       put(el, "price", money(p.priceCents));
       put(el, "included", money(p.includedCents));
       put(el, "hours", hours(p.includedCents));
+      put(el, "least-rate", rate(model.sizes[0].centsPerHour));
       put(el, "agents", String(p.agentsAtOnce));
       const li = el.querySelector('[data-f="largest"]');
       if (li && largest.size > 1 && sized(p.largest)) {
