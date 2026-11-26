@@ -29,6 +29,9 @@ import { SkillSavedLine } from "./SkillSaved";
 const VaultImportCardView = preloadable(() => import("./VaultImportCard").then((m) => m.VaultImportCardView));
 if (onWeb()) preloadWhenIdle(VaultImportCardView);
 else VaultImportCardView.preload().catch(() => undefined);
+/** A screen's card (ScreenCard.tsx): out of the first chat's load, there before a chat with a screen needs it. */
+const ScreenCard = preloadable(() => import("./ScreenCard").then((m) => m.ScreenCard));
+preloadWhenIdle(ScreenCard);
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { TOP_BAR } from "../../../shared/frame";
 import { ArtifactCard } from "../artifacts/ArtifactCard";
@@ -266,6 +269,12 @@ const RowView = memo(function RowView(props: {
       return <MessageView row={r} mineLatest={props.mineLatest} enter={props.enter} />;
     case "wake":
       return <WakeRow project={project} writing={r.writing} />;
+    case "screen":
+      return (
+        <Suspense fallback={null}>
+          <ScreenCard project={project} sessionId={r.sessionId} />
+        </Suspense>
+      );
   }
 });
 

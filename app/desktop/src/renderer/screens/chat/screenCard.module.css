@@ -1,0 +1,164 @@
+/* A screen's card in the chat (ScreenCard.tsx): its picture, its title and state over one line, its one button at the
+   end. A block in the chat, as an artifact's card is: a hairline, md corners, --raised. Asking, the warning's colour
+   says it on the card's edge and a faint ground, never as a coloured left edge. */
+.card {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: min(100%, 460px);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.card:has(.open:hover) {
+  background: color-mix(in srgb, var(--raised), var(--text) 3%);
+}
+.asking {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--hairline));
+  background: color-mix(in srgb, var(--raised), var(--warning) 6%);
+}
+.asking:has(.open:hover) {
+  background: color-mix(in srgb, var(--raised), var(--warning) 10%);
+}
+/* Its one button on the title's line, as a row's end control is. */
+.card > button {
+  flex: none;
+  margin-top: calc((1lh - var(--control)) / 2);
+}
+
+/* The picture and the words: one link, which opens the screen in the panel. */
+.open {
+  all: unset;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 16:10, as a browser's frame is; a phone's stands up in the middle of it. Inside the card, so less round than it. */
+.picture {
+  position: relative;
+  flex: none;
+  /* Smaller as the chat narrows, so the words keep their room. */
+  width: clamp(72px, 26%, 120px);
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--inset);
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+.picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+.phone img {
+  object-fit: contain;
+  object-position: center;
+}
+.ended .picture img {
+  opacity: 0.72;
+  filter: grayscale(0.6);
+}
+.blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  background: var(--hover);
+}
+.kindIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  stroke-width: 1.5;
+}
+.asking .picture {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 55%, transparent);
+}
+/* Asking: the hand over the page, on the warning's colour, in the picture's corner. */
+.hand {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  background: var(--warning);
+  color: var(--raised);
+}
+.hand svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+/* The state goes under the title when the two don't fit on one line, rather than cutting the title short. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+.title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.ended .title {
+  color: var(--quiet);
+  font-weight: 400;
+}
+.state {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.state > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The strip over the composer while a screen asks: the say capsule's glass, its words cut before Take over. */
+.ask {
+  gap: var(--space-2);
+  min-width: 0;
+}
+.askWords {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

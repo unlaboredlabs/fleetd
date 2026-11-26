@@ -1,18 +1,16 @@
 // The Screens page's data: every screen the hub serves, of every project you can see, each with its project,
 // the machine it runs on and its agent's latest step (browser_sessions), and a live one's newest picture (the hub's
 // screen_thumb feed, which runs only while the page shows: useThumbFeed), sorted as the page shows them.
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
-import { useData, useDataLayer, useToolQueries, useToolQuery } from "../../src/data/react";
+import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
+import { useScreenFeed } from "../sessions/feed";
 import { selectLiveAgents, selectProjects } from "../../src/data/selectors";
 import { FEATURE, fromHub, ownerOf } from "../sessions/hub";
 import { isLive, type BrowserSession } from "../sessions/model";
 import { parseMs } from "../live/format";
 
-/** The hub feature that says it sends the page's pictures, and names each screen's machine and latest step. */
-export const THUMBS = "screen_thumbs";
-/** How often the hub takes a picture of each live screen while the page shows (contracts THUMB_EVERY_SECS). */
-export const THUMB_EVERY_MS = 20_000;
+export { THUMBS, THUMB_EVERY_MS } from "../sessions/feed";
 
 export type Kind = NonNullable<BrowserSession["kind"]> | "browser";
 
@@ -91,29 +89,5 @@ export const split = (all: readonly PageScreen[]) => {
   return { asking, live, recent };
 };
 
-const onVisibility = (change: () => void) => {
-  document.addEventListener("visibilitychange", change);
-  return () => document.removeEventListener("visibilitychange", change);
-};
-const isVisible = () => document.visibilityState === "visible";
-
-/**
- * The page's pictures and steps, while it shows: the hub sends each live screen's picture a few times a minute
- * (screen_thumbs) and the lists are read again as often, for each agent's latest step. A hidden window, or the page
- * left, stops both.
- */
-export function useThumbFeed(on: boolean): void {
-  const layer = useDataLayer();
-  const served = useData((st) => st.features.includes(THUMBS));
-  const visible = useSyncExternalStore(onVisibility, isVisible);
-  const feeding = on && served && visible;
-  useEffect(() => {
-    if (!feeding) return undefined;
-    void window.fleetd.hub.thumbs(layer.hub, true);
-    const steps = setInterval(() => void layer.queryClient.invalidateQueries({ queryKey: ["call", "browser_sessions"] }), THUMB_EVERY_MS);
-    return () => {
-      clearInterval(steps);
-      void window.fleetd.hub.thumbs(layer.hub, false);
-    };
-  }, [layer, feeding]);
-}
+/** The page's pictures and steps, while it shows (sessions/feed.ts): a hidden window, or the page left, stops both. */
+export const useThumbFeed = (on: boolean): void => useScreenFeed(on);
