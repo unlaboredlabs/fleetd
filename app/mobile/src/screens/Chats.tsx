@@ -13,11 +13,11 @@
 // flat list, with no labels. Beside the chat (src/split.ts), a row opens its chat in the other pane, marked while it's open.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackHeaderItem, NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
-import { filterChoices, filterLabel, meAvatar, meSymbol, type FilterChoice, type MeTone } from "../chatsBar";
+import { filterChoices, filterLabel, meAvatar, meMark, meSymbol, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
 import { needsComputer } from "../cloud/account";
 import { firstRunShown } from "../firstRun";
@@ -33,10 +33,11 @@ import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { archiveWords, UNDO_MS } from "../archive";
 import { useAnnounce } from "../ui/announce";
-import { Avatar, type Pictured } from "../ui/Avatar";
+import { Avatar, usePicture, type Pictured } from "../ui/Avatar";
+import { MeImage } from "../ui/MeImage";
 import { useBot } from "../ui/botState";
 import { Names, useSpoken } from "../ui/Names";
-import { useBeside, useStrip } from "../ui/pane";
+import { useBeside } from "../ui/pane";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
@@ -136,6 +137,13 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   useAnnounce(hubSays.line?.text);
   const word = state.hub.phase === "live" ? hubSays.word : link;
   const me = meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase, link?.restart === true ? link.text : undefined);
+  const mePicture = state.me === undefined ? undefined : { personId: state.me, avatar: state.meAvatar };
+  // iOS's avatar button is a picture of it (ui/MeImage.tsx), drawn again when the photo, the initial or the scheme change.
+  const photo = usePicture(mePicture).uri;
+  const meKey = `${me.initial}|${photo ?? ""}|${String(t.dark)}`;
+  const [meImage, setMeImage] = useState<{ readonly key: string; readonly uri: string } | undefined>(undefined);
+  const onMeImage = useCallback((uri: string) => setMeImage({ key: meKey, uri }), [meKey]);
+  const meIcon = meImage?.key === meKey ? meImage.uri : undefined;
   // A tap on the word opens Settings, whose Update section says what happened (UpdateFleetd.tsx), as the avatar does.
   useLayoutEffect(() => {
     const text = word?.text;
@@ -262,19 +270,19 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   // The bar's sides: the avatar on the left; + on the right, and the filters' menu beside it where there's no bottom bar.
   // Where the Duo has its control strip at the side (src/split.ts sideStrip), iOS stands the bar's buttons in it, the
   // left one on top, under the status, and the list starts at the top.
-  const inStrip = useStrip() !== undefined;
   const choicesKey = JSON.stringify(choices);
   useLayoutEffect(() => {
     const openSettings = () => {
       swiped.close();
       root.settings();
     };
-    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} picture={state.me === undefined ? undefined : { personId: state.me, avatar: state.meAvatar }} onPress={openSettings} />;
+    const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} picture={mePicture} onPress={openSettings} />;
     const filters = filterMenu(choices, filter, pick);
     const add = newChatItem(root.newChat);
-    // iOS moves only its own buttons into the strip: a view of ours stays in a row over the list, so there the avatar
-    // is one of its buttons (meItem).
-    const left: NativeStackHeaderItem = inStrip ? meItem(me.initial, me.label, t[DOT[me.tone]], openSettings) : { type: "custom", element: avatar };
+    // iOS moves only its own buttons into the strip (a view of ours stays in a row over the list), so on iOS the avatar
+    // is one of its buttons, a picture of the avatar the size of + beside it (meItem), in the strip and in the bar alike.
+    const mark = meMark(me.tone);
+    const left = meItem(me.initial, me.label, mark === undefined ? undefined : t[DOT[mark]], meIcon, openSettings);
     const options: Partial<NativeStackNavigationOptions> =
       Platform.OS === "ios"
         ? {
@@ -284,7 +292,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
         : { headerLeft: () => avatar };
     navigation.setOptions(options);
     // The choices by their value, as they're made again each render; `pick` changes with the filter.
-  }, [navigation, root, swiped, me.initial, me.tone, me.label, state.me, state.meAvatar, filter, choicesKey, inStrip, t]);
+  }, [navigation, root, swiped, me.initial, me.tone, me.label, state.me, state.meAvatar, meIcon, filter, choicesKey, t]);
 
   const empty =
     // A planned restart's first seconds hold off can't-reach: the hub is back in a moment.
@@ -328,6 +336,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
 
   return (
     <>
+      {Platform.OS === "ios" ? <MeImage initial={me.initial} photo={photo} dark={t.dark} onImage={onMeImage} /> : null}
       <Animated.FlatList
         data={lines}
         keyExtractor={(l) => l.key}
@@ -420,17 +429,18 @@ const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f
 });
 
 /**
- * The avatar as one of iOS's bar buttons, for the iPhone Duo's side strip: the person's initial on a grey disc, as
- * Contacts shows someone without a photo (chatsBar.ts meSymbol), and the link's tone as the button's badge, a dot at
- * its corner.
+ * The avatar as one of iOS's bar buttons: its picture (`icon`, ui/MeImage.tsx) edge to edge with no glass round it, as
+ * iOS 26's account buttons; the initial on a grey disc for the moment before it is drawn, as Contacts shows someone
+ * without a photo (chatsBar.ts meSymbol). `dot`: the link's tone as the button's badge, only while it is wrong.
  */
-const meItem = (initial: string, label: string, dot: string, onPress: () => void): NativeStackHeaderItem => ({
+const meItem = (initial: string, label: string, dot: string | undefined, icon: string | undefined, onPress: () => void): NativeStackHeaderItem => ({
   type: "button",
   label: "Settings",
-  icon: { type: "sfSymbol", name: meSymbol(initial) },
+  icon: icon === undefined ? { type: "sfSymbol", name: meSymbol(initial) } : { type: "image", source: { uri: icon, scale: 3 }, tinted: false },
+  ...(icon === undefined ? {} : { hidesSharedBackground: true }),
   tintColor: MONOGRAM,
   accessibilityLabel: label,
-  badge: { value: "", style: { backgroundColor: dot, fontSize: 2 } },
+  ...(dot === undefined ? {} : { badge: { value: "", style: { backgroundColor: dot, fontSize: 2 } } }),
   onPress,
 });
 
@@ -449,8 +459,10 @@ function MeButton({ initial, tone, label, picture, onPress }: { initial: string;
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>
       <View style={styles.meFace}>
         <Avatar person name={initial} size={ME} picture={picture} />
-        {/* A planned restart opens the dot to a ring; it fills again when the hub answers. */}
-        <View style={[styles.meDot, tone === "restarting" ? { backgroundColor: t.bg, borderColor: t[DOT[tone]], borderWidth: 2.5 } : { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
+        {/* Only while the link is wrong; a planned restart opens the dot to a ring, which goes when the hub answers. */}
+        {meMark(tone) === undefined ? null : (
+          <View style={[styles.meDot, tone === "restarting" ? { backgroundColor: t.bg, borderColor: t[DOT[tone]], borderWidth: 2.5 } : { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
+        )}
       </View>
     </Pressable>
   );

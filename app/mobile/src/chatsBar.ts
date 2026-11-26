@@ -32,8 +32,11 @@ export const filterChoices = (counts: { readonly unread: number; readonly needsY
 export const filterLabel = (filter: Filter): string => (filter === "all" ? "Filter Chats" : `Filter Chats, ${CHOICES.find((c) => c.id === filter)?.title ?? ""}`);
 
 export type LinkTone = "live" | "busy" | "down";
-/** The avatar's dot: the link's tone, or a ring while the hub restarts for an update. */
+/** The link for the avatar's mark (meMark): its tone, or a ring while the hub restarts for an update. */
 export type MeTone = LinkTone | "restarting";
+
+/** The avatar's mark: none while connected, as iOS's account buttons have none; the link's tone once it is wrong. */
+export const meMark = (tone: MeTone): Exclude<MeTone, "live"> | undefined => (tone === "live" ? undefined : tone);
 
 /** How the link to the hub is, in the avatar's dot: green live, orange while it dials, grey once it can't. */
 export const linkTone = (phase: HubState["phase"]): LinkTone => (phase === "live" ? "live" : phase === "connecting" || phase === "retrying" ? "busy" : "down");

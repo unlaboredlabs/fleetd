@@ -86,7 +86,7 @@ export const usePicture = (of: Pictured | undefined): { uri: string | undefined;
  * A person's letters, quieter than a chat's: a soft grey dome lit from above with dark letters, or in dark a deep grey
  * with light ones, and a hairline rim so it holds its edge on a card of a near color.
  */
-const NEUTRAL = {
+export const NEUTRAL = {
   light: { top: "#F4F4F7", bottom: "#D9D9DF", ink: "#3C3C43", rim: "rgba(0,0,0,0.07)" },
   dark: { top: "#5C5C62", bottom: "#38383C", ink: "#F2F2F7", rim: "rgba(255,255,255,0.09)" },
 } as const;
