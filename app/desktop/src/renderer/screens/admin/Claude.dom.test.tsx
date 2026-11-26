@@ -284,7 +284,7 @@ it("shows where the key is, the members switch and the owner's subscription; eac
   await render(withKey);
   const key = section("Workspace API key");
   expect(key.textContent).toContain("Sealed on devbox. Through https://gateway.devbox.example.");
-  expect(key.textContent).toContain("Not on buildbox: nothing runs on it there.");
+  expect(key.textContent).toContain("Not on buildbox yet: nothing runs on it there. A machine that holds it passes it on once both are online.");
   expect(key.textContent).toContain("Worked on devbox");
   expect(key.textContent).toContain("Leads and automations run on this key, else your subscription.");
   expect(key.textContent).not.toContain("The workspace owner's subscription");

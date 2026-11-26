@@ -118,22 +118,24 @@ export function opened(sealed: string, what: string, boxKey: NodeBoxKey | undefi
   return value;
 }
 
-/** The account's secret sealed to another machine's box key `to` (standard base64 of 32 bytes), for the hub's runner
- * to take with nobody pasting it again; none when this node holds no such secret. */
-export function resealAccount(home: string, account: ClaudeAccount, to: string): string | undefined {
-  const file = read(home, account);
-  if (!file) return undefined;
+/** `value` (a secret this node holds) sealed to another machine's box key `to`; none when it holds none. */
+export function resealTo(value: string | undefined, to: string, what: string): string | undefined {
+  if (value === undefined) return undefined;
   const key = Buffer.from(to, "base64");
   if (key.length !== 32) throw new Error("the box key to seal to is not 32 bytes");
-  const plain = Buffer.from(file.value);
+  const plain = Buffer.from(value);
   try {
     return Buffer.from(seal(key, plain)).toString("base64");
   } catch {
-    throw new Error(`${shown(account)} could not be sealed`);
+    throw new Error(`${what} could not be sealed`);
   } finally {
     plain.fill(0);
   }
 }
+
+/** The account's secret sealed to another machine's box key `to` (standard base64 of 32 bytes), for the hub's runner
+ * to take with nobody pasting it again; none when this node holds no such secret. */
+export const resealAccount = (home: string, account: ClaudeAccount, to: string): string | undefined => resealTo(read(home, account)?.value, to, shown(account));
 
 /** The variables a claude on `account` gets, and its secret by the variable's name for masking. Throws when the node
  * doesn't hold the account: such a session must not start on the machine's own login instead. */
@@ -339,6 +341,9 @@ const GEMINI_SHOWN = "the team's Gemini API key";
 
 export const applyGeminiKey = (home: string, set: ClaudeSecretSet | undefined, boxKey: NodeBoxKey | undefined): string | undefined =>
   applySecret(join(home, GEMINI_FILE), GEMINI_SHOWN, set, boxKey);
+
+/** The team's Gemini key this node holds; undefined for none. */
+export const geminiKey = (home: string): string | undefined => readSecret(join(home, GEMINI_FILE), GEMINI_SHOWN)?.value;
 
 /** The team's Gemini key as a session's variables (`GEMINI_API_KEY`, and `GOOGLE_GEMINI_BASE_URL` with an endpoint); none
  * while this node holds none. */

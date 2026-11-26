@@ -65,6 +65,8 @@ export const SESSION_CALLS = [
   "claude_account_secret",
   "gemini_key",
   "claude_account_reseal",
+  "gemini_key_reseal",
+  "onepassword_token_reseal",
   "claude_account_test",
   "one_password_token",
   "one_password_test",

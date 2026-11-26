@@ -1,6 +1,7 @@
-// A machine that joins after the workspace's Claude API key was saved gets the key with nobody pasting it again
-// (artifact enterprise-sweep-selfhosted, bug 6): the key was sealed to `devbox`, the only machine then; `dev2` joins
-// later, and `devbox` seals the key to dev2's box key (`claude_account_reseal`), which the hub relays to it with the
+// A machine that joins after the team's secrets were saved gets them with nobody pasting them again (artifact
+// enterprise-sweep-selfhosted, bug 6): the workspace's Claude API key, the team's Gemini key and a person's 1Password
+// token were sealed to `devbox`, the only machine then; `dev2` joins later, and `devbox` seals each to dev2's box key
+// (`claude_account_reseal`, `gemini_key_reseal`, `onepassword_token_reseal`), which the hub relays to it with the
 // endpoint, keeping only the fingerprint. Two real fleetd nodes, each in a process of its own; no real claude, no
 // network beyond loopback, and the hub never sees the key.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -9,6 +10,7 @@ import { join } from "node:path";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { accounts } from "../src/hub/claude_accounts/tools.ts";
+import { token } from "../src/hub/onepassword/index.ts";
 import { doctor } from "../src/hub/doctor/index.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
@@ -50,7 +52,7 @@ async function until<T>(what: string, f: () => T | undefined | Promise<T | undef
   }
 }
 
-test("a machine joined after the workspace's Claude key was saved gets it from one that holds it", async () => {
+test("a machine joined after the team's Claude key, Gemini key and 1Password token were saved gets each from one that holds it", async () => {
   const home = join(tmp, "hub");
   seedHubDb(home);
   const hub = new Hub({ home, listen: { host: "127.0.0.1", port: 0 } }, HubDb.open(home), { now: () => Date.now() });
@@ -101,12 +103,17 @@ test("a machine joined after the workspace's Claude key was saved gets it from o
     throw new Error(`${tool}: ${r.error.kind === "tool" ? `${r.error.error.message} ${r.error.error.fix ?? ""}` : r.error.kind}`);
   };
 
-  // 1. The workspace's API key, through a gateway, sealed to the only machine there is.
+  // 1. The workspace's API key through a gateway, the team's Gemini key and the owner's 1Password token, each sealed to
+  // the only machine there is.
   join_("devbox");
   const pub = await until("devbox's node", () => (executors(hub).isConnected("devbox") ? store(hub).machineGet("devbox")?.boxPubKey : undefined));
-  const sealed = Buffer.from(seal(Buffer.from(pub, "base64"), new TextEncoder().encode("sk-ant-test-0123456789"))).toString("base64");
-  await call("claude_hub_api_set", { sealed: [{ machineId: "devbox", sealed }], endpoint: ENDPOINT });
+  const sealTo = (value: string) => Buffer.from(seal(Buffer.from(pub, "base64"), new TextEncoder().encode(value))).toString("base64");
+  await call("claude_hub_api_set", { sealed: [{ machineId: "devbox", sealed: sealTo("sk-ant-test-0123456789") }], endpoint: ENDPOINT });
+  await call("gemini_key_set", { sealed: [{ machineId: "devbox", sealed: sealTo("AIza-test-0123456789") }] });
+  await call("onepassword_set", { sealed: [{ machineId: "devbox", sealed: sealTo("ops_test0123456789") }] });
   expect(accounts(hub).hubApi()!.sealedOn.map((s) => s.machineId)).toEqual(["devbox"]);
+  expect(accounts(hub).geminiKey()!.sealedOn.map((s) => s.machineId)).toEqual(["devbox"]);
+  expect(token(hub.db, ownerId)!.sealedOn.map((s) => s.machineId)).toEqual(["devbox"]);
 
   // 2. Later, a second machine joins, as `fleetd pair --worker` lets one.
   const dev2 = join_("dev2");
@@ -121,4 +128,18 @@ test("a machine joined after the workspace's Claude key was saved gets it from o
   const file = join(dev2, "claude-accounts", "hub.json");
   expect(existsSync(file)).toBe(true);
   expect(JSON.parse(readFileSync(file, "utf8")).endpoint).toBe(ENDPOINT);
+  // The Gemini key and the 1Password token too, each the same value as devbox's.
+  const gemini = await until("the Gemini key on dev2", () => {
+    const on = accounts(hub).geminiKey()!.sealedOn;
+    return on.some((s) => s.machineId === "dev2") ? on : undefined;
+  });
+  expect(gemini.map((s) => s.machineId)).toEqual(["dev2", "devbox"]);
+  expect(gemini[0]!.fingerprint).toBe(gemini[1]!.fingerprint);
+  expect(existsSync(join(dev2, "gemini-key.json"))).toBe(true);
+  const onePassword = await until("the 1Password token on dev2", () => {
+    const on = token(hub.db, ownerId)!.sealedOn;
+    return on.some((s) => s.machineId === "dev2") ? on : undefined;
+  });
+  expect(onePassword.map((s) => s.machineId)).toEqual(["dev2", "devbox"]);
+  expect(onePassword[0]!.fingerprint).toBe(onePassword[1]!.fingerprint);
 });

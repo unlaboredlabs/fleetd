@@ -11,6 +11,7 @@ import { checkSeals } from "../claude_accounts/tools.ts";
 import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { spread } from "../claude_accounts/spread.ts";
 import { CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS, forget, forgetPerson, putToken, token } from "./index.ts";
 
 /**
@@ -80,6 +81,8 @@ export function register(tools: Registry): void {
     held.sort((a, b) => (a.machineId < b.machineId ? -1 : a.machineId > b.machineId ? 1 : 0));
     const saved: OnePasswordToken = { sealedOn: held, savedAt: isoMs(hub.clock.now()) };
     putToken(hub.db, id, saved);
+    // A machine the app didn't seal to (one joined since) gets it from one that holds it.
+    void spread(hub);
     const missingOn = store(hub)
       .machinesList()
       .map((m) => m.machineId)

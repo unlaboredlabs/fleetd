@@ -91,13 +91,13 @@ export function TestResult({ tried, nowMs }: { tried: Tried | undefined; nowMs: 
   );
 }
 
-/** Machines a secret isn't on: what runs there can't use it until it is saved again while they are online. */
+/** Machines a secret isn't on: what runs there can't use it until a machine holding it passes it on, both online. */
 export function MissingOn({ sealedOn, machines, there = "nothing runs on it there" }: { sealedOn: ReadonlyArray<ClaudeSealedOn>; machines: ReadonlyArray<string>; there?: string }) {
   // By name: the hub's runner reads as Hosted sandboxes, not its id.
   const names = useData((d) => d.machines);
   const missing = missingOn(sealedOn, machines).map((m) => names[m]?.name ?? m);
   if (missing.length === 0) return null;
-  return <Notice tone="warning">{`Not on ${missing.join(", ")}: ${there}. Save it again while ${missing.length === 1 ? "it is" : "they are"} online.`}</Notice>;
+  return <Notice tone="warning">{`Not on ${missing.join(", ")} yet: ${there}. A machine that holds it passes it on once both are online.`}</Notice>;
 }
 
 export function TestButton(props: { testing: boolean; onTest: () => void }) {
