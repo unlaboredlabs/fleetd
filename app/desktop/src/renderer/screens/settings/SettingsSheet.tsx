@@ -16,6 +16,7 @@ import {
   LockKeyhole,
   MonitorSmartphone,
   Search,
+  ScrollText,
   Server,
   SlidersHorizontal,
   UserRound,
@@ -76,6 +77,7 @@ const HUB_PAGES: ReadonlyArray<{
   { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
   { tab: "hub.providers", label: HUB_PAGES_SHOWN.providers, icon: <KeyRound /> },
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
+  { tab: "hub.audit", label: HUB_PAGES_SHOWN.audit, icon: <ScrollText /> },
   { tab: "hub.agents", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
   { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
 ];

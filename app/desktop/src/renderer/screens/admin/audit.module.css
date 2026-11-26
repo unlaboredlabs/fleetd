@@ -1,0 +1,85 @@
+/* Settings › Workspace › Audit log (AuditLog.tsx): a dense table, one line a row, its filters over it. */
+.column {
+  gap: var(--space-4);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.filter {
+  flex: 1 1 0;
+  min-width: 140px;
+}
+
+.tableWrap {
+  min-width: 0;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.colWhen {
+  width: 88px;
+}
+.colWho {
+  width: 120px;
+}
+.colBot {
+  width: 104px;
+}
+.table th {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--quiet);
+  font-weight: var(--weight-regular);
+  text-align: left;
+}
+.table td {
+  padding: 6px var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+.table tbody tr:hover td {
+  background: var(--row-hover);
+}
+.when {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cut {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quiet {
+  color: var(--quiet);
+}
+.what {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.refused {
+  flex: none;
+  color: var(--danger);
+  font-weight: var(--weight-medium);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

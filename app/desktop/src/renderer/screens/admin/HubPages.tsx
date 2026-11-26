@@ -30,6 +30,7 @@ import { HubSkills } from "../settings/Skills";
 import { HubVault } from "../settings/Vault";
 import { navigate } from "../shell/navigation";
 import { parseHash, toHash, type HubTab } from "../shell/routes";
+import { AuditLog } from "./AuditLog";
 import { Billing } from "./Billing";
 import { useBillingShown } from "./billingQuery";
 import { AddMachineButton, MachineList, useTeamMachines } from "./MachineList";
@@ -148,6 +149,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
       return <ProvidersPage me={me} />;
     case "hub.billing":
       return <Billing />;
+    case "hub.audit":
+      return <AuditLog />;
     case "hub.machines":
       return route.machine === undefined ? <Machines /> : route.machine === RUNNER_ID ? <ToProviders /> : <MachinePage machineId={route.machine} />;
     // Updates is a part of Machines, and Tools & skills of Every project › Agents (settings/route.ts).

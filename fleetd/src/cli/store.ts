@@ -6,6 +6,7 @@ import type { Grant, Role } from "../shared/contracts.ts";
 import { dirname } from "node:path";
 import { NAMELESS } from "../hub/auth/nodes.ts";
 import { HOSTED_ID, hostedIdRefused } from "../hub/hosted_gone/index.ts";
+import { AuditLog } from "../hub/audit/store.ts";
 import { HubDb } from "../hub/store/db.ts";
 import { isLiveHubHome, refuseLiveHubWrite } from "./common.ts";
 
@@ -470,7 +471,21 @@ export function announcePeople(
     ...(inviteId === undefined ? {} : { inviteId }),
   };
   appendEvent(db, { type: "people.changed", summary, data });
+  const kind = CLI_AUDIT[change];
+  if (kind !== undefined) {
+    new AuditLog(db, () => Date.now()).record({ kind, actor: CLI_ACTOR, target: who.name, summary, ...(inviteId === undefined ? {} : { data: { inviteId } }) });
+  }
 }
+
+/** The people changes `fleetd invite` and `fleetd people` make, as the workspace's audit log names them (hub/audit). */
+const CLI_AUDIT: Record<string, string> = {
+  invited: "invite.created",
+  invite_revoked: "invite.revoked",
+  role_changed: "person.role",
+  removed: "person.removed",
+};
+/** Who did it: whoever runs fleetd on the workspace's own machine. */
+const CLI_ACTOR = { kind: "workspace", name: "fleetd CLI" } as const;
 
 // ---- work claims (hub/work `release_owner`) ----
 

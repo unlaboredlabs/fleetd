@@ -13,6 +13,7 @@ export const CARRIED = [
   "approval_checks",
   "artifact_versions",
   "attachments",
+  "audit_log",
   "automation_runs",
   "automations",
   "browser_sessions",

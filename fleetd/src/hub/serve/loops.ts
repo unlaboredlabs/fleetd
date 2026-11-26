@@ -1,5 +1,6 @@
 // Every module's background loops, each started from its loops.ts. A new module adds its line here.
 import type { Hub } from "../api/hub.ts";
+import { start as sAudit } from "../audit/loops.ts";
 import { start as s0 } from "../automations/loops.ts";
 import { start as s1 } from "../browser/loops.ts";
 import { start as s2 } from "../chat/loops.ts";
@@ -36,6 +37,7 @@ import { start as s33 } from "../transfer/loops.ts";
 
 /** Every module's background loops ; each stops on `hub.shutdown`. */
 export function startAll(hub: Hub): void {
+  sAudit(hub); // hub/audit
   s0(hub); // hub/automations
   s1(hub); // hub/browser
   s2(hub); // hub/chat

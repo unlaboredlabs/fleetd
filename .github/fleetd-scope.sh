@@ -29,6 +29,8 @@ paths=(
   app/mobile/src/projectKey.ts app/desktop/src/shared/providers.ts
   # The Settings pages the hub's paths for a person must name (fleetd/test/settings_paths.test.ts).
   app/desktop/src/shared/settingsPages.ts app/desktop/src/shared/settingsPathCheck.ts
+  # The audit log's CSV, which `fleetd audit --csv` writes as the app's Export does.
+  app/desktop/src/shared/auditCsv.ts
 )
 
 run=true

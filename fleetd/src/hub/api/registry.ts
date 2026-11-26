@@ -22,6 +22,17 @@ export type Handler<N extends ToolName> = (
 /** Why a call produced no output. The transports word `unknown` and `invalid` themselves (MCP and /app differ). */
 export type { CallError };
 
+/**
+ * Sees each call before its handler runs (after its input decoded), and may return what to do once it has ended: its
+ * output, or the ToolError it was refused with. The audit log's (hub/audit/record.ts). A throw is logged, never the call's.
+ */
+export type CallObserver = (
+  hub: Hub,
+  caller: Caller,
+  tool: ToolName,
+  input: unknown,
+) => ((ended: { output: unknown } | { error: ToolError }) => void) | undefined;
+
 /** Tools a release took out, by name prefix, with what an older app that still calls one is told. */
 const REMOVED: [prefix: string, gone: string][] = [
   ["telegram_", "Telegram was removed from fleetd."],
@@ -32,6 +43,7 @@ export class Registry {
   private readonly tools = new Map<string, Handler<ToolName>>();
   /** Tools whose handler takes the input as sent and decodes it itself (`addRaw`). */
   private readonly raw = new Set<string>();
+  private readonly observers: CallObserver[] = [];
 
   constructor() {
     for (const [name, tool] of Object.entries(TOOLS)) {
@@ -57,6 +69,11 @@ export class Registry {
   addRaw<N extends ToolName>(name: N, handler: (hub: Hub, caller: Caller, input: unknown) => ReturnType<Handler<N>>): void {
     this.tools.set(name, handler as unknown as Handler<ToolName>);
     this.raw.add(name);
+  }
+
+  /** Adds an observer of every call (CallObserver). */
+  observe(observer: CallObserver): void {
+    this.observers.push(observer);
   }
 
   has(name: string): name is ToolName {
@@ -89,11 +106,33 @@ export class Registry {
         throw error;
       }
     }
+    const ends = this.observers.map((observe) => {
+      try {
+        return observe(hub, caller, tool as ToolName, decoded);
+      } catch (error) {
+        console.warn(`call observer failed: ${tool}:`, error);
+        return undefined;
+      }
+    });
+    const ended = (end: { output: unknown } | { error: ToolError }) => {
+      for (const fn of ends) {
+        try {
+          fn?.(end);
+        } catch (error) {
+          console.warn(`call observer failed: ${tool}:`, error);
+        }
+      }
+    };
     try {
       requireRole(caller, scope);
-      return { output: await handler(hub, caller, decoded as never) };
+      const output = await handler(hub, caller, decoded as never);
+      ended({ output });
+      return { output };
     } catch (error) {
-      if (error instanceof ToolError) return { error: { kind: "tool", error: isHuman(caller) ? error.forPerson() : error } };
+      if (error instanceof ToolError) {
+        ended({ error });
+        return { error: { kind: "tool", error: isHuman(caller) ? error.forPerson() : error } };
+      }
       if (error instanceof NotImplemented) {
         return { error: { kind: "tool", error: new ToolError("failed", error.message, "Use the Rust workspace for this tool for now.") } };
       }

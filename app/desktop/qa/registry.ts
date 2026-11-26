@@ -4482,6 +4482,9 @@ export const screens: readonly Screen[] = [
   // Agents (at Tools & skills, which was a page once) and Instructions (the hub-wide built-in prompts open from its
   // foot); Setup, which holds the hub's accounts (Hub accounts once); and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  // The audit log: a morning of the workspace, newest first, by name, a member's refused change in red, Older for the
+  // rest; and a workspace from before it, which says to update.
+  { id: "settings.hub.audit", route: "#/settings/hub/audit", fixtures: ["admin-owner", "admin-old-hub"] },
   // The Vault: the team's logins, cards and addresses with the set-aside section under them; as a member; one list on
   // a hub from before the team vault; and an empty one, its own add beside its words. A team card only its creator or an admin may show or change, opened.
   // A project's variables and its order's; and Every project › Vault, the vault key alone.

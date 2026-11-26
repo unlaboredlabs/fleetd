@@ -76,6 +76,16 @@ export const PEOPLE_USAGE = `  invite --name <name> [--role <member|admin|owner>
              always keeps an owner
 `;
 
+export const AUDIT_USAGE = `  audit [--person <name|personId>] [--bot <name>] [--kind <kind|group>] [--since <7d|date>]
+        [--until <date>] [--limit <n>] [--csv]
+             the workspace's audit log, newest first: who did what, when, on which bot or item
+             (people, invites, devices, bots' safety settings, the vault, approvals, merges, the
+             workspace's settings and connections). Never values or chat content. --kind takes a
+             kind (vault.revealed) or a group (vault); --since and --until take 7d, 24h, 30m, a
+             date or a time. Shows the newest 50 unless --limit; --csv writes every row it picks
+             as CSV, the same file the app's Export writes. Rows stay a year
+`;
+
 export const GITHUB_APP_USAGE = `  github-app
              the workspace's own GitHub App: where it is installed and its last test
   github-app create [--org <org>] [--name <name>] [--port <port>]

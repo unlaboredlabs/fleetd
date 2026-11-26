@@ -83,12 +83,17 @@ describe("event effects", () => {
     for (const read of ["people_list", "claude_accounts_get", "onepassword_get", "github_app_get"]) expect(people, read).toContain(read);
   });
 
-  it("a vault item changed or used: the Vault's lists, the open item and its activity read again, and Payments' card", () => {
+  it("a vault item changed or used: the Vault's lists, the open item and its activity read again, Payments' card, and the audit log", () => {
     expect(effectsOf(e("vault.used", { itemId: "V1", n: 3, action: "fill", outcome: "ok" }))).toEqual({
-      invalidate: [{ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" }],
+      invalidate: [{ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" }, { tool: "audit_list" }],
       resync: false,
     });
-    expect(tools(e("vault.changed", { itemId: "V1", scope: "person" }))).toEqual(["vault_list", "vault_get", "vault_audit", "project_purchases", "vault_status"]);
+    expect(tools(e("vault.changed", { itemId: "V1", scope: "person" }))).toEqual(["vault_list", "vault_get", "vault_audit", "project_purchases", "vault_status", "audit_list"]);
+  });
+
+  it("what comes with an audit row reads an open Audit log again", () => {
+    for (const type of ["people.changed", "project.settings", "pr.merged", "agents.cap"]) expect(tools(e(type)), type).toContain("audit_list");
+    expect(tools(e("chat.message"))).not.toContain("audit_list");
   });
 
   it("your pins changed on another device: this sidebar reads them again, and nothing else", () => {

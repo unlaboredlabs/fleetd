@@ -195,6 +195,15 @@ Signs out all their devices; one device: `fleetd workspace key revoke` \<keyId\>
 fleetd people remove <personId>
 ```
 
+### fleetd audit {#audit}
+
+The workspace's audit log, newest first: who did what, when, on which bot or item (people, invites, devices, bots' safety settings, the vault, approvals, merges, the workspace's settings and connections).
+
+```text
+fleetd audit [--person <name|personId>] [--bot <name>] [--kind <kind|group>] [--since <7d|date>]
+    [--until <date>] [--limit <n>] [--csv]
+```
+
 ### fleetd github-app {#github-app}
 
 The workspace's own GitHub App: where it is installed and its last test.

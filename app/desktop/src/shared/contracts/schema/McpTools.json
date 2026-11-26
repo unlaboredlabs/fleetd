@@ -1489,6 +1489,199 @@
       ],
       "type": "string"
     },
+    "AuditActor": {
+      "description": "Who did what an audit row records, by name as it was then.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/AuditActorKind"
+        },
+        "name": {
+          "description": "A person's name; for an agent, whose work it was (\"Olive's agent\"); for the workspace, what acted (\"fleetd\").",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId",
+          "description": "The person, or the person whose work an agent did. Absent for the workspace itself and fleetd staff."
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    "AuditActorKind": {
+      "description": "`person`: from their own device. `agent`: an agent's key. `workspace`: the workspace itself (the merge train, a schedule). `staff`: fleetd's own staff, on the cloud.",
+      "enum": [
+        "person",
+        "agent",
+        "workspace",
+        "staff"
+      ],
+      "type": "string"
+    },
+    "AuditBot": {
+      "description": "The bot an audit row is about, by its name then.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "projectId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "AuditEvent": {
+      "description": "One row of the workspace's audit log (`audit_list`). Never a value or chat content.",
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/AuditActor"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "bot": {
+          "$ref": "#/$defs/AuditBot"
+        },
+        "kind": {
+          "$ref": "#/$defs/AuditKind"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AuditOutcome"
+        },
+        "summary": {
+          "description": "One plain line: what happened, by name.",
+          "type": "string"
+        },
+        "target": {
+          "description": "What it acted on, by name: a person, a vault item's label, a PR (\"#123\"), a setting.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "at",
+        "kind",
+        "actor",
+        "outcome",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "AuditKind": {
+      "description": "What an audit row records, `<group>.<verb>`; the group before the dot is what `audit_list`'s `kind` also takes. The\ncloud adds its own (signin, sso.*, billing.*, spend.limit, staff.download).",
+      "enum": [
+        "person.joined",
+        "person.left",
+        "person.removed",
+        "person.role",
+        "invite.created",
+        "invite.revoked",
+        "device.added",
+        "device.revoked",
+        "bot.settings",
+        "bot.erased",
+        "vault.created",
+        "vault.changed",
+        "vault.deleted",
+        "vault.revealed",
+        "vault.refused",
+        "vault.filled",
+        "approval.answered",
+        "pr.merged",
+        "workspace.settings",
+        "connection.added",
+        "connection.removed"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "AuditListInput": {
+      "properties": {
+        "before": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer",
+          "description": "Rows before this one (its `n`), for the next page."
+        },
+        "kind": {
+          "description": "One kind (`vault.revealed`), or a group: `vault` is every `vault.*`.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "limit": {
+          "description": "At most; default 100.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId",
+          "description": "What this person did, or an agent did for them."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "What was done on this bot."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "From this time on."
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Before this time."
+        }
+      },
+      "type": "object"
+    },
+    "AuditListOutput": {
+      "properties": {
+        "events": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/AuditEvent"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "More rows before the last one.",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "more"
+      ],
+      "type": "object"
+    },
+    "AuditOutcome": {
+      "description": "`refused`: the workspace said no (a member's change of an admin's setting, a fill on the wrong site).",
+      "enum": [
+        "ok",
+        "refused",
+        "failed"
+      ],
+      "type": "string"
+    },
     "AutoApproved": {
       "description": "One risky action a project ran without asking its person, as its settings' log shows it.",
       "properties": {
@@ -11764,6 +11957,12 @@
         "attachment_put.output": {
           "$ref": "#/$defs/AttachmentPutOutput"
         },
+        "audit_list.input": {
+          "$ref": "#/$defs/AuditListInput"
+        },
+        "audit_list.output": {
+          "$ref": "#/$defs/AuditListOutput"
+        },
         "automation_create.input": {
           "$ref": "#/$defs/AutomationCreateInput"
         },
@@ -13036,6 +13235,8 @@
         "attachment_part.output",
         "attachment_put.input",
         "attachment_put.output",
+        "audit_list.input",
+        "audit_list.output",
         "automation_create.input",
         "automation_create.output",
         "automation_delete.input",

@@ -4,6 +4,7 @@ import { register as r0 } from "../agents/tools.ts";
 import { register as r1 } from "../api/tools.ts";
 import { register as r2 } from "../approvals/tools.ts";
 import { register as r3 } from "../artifacts/tools.ts";
+import { register as rAudit } from "../audit/tools.ts";
 import { register as r4 } from "../automations/tools.ts";
 import { register as r5 } from "../browser/tools.ts";
 import { register as r6 } from "../chat/tools.ts";
@@ -55,6 +56,7 @@ export function registerAll(tools: Registry): void {
   r1(tools); // hub/api
   r2(tools); // hub/approvals
   r3(tools); // hub/artifacts
+  rAudit(tools); // hub/audit
   r4(tools); // hub/automations
   r5(tools); // hub/browser
   r6(tools); // hub/chat
