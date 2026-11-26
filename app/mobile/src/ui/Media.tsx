@@ -164,7 +164,8 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: {
           {meta}
         </Text>
       </View>
-      {got === "reading" ? <ActivityIndicator size="small" color={ink} /> : <Icon name="share" size={17} color={mine ? ink : t.accent} weight="medium" />}
+      {/* No share glyph: a tap shows the file; Share is in the previewer's corner and the card's menu. */}
+      {got === "reading" ? <ActivityIndicator size="small" color={ink} /> : null}
     </Pressable>
   );
 }
