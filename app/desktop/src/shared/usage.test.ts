@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceUsageDay } from "./contracts";
-import { change, columnsOf, count, hours, money, onCloud, ticks, wait } from "./usage";
+import type { WorkspaceUsageCounts, WorkspaceUsageDay } from "./contracts";
+import { change, columnsOf, count, hours, idle, money, onCloud, ticks, wait } from "./usage";
 
 const day = (date: string, n: number, spend?: number): WorkspaceUsageDay => ({
   date,
@@ -56,6 +56,16 @@ describe("the Usage page's figures", () => {
     expect(ticks(23)).toEqual([0, 10, 20, 30]);
     expect(ticks(0)).toEqual([0, 1]);
     expect(ticks(40 * 3_600_000, 3_600_000)).toEqual([0, 10, 20, 30, 40].map((h) => h * 3_600_000));
+  });
+
+  it("calls a row idle only when it has nothing in the period, time on fleetd's computers included", () => {
+    const none: WorkspaceUsageCounts = { agents: 0, agentMs: 0, approvals: 0, failed: 0, merged: 0, messages: 0, orders: 0 };
+    expect(idle(none)).toBe(true);
+    expect(idle({ ...none, computerMs: 0, spendCents: 0 })).toBe(true);
+    expect(idle({ ...none, approvals: 1 })).toBe(false);
+    // The cloud's "No one" row with only the leads' boxes: shown, so the people add up to the spend.
+    expect(idle({ ...none, computerMs: 700_000, spendCents: 0 })).toBe(false);
+    expect(idle({ ...none, computerMs: 700_000, spendCents: 1 })).toBe(false);
   });
 
   it("is a cloud workspace's once spend and its currency come", () => {

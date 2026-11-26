@@ -226,6 +226,8 @@ export const fixtures = [
   "cloud-billing-cap",
   "cloud-billing-off",
   "cloud-billing-unreachable",
+  // Usage on a cloud workspace: spend per person and bot, No one holding only the leads' computer time.
+  "cloud-usage",
   // ...and a spend warning at 80% of the cap; Sign-in set and empty; spend limits on People, on a bot, and a member's own.
   "cloud-billing-warned",
   "cloud-signin-set",
@@ -5061,6 +5063,9 @@ export const screens: readonly Screen[] = [
     route: "#/settings/hub/billing",
     fixtures: ["cloud-billing-none", "cloud-billing-plan", "cloud-billing-failed", "cloud-billing-cap", "cloud-billing-unreachable", "cloud-billing-warned"],
   },
+  // Usage on a fleetd cloud workspace (fixtures/cloud): spend per person and bot, and No one with only the leads' time on
+  // fleetd's computers, which shows for that alone.
+  { id: "settings.hub.usage", route: "#/settings/hub/usage", fixtures: ["cloud-usage"] },
   // Sign-in on a fleetd cloud workspace (fixtures/cloud): Google required with a verified domain joining, and nothing
   // set yet. A self-hosted workspace has no Sign-in row (settings.sheet).
   { id: "settings.hub.signin", route: "#/settings/hub/signin", fixtures: ["cloud-signin-set", "cloud-signin-empty"] },
