@@ -301,7 +301,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
           <tr><th scope="row">8 CPU, 16 GB</th><td class="num">$0.24</td></tr>
         </tbody>
       </table>
-      <p style="margin-top:12px" id="per-note">Metered to the millisecond, only while a computer is running.</p>
+      <p style="margin-top:12px" id="per-note">Billed by the second, only while a computer is running, with nothing rounded up.</p>
     </div>
     <div>
       <h3>Credits</h3>
@@ -454,7 +454,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 
   const renderSizes = () => {
     document.getElementById("per-h").textContent = { second: "Per second", hour: "Per hour", month: "Per month" }[per];
-    document.getElementById("per-note").textContent = "Metered to the millisecond, only while a computer is running." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
+    document.getElementById("per-note").textContent = "Billed by the second, only while a computer is running, with nothing rounded up." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
     document.querySelectorAll("[data-per]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.per === per)));
     document.getElementById("sizes").replaceChildren(...model.sizes.map((s) => {
       const tr = document.createElement("tr");
