@@ -134,6 +134,8 @@ test("a key's refusals, and an enroll code's", () => {
   expect(shownPrefix("fld_abcdefghij")).toBe("fld_abcdef");
   expect(keyRefusal(undefined)?.message).toBe("unknown agent key");
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: 5, person_removed: 0 })?.message).toBe("agent key fld_abc was revoked");
+  // A person's device, revoked: its own words, no key id (the second quality sweep: a phone read "agent key fld_… was revoked").
+  expect(keyRefusal({ prefix: "fld_abc", revoked_ms: 5, person_removed: 0, person_id: "P1" })?.message).toBe("This device's key was revoked, so it's signed out of this workspace");
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: null, person_removed: 1 })?.message).toBe("You were removed from this workspace, so this device is signed out");
   // Removing them revokes the key too; they're told they were removed.
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: 5, person_removed: 1 })?.fix).toBe("Ask one of its owners or admins to invite you again.");
