@@ -38,7 +38,7 @@ import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import type { HubView } from "../../src/data/hubs";
-import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
+import type { ProjectTarget } from "../projects/actions";
 import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, preloadable, preloadWhenIdle, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
@@ -53,7 +53,7 @@ import type { Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
 import { changePins, inOrder, pinnedAt, PINS_MAX, unpinned } from "./pins";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
-import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
+import { MoveToSection, SectionLabel, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
 import { holdRows, useHeldRows } from "./sidebarState";
@@ -65,10 +65,13 @@ import { askedOn } from "./workspaceAsk";
 import { PlaceIcons, useHubsMark, You } from "./You";
 import s from "./sidebar.module.css";
 
-/** New workspace's dialog, loaded on use (it is never in the first chat's load), or once the app is idle on the web. */
+/** The dialogs a menu opens (New workspace, Rename, a section's name), loaded on use, never in the first chat's load:
+ * on the web once the app is idle, on the desktop at once. */
 const NewWorkspaceDialog = preloadable(() => import("./NewWorkspace").then((m) => m.NewWorkspaceDialog));
-if (onWeb()) preloadWhenIdle(NewWorkspaceDialog);
-else NewWorkspaceDialog.preload().catch(() => undefined);
+const RenameProjectDialog = preloadable(() => import("../projects/actions").then((m) => m.RenameProjectDialog));
+const SectionNameDialog = preloadable(() => import("./SectionName").then((m) => m.SectionNameDialog));
+if (onWeb()) preloadWhenIdle(NewWorkspaceDialog, RenameProjectDialog, SectionNameDialog);
+else for (const d of [NewWorkspaceDialog, RenameProjectDialog, SectionNameDialog]) d.preload().catch(() => undefined);
 
 /** A chat's picture in its row: big enough to read its face, the row a 46 px rounded box around it. */
 const AVATAR = 32;
@@ -672,8 +675,18 @@ const Loading = ({ busy }: { busy: boolean }) => (
  * the dialogs it opens. `rows` are the hub's rows, which pin changes are made among.
  */
 function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (screen: Screen) => void) {
-  const [renaming, setRenaming] = useState<ProjectTarget | null>(null);
-  const [naming, setNaming] = useState<Naming | null>(null);
+  const [renaming, setRenamingNow] = useState<ProjectTarget | null>(null);
+  const [naming, setNamingNow] = useState<Naming | null>(null);
+  // The dialogs mount once first asked for, and stay, so each closes as it opened.
+  const [asked, setAsked] = useState(false);
+  const setRenaming = (t: ProjectTarget | null) => {
+    if (t !== null) setAsked(true);
+    setRenamingNow(t);
+  };
+  const setNaming = (n: Naming | null) => {
+    if (n !== null) setAsked(true);
+    setNamingNow(n);
+  };
   const layer = useDataLayer();
   const sections = useSections() ?? NO_SECTIONS;
   // A change is made to the hub's own list (sections.ts), which the ones on show may not be yet.
@@ -709,12 +722,12 @@ function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (scree
         <ContextMenuCopy text={workspaceRoot}>Copy path</ContextMenuCopy>
         <ContextMenuSeparator />
         {/* Archive keeps everything and shows an Undo; Delete is only in the bot's settings, at the bottom. */}
-        <ContextMenuItem onSelect={() => void archiveProject(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
+        <ContextMenuItem onSelect={() => void import("../projects/actions").then((m) => m.archiveProject(layer, { machineId, projectId, title }))}>Archive</ContextMenuItem>
       </>
     );
   };
-  const dialogs = (
-    <>
+  const dialogs = !asked ? null : (
+    <Suspense fallback={null}>
       <RenameProjectDialog project={renaming} onClose={() => setRenaming(null)} />
       <SectionNameDialog
         naming={naming}
@@ -722,7 +735,7 @@ function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (scree
         onName={(n, name) => change((now) => (n.t === "new" ? addSection(now, newSectionId(), name, n.chat) : renameSection(now, n.section.id, name)))}
         onClose={() => setNaming(null)}
       />
-    </>
+    </Suspense>
   );
   return { layer, sections, change, pinned, pinOn, openRow, menu, setNaming, dialogs };
 }
