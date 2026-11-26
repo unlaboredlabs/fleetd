@@ -131,6 +131,10 @@ A command gets none of the agent's secrets unless it passes one with `--env NAME
 A job keeps running through an update's restarts of the workspace and the Mac's node. `mac run` picks up its output
 where it stopped once the Mac is back.
 
+Builds take turns. Each `xcodebuild` that builds (`expo run:ios` too) waits for one of the Mac's build slots: one per
+4 cores, and one per 4 GB of memory past 8 GB, whichever allows fewer (2 on a 12-core, 16 GB Mac mini). Each build
+gets its share of the cores. A build past them waits and says so in its output, then starts once one ends.
+
 ## iOS simulators {#sim}
 
 `mac sim start` gives the agent its own iPhone simulator. The agent drives it with

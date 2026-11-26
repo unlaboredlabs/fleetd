@@ -219,14 +219,17 @@ function capped(home: string, slots: number): string[] | undefined {
   return undefined;
 }
 
+/** `--slots <n>`: as many slots as the caller sized (the agents' Mac's builds, mac_tool/protocol.ts macBuilds), not
+ * what this machine's heavy runs fit. */
 export async function main(argv: string[]): Promise<number> {
-  const [home, bin, ...args] = argv;
+  const sized = argv[0] === "--slots" && /^[1-9][0-9]*$/.test(argv[1] ?? "") ? Number(argv[1]) : undefined;
+  const [home, bin, ...args] = sized === undefined ? argv : argv.slice(2);
   if (home === undefined || bin === undefined) {
     process.stderr.write(`fleetd: ${COMMAND} needs the node home, then the command to run\n`);
     return 2;
   }
   const held = process.env[HELD] !== undefined || process.env[OLD.held] !== undefined;
-  const slots = held || declaredLight(process.cwd(), [bin, ...args]) ? undefined : slotsHere(home);
+  const slots = held || declaredLight(process.cwd(), [bin, ...args]) ? undefined : (sized ?? slotsHere(home));
   if (slots === undefined) return runInherited(bin, args, process.env);
   let slot: number[] | undefined;
   try {
