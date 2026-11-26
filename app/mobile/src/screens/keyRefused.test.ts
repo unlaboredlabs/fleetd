@@ -15,4 +15,11 @@ describe("Settings with a refused key", () => {
     expect(again).toBeGreaterThan(status);
     expect(settings.slice(status, again)).not.toContain("</ListSection>");
   });
+
+  it("asks once per refusal, not again as a repair forgets the hub", () => {
+    // Seen on the Duo: after Pair Again from the workspace's link had paired with a new key, the old key's alert came
+    // back over the new session (its effect ran again as the hubs kept changed).
+    const app = readFileSync(join(import.meta.dirname, "..", "..", "App.tsx"), "utf8");
+    expect(app).toContain("if (refused === undefined || leaving.current || alerted.current === refused) return;");
+  });
 });

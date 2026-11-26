@@ -558,8 +558,12 @@ function Hub({ paired, hubs, account, onForget, onRefused, onShow, onMade, onSig
     onRefused(refused === undefined || refused === WORKSPACE_DELETED ? null : paired.hub);
     return () => onRefused(null);
   }, [refused, onRefused, paired.hub]);
+  // Once per refusal: the effect runs again as the hubs kept change (a repair forgetting this one), and an alert
+  // outlives the screen that raised it.
+  const alerted = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (refused === undefined || leaving.current) return;
+    if (refused === undefined || leaving.current || alerted.current === refused) return;
+    alerted.current = refused;
     // Its workspace was deleted (fleetd cloud's final close): nothing to pair again. It leaves this phone, which then
     // shows the next workspace kept, or the first screen with that line (iPhone sweep S1: "Connecting…" forever).
     if (refused === WORKSPACE_DELETED) {
