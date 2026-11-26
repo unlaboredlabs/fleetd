@@ -217,16 +217,16 @@ test("on the workspace's runner, an endpoint the Test doesn't reach says what to
   // Through the gateway: the tailnet's access rules.
   await onRunner(
     async () => {
-      throw new Error("the gateway couldn't reach 100.104.249.49:8317");
+      throw new Error("the gateway couldn't reach 100.101.102.103:8317");
     },
     async () => {
-      await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: "http://100.104.249.49:8317" } });
+      await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: "http://100.101.102.103:8317" } });
       const out = await ok("claude_account_test", { account: { kind: "hub" } });
       expect(out).toEqual({
         kind: "claude_account_tested",
         ok: false,
         error:
-          "the endpoint 100.104.249.49:8317 doesn't answer (the gateway couldn't reach 100.104.249.49:8317): the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it",
+          "the endpoint 100.101.102.103:8317 doesn't answer (the gateway couldn't reach 100.101.102.103:8317): the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it",
       });
     },
   );

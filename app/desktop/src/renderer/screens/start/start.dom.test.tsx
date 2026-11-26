@@ -743,7 +743,7 @@ it("the hub's key with a tailnet endpoint: says so while Tailscale is off, with 
   // Saved with nothing pasted: it says what to paste.
   await click("Save");
   expect(host.querySelector("[role=alert]")?.textContent).toBe("Paste the API key from the Claude Console.");
-  await type("Endpoint", "http://100.104.249.49:8317");
+  await type("Endpoint", "http://100.101.102.103:8317");
   expect(host.querySelector("[data-tailnet-hint]")?.textContent).toContain("This endpoint is on your tailnet. Hosted agents reach it once Tailscale is connected.");
   await click("Connect Tailscale");
   expect(calls.filter((c) => c.tool === "tailnet_connect")).toHaveLength(1);
@@ -755,12 +755,12 @@ it("the hub's key with a tailnet endpoint: says so while Tailscale is off, with 
   host.remove();
   const again = await render({ machines: [runner], sandbox, tailnet: { status: "connected", tailnet: "sam-dev.github" } });
   await until("start.claude");
-  await type("Endpoint", "http://100.104.249.49:8317/");
+  await type("Endpoint", "http://100.101.102.103:8317/");
   expect(host.querySelector("[data-tailnet-hint]")).toBeNull();
   await type("API key", "sk-ant-api03-standin");
   await click("Save");
   expect(sealed).toEqual([
-    { account: "hub_api", key: "sk-ant-api03-standin", endpoint: "http://100.104.249.49:8317", boxes: [{ machineId: "hosted", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }] },
+    { account: "hub_api", key: "sk-ant-api03-standin", endpoint: "http://100.101.102.103:8317", boxes: [{ machineId: "hosted", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }] },
   ]);
   // The hub has the key: Claude is done with it, GitHub is next.
   await settle();

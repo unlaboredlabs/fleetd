@@ -47,10 +47,10 @@ test("a GET over the dial: its headers go, the status and body come back, whole,
     const refused = await f("http://devbox.tail1234.ts.net:8317/v1/models?limit=1", { headers: { "x-api-key": "sk-devbox" } });
     expect([refused.status, refused.statusText, await refused.text()]).toEqual([401, "Unauthorized", "refused"]);
     expect(seen).toBe("sk-devbox");
-    expect(await (await f("http://100.104.249.49/chunked")).text()).toBe("one two");
-    expect((await f("http://100.104.249.49:80/none")).status).toBe(204);
-    expect(dialed).toEqual(["devbox.tail1234.ts.net:8317", "100.104.249.49:80", "100.104.249.49:80"]);
-    await expect(f("http://100.104.249.49/", { headers: { "x-bad": "a\r\nb" } })).rejects.toThrow("line break");
+    expect(await (await f("http://100.101.102.103/chunked")).text()).toBe("one two");
+    expect((await f("http://100.101.102.103:80/none")).status).toBe(204);
+    expect(dialed).toEqual(["devbox.tail1234.ts.net:8317", "100.101.102.103:80", "100.101.102.103:80"]);
+    await expect(f("http://100.101.102.103/", { headers: { "x-bad": "a\r\nb" } })).rejects.toThrow("line break");
   } finally {
     srv.stop(true);
   }
@@ -73,10 +73,10 @@ test("a POST over the dial sends its body, and an MCP server on the tailnet list
   });
   const f = dialFetch(to(srv.port!, []));
   try {
-    const echoed = await f("http://100.104.249.49/echo", { method: "POST", body: "héllo", headers: { "content-length": "1" } });
+    const echoed = await f("http://100.101.102.103/echo", { method: "POST", body: "héllo", headers: { "content-length": "1" } });
     expect(await echoed.text()).toBe("got héllo");
     expect(seen.shift()).toBe("POST true */* fleetd");
-    await expect(f("http://100.104.249.49/", { method: "GET /x HTTP/1.1\r\n" })).rejects.toThrow("isn't an HTTP method");
+    await expect(f("http://100.101.102.103/", { method: "GET /x HTTP/1.1\r\n" })).rejects.toThrow("isn't an HTTP method");
     const server = { name: "crm", transport: { type: "http" as const, url: "http://devbox.tail1234.ts.net:8080/mcp" }, values: [["Authorization", "Bearer made-up-key"]] as [string, string][], secrets: [] };
     expect(await probe(server, { fetch: f })).toEqual({ server: "tailnet-mcp 1.0.0", tools: [{ name: "search" }] });
     // The probe's own accept and user agent, not the dial's defaults beside them.
@@ -110,12 +110,12 @@ test("https goes over TLS on top of the dial, checking the endpoint's certificat
 
 test("a dial or an answer that takes too long ends at the signal, as a timeout", async () => {
   const hang = dialFetch(() => new Promise<Duplex>(() => {}));
-  const err = await hang("http://100.104.249.49:8317", { signal: AbortSignal.timeout(50) }).catch((e: Error) => e);
+  const err = await hang("http://100.101.102.103:8317", { signal: AbortSignal.timeout(50) }).catch((e: Error) => e);
   expect((err as Error).name).toBe("TimeoutError");
   // A server that takes the request and never answers.
   const silent = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   try {
-    const slow = await dialFetch(to(silent.port, []))("http://100.104.249.49:8317", { signal: AbortSignal.timeout(50) }).catch((e: Error) => e);
+    const slow = await dialFetch(to(silent.port, []))("http://100.101.102.103:8317", { signal: AbortSignal.timeout(50) }).catch((e: Error) => e);
     expect((slow as Error).name).toBe("TimeoutError");
   } finally {
     silent.stop(true);

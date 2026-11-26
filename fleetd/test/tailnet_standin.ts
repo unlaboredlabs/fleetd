@@ -11,7 +11,7 @@ import { connect, createServer, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 
 export const LOGIN_URL = "https://login.tailscale.com/a/standin";
-/** The gateway's own addresses on the stand-in's tailnet. Its peers: devbox (100.104.249.49, fd7a:115c:a1e0::1) and
+/** The gateway's own addresses on the stand-in's tailnet. Its peers: devbox (100.101.102.103, fd7a:115c:a1e0::1) and
  * sshbox (100.64.0.9, whose dial tailscaled refuses). A dial to any address goes to 127.0.0.1 at its port, as a
  * userspace tailscaled's dial to its own address does: what the gateway must never let through. */
 export const SELF_IPS = ["100.70.0.1", "fd7a:115c:a1e0::70"];
@@ -40,7 +40,7 @@ function daemon(args: string[]): void {
           CurrentTailnet: { Name: "example.com", MagicDNSSuffix: "tail1234.ts.net" },
           Self: { DNSName: "fleetd.tail1234.ts.net.", HostName: "fleetd", TailscaleIPs: SELF_IPS },
           Peer: {
-            devbox: { DNSName: "devbox.tail1234.ts.net.", HostName: "devbox", TailscaleIPs: ["100.104.249.49", "fd7a:115c:a1e0::1"] },
+            devbox: { DNSName: "devbox.tail1234.ts.net.", HostName: "devbox", TailscaleIPs: ["100.101.102.103", "fd7a:115c:a1e0::1"] },
             sshbox: { DNSName: "sshbox.tail1234.ts.net.", HostName: "sshbox", TailscaleIPs: ["100.64.0.9"] },
           },
         }

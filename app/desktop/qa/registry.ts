@@ -3491,7 +3491,7 @@ export const screens: readonly Screen[] = [
     variant: "claude-tailnet",
     sizes: [...defaultSizes, "narrow"],
     open: async (page) => {
-      await page.getByLabel("Endpoint").fill("http://100.104.249.49:8317");
+      await page.getByLabel("Endpoint").fill("http://100.101.102.103:8317");
       await page.locator("[data-tailnet-hint]").waitFor();
     },
   },
@@ -3787,7 +3787,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["setup-fresh"],
     variant: "claude-tailnet",
     open: async (page) => {
-      await page.getByLabel("Endpoint").fill("http://100.104.249.49:8317");
+      await page.getByLabel("Endpoint").fill("http://100.101.102.103:8317");
       await page.locator("[data-tailnet-hint]").waitFor();
     },
   },

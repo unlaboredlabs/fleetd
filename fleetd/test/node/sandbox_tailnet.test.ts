@@ -49,7 +49,7 @@ async function echoServer(host = "127.0.0.1"): Promise<number> {
 }
 
 test("the tailnet's addresses and names: its ranges, MagicDNS names, its own suffix and reverse lookups", () => {
-  for (const ip of ["100.64.0.1", "100.104.249.49", "100.127.255.254", "fd7a:115c:a1e0::1", "FD7A:115C:A1E0:ab12::5"]) expect(tailnetIp(ip)).toBe(true);
+  for (const ip of ["100.64.0.1", "100.101.102.103", "100.127.255.254", "fd7a:115c:a1e0::1", "FD7A:115C:A1E0:ab12::5"]) expect(tailnetIp(ip)).toBe(true);
   for (const ip of ["100.63.255.255", "100.128.0.1", "10.0.0.1", "fd7a:115c:a1e1::1", "devbox"]) expect(tailnetIp(ip)).toBe(false);
   expect(tailnetName("devbox.tail1234.ts.net", undefined)).toBe(true);
   expect(tailnetName("devbox.tail1234.ts.net.", undefined)).toBe(true);
@@ -165,13 +165,13 @@ test("the guest's capture: each tailnet connection through the node, tailnet nam
   expect(readFileSync(`${resolv}.fleetd`, "utf8")).toBe("nameserver 127.0.0.9\nsearch corp.example\noptions edns0\n");
 
   // A connection, its bytes both ways, its target the node's to dial.
-  const { code, s } = await socksConnect(socksPort, "100.104.249.49", 8317);
+  const { code, s } = await socksConnect(socksPort, "100.101.102.103", 8317);
   expect(code).toBe(0);
   s.write("hello tailnet");
   const back = await within(new Promise<string>((r) => s.once("data", (d) => r(d.toString()))), 5_000, "the echo");
   expect(back).toBe("hello tailnet");
   s.destroy();
-  expect(node.dials[0]).toEqual({ tailnet: { host: "100.104.249.49", port: 8317 } });
+  expect(node.dials[0]).toEqual({ tailnet: { host: "100.101.102.103", port: 8317 } });
 
   // A tailnet name goes to the gateway (its answer with the box's own id); any other name to the box's nameserver.
   const ask = (name: string, id: number) =>
@@ -336,7 +336,7 @@ test("the node's Box carries the guest's tailnet connections and lookups to the 
       cb();
     },
   });
-  guest.open(5, { tailnet: { host: "100.104.249.49", port: 8317 } }, end);
+  guest.open(5, { tailnet: { host: "100.101.102.103", port: 8317 } }, end);
   await within(
     (async () => {
       while (!words.some((w) => w.channel === 5)) await Bun.sleep(10);
@@ -364,7 +364,7 @@ test("the node's Box carries the guest's tailnet connections and lookups to the 
     "the refusal",
   );
   expect(words.find((w) => w.channel === 6)).toEqual({ op: "tailnetDialed", channel: 6, error: "connect ECONNREFUSED 100.64.0.9:22" });
-  expect(dialled).toEqual(["100.104.249.49:8317", "100.64.0.9:22"]);
+  expect(dialled).toEqual(["100.101.102.103:8317", "100.64.0.9:22"]);
 
   const dnsEnd = new PassThrough();
   const answered = new Promise<string>((resolve) => {
@@ -382,7 +382,7 @@ test("a box without the tailnet's hooks (a local VM's) opens no tailnet channel"
   const end = new PassThrough();
   const ended = new Promise<void>((r) => end.once("finish", () => r()));
   end.resume();
-  guest.open(5, { tailnet: { host: "100.104.249.49", port: 8317 } }, end);
+  guest.open(5, { tailnet: { host: "100.101.102.103", port: 8317 } }, end);
   await within(ended, 5_000, "the refusal");
   box.close();
 });
