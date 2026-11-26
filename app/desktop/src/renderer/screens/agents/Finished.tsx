@@ -28,7 +28,7 @@ export function FinishedAgent({ project, taskId }: { project: ProjectKey; taskId
         <EmptyState title="This agent isn’t running now">Its result can’t be read now. The chat says how it went.</EmptyState>
       </div>
     ) : (
-      <div className={s.workBody} aria-busy="true" />
+      <div className={s.workBody} aria-busy="true" data-screen="agents.work" />
     );
   }
   const result = task.result;

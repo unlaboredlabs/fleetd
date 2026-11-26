@@ -31,7 +31,7 @@ export function OrderView({ project, workstreamId }: { project: ProjectKey; work
   if (out === undefined) {
     const gone = read.error instanceof CallError && read.error.error.code === "not_found";
     return read.error === null ? (
-      <div className={s.workBody} aria-busy="true" />
+      <div className={s.workBody} aria-busy="true" data-screen="agents.order" />
     ) : (
       <div className={s.workBody} data-screen="agents.order">
         <EmptyState title={gone ? "This order isn’t here" : "This order can’t be read now"}>
