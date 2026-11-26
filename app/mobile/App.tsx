@@ -24,6 +24,8 @@ import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, Text, u
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { sendAgain } from "./src/appErrors";
+import { appErrors, catchUncaught } from "./src/appErrorsDevice";
 import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
@@ -74,12 +76,18 @@ import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { BesideContext, PaneSide, PaneWidth, useBeside, useStrip, type Beside } from "./src/ui/pane";
-import { coveredRoom } from "./src/ui/Covered";
+import { Caught, caught } from "./src/ui/Caught";
+import { coveredRoom as covered } from "./src/ui/Covered";
 import { sheetRoom, stripRoom, useStripBars } from "./src/ui/StripRoom";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
 const nav = createNavigationContainerRef<RootParams>();
+// An error nothing caught is kept before the app goes on (or ends): it reaches the workspace with the next link.
+catchUncaught();
+
+/** The layout of a root screen another can cover (Covered.tsx), in a Caught (Caught.tsx) as every screen is (StripRoom.tsx). */
+const coveredRoom = (props: Parameters<typeof covered>[0]) => caught(props.route.name, covered(props), props.navigation);
 const pairNav = createNavigationContainerRef<PairParams>();
 
 // The splash stays until the first screen is on screen (its stack's transitionEnd, iOS's viewDidAppear), with the chats
@@ -229,6 +237,8 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <View style={[styles.fill, { backgroundColor: t.bg }]}>
+        {/* What fails outside a screen (the navigator, a provider) shows Something went wrong too, the app as a whole reloaded. */}
+        <Caught screen="App">
         {paired === undefined ? null : paired === null ? (
           <NavigationContainer ref={pairNav} theme={theme} onReady={() => setPairShown((n) => n + 1)}>
             <Pairing
@@ -255,6 +265,7 @@ export default function App() {
             onOpened={() => setOpened(null)}
           />
         )}
+        </Caught>
       </View>
     </SafeAreaProvider>
     </KeyboardProvider>
@@ -411,6 +422,22 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       sub.remove();
       unwatch();
       session.stop();
+    };
+  }, [session]);
+
+  // The app's errors go to this workspace's log: those kept from before (the one a crash ended on) at once, and what
+  // waits again each time the link is back. A workspace from before the tool takes none, and they aren't sent again.
+  useEffect(() => {
+    appErrors.sendTo(async (errors) => {
+      const r = await session.call("app_error_report", { errors: [...errors] });
+      return r.ok || !sendAgain(r.error);
+    });
+    const offLive = session.onLive(() => void appErrors.flush());
+    const offState = nav.addListener("state", () => appErrors.at(nav.getCurrentRoute()?.name));
+    return () => {
+      offLive();
+      offState();
+      appErrors.sendTo(null);
     };
   }, [session]);
 

@@ -7,6 +7,7 @@
 // runs this app's checks when they change.
 export type {
   AgentKeyInfo,
+  AppErrorReport,
   Automation,
   AutomationWatch,
   KnownWatchEvery,
