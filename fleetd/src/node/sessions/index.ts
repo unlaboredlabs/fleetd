@@ -226,6 +226,9 @@ export function retryDelayMs(attempt: number, unit = Math.random()): number | un
 /** Every retry's delay, each drawn with its jitter. */
 const retrySchedule = () => Array.from({ length: MAX_RUN_RETRIES }, (_, i) => retryDelayMs(i + 1)!);
 
+/** The variables that hold claude's own key or token. */
+const LOGIN_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"];
+
 const retryable = (cls: FailureClass) => cls === "overloaded" || cls === "network";
 
 const expandHome = (dir: string) => (dir === "~" ? homeDir() : dir.startsWith("~/") ? join(homeDir(), dir.slice(2)) : dir);
@@ -629,6 +632,7 @@ export class SessionService {
       runnerEnv: () => runnerEnv(this.config),
       send: (frame) => this.#outlet?.(frame),
       forgetSignins: (projectId) => this.forgetSignins(projectId),
+      accountChanged: () => this.reprobe(),
     };
   }
 
@@ -2039,7 +2043,7 @@ export class SessionService {
     }
     this.#retries.delete(runId);
     if (typeof outcome === "object" && "Failed" in outcome && outcome.Failed.class === "auth") {
-      this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now()));
+      this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now(), this.#loginKey()));
       // Claude refused the sign-in it was started with: this claude goes, so the next turn's start reads the session's
       // account again (one reconnected meanwhile), as an idle one goes.
       live.closing = true;
@@ -2666,11 +2670,14 @@ export class SessionService {
         endpoint = account ? envFor(this.home, account).vars.find(([k]) => k === "ANTHROPIC_BASE_URL")?.[1] : undefined;
       } catch {}
       const info = runnerClaude(account, endpoint, nodeTailnet()?.on === true);
-      this.#healthChanged((h) => h.probed(info, started));
+      this.#healthChanged((h) => h.probed(info, started, this.#loginKey()));
       return this.#health.info() ?? info;
     }
     const env = runnerEnv(this.config);
+    const key = this.#loginKey();
     let info = await claude.probe(this.config.claudeBin, env);
+    const file = this.#loginFile();
+    if (file !== undefined) info.loginFile = file;
     // Logged out here: the runner as a session on the Claude account the hub sealed to this node runs it. Read as
     // logged out, the machine would be degraded and every message to its agents refused.
     const account = info.login === "logged_out" ? held(this.home) : undefined;
@@ -2681,8 +2688,44 @@ export class SessionService {
         if (onAccount.login === "logged_in") info = onAccount;
       } catch {}
     }
-    this.#healthChanged((h) => h.probed(info, started));
+    // Behind a proxy the login is the proxy's, fixed where nothing here changes: any probe that finds it logged in
+    // clears a refusal, as before.
+    this.#healthChanged((h) => h.probed(info, started, info.proxy === undefined ? key : undefined));
     return this.#health.info() ?? info;
+  }
+
+  /** `claude.env` when it sets the machine's Claude key or token, as `~/…`: a refused key is replaced there. */
+  #loginFile(): string | undefined {
+    try {
+      const set = parseEnvFile(readFileSync(this.config.claudeEnv, "utf8")).some(([k, v]) => LOGIN_VARS.includes(k) && v !== "");
+      return set ? tilde(this.config.claudeEnv) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A digest of the Claude login the node's sessions start on now: its variables (claude.env's, the account the
+   * workspace sealed to this node), claude's credentials and settings files, and on a Mac its keychain entry's change
+   * time. A refusal stands until it changes (Health). No secret leaves it. */
+  #loginKey(): string {
+    const env = runnerEnv(this.config);
+    const parts = LOGIN_VARS.concat("ANTHROPIC_BASE_URL").map((k) => `${k}=${env[k] ?? ""}`);
+    const account = held(this.home);
+    try {
+      if (account) parts.push(...envFor(this.home, account).vars.map(([k, v]) => `held ${k}=${v}`));
+    } catch {}
+    for (const file of [".credentials.json", "settings.json"].map((f) => join(claude.configDir(env), f))) {
+      try {
+        const st = statSync(file);
+        parts.push(`${file} ${st.mtimeMs} ${st.size}`);
+      } catch {}
+    }
+    if (process.platform === "darwin") {
+      // Its attributes only, never the secret (that would take -w or -g).
+      const out = Bun.spawnSync(["security", "find-generic-password", "-s", "Claude Code-credentials"], { stdout: "pipe", stderr: "ignore", timeout: 5_000 });
+      parts.push(/"mdat"<timedate>=(\S+)/.exec(out.stdout.toString())?.[1] ?? "");
+    }
+    return createHash("sha256").update(parts.join("\n")).digest("hex");
   }
 
   /** Applies `f` to the runner's health and pushes `runner_info` when what it reports changed; the prober then

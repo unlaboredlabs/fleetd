@@ -85,6 +85,9 @@ export function register(tools: Registry): void {
     if (before) {
       s.removeHubApi();
       await forget(hub, { kind: "hub" }, before.sealedOn.map((x) => x.machineId));
+      // A lead Claude refused on the key carries on with what it runs on now (the owner's subscription, the machine's
+      // own login), as on a key saved; once, so one that is refused again waits for the next change.
+      signedInAgain(hub);
     }
     return {
       ok: true,
@@ -129,6 +132,7 @@ export function register(tools: Registry): void {
       s.removeSubscription(p.personId);
       await forget(hub, { kind: "person", personId: p.personId }, before.sealedOn.map((x) => x.machineId));
       accountRemoved(hub, refOf(p), "Claude subscription");
+      signedInAgain(hub);
     }
     return { me: s.setup().person(p), next: STARTED_NEXT };
   });

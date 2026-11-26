@@ -47,6 +47,9 @@ export type CallContext = {
   send(frame: NodeFrame): void;
   /** Forgets a project's sign-ins: its browser ends, then its kept profile goes (sessions' `forgetSignins`). */
   forgetSignins?(projectId: string): Promise<void>;
+  /** The Claude account the node holds changed: the runner is probed again before the call answers, so the workspace
+   * hears what its runner says now first (a login Claude refused on the old key is usable on the new one). */
+  accountChanged?(): Promise<unknown>;
 };
 
 export const OPS = [
@@ -169,6 +172,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       return { kind: "done" };
     case "claude_account_secret": {
       const fingerprint = asInvalid(() => applyAccount(home, call.account, call.set, ctx.boxKey));
+      await ctx.accountChanged?.().catch(() => {});
       return { kind: "claude_account_saved", ...(fingerprint ? { fingerprint } : {}) };
     }
     case "gemini_key": {

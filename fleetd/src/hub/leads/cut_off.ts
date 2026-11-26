@@ -94,13 +94,16 @@ export type End =
 /** The chat's line when Claude refused the lead's sign-in, by what the lead runs on (the thread's account; none: the
  * machine's own login) and where (`machineId`): where it is reconnected, and that the lead then carries on by itself.
  * A bot in hosted sandboxes (fleetd's computers on a cloud team) has no machine of its own to sign in on: with no
- * account it is told where an admin adds the key, which its next turn then runs on (leads/index.ts `accountMoved`). */
-export function signedOutLine(account: ClaudeAccount | undefined, machineId?: string): string {
+ * account it is told where an admin adds the key, which its next turn then runs on (leads/index.ts `accountMoved`). A
+ * machine whose key is set in a file (`loginFile`, its runner says: `~/.fleetd/claude.env`) is told to replace it there. */
+export function signedOutLine(account: ClaudeAccount | undefined, machineId?: string, loginFile?: string): string {
   if (account?.kind === "hub") return `The workspace's Claude API key stopped working for this bot: an admin replaces it in ${settingsPath()} › Setup › Claude. The lead carries on by itself once it is.`;
   if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Accounts › Claude. The lead carries on by itself once it is.";
   if (machineId === RUNNER_ID) {
     return `This bot has no Claude account to run on yet: an admin adds a Claude API key in ${settingsPath("Providers", "Anthropic")}. The lead carries on by itself once it is.`;
   }
+  // A key set in a file there (claude.env) wins over any `claude auth login`: it is replaced where it is set.
+  if (loginFile !== undefined) return `Claude refused the key on this bot's machine: replace it in \`${loginFile}\` there, then send a message.`;
   return "Claude's sign-in on this bot's machine stopped working: sign it in again there with `claude auth login`, then send a message.";
 }
 

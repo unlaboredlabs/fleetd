@@ -171,6 +171,8 @@ test("a degraded machine gets the one fix for its cause", () => {
   expect(command).toBeUndefined();
   expect(label).toContain("log in with your proxy");
   expect(label).toContain("8317");
+  // A key set in claude.env is replaced there: `claude auth login` wouldn't touch it (S1 of the Nov 26 sweep).
+  expect(fix({ ...runner(ok, "logged_out"), loginFile: "~/.fleetd/claude.env" })).toEqual(["On mac, replace the claude key in ~/.fleetd/claude.env", undefined]);
   // A version outside the tested range is never the cause.
   expect(fix(runner("2.0.1", "logged_out"))[1]).toBe("claude auth login");
   expect(fix(runner(undefined, "unknown"))[1]).toBe("curl -fsSL https://claude.ai/install.sh | bash");

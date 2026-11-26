@@ -341,6 +341,8 @@ export function runnerFix(machineId: string, info: RunnerInfo): DoctorFix | unde
   const login = info.login === "logged_out" ? guide.loginFix(info.proxy !== undefined) : undefined;
   if (!install && login === undefined) return undefined;
   if (install && login === undefined) return manual(`${install[0]} on ${machineId}`, install[1]);
+  // A key set in a file (claude.env) is fixed there: `claude auth login` wouldn't replace it.
+  if (!install && info.loginFile !== undefined) return manual(`On ${machineId}, replace the ${name} key in ${info.loginFile}`);
   if (!install) {
     // Behind a proxy the proxy holds the login: nothing to paste.
     return info.proxy !== undefined
@@ -382,7 +384,9 @@ export function runnerChecks(machineId: string, info: RunnerInfo): DoctorCheck[]
   // Sessions use the machine's own runner setup, so the fix is the login the user would do for their own.
   const setup = guide.setup(info);
   const loginFix = () =>
-    info.proxy !== undefined
+    info.loginFile !== undefined
+      ? manual(`On ${machineId}, replace the ${name} key in ${info.loginFile}`)
+      : info.proxy !== undefined
       ? manual(`On ${machineId}, ${guide.loginFix(true)} (${name} goes through ${info.proxy})`)
       : manual(`Log ${name} in on ${machineId}`, guide.loginFix(false));
   let version: DoctorCheck;

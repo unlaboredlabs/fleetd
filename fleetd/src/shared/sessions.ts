@@ -340,6 +340,9 @@ export type RunnerInfo = {
   configDir?: string;
   selfUpdate?: boolean;
   accountOverrides?: string[];
+  /** The file the machine's own Claude key comes from (`~/.fleetd/claude.env`), when one sets it: a refused key is
+   * fixed there, not with `claude auth login`. */
+  loginFile?: string;
 };
 
 export type BaseErrorKind = "offline" | "auth" | "no_access" | "no_ssh" | "no_default_branch" | "no_remote" | "failed";

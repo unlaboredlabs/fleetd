@@ -65,3 +65,28 @@ test("an auth failure logs out until a later probe or run says the login works",
   health.runCompleted();
   expect(health.info()!.login).toBe("logged_in");
 });
+
+// S1 of the Nov 26 sweep: a bad key in claude.env, and Machines said Idle. The free probe reported logged in 0.4 s after
+// Claude refused the key, and cleared the refusal; the fix it gave was `claude auth login`, which doesn't touch the file.
+test("a refusal stands until a run completes or the login changes, and names the file its key comes from", () => {
+  const t0 = 1_000_000;
+  const health = new Health();
+  const fromFile = info("logged_in", { loginKind: "api_key", loginFile: "~/.fleetd/claude.env" });
+  health.probed(fromFile, t0, "key-a");
+  health.authFailed("Invalid API key · Fix external API key", t0 + 10_000, "key-a");
+  // The probe right after: the same login, which claude still reports as one. It stays refused, and unusable.
+  health.probed(fromFile, t0 + 10_400, "key-a");
+  expect(health.info()!.login).toBe("logged_out");
+  expect(health.info()!.problem).toBe("claude refused its login: Invalid API key · Fix external API key. Fix: replace the key in ~/.fleetd/claude.env");
+  expect(health.nextProbeIn(t0 + 10_400)).toBe(RECHECK_AFTER_MS);
+  // The key was replaced: the next probe sees another login, and clears it.
+  health.probed(fromFile, t0 + 30_000, "key-b");
+  expect(health.info()!.login).toBe("logged_in");
+  // A refusal of that one, then a run that completes on it: cleared too.
+  health.authFailed("Invalid API key", t0 + 40_000, "key-b");
+  health.probed(fromFile, t0 + 41_000, "key-b");
+  expect(health.info()!.login).toBe("logged_out");
+  health.runCompleted();
+  expect(health.info()!.login).toBe("logged_in");
+  expect(loginFix(false, "~/.fleetd/claude.env")).toBe("replace the key in ~/.fleetd/claude.env");
+});

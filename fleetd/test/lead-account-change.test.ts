@@ -15,6 +15,7 @@ import { signedInAgain } from "../src/hub/leads/signed_in.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { events } from "../src/hub/store/events.ts";
+import { executors } from "../src/hub/executor/index.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { isoMs } from "../src/hub/store/time.ts";
 import type { ProjectRef } from "../src/shared/contracts.ts";
@@ -156,6 +157,48 @@ test("a lead refused for its sign-in on no account carries on by itself once the
   expect(t.launches[1]).toContain("Your Claude sign-in was reconnected");
   expect(t.sends).toEqual([]);
   expect(t.runsOn()).toEqual({ kind: "hub" });
+}, 30_000);
+
+/** Claude refused the lead's turn for its sign-in, as the node reports it. */
+const refused = (t: ReturnType<typeof withLead>, message: string) =>
+  events(t.hub).append({
+    at: isoMs(t.hub.clock.now()),
+    type: "thread.failed",
+    machineId: PROJECT.machineId,
+    projectId: PROJECT.projectId,
+    threadId: t.lead().threadId,
+    summary: "failed",
+    data: { runId: "r1", endCause: "failed", error: { class: "auth", message } },
+  });
+
+// S1 of the Nov 26 sweep: a bad key in the machine's claude.env, and the chat said to run `claude auth login`, which
+// doesn't touch the key claude runs on.
+test("a machine's key Claude refused, set in claude.env, is replaced there: the chat says so", async () => {
+  const t = withLead(PROJECT);
+  await t.say("hello");
+  executors(t.hub).rememberRunner(PROJECT.machineId, { runner: "claude", supported: "", versionOk: true, login: "logged_out", loginFile: "~/.fleetd/claude.env" });
+  refused(t, "Invalid API key · Fix external API key");
+  for (let i = 0; i < 200 && t.lines().length === 0; i++) await Bun.sleep(10);
+  expect(t.lines()).toEqual(["Claude refused the key on this bot's machine: replace it in `~/.fleetd/claude.env` there, then send a message."]);
+});
+
+// S2 of the Nov 26 sweep: the workspace's key refused, then removed; the lead waited on "Waiting for the lead to start"
+// until the person wrote again, though the machine's own login worked.
+test("a lead refused on the workspace's key carries on by itself once the key is removed, on the machine's own login", async () => {
+  const t = withLead(PROJECT);
+  t.saveKey();
+  await t.say("hello");
+  expect(t.runsOn()).toEqual({ kind: "hub" });
+  refused(t, "Invalid API key · Fix external API key");
+  for (let i = 0; i < 200 && t.lines().length === 0; i++) await Bun.sleep(10);
+  t.idle("failed");
+  // An admin removes it (no node holds it online here, so none is told to forget it).
+  t.hub.db.conn.query("INSERT INTO people (person_id, name, role, created_ms) VALUES (?, ?, ?, 0)").run("p_ada", "Ada", "owner");
+  await t.call("claude_hub_api_remove", {});
+  for (let i = 0; i < 1500 && t.launches.length < 2; i++) await Bun.sleep(10);
+  expect(t.launches.length).toBe(2);
+  expect(t.launches[1]).toContain("so the message above has no answer yet");
+  expect(t.runsOn()).toBeUndefined();
 }, 30_000);
 
 test("after a refused turn, the person's next message runs on the key saved since, not the session with no login", async () => {
