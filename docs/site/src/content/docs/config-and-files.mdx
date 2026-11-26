@@ -66,7 +66,8 @@ Restart the node after a change (`fleetd node restart`), except where a key says
 - `buildSlots`: how many agents' cargo builds run at once; the rest wait their turn. Default: one per 16 GB of
   memory. `0` turns it off. No restart needed.
 - `heavySlots`: how many heavy runs (agents' full checks, whole test suites, full builds) run at once; the rest
-  wait their turn. Default: one per 8 cores, at least 2. `0` turns it off. No restart needed.
+  wait their turn. Default: what the machine's cores, memory and ports fit ([how](/docs/machines#fair-share)).
+  `0` turns it off. No restart needed.
 - `warmBuilds`: finished cargo builds kept for the next reader or reviewer of a repo. Default: 2. `0` keeps none.
 - `browser`, `device`, `desktop`, `mac`, `ios`, `agentsMac`: which [screens](/docs/browser-sessions) the machine
   runs. Set these in Settings › Workspace › Machines rather than by hand.
