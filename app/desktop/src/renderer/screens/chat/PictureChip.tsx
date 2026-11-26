@@ -15,7 +15,7 @@ export function PictureChip({ a, onRemove, onRetry }: { a: Attached & { thumb: N
   const failed = a.upload !== undefined && !a.upload.ok;
   const state = a.upload === undefined ? "uploading…" : a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload";
   return (
-    <span className={cx(c.thumb, failed && c.thumbFailed)} data-uploading={a.upload === undefined ? "" : undefined}>
+    <span className={cx(c.thumb, failed && c.thumbFailed)} data-attached={a.name} data-uploading={a.upload === undefined ? "" : undefined}>
       <Tooltip content={`${a.name} · ${state}`}>
         <button type="button" className={c.thumbOpen} aria-label={`Show ${a.name}`} onClick={() => setOpen(true)}>
           <img src={a.thumb.src} alt="" draggable={false} />

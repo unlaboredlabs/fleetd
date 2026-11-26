@@ -42,6 +42,7 @@ const snapshot: HubFrame = {
 };
 
 const enc = new TextEncoder();
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const CITIES = ["Oslo", '"Paris, FR"', "Lisbon"];
 /** 60,000 rows, a 5.4 MB CSV: past the first piece, the bytes a table reads and its rows. */
 const CSV = enc.encode(["city,max_c,rain,note", ...Array.from({ length: 60_000 }, (_, i) => `${CITIES[i % 3] ?? ""},${String(i % 30)},${String(i % 7)},${"x".repeat(80)}`)].join("\n"));
@@ -50,7 +51,7 @@ const FILE: Record<string, { name: string; mime: string; bytes: Uint8Array }> = 
   F2: { name: "inventory.json", mime: "text/plain", bytes: enc.encode(JSON.stringify({ name: "inventory", warehouses: [{ id: "wh-001", city: "Oslo", stock: { units: 5 } }] })) },
   F3: { name: "summary.md", mime: "text/plain", bytes: enc.encode("# Weekly summary\n\nThe **checkout** fix shipped.") },
   F4: { name: "restock.py", mime: "text/plain", bytes: enc.encode("LOW = 120\n\ndef low(units):\n    return units < LOW\n") },
-  F5: { name: "notes.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes: new Uint8Array(4000) },
+  F5: { name: "notes.docx", mime: DOCX, bytes: new Uint8Array(4000) },
 };
 /** The bytes each read asked for. */
 const reads: { id: string; offset: number; length: number }[] = [];
@@ -157,14 +158,14 @@ it("selects cells as a spreadsheet does, sums them and copies them as cells", as
 it("folds JSON below its top level, and opens a branch on a click", async () => {
   await mount(file("F2"));
   expect(host.textContent).toContain("JSON");
-  const branch = [...host.querySelectorAll("button[aria-expanded]")].find((b) => b.textContent?.startsWith("warehouses"));
+  const branch = [...host.querySelectorAll("button[aria-expanded]")].find((b) => b.textContent.startsWith("warehouses"));
   expect(branch?.getAttribute("aria-expanded")).toBe("false");
   expect(branch?.textContent).toContain("[ 1 item ]");
   await act(async () => {
     (branch as HTMLElement).click();
     await Promise.resolve();
   });
-  const item = [...host.querySelectorAll("button[aria-expanded]")].find((b) => b.textContent?.startsWith("0"));
+  const item = [...host.querySelectorAll("button[aria-expanded]")].find((b) => b.textContent.startsWith("0"));
   // A folded object says what it holds and shows its first plain values.
   expect(item?.textContent).toContain('id: "wh-001", city: "Oslo"');
 });
@@ -189,7 +190,7 @@ it("opens a card's file in the panel when fleetd shows it, and in this computer'
   await mount(
     <>
       <FileCard project={SHOP} file={{ attachmentId: "F1", name: "temps.csv", mime: "text/csv", bytes: CSV.length }} />
-      <FileCard project={SHOP} file={{ attachmentId: "F5", name: "notes.docx", mime: FILE.F5?.mime ?? "", bytes: 4000 }} />
+      <FileCard project={SHOP} file={{ attachmentId: "F5", name: "notes.docx", mime: DOCX, bytes: 4000 }} />
     </>,
   );
   const opens = [...host.querySelectorAll("button")].filter((b) => b.textContent === "Open");
