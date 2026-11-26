@@ -281,6 +281,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     const add = newChatItem(root.newChat);
     // iOS moves only its own buttons into the strip (a view of ours stays in a row over the list), so on iOS the avatar
     // is one of its buttons, a picture of the avatar the size of + beside it (meItem), in the strip and in the bar alike.
+    // The strip shows only the picture a button has as it is made: patches/react-native-screens decodes it at once.
     const mark = meMark(me.tone);
     const left = meItem(me.initial, me.label, mark === undefined ? undefined : t[DOT[mark]], meIcon, openSettings);
     const options: Partial<NativeStackNavigationOptions> =
