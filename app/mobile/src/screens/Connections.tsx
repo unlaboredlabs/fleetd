@@ -156,7 +156,7 @@ function Strip({ items }: { items: ReadonlyArray<StripItem> }) {
 }
 
 /** Tailscale: Connect (an admin's), its sign-in or approval while it waits, then the tailnet with Disconnect. */
-function TailscaleRow({ state, admin, reload }: { state: TailnetState; admin: boolean; reload: () => void }) {
+export function TailscaleRow({ state, admin, reload }: { state: TailnetState; admin: boolean; reload: () => void }) {
   const t = useTheme();
   const { session } = useHub();
   const word = tailnetWordOf(state);

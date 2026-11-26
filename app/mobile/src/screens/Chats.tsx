@@ -309,7 +309,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     ) : needsComputer(paired, state) ? (
       <ConnectComputer />
     ) : firstRunShown(paired, state) ? (
-      <FirstRun open={(step) => (step === "bot" ? root.newChat() : root.settingsAt(step === "plan" ? "Billing" : "Claude"))} />
+      <FirstRun open={(step) => (step === "bot" ? root.newChat() : root.settingsAt(step === "where" ? "Billing" : "Claude"))} />
     ) : (
       <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a bot, and its chat shows up here." />
     );
