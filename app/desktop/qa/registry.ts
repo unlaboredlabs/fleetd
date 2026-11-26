@@ -4219,7 +4219,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-preview"],
     variant: "yours",
     open: async (page, app) => {
-      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      // The screen's own Take over, in the panel: the chat's card of it and the strip over the composer have one too.
+      await page.getByRole("tabpanel", { name: "Agents" }).getByRole("button", { name: "Take over", exact: true }).click();
       await expect(page.getByRole("button", { name: /^Hand back/u })).toBeVisible();
       await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeFocused();
       // ⌘V (Ctrl+V) pastes this computer's clipboard into the page: the paste reaches the frame, which sends its text.
@@ -4247,10 +4248,11 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-preview"],
     variant: "handed-back",
     open: async (page) => {
-      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      // The screen's own Take over, in the panel: the chat's card of it and the strip over the composer have one too.
+      await page.getByRole("tabpanel", { name: "Agents" }).getByRole("button", { name: "Take over", exact: true }).click();
       await page.getByRole("application").focus();
       await page.keyboard.press("ControlOrMeta+Shift+Enter");
-      await expect(page.getByText("handed back", { exact: true })).toBeVisible();
+      await expect(page.getByRole("tabpanel", { name: "Agents" }).getByText("handed back", { exact: true })).toBeVisible();
     },
   },
   // ...and in a window of its own, the pop-out for taking over: the session alone, its page yours.

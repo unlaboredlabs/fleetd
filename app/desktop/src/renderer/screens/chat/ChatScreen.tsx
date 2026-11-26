@@ -24,6 +24,7 @@ import { hideWait, useHiddenWait } from "./hiddenWait";
 import { leadLastTurnSince, leadLastTurnUntil, leadLastTurnWorkedMs, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { Island } from "./Island";
+import { useScreenTimes, withScreens } from "./screenRows";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
 import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
@@ -44,6 +45,8 @@ import s from "./view.module.css";
 
 /** The search field loads with its first ⌘F, not with the chat. */
 const Find = lazy(() => import("./find/Find").then((m) => ({ default: m.Find })));
+/** The strip over the composer while a screen asks for you: loaded only then. */
+const ScreenAsk = lazy(() => import("./ScreenCard").then((m) => ({ default: m.ScreenAsk })));
 
 /** The gap between the conversation's last row and the island's band, px (--space-2). */
 const ISLAND_CLEAR = 8;
@@ -137,7 +140,14 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const [kept, setKept] = useState<{ from?: readonly Row[] | undefined; rows?: readonly Row[] | undefined }>({});
   const next = kept.from === built ? kept : { from: built, rows: built === undefined ? undefined : keepRows(kept.rows, built) };
   if (next !== kept) setKept(next);
-  const rows = next.rows;
+  // Each of the bot's screens, as a card where it opened (screens.ts); not in a lens, which shows one order's messages.
+  const { times: screenTimes, asking: screenAsks } = useScreenTimes(project);
+  const older = view?.hasOlder === true;
+  const windowedRows = view?.window?.hasNewer === true;
+  const rows = useMemo(
+    () => (next.rows === undefined || lens !== undefined ? next.rows : withScreens(next.rows, screenTimes, { hasOlder: older, newer: windowedRows })),
+    [next.rows, lens, screenTimes, older, windowedRows],
+  );
   // The chat's first rows are what the app opened on: what waits for them (Settings' chunk, the web's side panel) may
   // load now. So may it when the chat couldn't be read: what the screen shows then is its error.
   const loaded = rows !== undefined || data.loadError !== undefined;
@@ -145,7 +155,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     if (loaded) markShown();
   }, [loaded]);
   const items = view?.items;
-  const older = view?.hasOlder === true;
   const waiting = useMemo(
     // "asked at 09:02" (or "yesterday at …") is read when the chat changes; nothing ticks while it waits.
     // eslint-disable-next-line react-hooks/purity
@@ -551,6 +560,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               <Boundary part="the island">
                 <Island project={project} warning={warning} />
               </Boundary>
+              {screenAsks ? (
+                <Boundary part="the screen asking">
+                  <Suspense fallback={null}>
+                    <ScreenAsk project={project} />
+                  </Suspense>
+                </Boundary>
+              ) : null}
               <span className={s.say} data-say="">
                 {view?.held === true && !(view.offline && starting) ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
                 <AttentionLine

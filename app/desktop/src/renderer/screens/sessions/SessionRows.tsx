@@ -1,6 +1,7 @@
 // A project's screens as the Agents tab lists them (agents/AgentsPane.tsx), under its agents: the browsers and devices
 // its agents and you have open, those asking you to take over first, then the live ones, and the ones that ended under
-// a fold. One row each: what it is for and, under it, its state in a word (asking, why). Whose it is, the site it is on
+// a fold. One row each: what it is for and, under it, its state in a word (asking, why); a live one's small picture at
+// its end, edged in the warning's colour while it asks. Whose it is, the site it is on
 // and how long it ran are in the row's hover and on its own view. A row opens the screen in the list's place, live
 // while it runs (SessionView), its replay once it has ended. Your waits for a slot on a full machine show until their
 // screen opens.
@@ -11,7 +12,9 @@ import { parseMs } from "../live/format";
 import { agoText } from "../projects/machineText";
 import { panelRoute, toHash } from "../shell/routes";
 import { durationOf, fmtDuration, glyphOf, isLive, siteOf, STATE_TONE, STATE_WORD, waitLine, type BrowserSession, type ScreenWaiting } from "./model";
+import { useScreenFeed, useThumb } from "./feed";
 import s from "./sessions.module.css";
+import p from "./rowPicture.module.css";
 
 /**
  * Your screen on its way: what and where, then your place in line (with Cancel), the PR's build going in, or why it
@@ -65,9 +68,14 @@ export function SessionRow({ list, session: x, now, ...rest }: { list: string; s
   const href = toHash(panelRoute(x.projectRef, { tab: "sessions", session: x.id }));
   const ended = parseMs(x.endedAt);
   const asking = x.state === "asking";
+  const live = isLive(x);
+  // A live one's small picture, a few a minute while the row shows (feed.ts); none for one that ended.
+  useScreenFeed(live);
+  const thumb = useThumb(x.id);
+  const picture = live && thumb !== undefined;
   return (
     <Tooltip content={sessionDetail(x, now)} side="left">
-      <a {...rest} className={cx(s.row, fresh && s.arrive, !isLive(x) && s.ended)} href={href} data-state={x.state} data-session={x.id}>
+      <a {...rest} className={cx(s.row, fresh && s.arrive, !live && s.ended, picture && p.pictured)} href={href} data-state={x.state} data-session={x.id}>
         <span className={s.glyph}>
           <StateGlyph state={glyphOf(x.state)} label={STATE_WORD[x.state]} phase={x.id.length % 4} settled={!fresh} />
         </span>
@@ -87,6 +95,11 @@ export function SessionRow({ list, session: x, now, ...rest }: { list: string; s
             </Text>
           )}
         </span>
+        {picture ? (
+          <span className={cx(p.picture, (x.kind === "ios" || x.kind === "android") && p.phone)}>
+            <img src={thumb} alt="" draggable={false} />
+          </span>
+        ) : null}
       </a>
     </Tooltip>
   );
