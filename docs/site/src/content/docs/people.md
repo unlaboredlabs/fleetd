@@ -97,4 +97,6 @@ A change applies to agents started after it. See [Security](/docs/security#claud
 
 Chat messages, approvals, secrets, decisions and checklist ticks each show who did them. With more than one person on the workspace, the lead knows who is writing and answers them by name.
 
+Owners and admins see the workspace's changes in one place, by name, in the [audit log](/docs/audit-log).
+
 The workspace's operator can read the workspace's database. fleetd records who did what; it hides nothing from the operator.

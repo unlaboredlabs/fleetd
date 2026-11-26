@@ -70,6 +70,7 @@ export const TOOLS = {
   vault_reveal: { scope: "operate", module: "src/hub/vault" },
   vault_move: { scope: "operate", module: "src/hub/vault" },
   vault_audit: { scope: "read", module: "src/hub/vault" },
+  audit_list: { scope: "read", module: "src/hub/audit" },
   vault_status: { scope: "read", module: "src/hub/vault" },
   vault_unlock: { scope: "admin", module: "src/hub/vault" },
   vault_rotate: { scope: "admin", module: "src/hub/vault" },

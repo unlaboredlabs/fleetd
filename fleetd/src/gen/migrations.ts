@@ -191,6 +191,7 @@ import m187 from "../hub/store/migrations/202611222100_issue_orders.sql" with { 
 import m188 from "../hub/store/migrations/202611222156_watcher_runs.sql" with { type: "text" };
 import m189 from "../hub/store/migrations/202611222222_who_merges.sql" with { type: "text" };
 import m190 from "../hub/store/migrations/202611222300_merge_then_verify.sql" with { type: "text" };
+import m191 from "../hub/store/migrations/202611261317_audit_log.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -384,4 +385,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611222156_watcher_runs", sql: m188 },
   { name: "202611222222_who_merges", sql: m189 },
   { name: "202611222300_merge_then_verify", sql: m190 },
+  { name: "202611261317_audit_log", sql: m191 },
 ];

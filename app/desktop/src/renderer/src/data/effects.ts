@@ -2,6 +2,23 @@
 // the reads to refetch; the query layer batches them. Pure, so the mapping is tested on its own.
 import { dataField, type HubEvent, type ToolName } from "../../../shared/contracts";
 
+/** The events that come with an audit row (fleetd/src/hub/audit/record.ts writes it as the change is made). */
+const AUDITED: ReadonlySet<string> = new Set([
+  "people.changed",
+  "key.paired",
+  "project.settings",
+  "project.settings_refused",
+  "project.removed",
+  "automation.changed",
+  "agents.cap",
+  "pr.merged",
+  "pr.merged_outside",
+  "vault.used",
+  "vault.changed",
+  "request.updated",
+  "hub.update",
+]);
+
 /** Refetch `tool`'s queries, or only those whose input has these top-level values. */
 export interface Invalidation {
   readonly tool: ToolName;
@@ -114,6 +131,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // activity; a card's label shows in Payments too.
   if (type === "vault.changed" || type === "vault.used") out.push({ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" });
   if (type === "vault.changed") out.push({ tool: "project_purchases" }, { tool: "vault_status" });
+  // What the audit log records lands with these: an open Audit log reads its page again.
+  if (AUDITED.has(type)) out.push({ tool: "audit_list" });
   // An MCP server's sign-in started, finished, failed or ended, or the server was removed: Integrations reads again.
   if (type === "mcp.oauth") out.push({ tool: "mcp_servers_get" });
   // A name published again is a new version: the list, and the open artifact's list of versions.

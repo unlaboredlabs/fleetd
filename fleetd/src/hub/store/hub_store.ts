@@ -98,6 +98,8 @@ export const MACHINE_TABLES = [
  */
 export const MACHINE_KEEPS = [
   "events",
+  // The workspace's audit log: what was done on a machine's bots outlives them, for a year (hub/audit).
+  "audit_log",
   "time_spans",
   // The spans' hourly digests, kept as long as the spans.
   "time_digests",

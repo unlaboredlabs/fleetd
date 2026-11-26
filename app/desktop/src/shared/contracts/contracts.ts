@@ -960,6 +960,97 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
+/** Who did what an audit row records, by name as it was then. */
+export type AuditActor = {
+  kind: AuditActorKind;
+  /** A person's name; for an agent, whose work it was ("Olive's agent"); for the workspace, what acted ("fleetd"). */
+  name: string;
+  /** The person, or the person whose work an agent did. Absent for the workspace itself and fleetd staff. */
+  personId?: PersonId;
+};
+
+/** `person`: from their own device. `agent`: an agent's key. `workspace`: the workspace itself (the merge train, a schedule). `staff`: fleetd's own staff, on the cloud. */
+export type AuditActorKind = "person" | "agent" | "workspace" | "staff";
+
+/** The bot an audit row is about, by its name then. */
+export type AuditBot = {
+  machineId?: MachineId;
+  name: string;
+  projectId: ProjectId;
+};
+
+/** One row of the workspace's audit log (`audit_list`). Never a value or chat content. */
+export type AuditEvent = {
+  actor: AuditActor;
+  at: Timestamp;
+  bot?: AuditBot;
+  kind: AuditKind;
+  n: number;
+  outcome: AuditOutcome;
+  /** One plain line: what happened, by name. */
+  summary: string;
+  /** What it acted on, by name: a person, a vault item's label, a PR ("#123"), a setting. */
+  target?: string;
+};
+
+/**
+ * What an audit row records, `<group>.<verb>`; the group before the dot is what `audit_list`'s `kind` also takes. The
+ * cloud adds its own (signin, sso.*, billing.*, spend.limit, staff.download).
+ */
+export type KnownAuditKind =
+  | "person.joined"
+  | "person.left"
+  | "person.removed"
+  | "person.role"
+  | "invite.created"
+  | "invite.revoked"
+  | "device.added"
+  | "device.revoked"
+  | "bot.settings"
+  | "bot.erased"
+  | "vault.created"
+  | "vault.changed"
+  | "vault.deleted"
+  | "vault.revealed"
+  | "vault.refused"
+  | "vault.filled"
+  | "approval.answered"
+  | "pr.merged"
+  | "workspace.settings"
+  | "connection.added"
+  | "connection.removed";
+/** KnownAuditKind, or a value from a newer workspace or the cloud: its summary says what it was. */
+export type AuditKind = KnownAuditKind | (string & {});
+
+export type AuditListInput = {
+  /** Rows before this one (its `n`), for the next page. */
+  before?: number;
+  /** One kind (`vault.revealed`), or a group: `vault` is every `vault.*`. */
+  kind?: string;
+  /** At most; default 100. */
+  limit?: number;
+  /** What this person did, or an agent did for them. */
+  personId?: PersonId;
+  /** What was done on this bot. */
+  projectId?: ProjectId;
+  /** From this time on. */
+  since?: Timestamp;
+  /** Before this time. */
+  until?: Timestamp;
+};
+
+export type AuditListOutput = {
+  /** Newest first. */
+  events: AuditEvent[];
+  /** More rows before the last one. */
+  more: boolean;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** `refused`: the workspace said no (a member's change of an admin's setting, a fill on the wrong site). */
+export type AuditOutcome = "ok" | "refused" | "failed";
+
 /** One risky action a project ran without asking its person, as its settings' log shows it. */
 export type AutoApproved = {
   at: Timestamp;
@@ -10992,6 +11083,7 @@ export interface ToolMap {
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_part: { input: AttachmentPartInput; output: AttachmentPartOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
+  audit_list: { input: AuditListInput; output: AuditListOutput };
   automation_create: { input: AutomationCreateInput; output: AutomationCreateOutput };
   automation_delete: { input: AutomationDeleteInput; output: AutomationDeleteOutput };
   automation_list: { input: AutomationListInput; output: AutomationListOutput };

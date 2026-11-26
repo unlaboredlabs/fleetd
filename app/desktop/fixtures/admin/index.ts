@@ -127,6 +127,34 @@ const setup = (f: Fixture): void => {
   for (const step of list) f.answer("setup_test", { step: step.id }, { step }, 600);
 };
 
+/**
+ * Settings › Workspace › Audit log: a morning of Sam's workspace, newest first, by name: an admin's safety changes, a
+ * member's refused one, the vault, an approval, a merge and the people pages; older rows behind Older.
+ */
+const auditList = (f: Fixture): void => {
+  const at = (minutesAgo: number) => new Date(Date.parse(f.now) - minutesAgo * 60_000).toISOString();
+  const by = (p: JsonObject) => ({ kind: "person", personId: p["personId"] ?? "", name: p["name"] ?? "" });
+  const bot = (name: string) => ({ machineId: name === "billing" ? "buildbox" : "devbox", projectId: `bot-${name}`, name });
+  const rows: JsonObject[] = [
+    { at: at(4), kind: "bot.settings", actor: by(alice), bot: bot("storefront"), target: "Approvals", outcome: "ok", summary: "Set approvals to Ask me" },
+    { at: at(9), kind: "bot.settings", actor: by(bob), bot: bot("storefront"), target: "Merging", outcome: "refused", summary: "Tried to set who merges to fleetd" },
+    { at: at(15), kind: "vault.filled", actor: { kind: "agent", personId: "p_aaaaaaaa", name: "Sam Rivera's agent" }, bot: bot("checkout"), target: "Stripe test login", outcome: "ok", summary: 'Filled "Stripe test login" on dashboard.stripe.com' },
+    { at: at(22), kind: "pr.merged", actor: { kind: "workspace", name: "fleetd's merge train" }, bot: bot("docs"), target: "#412", outcome: "ok", summary: "Merged #412 into acme/docs" },
+    { at: at(31), kind: "approval.answered", actor: by(sam), bot: bot("billing"), target: "approval", outcome: "ok", summary: "Approved: Run the database migration on staging" },
+    { at: at(48), kind: "vault.revealed", actor: by(alice), target: "AWS root", outcome: "ok", summary: 'Showed "AWS root"' },
+    { at: at(62), kind: "bot.settings", actor: by(sam), bot: bot("billing"), target: "Max agents", outcome: "ok", summary: "Set max agents to 4" },
+    { at: at(75), kind: "vault.refused", actor: { kind: "agent", name: "An agent" }, bot: bot("search"), target: "GitHub login", outcome: "refused", summary: 'Was refused a fill of "GitHub login" on github-login.example.net' },
+    { at: at(90), kind: "connection.added", actor: by(alice), target: "the workspace's tool server linear", outcome: "ok", summary: "Connected the workspace's tool server linear" },
+    { at: at(130), kind: "person.role", actor: by(sam), target: "Alice Chen", outcome: "ok", summary: "Changed Alice Chen's role from member to admin" },
+    { at: at(160), kind: "device.added", actor: by(bob), target: "Bob's MacBook", outcome: "ok", summary: "Added the device Bob's MacBook" },
+    { at: at(161), kind: "person.joined", actor: by(bob), target: "Bob Okafor", outcome: "ok", summary: "Bob Okafor joined the workspace on Bob's MacBook" },
+    { at: at(200), kind: "invite.created", actor: by(sam), target: "Bob Okafor", outcome: "ok", summary: "Invited Bob Okafor as member" },
+    { at: at(60 * 26), kind: "bot.erased", actor: by(sam), bot: bot("analytics"), target: "analytics", outcome: "ok", summary: 'Deleted the bot "analytics"' },
+    { at: at(60 * 30), kind: "workspace.settings", actor: by(alice), target: "Updates", outcome: "ok", summary: "Changed how the workspace updates" },
+  ].map((r, i, all) => ({ n: 9000 + all.length - i, ...r }));
+  f.answer("audit_list", undefined, { events: rows, more: true });
+};
+
 /** The owner's hub as `me` sees it, with every write answered as the hub would. */
 function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: boolean, membersUseHubApi = true): Fixture {
   return answerHub(Fixture.from(from, name, note), me, admin, membersUseHubApi);
@@ -143,6 +171,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   f.answer("onepassword_test", undefined, { test: { ...vaults, at: f.now } });
   f.answer("usage_status", undefined, usageStatus);
   f.answer("people_list", undefined, people(me));
+  if (admin) auditList(f);
   // Settings › You › General, Name: the hub keeps a name as typed, trimmed, and refuses an empty one in its own words.
   const renamed = `${asText(me["name"])} Jr.`;
   f.answer("person_name_set", { name: renamed }, { person: { ...me, name: renamed } });
@@ -208,7 +237,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
 function oldHub(from: Fixture): Fixture {
   const f = Fixture.from(from, "admin-old-hub", "A workspace from before people: its admin key reaches the Workspace group, and People and Invites ask for an update");
   f.answer("hub_info", undefined, { version: "0.8.0", protocol: 1, busy: [], admin: true });
-  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove"]) {
+  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "audit_list"]) {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the workspace's MCP tool list." });
   }
   // Its MCP servers are older than people: Every project shows them, none here.

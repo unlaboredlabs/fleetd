@@ -18,7 +18,7 @@ commands:
   help       show this message
 ${U.UPDATE_USAGE}
 setting up (on the workspace's machine):
-${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.GITHUB_APP_USAGE}
+${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.AUDIT_USAGE}${U.GITHUB_APP_USAGE}
 moving a workspace:
 ${U.EXPORT_USAGE}
 bots:
@@ -46,6 +46,8 @@ export function helpFor(argv: string[]): string | undefined {
       case "invite":
       case "people":
         return U.PEOPLE_USAGE;
+      case "audit":
+        return U.AUDIT_USAGE;
       case "github-app":
         return U.GITHUB_APP_USAGE;
       case "project":
@@ -184,6 +186,8 @@ export async function main(argv: string[]): Promise<number> {
         return emit(await (await import("./people.ts")).inviteCommand(rest));
       case "people":
         return emit(await (await import("./people.ts")).peopleCommand(rest));
+      case "audit":
+        return emit((await import("./audit.ts")).auditCommand(rest));
       case "prompts":
         return emit(await (await import("./prompts.ts")).promptsCommand(rest));
       case "instructions":

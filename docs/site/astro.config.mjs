@@ -92,6 +92,7 @@ export default defineConfig({
             "agent-time",
             "payments-and-sign-ins",
             "people",
+            "audit-log",
             "approvals-and-secrets",
             "vault",
             "automations",
