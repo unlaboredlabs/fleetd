@@ -1,7 +1,7 @@
 # fleetd.sh
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
-fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first, and `/download/mac` (the hero's Download for Mac) redirects to the Mac app's disk image on the edge release (`.github/release/macos-dmg.sh`). Every
+fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first, and `/download/mac` (the hero's Download for Mac) redirects to the Mac app's disk image on the edge release (`.github/release/macos-dmg.sh`), or to that release's page (the app's .zip) while there's none yet (`api/download-mac.mjs`, a Vercel function the rewrite sends it to). Every
 answer carries a Content-Security-Policy (`vercel.json`'s `/(.*)` headers): scripts and styles from the site itself
 (inline ones too), clips and posters from media.unlabored.net, pricing's plans from accounts.fleetd.dev, Pagefind's
 WebAssembly; a page that loads from anywhere else needs that origin added there. `home.html` is the landing page: a hero

@@ -52,14 +52,13 @@
       "source": "/docs/several-hubs{/}?",
       "destination": "/docs/several-workspaces",
       "permanent": true
-    },
-    {
-      "source": "/download/mac{/}?",
-      "destination": "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-desktop-macos-universal.dmg",
-      "permanent": false
     }
   ],
   "rewrites": [
+    {
+      "source": "/download/mac{/}?",
+      "destination": "/api/download-mac"
+    },
     {
       "source": "/updates",
       "has": [

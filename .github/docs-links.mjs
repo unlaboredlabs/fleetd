@@ -46,6 +46,13 @@ const AWAY = new Map(
     .redirects.filter((r) => /^https?:\/\//u.test(r.destination) && /^[/a-z0-9-]+(\{\/\}\?)?$/u.test(r.source))
     .map((r) => [r.source.replace("{/}?", ""), r.destination]),
 );
+// Its rewrites to a function of the site's (/download/mac → site/api/download-mac.mjs, which answers a redirect that
+// always lands): a link to one passes while that function is there.
+const SERVED = new Map(
+  JSON.parse(fs.readFileSync("site/vercel.json", "utf8"))
+    .rewrites.filter((r) => /^\/api\/[a-z0-9-]+$/u.test(r.destination) && /^[/a-z0-9-]+(\{\/\}\?)?$/u.test(r.source))
+    .map((r) => [r.source.replace("{/}?", ""), `site${r.destination}.mjs`]),
+);
 const decode = (s) => s.replaceAll("&amp;", "&").replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">");
 
 for (const page of PAGES) {
@@ -69,6 +76,11 @@ for (const page of PAGES) {
     const away = AWAY.get(where.replace(/(.)\/$/u, "$1"));
     if (away !== undefined) {
       external.set(away, page);
+      continue;
+    }
+    const served = SERVED.get(where.replace(/(.)\/$/u, "$1"));
+    if (served !== undefined) {
+      if (!fs.existsSync(served)) errors.push(`${page}: ${link}: ${served} is not there to answer it`);
       continue;
     }
     const target = where === "" ? page : resolve(where.split("?")[0]);
