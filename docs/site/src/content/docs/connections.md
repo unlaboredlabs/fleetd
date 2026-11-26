@@ -76,12 +76,14 @@ on to your workspace's own address. Your browser makes that last step, so fleetd
 gets the one-time sign-in code and nothing else. It keeps nothing and logs nothing. The code is useless without a key
 that only your workspace holds.
 
-It's on by default. An admin can turn it off at the foot of **Connections**, with **Sign-in return page**. You can
-also give the workspace an https address, which signs in directly. With Tailscale running on the workspace's computer,
-press **Give the workspace an https address** there. It runs Tailscale Serve for the workspace. Or run it yourself:
+It's on by default. An admin can turn it off at the foot of **Connections**, with **Sign-in return page**. While the
+page can't be reached, sign-ins come back to the workspace's own address, as they did before. You can also give the
+workspace an https address, which signs in directly. With Tailscale running on the workspace's computer, press **Give
+the workspace an https address** there. It runs Tailscale Serve for the workspace on https port 443, or 8443 when
+another site already uses 443. Or run it yourself, with the port your workspace listens on:
 
 ```sh
-tailscale serve --bg 4790
+tailscale serve --bg --https=8443 4790
 ```
 
 A workspace with an https address never uses the return page.
