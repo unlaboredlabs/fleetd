@@ -216,6 +216,34 @@ test("a message to a finished agent whose Monitor is armed wakes it in its own t
   k.hub.shutdown.abort();
 });
 
+test("what a finished agent waits on is read from its own rows, never from every done task", async () => {
+  const k = await setup();
+  await k.ended();
+  k.threadRow("s1", "completed", "done", { watchingUntil: new Date(k.clock.ms + 600_000).toISOString(), watching: ["the full check"] });
+  const conn = k.hub.db.conn;
+  const ran: string[] = [];
+  const query = conn.query.bind(conn);
+  conn.query = ((sql: string) => (ran.push(sql), query(sql))) as typeof conn.query;
+  let on: string | undefined;
+  try {
+    on = k.t.waitingOn("T1");
+  } finally {
+    conn.query = query;
+  }
+  expect(on).toBe("a Monitor (the full check)");
+  // At the workspace's start it runs once per held message: a scan of every done task for each made the devbox's
+  // start wait 3.5 s for its 111.
+  const plans = ran.flatMap((sql) => {
+    const plan = conn.query(`EXPLAIN QUERY PLAN ${sql}`);
+    return (plan.all(...(Array(plan.paramsCount).fill(null) as null[])) as { detail: string }[]).map((r) => r.detail);
+  });
+  // Each read of a task is of that one task, by its number; of a thread, by its key.
+  const reads = plans.filter((d) => /^(SCAN|SEARCH) (tasks|threads|t|th)\b/.test(d));
+  expect(reads.length).toBeGreaterThan(0);
+  expect(reads.filter((d) => !/USING INTEGER PRIMARY KEY|USING INDEX sqlite_autoindex_threads_1/.test(d))).toEqual([]);
+  k.hub.shutdown.abort();
+});
+
 test("a message to a finished agent that waits on nothing never wakes it, even after the batch", async () => {
   const k = await setup();
   await k.ended();
