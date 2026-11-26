@@ -529,11 +529,15 @@ units() {
 # CLI as it was started. can_look: whether this machine lets it look at all.
 running() {
   if [ -d /proc/self ]; then
-    for d in /proc/[0-9]*; do
-      exe="$(readlink "$d/exe" 2>/dev/null)" || continue
-      case "$exe" in "$bin_dir/fleetd" | "$bin_dir/fleetd (deleted)") ;; *) continue ;; esac
-      printf '%s %s\n' "${d#/proc/}" "$(tr '\000' ' ' 2>/dev/null <"$d/cmdline")"
-    done
+    # Every process's binary in one ls, not a readlink each: a thousand processes took over ten seconds a look.
+    # shellcheck disable=SC2012 # ls -l of /proc's links is the one-process way to read them all
+    ls -l /proc/[0-9]*/exe 2>/dev/null | awk -v exe="$bin_dir/fleetd" '
+      { at = index($0, " -> "); if (at == 0) next; to = substr($0, at + 4)
+        if (to != exe && to != exe " (deleted)") next
+        link = substr($0, 1, at - 1); sub(/\/exe$/, "", link); sub(/^.*\/proc\//, "", link); print link }' |
+      while IFS= read -r pid; do
+        printf '%s %s\n' "$pid" "$(tr '\000' ' ' 2>/dev/null <"/proc/$pid/cmdline")"
+      done
   else
     { ps -eo pid=,args= 2>/dev/null || ps -o pid=,args= 2>/dev/null; } | awk -v exe="$bin_dir/fleetd" -v link="$HOME/.local/bin/fleetd" '
       { line = $0; sub(/^[ \t]*/, "", line); pid = line; sub(/[ \t].*$/, "", pid); sub(/^[0-9]+[ \t]+/, "", line) }
