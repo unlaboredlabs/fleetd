@@ -106,7 +106,7 @@ p,h1,h2,table,blockquote{margin:0}
 }
 @media (max-width:640px){
   .nav{gap:14px}
-  .nav .gh,.nav .in{display:none}
+  .nav .gh{display:none}
   .doc .facts li{grid-template-columns:minmax(0,1fr);gap:0}
   .doc tbody th,.doc thead .num{white-space:normal}
   .doc .num{padding-left:12px}
