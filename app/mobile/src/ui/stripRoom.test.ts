@@ -56,7 +56,7 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
   it("is SheetRoom for every Modal sheet, and the window's strip for every overlay over the whole window", () => {
     const modals = all(/Modal/u);
     const sheets = modals.filter((m) => /presentationStyle="(pageSheet|formSheet)"/u.test(m.tag));
-    expect(sheets.map((m) => m.path).sort()).toEqual(["src/screens/Chat.tsx", "src/screens/PinnedMessages.tsx", "src/screens/SignIn.tsx", "src/screens/manage/ChatFind.tsx", "src/screens/manage/TypedDelete.tsx"]);
+    expect(sheets.map((m) => m.path).sort()).toEqual(["src/screens/Chat.tsx", "src/screens/NotifyAsk.tsx", "src/screens/PinnedMessages.tsx", "src/screens/SignIn.tsx", "src/screens/manage/ChatFind.tsx", "src/screens/manage/TypedDelete.tsx"]);
     const overlays = modals.filter((m) => !sheets.includes(m));
     expect(overlays.map((m) => m.path).sort()).toEqual(["src/screens/Sections.tsx", "src/ui/Media.tsx", "src/ui/Menu.tsx"]);
     for (const { path } of sheets) {

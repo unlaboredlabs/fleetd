@@ -13,6 +13,7 @@ import { askNotifications } from "../notifications";
 import { space, type, useTheme } from "../theme";
 import { Being } from "../ui/Being";
 import { Button } from "../ui/Button";
+import { SheetRoom } from "../ui/StripRoom";
 
 const answered = (): File => new File(Paths.document, "notify-asked.json");
 
@@ -71,7 +72,7 @@ export function NotifyAsk() {
   };
   return (
     <Modal visible={shown} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
-      <View style={[styles.sheet, { backgroundColor: t.bg, paddingBottom: insets.bottom + space.lg }]}>
+      <SheetRoom style={[styles.sheet, { backgroundColor: t.bg, paddingBottom: insets.bottom + space.lg }]}>
         <View style={styles.middle}>
           <Being state="needs" size={88} color="blue" />
           <Text style={[type.title1, styles.center, { color: t.label }]} accessibilityRole="header">
@@ -85,7 +86,7 @@ export function NotifyAsk() {
           <Button label="Turn On Notifications" size="large" busy={busy} onPress={turnOn} />
           <Button label="Not Now" kind="plain" size="large" disabled={busy} onPress={close} />
         </View>
-      </View>
+      </SheetRoom>
     </Modal>
   );
 }

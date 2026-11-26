@@ -67,10 +67,7 @@ export const pushDeps: PushDeps = {
 };
 
 /** iOS's (or Android's) own prompt, asked once the person chose to turn notifications on: whether they're allowed. */
-export const askNotifications = async (): Promise<boolean> => {
-  if (process.env.EXPO_PUBLIC_FLEETD_SCREENS === "1") return false;
-  return (await Notifications.requestPermissionsAsync()).granted;
-};
+export const askNotifications = async (): Promise<boolean> => (await Notifications.requestPermissionsAsync()).granted;
 
 const channels = async (): Promise<void> => {
   for (const [id, channel] of Object.entries(CHANNELS)) {
