@@ -38,6 +38,7 @@ const SYMBOLS = {
   scan: ["qrcode.viewfinder", "qr_code_scanner"],
   keyboard: ["keyboard", "keyboard"],
   close: ["xmark", "close"],
+  perf: ["waveform.path.ecg", "monitor_heart"],
   camera: ["camera.fill", "photo_camera"],
   status: ["antenna.radiowaves.left.and.right", "sensors"],
   info: ["info", "info"],

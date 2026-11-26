@@ -114,14 +114,18 @@ export function encoderArgs(input: Input, kbps: number, cores = navigator.hardwa
 export class X264 {
   private readonly proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
   private stopped = false;
-  /** The times of the frames put and not yet out. */
+  /** The times of the frames put and not yet out, and when each went in (performance.now()). */
   private readonly times: number[] = [];
+  private readonly putAt: number[] = [];
   readonly ended: Promise<string | undefined>;
 
   constructor(ffmpeg: string, input: Input, kbps: number, onFrame: (frame: Encoded, atMs: number) => void) {
     const proc = Bun.spawn([ffmpeg, ...encoderArgs(input, kbps)], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
     this.proc = proc;
-    const reader = new FlvReader((f) => onFrame(f, this.times.shift() ?? 0));
+    const reader = new FlvReader((f) => {
+      const at = this.putAt.shift();
+      onFrame(at === undefined ? f : { ...f, ms: performance.now() - at }, this.times.shift() ?? 0);
+    });
     const said = new Response(proc.stderr).text();
     this.ended = (async () => {
       try {
@@ -137,6 +141,7 @@ export class X264 {
   put(frame: Uint8Array, atMs = 0): void {
     if (this.stopped) return;
     this.times.push(atMs);
+    this.putAt.push(performance.now());
     try {
       this.proc.stdin.write(frame);
       void this.proc.stdin.flush();

@@ -17,6 +17,8 @@
 // A screen's frames can't all be dropped alike: an H.264 frame not taken loses the ones made from it, so the sender
 // then waits for a keyframe or a JPEG and asks the screen for one, at most each KEY_EVERY.
 
+import type { LinkPerf } from "../../shared/contracts.ts";
+
 /** Times are ms. */
 const BASE_WINDOW = 10_000;
 const PAUSE_AGE = 250;
@@ -230,6 +232,17 @@ export class AckFlow {
     return this.target >= START_KBPS ? undefined : this.target;
   }
 
+  /** The link as the panel shows it (contracts' LinkPerf), from what the acks measured. */
+  stats(now: number): Omit<LinkPerf, "skipped"> {
+    const kbps = this.kbps();
+    return {
+      rttMs: Math.round(this.networkBase()),
+      queueMs: Math.round(this.standingAbove(now, this.network, this.networkBase())),
+      ...(this.goodput > 0 ? { kbps: Math.round(this.goodput) } : {}),
+      ...(kbps === undefined ? {} : { budgetKbps: kbps }),
+    };
+  }
+
   /** The viewer stalled: start again, as with a new viewer. */
   reset(): void {
     this.frames.length = 0;
@@ -256,6 +269,8 @@ export class FrameSender<T> {
   /** The viewer draws at most `fps`: frames go no closer together than this, the newest whole picture at the gap. */
   private readonly gap: number | undefined;
   private lastSent = Number.NEGATIVE_INFINITY;
+  /** Frames offered and not taken since `stats` last read them. */
+  private skipped = 0;
   private deferred: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -286,11 +301,19 @@ export class FrameSender<T> {
       this.needKey = true;
     }
     this.flow.update(now);
-    if (frame.h264 && !frame.key && this.needKey) return this.askKey(now);
+    if (frame.h264 && !frame.key && this.needKey) {
+      this.skipped++;
+      return this.askKey(now);
+    }
     if (!frame.h264 || frame.key) {
       // Deltas after a JPEG that replaced some unsent are made from those: they wait for a keyframe.
       const lost = !frame.key && this.queue.some((q) => q.h264);
-      for (const q of this.queue.splice(0)) this.flow.unadmit(q.seq);
+      // Skipped only where the link held it: one that waits out the viewer's own frame gap is a frame it never asked for.
+      const held = this.deferred === undefined;
+      for (const q of this.queue.splice(0)) {
+        this.flow.unadmit(q.seq);
+        if (held) this.skipped++;
+      }
       this.needKey = lost;
       if (lost) this.askKey(now);
       if (this.flow.paused(now) && this.flow.frames.length > 0) {
@@ -300,7 +323,11 @@ export class FrameSender<T> {
         return this.pump();
       }
     } else if (this.flow.paused(now)) {
-      for (const q of this.queue.splice(0)) this.flow.unadmit(q.seq);
+      for (const q of this.queue.splice(0)) {
+        this.flow.unadmit(q.seq);
+        this.skipped++;
+      }
+      this.skipped++;
       this.needKey = true;
       return this.askKey(now);
     }
@@ -353,6 +380,13 @@ export class FrameSender<T> {
       this.out.budget(kbps);
     }
     this.pump();
+  }
+
+  /** The link's measures, and the frames skipped since the last read (contracts' LinkPerf). */
+  stats(): LinkPerf {
+    const out = { ...this.flow.stats(this.now()), skipped: this.skipped };
+    this.skipped = 0;
+    return out;
   }
 
   end(): void {

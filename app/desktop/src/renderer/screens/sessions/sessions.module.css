@@ -1041,3 +1041,147 @@
   align-items: center;
   margin-inline-end: auto;
 }
+
+/* A live screen's performance panel (PerfPanel.tsx): a column beside the screen, which refits to the room left, so
+   it never covers the picture or takes its input. Words first, the measures in a two-column list under quiet labels. */
+.liveFill {
+  container: live / inline-size;
+}
+.liveStage {
+  flex: 1;
+  display: flex;
+  gap: var(--space-4);
+  min-height: 0;
+}
+.perf {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 248px;
+  min-height: 0;
+  border-left: 1px solid var(--hairline);
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+}
+.perf .stepsHead {
+  height: var(--bar);
+  padding: 0 var(--space-2) 0 var(--space-3);
+}
+.perfBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3);
+}
+.perfVerdict {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.perfGraph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.perfGraphHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.perfChart {
+  display: block;
+  width: 100%;
+  height: 36px;
+  overflow: visible;
+}
+/* Frames made and not shown: the one colour, for what went missing. */
+.perfGap {
+  fill: var(--warning);
+  fill-opacity: 0.28;
+}
+.perfMade {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+}
+.perfShown {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.perfBase {
+  stroke: var(--hairline);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.perfAxis {
+  display: flex;
+  justify-content: space-between;
+  line-height: 1;
+}
+.perfAxis > * {
+  font-size: 11px;
+}
+.perfGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.perfLabel {
+  display: block;
+}
+.perfRows {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  row-gap: 3px;
+  margin: 0;
+}
+.perfRow {
+  display: contents;
+}
+.perfRow dt,
+.perfRow dd {
+  margin: 0;
+  min-width: 0;
+}
+.perfRow dd {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+
+/* A narrow view: the panel goes under the screen, full width and at most a little over a third of the height, its
+   verdict, graph and groups side by side as room allows. */
+@container live (max-width: 720px) {
+  .liveStage {
+    flex-direction: column;
+  }
+  .perf {
+    width: auto;
+    max-height: 38%;
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+    margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  }
+  .perfBody {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    column-gap: var(--space-6);
+    row-gap: var(--space-3);
+  }
+  .perfVerdict,
+  .perfGraph {
+    flex: 1 1 220px;
+  }
+  .perfGroup {
+    flex: 1 1 180px;
+  }
+}

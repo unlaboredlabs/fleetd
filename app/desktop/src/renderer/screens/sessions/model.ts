@@ -123,6 +123,8 @@ export interface BrowserSession {
   readonly device?: PhoneDevice;
   /** Live, and its machine answers a screen peer (`browser_rtc`): the window may watch it peer to peer. */
   readonly rtc?: true;
+  /** The machine it runs on, where the hub says. */
+  readonly machineId?: string;
 }
 
 /** A phone screen's device: the controls its machine checked work there, which way it is turned, folded, light or dark. */

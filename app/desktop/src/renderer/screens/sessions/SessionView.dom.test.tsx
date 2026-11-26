@@ -10,6 +10,7 @@ import { DataProvider } from "../../src/data/react";
 import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { SessionView } from "./SessionView";
+import { setPerfOpen } from "./perf";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -385,4 +386,44 @@ it("shows a phone's frame at its own shape, its island along the edge its top tu
   expect(strip()?.querySelector("[aria-label='Home']")).toBeNull();
   // This DOM has no WebGL: flat only, and the 3D button says why.
   expect(strip()?.querySelector("[aria-label^='3D needs WebGL']")).not.toBeNull();
+});
+
+const perfToggle = () => host.querySelector<HTMLButtonElement>("button[aria-label='Performance']");
+const perfPanel = () => host.querySelector("aside[aria-label='Performance']");
+
+it("keeps a live screen's performance closed until its toggle opens it, beside the page, and remembers the choice", async () => {
+  setPerfOpen(false);
+  await mount("bs-live");
+  expect(perfToggle()?.getAttribute("aria-pressed")).toBe("false");
+  expect(perfPanel()).toBeNull();
+  act(() => perfToggle()?.click());
+  // Beside the page, not over it: the page's frame is still there, a sibling of the panel's column.
+  expect(perfPanel()).not.toBeNull();
+  expect(perfToggle()?.getAttribute("aria-pressed")).toBe("true");
+  expect(perfPanel()?.parentElement?.querySelector("[data-control='agent']")).not.toBeNull();
+  expect(window.localStorage.getItem("fleetd.screenPerf")).toBe("open");
+  act(() => root?.unmount());
+  root = undefined;
+  // Another screen, another time: still open.
+  await mount("bs-yours");
+  expect(perfPanel()).not.toBeNull();
+  act(() => host.querySelector<HTMLButtonElement>("button[aria-label='Hide performance']")?.click());
+  expect(perfPanel()).toBeNull();
+  expect(window.localStorage.getItem("fleetd.screenPerf")).toBe("closed");
+});
+
+it("reads the screen's measures as they come: what it sent, the round trip, the machine", async () => {
+  setPerfOpen(true);
+  await mount("bs-live");
+  expect(perfPanel()?.textContent).toContain("Measuring");
+  const perf = (seq: number) => ({ sent: seq, seq, madeFps: 30, madeKbps: 900, encoder: "x264", encodeMs: 2.6, cores: 8, cpuPct: 41, memPct: 52, link: { rttMs: 12, queueMs: 0, skipped: 0 } });
+  for (let seq = 1; seq <= 61; seq++) {
+    act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq, jpegB64: "AAAA", width: 1280, height: 800, control: "agent", ...(seq % 30 === 1 ? { perf: perf(seq) } : {}) } }));
+  }
+  await act(() => new Promise((done) => setTimeout(done, 1_100)));
+  const text = perfPanel()?.textContent ?? "";
+  expect(text).toContain("Round trip12 ms");
+  expect(text).toContain("Encoder2.6 msx264 on the CPU");
+  expect(text).toContain("CPU41%of 8 cores");
+  setPerfOpen(false);
 });

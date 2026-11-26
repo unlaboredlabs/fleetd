@@ -9,7 +9,7 @@
 // input is refused as any other's. A watch that acks its frames gets them through a
 // FrameSender (./flow.ts): as many on their way as the acks' round trip needs, none taken while a queue stands, and its
 // budget from the same acks. One that doesn't ack gets each frame as it comes.
-import type { BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
+import type { BrowserFrame, BrowserInput, ScreenPerf } from "../../shared/contracts.ts";
 import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
 import type { BrowserRtcReport } from "../../shared/screens_wire.ts";
 import { allows } from "../auth/index.ts";
@@ -32,7 +32,9 @@ class Connection {
   /** The app's peers, by its own id: the hub's id for each, the node's, and its session. */
   readonly peers = new Map<string, { id: string; machine: string; session: string; owner: string; input: boolean }>();
   /** The acking watch's frames, paced to its acks. */
-  sender: FrameSender<string> | undefined;
+  sender: FrameSender<BrowserFrame> | undefined;
+  /** The screen's newest measures not sent yet: they go, with this connection's link's, on the next frame that does. */
+  perf: ScreenPerf | undefined;
   /** The last frame sent, by its link and seq. */
   last: { link: number | undefined; seq: number } | undefined;
   thumbs: (() => void) | undefined;
@@ -221,7 +223,8 @@ export function browserWatch(
     if (c.rtc !== undefined) return;
     if (!c.sender) return void appWs(hub).sendTo(conn, textOf(frame));
     const h264 = frame.h264B64 !== undefined;
-    c.sender.offer({ seq: frame.seq, bytes: Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3, h264, key: frame.key === true, data: textOf(frame) });
+    if (frame.perf !== undefined) c.perf = frame.perf;
+    c.sender.offer({ seq: frame.seq, bytes: Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3, h264, key: frame.key === true, data: frame });
   };
   try {
     // While its machine isn't linked, the app shows it waits for it, over the last picture, until the next frame.
@@ -230,10 +233,28 @@ export function browserWatch(
     c.asked = asked;
     if (msg.acks) {
       const w = c.watch;
-      c.sender = new FrameSender<string>(
-        { send: (f) => void appWs(hub).sendTo(conn, f.data), key: () => w.key(), budget: (kbps) => w.budget(kbps) },
+      const sender: FrameSender<BrowserFrame> = new FrameSender<BrowserFrame>(
+        {
+          // The screen's newest measures go on the next frame that does, with this connection's own link's (the
+          // performance panel's): that frame's text is its own.
+          send: (f) => {
+            const perf = c.perf;
+            c.perf = undefined;
+            // A frame whose own measures an earlier one carried goes without them: one measure a frame number.
+            const text =
+              perf !== undefined
+                ? JSON.stringify({ ...f.data, perf: { ...perf, link: sender.stats() }, t: "browser_frame" })
+                : f.data.perf === undefined
+                  ? textOf(f.data)
+                  : JSON.stringify({ ...f.data, perf: undefined, t: "browser_frame" });
+            void appWs(hub).sendTo(conn, text);
+          },
+          key: () => w.key(),
+          budget: (kbps) => w.budget(kbps),
+        },
         msg.fps,
       );
+      c.sender = sender;
     }
     if (rtc !== undefined) {
       c.rtc = rtc;

@@ -10,7 +10,7 @@
 // Once it has ended: its replay, the recording in the same frame; Steps opens its steps beside it, each step a jump to
 // its moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its
 // value is never on the hub to show, nor in a snapshot.
-import { AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
+import { Activity, AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -52,6 +52,8 @@ import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
 import { DeviceRail } from "./DeviceRail";
 import { DeviceStage, useDevice, type Place, type StageView } from "./DeviceStage";
+import { perfDrawn, usePerfOpen, useScreenPerf } from "./perf";
+import { PerfPanel } from "./PerfPanel";
 import s from "./sessions.module.css";
 
 /** How long an empty page stays without words before it says what it waits for. */
@@ -202,6 +204,16 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const navigates = useData((d) => d.features.includes(NAVIGATE));
   const nav = useMemo(() => (takes && navigates && x.kind === undefined ? pageNav(layer.hub, x.id) : undefined), [takes, navigates, x.kind, layer.hub, x.id]);
   const [asking, setAsking] = useState<"human" | "agent" | null>(null);
+  const [perfOn, setPerf] = usePerfOpen();
+  const perfNow = useScreenPerf(x.id, perfOn && !away);
+  const direct = useData((d) => d.browserRtc === x.id);
+  const machineName = useData((d) => (x.machineId === undefined ? undefined : d.machines[x.machineId]?.name));
+  // The page's width in this screen's own pixels, read with each second's measures while the panel is open.
+  const [shownWidth, setShownWidth] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const box = page.current?.getBoundingClientRect();
+    setShownWidth(box === undefined ? undefined : box.width * window.devicePixelRatio);
+  }, [perfNow]);
   // Taken over, the keys go to the page at once (in the window that has it).
   useEffect(() => {
     if (takes) page.current?.focus();
@@ -230,6 +242,14 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
         run: () => control("agent"),
       },
       {
+        id: "session.perf",
+        title: "Show or hide the screen’s performance",
+        detail: "Frames, delay and the machine behind the screen, beside it",
+        group: "actions",
+        enabled: () => !away,
+        run: () => setPerf(!perfOn),
+      },
+      {
         id: "session.end",
         title: "End this screen",
         detail: "Close the screen you opened; its recording goes to the workspace",
@@ -238,7 +258,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
         run: end,
       },
     ],
-    [x.id, takes, own],
+    [x.id, takes, own, away, perfOn],
   );
   const popOut = () => {
     if (!yours) control("human");
@@ -283,6 +303,11 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   ) : x.state === "running" ? (
     takeOver("secondary")
   ) : null;
+  const perfToggle = away ? null : (
+    <Tooltip content={`${perfOn ? "Hide" : "Show"} performance · ${display("session.perf", window.fleetd.platform)}`}>
+      <Button variant={perfOn ? "secondary" : "quiet"} size="sm" iconOnly icon={<Activity aria-hidden />} aria-label="Performance" aria-pressed={perfOn} onClick={() => setPerf(!perfOn)} />
+    </Tooltip>
+  );
   // What the agent does while it has the screen; nothing while you do, which the line says.
   const doing = (x.state === "running" && !own) || x.state === "handingBack" ? nowLine(x) : undefined;
   const phone = x.kind === "ios" || x.kind === "android";
@@ -290,8 +315,18 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const rail = (view: StageView) => <DeviceRail sessionId={x.id} device={takes ? x.device : undefined} name={x.model ?? (x.kind === "ios" ? "iPhone" : "Android")} view={view} />;
   return (
     <>
-      <Head session={x} windowed={windowed} back={back} controls={controls} />
-      <div className={s.fill}>
+      <Head
+        session={x}
+        windowed={windowed}
+        back={back}
+        controls={
+          <>
+            {perfToggle}
+            {controls}
+          </>
+        }
+      />
+      <div className={cx(s.fill, s.liveFill)}>
         {x.state === "asking" && x.handoff !== undefined ? (
           <div className={s.ask} role="status">
             <span className={s.askWords}>
@@ -303,6 +338,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
             {takeOver("primary")}
           </div>
         ) : null}
+        <div className={s.liveStage}>
         {/* What the agent does sits right under the screen, which leaves it its room. */}
         <div className={cx(s.stageFit, !phone && s.stageTop)} style={doing === undefined ? undefined : ({ "--below": "26px" } as CSSProperties)}>
           <Frame
@@ -320,6 +356,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
             {...(nav === undefined ? {} : { nav })}
             rail={rail}
             place={place}
+            onDrawn={(seq, w, h) => perfDrawn(x.id, seq, w, h)}
             {...(x.model === undefined ? {} : { model: x.model })}
             {...(x.device === undefined ? {} : { device: x.device })}
           />
@@ -330,6 +367,18 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
               </Truncate>
             </span>
           )}
+        </div>
+        {perfOn && !away ? (
+          <PerfPanel
+            now={perfNow}
+            kind={x.kind}
+            screen={frame === undefined ? undefined : { width: frame.width, height: frame.height }}
+            shownWidth={shownWidth}
+            direct={direct}
+            machine={machineName}
+            onClose={() => setPerf(false)}
+          />
+        ) : null}
         </div>
       </div>
     </>
@@ -364,7 +413,10 @@ function Frame({
   device,
   picture,
   replaySurface,
+  onDrawn,
 }: {
+  /** A JPEG drawn as the page (not under the H.264 canvas), of its own size: the performance panel counts it. */
+  onDrawn?: (seq: number, width: number, height: number) => void;
   /** Where the live screen's H.264 is drawn (video.ts), over `image` while `videoOn` (it has a newer picture). */
   videoSurface?: Surface;
   videoOn?: boolean;
@@ -429,7 +481,16 @@ function Frame({
         (image === undefined ? (
           <span className={s.blank}>{caption === undefined ? null : <Text size="xs" tone="quiet">{caption}</Text>}</span>
         ) : (
-          <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
+          <img
+            src={image.src}
+            alt=""
+            draggable={false}
+            onLoad={(e) => {
+              painted();
+              if (!videoOn && image.seq !== undefined) onDrawn?.(image.seq, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+            }}
+            data-seq={image.seq}
+          />
         ))}
       {media === undefined && videoSurface !== undefined ? <SurfaceHost surface={videoSurface} className={s.video} on={videoOn} /> : null}
       {/* After the H.264 canvas, which fills the frame: the line is over the picture whichever shows it. */}

@@ -39,8 +39,9 @@ export type StreamRun = {
   inputPending?: () => boolean;
 };
 
-/** One encoded frame: an access unit in Annex B, its parameter sets first on a keyframe. */
-export type Encoded = { data: Uint8Array; key: boolean };
+/** One encoded frame: an access unit in Annex B, its parameter sets first on a keyframe; `ms`, the encoder's time
+ * from the frame in to it out, where the node encoded it. */
+export type Encoded = { data: Uint8Array; key: boolean; ms?: number };
 
 /** What frames go into an encoder: a screen's raw pixels (32 bits each, BGRA in memory) at its size, its picture as
  * NV12 (./nv12.ts, an even size), or JPEGs of a size. */
@@ -93,6 +94,16 @@ export function fpsFor(max: number, kbps: number | undefined, load: number, aske
   else if (load >= BUSY) fps = Math.min(fps, max / 2);
   if (asked !== undefined && asked > 0) fps = Math.min(fps, asked);
   return STEPS.find((s) => s <= fps) ?? STEPS.at(-1)!;
+}
+
+/** What holds a screen at fpsFor's rate under `max`: the bound alone at the rate, the machine's load before the link
+ * before the watcher's ask when two give it; undefined at `max`. */
+export function capBy(max: number, kbps: number | undefined, load: number, asked?: number): "busy" | "link" | "asked" | undefined {
+  const fps = fpsFor(max, kbps, load, asked);
+  if (fps >= max) return undefined;
+  if (fpsFor(max, undefined, load) === fps) return "busy";
+  if (fpsFor(max, kbps, 0) === fps) return "link";
+  return asked !== undefined && asked > 0 ? "asked" : undefined;
 }
 
 /** Frames a screen may send at once after a quiet spell (a key's echo, a click and its menu) before its frame rate

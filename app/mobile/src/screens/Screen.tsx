@@ -33,6 +33,8 @@ import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { DeviceFrame } from "./DeviceFrame";
 import { DeviceStrip } from "./DeviceStrip";
+import { PerfStrip } from "./PerfCard";
+import { PerfMeter, setPerfOpen, usePerfOpen, useScreenPerf } from "../screenPerf";
 
 const SETTLE = { damping: 26, stiffness: 260, mass: 1 } as const;
 /**
@@ -79,6 +81,14 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const [slots, setSlots] = useState<{ readonly a?: BrowserFrame; readonly b?: BrowserFrame; readonly top: "a" | "b" }>({ top: "a" });
   const [newest, setNewest] = useState<BrowserFrame | undefined>(undefined);
   const newestRef = useRef<BrowserFrame | undefined>(undefined);
+  // The performance card's counts, only while it is open.
+  const perfOn = usePerfOpen();
+  const meter = useMemo(() => (perfOn ? new PerfMeter() : undefined), [perfOn, sessionId]);
+  const meterRef = useRef(meter);
+  meterRef.current = meter;
+  const perfNow = useScreenPerf(meter);
+  // Every measure under the strip, while the person keeps it open.
+  const [perfMore, setPerfMore] = useState(false);
   useEffect(() => {
     const pacer = new FramePacer<BrowserFrame>((f) => {
       newestRef.current = f;
@@ -86,7 +96,9 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
       setSlots((s) => (s.top === "a" ? { ...s, b: f } : { ...s, a: f }));
     });
     const off = session.onFrame((f) => {
-      if (f.sessionId === sessionId) pacer.offer(f);
+      if (f.sessionId !== sessionId) return;
+      meterRef.current?.arrived(f);
+      pacer.offer(f);
     });
     session.watch(sessionId);
     return () => {
@@ -105,6 +117,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     const n = (loads.current.get(frame) ?? 0) + 1;
     loads.current.set(frame, n);
     if (n < copies.current) return;
+    if (n === copies.current) meterRef.current?.drawn(frame);
     // Its move to the new shape is set up now, as it goes on top, so the first frame at the new size already starts
     // from the old one.
     if (frame === newestRef.current) moveTo.current(frame);
@@ -499,6 +512,14 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
           </View>
         ) : null}
 
+        {/* The performance strip, over the page under the bar: the page stays where it is. Opened, a tap outside closes it. */}
+        {perfOn && !ended && perfMore ? <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Close the measures" onPress={() => setPerfMore(false)} /> : null}
+        {perfOn && !ended ? (
+          <View style={[styles.perf, { top: barTop + BAR + space.sm }]} pointerEvents="box-none">
+            <PerfStrip now={perfNow} kind={card?.kind} open={perfMore} onOpen={setPerfMore} />
+          </View>
+        ) : null}
+
         {/* The bar: close, and who it is and who drives. */}
         <View style={[styles.bar, { top: barTop }]} pointerEvents="box-none">
           <Glass interactive style={styles.round}>
@@ -557,15 +578,32 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               </Glass>
             </Pressable>
           )}
+          {editing || ended ? null : (
+            <Glass interactive style={styles.round}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Performance"
+                accessibilityState={{ selected: perfOn }}
+                style={styles.roundHit}
+                onPress={() => {
+                  haptics.tap();
+                  setPerfOpen(!perfOn);
+                  setPerfMore(false);
+                }}
+              >
+                <Icon name="perf" size={19} color={perfOn ? t.accent : t.label} weight="semibold" />
+              </Pressable>
+            </Glass>
+          )}
           {canGo && !editing ? (
             <Glass interactive style={styles.round}>
               <Pressable accessibilityRole="button" accessibilityLabel="Reload the page" style={styles.roundHit} onPress={() => go({ kind: "reload" })}>
                 <Icon name="reload" size={19} color={t.label} weight="semibold" />
               </Pressable>
             </Glass>
-          ) : (
+          ) : editing || ended ? (
             <View style={styles.round} />
-          )}
+          ) : null}
         </View>
 
         {/* An input the hub refused. */}
@@ -696,6 +734,7 @@ const ASK_ICON = 18;
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   stage: { flex: 1, paddingHorizontal: space.sm },
+  perf: { position: "absolute", left: space.lg, right: space.lg },
   box: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   page: { flex: 1, overflow: "hidden", borderCurve: "continuous" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm },

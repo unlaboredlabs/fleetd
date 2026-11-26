@@ -54,6 +54,7 @@
     "./box/mac": "./fleetd/src/node/mac_tool/paths.ts",
     "./node/mac_tool/protocol": "./fleetd/src/node/mac_tool/protocol.ts",
     "./node/mac_tool/queue": "./fleetd/src/node/mac_tool/queue.ts",
+    "./node/screen/perf": "./fleetd/src/node/screen/perf.ts",
     "./box/claude": "./fleetd/src/node/runner/claude_spec.ts",
     "./box/antigravity": "./fleetd/src/node/runner/antigravity_spec.ts",
     "./box/session_state": "./fleetd/src/node/sessions/state.ts",
