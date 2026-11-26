@@ -76,7 +76,8 @@ On an iPhone, **fleetd** is in every app's share sheet:
 2. Add a message if you like, and pick a chat.
 3. Tap **Send**.
 
-It sends text, a link, or up to 20 images. The lead is told it came from the share sheet, so it reads it as content,
+It sends text, a link, or up to 20 images and files: PDFs, text, CSV, Word, Excel, PowerPoint and zip files, up to
+25 MB each. The lead is told it came from the share sheet, so it reads it as content,
 not instructions.
 
 ## Shortcuts and the Action Button {#shortcuts}

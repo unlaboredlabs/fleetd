@@ -125,7 +125,9 @@ describe("plugins/share-extension", () => {
     expect(own).toEqual({ "keychain-access-groups": [GROUP] });
   });
 
-  it("writes the sources and an Info.plist for the share sheet: text, one page, up to 20 images", () => {
+  it("writes the sources and an Info.plist for the share sheet: text, one page, up to 20 images and files", () => {
+    // The bots it draws come with it.
+    expect(SOURCES).toContain("BotLook.swift");
     expect(readdirSync(join(root, "ios", TARGET)).sort()).toEqual([...SOURCES, "Info.plist", `${TARGET}.entitlements`].sort());
     const info = plist.parse(readFileSync(join(root, "ios", TARGET, "Info.plist"), "utf8")) as Record<string, any>;
     expect(info).toMatchObject({
@@ -141,6 +143,7 @@ describe("plugins/share-extension", () => {
             NSExtensionActivationSupportsText: true,
             NSExtensionActivationSupportsWebURLWithMaxCount: 1,
             NSExtensionActivationSupportsImageWithMaxCount: 20,
+            NSExtensionActivationSupportsFileWithMaxCount: 20,
           },
         },
       },
