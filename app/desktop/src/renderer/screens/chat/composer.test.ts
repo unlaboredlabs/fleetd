@@ -239,7 +239,7 @@ describe("a draft after quitting", () => {
   it("follows another tab's words: a draft sent or changed there is gone or changed here; the rest stay", () => {
     const d = createDrafts(layer, { "devbox/api": "ship it", "devbox/web": "mine alone" });
     const target = new EventTarget();
-    followDrafts(d, target as unknown as Window);
+    followDrafts(d, target);
     const storageEvent = (oldValue: object, newValue: object | null) =>
       Object.assign(new Event("storage"), { key: "fleetd.drafts.v1", oldValue: JSON.stringify(oldValue), newValue: newValue === null ? null : JSON.stringify(newValue) });
     // The other tab sent devbox/api (its words gone from storage) and typed in devbox/docs.
