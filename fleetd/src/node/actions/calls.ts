@@ -14,7 +14,7 @@ import type { VaultImportCandidate, VaultImportError } from "../../shared/contra
 import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { API_KEY_ENV, applyAccount, applyGeminiKey, BASE_URL_ENV, EndpointRefused, endpointSilent, envFor, hubModels, opened, putOn, resealAccount, tryAccount, tryAccountApi } from "./accounts.ts";
+import { API_KEY_ENV, applyAccount, applyGeminiKey, BASE_URL_ENV, EndpointRefused, endpointSilent, envFor, geminiKey, hubModels, opened, putOn, resealAccount, resealTo, tryAccount, tryAccountApi } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
@@ -59,6 +59,8 @@ export const OPS = [
   "claude_account_secret",
   "gemini_key",
   "claude_account_reseal",
+  "gemini_key_reseal",
+  "onepassword_token_reseal",
   "claude_account_test",
   "onepassword_token",
   "onepassword_test",
@@ -203,6 +205,14 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
     case "claude_account_reseal": {
       const sealed = asInvalid(() => resealAccount(home, call.account, call.to));
       return { kind: "claude_account_resealed", ...(sealed ? { sealed } : {}) };
+    }
+    case "gemini_key_reseal": {
+      const sealed = asInvalid(() => resealTo(geminiKey(home), call.to, "the team's Gemini key"));
+      return { kind: "secret_resealed", ...(sealed ? { sealed } : {}) };
+    }
+    case "onepassword_token_reseal": {
+      const sealed = asInvalid(() => resealTo(readToken(home, call.personId), call.to, "the 1Password token"));
+      return { kind: "secret_resealed", ...(sealed ? { sealed } : {}) };
     }
     case "claude_account_test": {
       if (call.trial?.sealed !== undefined) return trialKey(call.trial.sealed, call.trial.endpoint, ctx.boxKey);

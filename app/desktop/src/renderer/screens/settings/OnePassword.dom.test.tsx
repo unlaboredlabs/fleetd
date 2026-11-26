@@ -147,7 +147,7 @@ it("guides a person to a service account, seals the pasted token through main, l
   // Two vaults want a look: one kept for fleetd is what to make.
   expect(warning()).toContain("Reads Agents and Shared: it should read only fleetd's vault");
   // oldbox has no box key, so it doesn't hold it.
-  expect(host.textContent).toContain("Not on oldbox: agents there fill no logins with it.");
+  expect(host.textContent).toContain("Not on oldbox yet: agents there fill no logins with it.");
   expect(host.textContent).not.toContain(TOKEN);
   expect([...host.querySelectorAll("input")].map((i) => i.value)).not.toContain(TOKEN);
 });

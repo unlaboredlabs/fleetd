@@ -12,6 +12,7 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { administrator, refOf } from "./people.ts";
 import { checkSeals } from "./setup.ts";
+import { spread } from "./spread.ts";
 import { accounts, forgetSecret, relaySecret, type NodeSecret } from "./tools.ts";
 
 const GEMINI: NodeSecret = {
@@ -41,6 +42,8 @@ export function register(tools: Registry): void {
     }
     const key = { ...(endpoint !== undefined ? { endpoint } : {}), sealedOn: held, updatedAt: isoMs(hub.clock.now()), updatedBy: refOf(by) };
     s.putGeminiKey(key);
+    // A machine the app didn't seal to (one joined since its list was read) gets it from one that holds it.
+    void spread(hub);
     const missing = missingOn(hub, held);
     return {
       geminiKey: key,

@@ -202,6 +202,9 @@ export type SessionCall =
   | { op: "gemini_key"; set?: ClaudeSecretSet }
   /** The account's secret sealed to `to`, another machine's box key: how the hub's runner gets it (hub/claude_accounts). */
   | { op: "claude_account_reseal"; account: ClaudeAccount; to: BoxPublicKey }
+  /** The team's Gemini key, and a person's 1Password token, sealed to `to` the same way (hub/claude_accounts/spread.ts). */
+  | { op: "gemini_key_reseal"; to: BoxPublicKey }
+  | { op: "onepassword_token_reseal"; personId: PersonId; to: BoxPublicKey }
   /** `trial`: a sealed key (with its endpoint) tried on its own, kept nowhere, rather than the account the node holds. */
   | { op: "claude_account_test"; account: ClaudeAccount; trial?: ClaudeSecretSet }
   | { op: "onepassword_token"; personId: PersonId; sealed?: SealedSecret }
@@ -403,6 +406,7 @@ export type SessionOutput =
   | { kind: "claude_account_saved"; fingerprint?: SecretFingerprint }
   | { kind: "gemini_key_saved"; fingerprint?: SecretFingerprint }
   | { kind: "claude_account_resealed"; sealed?: SealedSecret }
+  | { kind: "secret_resealed"; sealed?: SealedSecret }
   /** `refused`: the endpoint refused the key itself (HTTP 401 or 403), not just failed to answer. */
   | { kind: "claude_account_tested"; ok: boolean; error?: string; refused?: boolean }
   | { kind: "onepassword_saved"; fingerprint?: SecretFingerprint }
