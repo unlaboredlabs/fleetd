@@ -225,7 +225,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
               selectionColor={t.accent}
               value={hub}
               onChangeText={setHub}
-              placeholder="http://devbox:4790"
+              placeholder="https://workspace.example.com"
               placeholderTextColor={t.tertiary}
               autoCapitalize="none"
               autoCorrect={false}

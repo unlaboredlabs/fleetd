@@ -57,6 +57,12 @@ it("signed out: Welcome to fleetd, and Sign in or Make an account in the box", a
   await show({ at: "signed-out" });
   expect(host.querySelector("[data-screen]")?.getAttribute("data-screen")).toBe("web.sign-in");
   expect(host.querySelector("h1")?.textContent).toBe("Welcome to fleetd");
+  // The terms and privacy policy, before WorkOS's page: the App Store and the law ask for them where an account is made.
+  const links = [...host.querySelectorAll("a")].map((a) => [a.textContent, a.getAttribute("href")]);
+  expect(links).toEqual([
+    ["terms of service", "https://fleetd.sh/terms"],
+    ["privacy policy", "https://fleetd.sh/privacy"],
+  ]);
   await press("Sign in");
   expect(actions.signIn).toHaveBeenCalledOnce();
   // The site's Sign up lands here: making an account is a button of its own, not a link under Sign in on WorkOS's page.

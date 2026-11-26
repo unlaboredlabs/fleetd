@@ -21,3 +21,19 @@
 .box > :last-child {
   margin-top: var(--space-3);
 }
+
+/* Terms and privacy under Sign in's box, lined up with the words in it. */
+.foot {
+  margin-top: var(--space-3);
+  padding-inline: var(--space-4);
+}
+
+.link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--text);
+}

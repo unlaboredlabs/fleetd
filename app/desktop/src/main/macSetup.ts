@@ -201,7 +201,7 @@ export async function redeemMac(ports: MacSetupPorts, request: MacRedeemRequest)
   let hub: string;
   if (request.hub !== undefined && request.hub.trim() !== "") {
     const origin = hubOrigin(request.hub);
-    if (origin === undefined) return failed({ message: `${request.hub.trim()} isn't an address.`, fix: "Type the workspace's address as Add machine › A Mac for agents shows it, e.g. http://devbox:4790.", field: "hub" });
+    if (origin === undefined) return failed({ message: `${request.hub.trim()} isn't an address.`, fix: "Type the workspace's address as Add machine › A Mac for agents shows it, e.g. https://workspace.example.com.", field: "hub" });
     hub = origin;
   } else {
     const hubs = await findHubs(ports);

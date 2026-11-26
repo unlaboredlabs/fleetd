@@ -4,6 +4,7 @@
 // one thing to do, as that page's open step does, so signing in, joining and setting up read as one page.
 import { useState, type ReactNode } from "react";
 import { invitationLine } from "../shared/accounts";
+import { LEGAL_PAGES } from "../shared/legal";
 import type { BotState } from "../shared/bot";
 import type { AccountPreviewOutcome, DeleteAccountOutcome } from "../shared/cloud";
 import { Bot, Button, Text } from "../renderer/ui";
@@ -37,8 +38,9 @@ export interface GateActions {
   readonly deleted: () => void;
 }
 
-/** The page: the bot and its title where Get started has them (under the app's top bar's height), then the box. */
-function Stage({ id, bot, title, children }: { id: string; bot: BotState; title: string; children: ReactNode }) {
+/** The page: the bot and its title where Get started has them (under the app's top bar's height), then the box, and
+ * under it `foot`. */
+function Stage({ id, bot, title, children, foot }: { id: string; bot: BotState; title: string; children: ReactNode; foot?: ReactNode }) {
   return (
     <div className={s.frame}>
       <div className={st.screen} data-screen={id}>
@@ -50,6 +52,7 @@ function Stage({ id, bot, title, children }: { id: string; bot: BotState; title:
             </Text>
           </div>
           <div className={s.box}>{children}</div>
+          {foot}
         </div>
       </div>
     </div>
@@ -59,7 +62,7 @@ function Stage({ id, bot, title, children }: { id: string; bot: BotState; title:
 export function Gate({ view, actions }: { view: GateView; actions: GateActions }) {
   if (view.at === "signed-out") {
     return (
-      <Stage id="web.sign-in" bot="idle" title="Welcome to fleetd">
+      <Stage id="web.sign-in" bot="idle" title="Welcome to fleetd" foot={<Legal />}>
         <Text strong>Sign in, or make an account</Text>
         <Text tone="quiet">With Google, GitHub or a code by email.</Text>
         <div className={st.actions}>
@@ -88,6 +91,20 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
   }
   if (view.at === "no-team") return <NoTeam email={view.email} removed={view.removed} actions={actions} />;
   return <Invitations view={view} actions={actions} />;
+}
+
+/** fleetd's terms and privacy policy, under Sign in: what making an account agrees to, before WorkOS's page. */
+function Legal() {
+  const link = (id: "terms" | "privacy", words: string) => (
+    <a className={s.link} href={LEGAL_PAGES.find((p) => p.id === id)?.url} target="_blank" rel="noreferrer">
+      {words}
+    </a>
+  );
+  return (
+    <Text as="p" size="sm" tone="quiet" className={s.foot}>
+      By signing in, you accept fleetd's {link("terms", "terms of service")} and {link("privacy", "privacy policy")}.
+    </Text>
+  );
 }
 
 /** Each invitation in turn, Join or Not now; then the app, or no team when none was joined and there was none. */
