@@ -32,6 +32,8 @@ import type { Hub } from "../api/hub.ts";
 import { hubZone } from "../attention/index.ts";
 import { uuidFrom } from "../executor/index.ts";
 import { leads } from "../leads/index.ts";
+import { chat } from "../chat/index.ts";
+import { chatPerson } from "../leads/zone.ts";
 import { unknownProject } from "../leads/seams.ts";
 import { intake, type IntakeInput } from "../leads/workstreams.ts";
 import { clip } from "../leads/text.ts";
@@ -777,6 +779,65 @@ export class Automations {
       const a = this.row(run.automationId);
       if (a) await this.wakeLead(a, run);
     }
+  }
+
+  // ---- a person's zone moving ---------------------------------------------------------------------------------------
+
+  /**
+   * Person `personId` moved from zone `from` to `to` (their device sent another, `chat_send`'s tz): every schedule on
+   * `from` of the bots whose schedules follow them (they wrote last in its chat, `chatPerson`; `writing`, where they
+   * write now, counts) moves to `to`, so all their schedules keep one zone. A repeating one keeps its wall-clock time (08:00
+   * stays 08:00 on the new clock); a one-time one keeps its instant. Each bot's chat says what moved. A schedule on
+   * another zone was named on purpose and stays; a one-time one that has run stays as it ran. How many moved.
+   */
+  followZone(personId: string, from: string, to: string, writing?: ProjectRef): number {
+    const rows = this.hub.db.all<{ data: string }>(
+      "SELECT data FROM automations WHERE json_extract(data, '$.schedule.tz') = ? AND json_extract(data, '$.doneAt') IS NULL ORDER BY rowid",
+      [from],
+    );
+    const moved = new Map<string, { r: ProjectRef; n: number }>();
+    const follows = new Map<string, boolean>();
+    for (const { data } of rows) {
+      const a = decode(data);
+      const key = `${a.projectRef.machineId}/${a.projectRef.projectId}`;
+      let theirs = follows.get(key);
+      if (theirs === undefined) {
+        theirs = (writing !== undefined && sameRef(writing, a.projectRef)) || chatPerson(this.hub.db, a.projectRef) === personId;
+        follows.set(key, theirs);
+      }
+      if (!theirs) continue;
+      const s = a.schedule as AutomationSchedule;
+      let next: AutomationSchedule;
+      try {
+        next = s.at === undefined ? kept({ ...s, tz: to }) : kept({ at: isoMs(atMs(s.at, s)), tz: to });
+      } catch (error) {
+        console.warn(`automation ${a.automationId} kept its zone:`, (error as Error).message);
+        continue;
+      }
+      const out: Automation = { ...a, schedule: next, updatedAt: isoMs(this.now()) };
+      if (!a.paused) {
+        try {
+          out.nextRunAt = isoMs(nextAfter(next, this.now()));
+        } catch {
+          delete out.nextRunAt;
+        }
+      }
+      this.put(out);
+      this.changedEvent(out, `moved to ${to} with its person's zone`, "hub");
+      moved.set(key, { r: a.projectRef, n: (moved.get(key)?.n ?? 0) + 1 });
+    }
+    let n = 0;
+    for (const { r, n: count } of moved.values()) {
+      n += count;
+      const what = count === 1 ? "Your automation now runs" : `Your ${String(count)} automations now run`;
+      try {
+        chat(this.hub).systemLine(r, `${what} on ${to} time, the zone of the device you last wrote from. ${count === 1 ? "It was" : "They were"} on ${from}.`);
+      } catch (error) {
+        console.warn("a zone move's chat line not posted:", (error as Error).message);
+      }
+    }
+    if (n > 0) this.signal();
+    return n;
   }
 
   // ---- removed projects ----------------------------------------------------------------------------------------------

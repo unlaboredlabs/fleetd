@@ -38,6 +38,7 @@ import { archivedNote } from "../leads/lead_wakes.ts";
 import { leadWiring } from "../leads/ports.ts";
 import { requireHuman } from "../leads/seams.ts";
 import { ofPerson, setZone, stamp } from "../leads/zone.ts";
+import { automations } from "../automations/index.ts";
 import { allowPasted } from "../project_lead/tools.ts";
 import { writer as writerName } from "../people/store.ts";
 import { prompts } from "../prompts/store.ts";
@@ -280,7 +281,9 @@ export async function send(hub: Hub, caller: Caller, input: ChatSendInput): Prom
   }
   const writer = writerOf(hub, caller, input);
   const tz = writer.author === "human" && input.tz !== undefined ? zone(input.tz) : undefined;
-  if (tz !== undefined) setZone(hub.db, writer.person?.personId, tz);
+  // A device in another zone moves the person, and their schedules with them, said in each bot's chat.
+  const moved = tz === undefined ? undefined : setZone(hub.db, writer.person?.personId, tz);
+  if (moved !== undefined && tz !== undefined) automations(hub).followZone(moved.personId, moved.from, tz, r);
   const now = input.now === true;
   if (now && writer.author !== "human") {
     throw refusedWith("Only a person can stop the lead's step.", "Send it without now: the lead reads it at its next step.");

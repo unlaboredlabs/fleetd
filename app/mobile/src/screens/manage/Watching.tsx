@@ -73,7 +73,7 @@ export function Watching({ navigation, route }: ChatInfoProps<"Watching">) {
       style={{ backgroundColor: t.grouped }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={read.reload} tintColor={t.secondary} />}
     >
-      <ListSection footer={list?.ok === true ? watchersAbout(list.output.watchable) : undefined}>
+      <ListSection {...(list?.ok === true ? { footer: watchersAbout(list.output.watchable) } : {})}>
         {watchers === undefined ? (
           <ListRow title={list?.ok === false ? "Couldn't read its watchers" : "Reading…"} />
         ) : (
