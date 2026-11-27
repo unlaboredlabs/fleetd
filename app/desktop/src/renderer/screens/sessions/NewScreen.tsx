@@ -24,13 +24,15 @@
 // while the bot's is in use) is its tile's line.
 //
 // The Screens page opens the same picker, for any bot: its first pick is then the bot, and a screen opened from there
-// opens on that page.
+// opens on that page. A workspace with no bots yet gets a line that a screen needs one and New bot, the sidebar's
+// dialog; once the bot is made and that dialog is done, the picker follows for it.
 import { Plus } from "lucide-react";
-import { useSyncExternalStore } from "react";
-import { Button, Tooltip } from "../../ui";
+import { useEffect, useSyncExternalStore } from "react";
+import { Button, Dialog, markShown, Text, Tooltip } from "../../ui";
 import { useData } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
 import { useCommands } from "../palette";
+import { addUi, openAddProject, useAddState } from "../projects/store";
 import { currentRoute } from "../shell/navigation";
 import type { ProjectKey } from "../shell/routes";
 import { NewScreenDialog } from "./NewScreenDialog";
@@ -42,15 +44,25 @@ export const NEW_SCREEN = "screen_open";
 const keyOf = (p: ProjectKey) => `${p.machineId}/${p.projectId}`;
 
 // What the picker is open for, if it is: a project's, or the Screens page's for any bot. One picker for the window.
-let shown: { readonly project?: ProjectKey } | null = null;
+// `making`: no bot yet, so New bot is making the first one, and the picker waits for it. It holds New bot's create
+// count when it opened, so a dialog closed after a create (made, its bot not listed yet) is told from one cancelled.
+type Shown = { readonly project?: ProjectKey; readonly making?: number };
+let shown: Shown | null = null;
 const listeners = new Set<() => void>();
-const set = (to: { readonly project?: ProjectKey } | null) => {
+const set = (to: Shown | null) => {
   shown = to;
   for (const l of listeners) l();
 };
 
-/** Opens the picker for `project`, or with no project (the Screens page) for any bot, picked first. */
-export const openNewScreen = (project?: ProjectKey): void => set(project === undefined ? {} : { project });
+/**
+ * Opens the picker for `project`, or with no project (the Screens page) for any bot, picked first. On the web its host
+ * mounts once the app has shown (PaletteHost), which a page with no chat (a workspace with no bots) never says: a
+ * press is past the first screen, so it says so and the picker shows at once, not up to 30 s later.
+ */
+export const openNewScreen = (project?: ProjectKey): void => {
+  markShown();
+  set(project === undefined ? {} : { project });
+};
 
 const subscribe = (onChange: () => void) => {
   listeners.add(onChange);
@@ -68,6 +80,13 @@ export function NewScreenHost() {
   const open = useSyncExternalStore(subscribe, () => shown);
   const projects = useData(selectProjects);
   const served = useData((d) => d.features.includes(NEW_SCREEN));
+  const add = useAddState();
+  const making = open?.making;
+  // New bot closed without a create: nothing to follow.
+  const dropped = making !== undefined && !add.open && add.add.phase.kind === "form" && add.add.gen === making;
+  useEffect(() => {
+    if (dropped) set(null);
+  }, [dropped]);
   useCommands(
     [
       {
@@ -88,9 +107,47 @@ export function NewScreenHost() {
   if (open === null) return null;
   // From the Screens page: any bot, the first one picked to start with.
   const first = open.project ?? projects?.[0];
-  if (first === undefined) return null;
+  if (first === undefined) {
+    if (projects === undefined || making !== undefined) return null;
+    const make = () => {
+      openAddProject();
+      set({ making: addUi().add.gen });
+    };
+    return <NoBot onMake={make} onClose={() => set(null)} />;
+  }
+  // The bot just made: its dialog may stay to show its repos coming in; the picker follows once it is done.
+  if (making !== undefined && add.open) return null;
   const project = { machineId: first.machineId, projectId: first.projectId };
   return <NewScreenDialog key={open.project === undefined ? "any" : keyOf(project)} project={project} anyBot={open.project === undefined} onClose={() => set(null)} />;
+}
+
+/** A workspace with no bots: a screen needs one, and New bot makes it. */
+function NoBot({ onMake, onClose }: { onMake: () => void; onClose: () => void }) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title="New screen"
+      footer={
+        <>
+          <Button variant="quiet" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" icon={<Plus aria-hidden />} onClick={onMake}>
+            New bot
+          </Button>
+        </>
+      }
+    >
+      <div data-screen="sessions.new.nobot">
+        <Text as="p" size="sm">
+          A screen opens for a bot, and this workspace has none yet. Make one, then pick its screen.
+        </Text>
+      </div>
+    </Dialog>
+  );
 }
 
 /** New screen, a plus at the end of the Agents tab's Screens label. */

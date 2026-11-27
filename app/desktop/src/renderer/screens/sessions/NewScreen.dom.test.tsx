@@ -3,7 +3,8 @@
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
 // with Cancel. An Android screen takes an open PR's build: the picker follows it in the hub until the screen is
 // yours, or says why it failed. An iPhone (D652) opens on the agents' Mac, its model and OS picked from what the Mac
-// reports, and says why where no agents' Mac is joined. The palette's "New screen…" opens the same picker.
+// reports, and says why where no agents' Mac is joined. The palette's "New screen…" opens the same picker. The
+// Screens page's, in a workspace with no bots, says a screen needs one and offers New bot, then the picker for it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -12,7 +13,8 @@ import { DataProvider } from "../../src/data/react";
 import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { AgentsPane } from "../agents/AgentsPane";
-import { NewScreenHost } from "./NewScreen";
+import { NewScreenHost, openNewScreen } from "./NewScreen";
+import { closeAddProject, create, setName, useAddUi } from "../projects/store";
 import { commandFor } from "../palette/registry";
 import { CallRequest } from "../../../shared/ipc";
 
@@ -61,6 +63,12 @@ const MINE = { ...OPENED, sessionId: "B00000000000000000000000000000002", thread
 const IPHONE_STARTING = { ...WAIT, waitId: "W3", kind: "ios", machineId: "studio", stage: "starting", threadId: "screen-3" };
 const IPHONE = { ...OPENED, sessionId: "B00000000000000000000000000000003", threadId: "screen-3", kind: "ios", purpose: "iPhone 17 · Ada" };
 
+// A workspace with no bots yet.
+const bare = (cursor: number) => {
+  const f = snapshot(cursor);
+  return f.t === "snapshot" ? { ...f, snapshot: { ...f.snapshot, projects: [] } } : f;
+};
+
 let host: HTMLDivElement;
 let root: Root | undefined;
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
@@ -97,7 +105,7 @@ beforeEach(() => {
   });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
   Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => 400 });
-  vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() } });
+  vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() }, system: { hostName: () => Promise.resolve("devbox") } });
   host = document.createElement("div");
   document.body.appendChild(host);
   calls = [];
@@ -111,6 +119,7 @@ beforeEach(() => {
   window.location.hash = "";
 });
 afterEach(() => {
+  act(() => closeAddProject());
   act(() => root?.unmount());
   root = undefined;
   host.remove();
@@ -128,7 +137,13 @@ const eventSettle = async () => {
   await settle();
 };
 
-const mount = async () => {
+/** New bot's flow, which the shell's NewBot feeds from the hub. */
+function Flow() {
+  useAddUi();
+  return null;
+}
+
+const mount = async (first = snapshot(1)) => {
   const hub: HubApi = {
     call: (tool, input, options) => {
       calls.push({ tool, input, timeoutMs: options?.timeoutMs });
@@ -163,6 +178,7 @@ const mount = async () => {
         waits = [];
         return Promise.resolve({ ok: true, output: {} });
       }
+      if (tool === "project_add") return Promise.resolve({ ok: true, output: { machineId: "devbox", projectId: "storefront", path: "/srv/storefront" } });
       if (tool === "work_list") return Promise.resolve({ ok: true, output: { scope: { repoKey: "github.com/acme/app", base: "main" }, items: [], recentLandings: [] } });
       return Promise.resolve({ ok: true, output: tool === "agents_list" ? { at: AT, agents: [] } : {} });
     },
@@ -179,13 +195,14 @@ const mount = async () => {
         <TooltipProvider>
           <AgentsPane project={project} agent={null} />
           <NewScreenHost />
+          <Flow />
         </TooltipProvider>
       </DataProvider>,
     );
   });
   act(() => {
     send(live(["browser_sessions", "screen_open"]));
-    send(snapshot(1));
+    send(first);
   });
   await settle();
 };
@@ -539,4 +556,38 @@ it("says an iPhone needs the agents' Mac, with its one fix", async () => {
   expect(document.querySelector("[data-off-reason='add']")?.textContent).toContain("iPhone simulators need a Mac: one that runs agents, or one joined as the agents’ Mac.");
   expect(button("Add machine")).toBeDefined();
   expect(document.querySelector("[aria-label='Model']")).toBeNull();
+});
+
+it("says a screen needs a bot in a workspace with none, makes one with New bot, then picks its screen", async () => {
+  await mount(bare(1));
+  act(() => openNewScreen());
+  await settle();
+  const empty = document.querySelector("[data-screen='sessions.new.nobot']");
+  expect(empty?.textContent).toContain("this workspace has none yet");
+  expect(picker()).toBeNull();
+
+  // New bot, cancelled: nothing follows, not even once a bot shows up later.
+  act(() => button("New bot")?.click());
+  await settle();
+  expect(document.querySelector("[data-screen='sessions.new.nobot']")).toBeNull();
+  act(() => closeAddProject());
+  await settle();
+  expect(document.querySelector("[data-screen^='sessions.new']")).toBeNull();
+
+  // New bot, made: the picker waits for the hub to list it, then opens for it.
+  act(() => openNewScreen());
+  await settle();
+  act(() => button("New bot")?.click());
+  act(() => setName("storefront"));
+  act(() => create("devbox"));
+  await settle();
+  expect(calls.some((c) => c.tool === "project_add")).toBe(true);
+  expect(picker()).toBeNull();
+  act(() => send(snapshot(2)));
+  await eventSettle();
+  expect(picker()).not.toBeNull();
+  expect(document.querySelector("[aria-label='Bot']")?.textContent).toContain("storefront");
+  act(() => button("Cancel")?.click());
+  await settle();
+  expect(picker()).toBeNull();
 });
