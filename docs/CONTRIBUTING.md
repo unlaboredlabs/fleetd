@@ -65,8 +65,10 @@ so commit exactly that. Its last line says how it went: `check.sh: pushable <tre
 Too long for one command: start `scripts/check.sh --background`, then wait with Claude's Monitor tool running
 `scripts/check.sh --wait`, which prints that last line once the run ends (never a sleep loop). The tree passes once
 every check its changes touch has passed on it, in one run or several, so after a failure rerun only that check
-(`scripts/check.sh fleetd`). A check's pass holds for any tree with the same inputs for it (`scripts/check.sh
---keys` prints each one's hash), so a desktop fix on a branch whose fleetd check passed doesn't run it again.
+(`scripts/check.sh fleetd`). It runs only what the change reaches (`fleetd/scripts/check_scope.ts` picks the parts
+and fleetd's tests, and runs more when it can't tell). A check's pass still holds after a clean merge of a newer main
+whose new commits touch none of the change's files; otherwise only what the pass hasn't seen runs again, so a desktop
+fix on a branch whose fleetd check passed doesn't run it again.
 
 ## The site
 
