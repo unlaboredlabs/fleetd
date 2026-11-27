@@ -51,12 +51,13 @@ const layout = () => {
 
 /**
  * The chat on a live hub whose Status row for the project is `row`, its lead's lane `lead` when given. `working`: the
- * hub's chat state says the lead works (by default, when it has a lane); `messages`: the chat's, oldest first.
+ * hub's chat state says the lead works (by default, when it has a lane); `messages`: the chat's, oldest first; `open`:
+ * the shell opened the chat (by default, while the lead works).
  */
 const mount = async (
   row: Partial<ProjectStatusRow>,
   lead?: ReturnType<typeof liveLane>,
-  at: { working?: boolean; messages?: readonly unknown[]; machine?: MachineStatus; hubInfo?: unknown } = {},
+  at: { working?: boolean; open?: boolean; messages?: readonly unknown[]; machine?: MachineStatus; hubInfo?: unknown } = {},
 ) => {
   const working = at.working ?? lead !== undefined;
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
@@ -84,7 +85,7 @@ const mount = async (
   };
   const layer = createDataLayer(hub);
   // The shell opens the chat it shows; the lead's lines show only in a loaded one.
-  if (working) layer.chat.open(projectKey(project));
+  if (at.open ?? working) layer.chat.open(projectKey(project));
   root = createRoot(host);
   act(() => {
     root?.render(
@@ -198,6 +199,27 @@ it("says what the lead is doing beside its bot at the chat's end, in plain words
   expect(row?.querySelector("button")).not.toBeNull();
   expect(row?.textContent).not.toContain("src/checkout");
   expect(host.querySelector("[data-band] > [data-island]")).toBeNull();
+});
+
+// T6171's find on the cloud (2026-11-27): "Done in 18s · 1 agent" showed on the reply that closed an order, live, and
+// was gone after a reload. The stamp is the message's own (the hub's `closed`), so a chat read again, with none of the
+// lead's turn among its events, still shows it, and it still opens what that run did.
+it("keeps the closing reply's stamp after the chat is read again, and it opens what the run did", async () => {
+  layout();
+  const closed = { workstreamId: "W7", ms: 188_000, agents: 2, since: AT, until: "2026-10-19T10:03:10.000Z" };
+  const messages = [
+    { messageId: "m1", projectRef: project, seq: 1, author: "human", state: "final", text: "Make search fast", createdAt: AT },
+    { messageId: "m2", projectRef: project, seq: 2, author: "lead", state: "final", text: "Search is fast now.", createdAt: "2026-10-19T10:03:09.000Z", closed },
+  ];
+  await mount({ state: "idle" }, undefined, { working: false, open: true, messages });
+  const stamp = host.querySelector<HTMLButtonElement>("button[aria-label='Done in 3m 8s · 2 agents: what it did']");
+  expect(stamp?.textContent).toBe("Done in 3m 8s · 2 agents");
+  await act(async () => {
+    stamp?.click();
+    await new Promise((done) => setTimeout(done, 0));
+  });
+  expect(document.querySelector("[aria-label='What this turn did']")).not.toBeNull();
+  expect(calls.some(([tool]) => tool === "tasks_list")).toBe(true);
 });
 
 /** The lead's Stop beside Send, and the island over the composer. */

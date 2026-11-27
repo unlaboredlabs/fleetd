@@ -1,41 +1,32 @@
 // "Worked for 27s" and "Done in 3m 10s · 3 agents" beside the reply a lead turn ended with, and what pressing it opens:
 // that turn's list (TurnBody.tsx). Loaded with the first reply that has a stamp (Bubble.tsx), so the chat's first load
-// stays as it was: until then the stamp reads "Worked for…", as it does while the order it closed is read.
+// stays as it was. The reply that closed an order says so from the message itself (ChatMessage.closed, the hub's), so
+// it reads the same after a reload; "Worked for…" is the latest turn's, from the events.
 import { useState, type ReactNode } from "react";
-import { turnStamp } from "../../../shared/stamp";
-import { useData, useToolQuery } from "../../src/data/react";
+import type { ChatClosed } from "../../../shared/contracts";
+import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { Popover, PopoverContent, PopoverTrigger } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
 import { leadLastTurnSince, leadLastTurnUntil } from "./activity";
 import { TurnBody } from "./TurnBody";
-import { closedOrderId, closedOrderStamp, leadLastTurnClosed } from "./turnDone";
 import s from "./turn.module.css";
 
 /**
- * The stamp's words: on the reply that closes an order, the order's whole time and its agents (its start to the
- * workstream.done inside the turn, order_get's agents), else `worked`, the turn's own time. And the order it closed.
+ * The stamp, `worked` its words. Without `time`: they go quietly beside the reply. With it: a quiet button among the
+ * reply's actions that opens its turn's list, in the reply's time's place: the time keeps the room (unseen), so the
+ * reply's bubble keeps its width and nothing moves as the actions show.
  */
-const useTurnStamp = (project: ProjectKey, worked: string): { readonly text: string; readonly order?: string | undefined } => {
-  const closed = useData((d) => leadLastTurnClosed(d, projectKey(project)));
-  const order = closedOrderId(closed);
-  const read = useToolQuery("order_get", { workstreamId: order ?? "" }, { enabled: order !== undefined }).data;
-  const stamp = closedOrderStamp(closed, read);
-  return stamp === undefined ? { text: worked } : { text: turnStamp({ ms: 0, order: stamp }), order };
-};
-
-/**
- * The stamp. Without `time`: its quiet words beside the reply. With it: a quiet button among the reply's actions that
- * opens its turn's list, in the reply's time's place: the time keeps the room (unseen), so the reply's bubble keeps its
- * width and nothing moves as the actions show.
- */
-export default function TurnStamp({ worked, project, time }: { worked: string; project: ProjectKey; time?: ReactNode }) {
+export default function TurnStamp({ worked, project, time, closed }: { worked: string; project: ProjectKey; time?: ReactNode; closed?: ChatClosed | undefined }) {
   const [open, setOpen] = useState(false);
-  const { text, order } = useTurnStamp(project, worked);
-  // The turn the stamp is of: the lead's latest that is over, as the reply's stamp is (model.ts).
-  const since = useData((d) => leadLastTurnSince(d, projectKey(project)));
-  const until = useData((d) => leadLastTurnUntil(d, projectKey(project)));
-  if (time === undefined || since === undefined || until === undefined) return <>{text}</>;
+  const order = closed?.workstreamId;
+  // The turn the stamp is of: the run that closed the order, as the hub kept it; else the lead's latest that is over,
+  // as the reply's stamp is (model.ts).
+  const lastSince = useData((d) => leadLastTurnSince(d, projectKey(project)));
+  const lastUntil = useData((d) => leadLastTurnUntil(d, projectKey(project)));
+  const since = closed !== undefined ? Date.parse(closed.since) : lastSince;
+  const until = closed !== undefined ? Date.parse(closed.until) : lastUntil;
+  if (time === undefined || since === undefined || until === undefined) return <>{worked}</>;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <span className={s.spot}>
@@ -43,8 +34,8 @@ export default function TurnStamp({ worked, project, time }: { worked: string; p
           {time}
         </span>
         <PopoverTrigger asChild>
-          <button type="button" className={s.stamp} aria-label={`${text}: what it did`}>
-            {text}
+          <button type="button" className={s.stamp} aria-label={`${worked}: what it did`}>
+            {worked}
           </button>
         </PopoverTrigger>
       </span>

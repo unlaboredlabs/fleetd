@@ -7,6 +7,7 @@ import type { ChatItem } from "../../src/data/chat";
 import type { ChatMessage } from "../../src/data/chat-contract";
 import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
+import { turnStamp } from "../../../shared/stamp";
 import { workedFor } from "../../../shared/turnWords";
 import { nameNow, type PersonNames } from "../admin/names";
 import { stepsOf, tagKey, tagOf, type Step, type Tag, type Tags } from "./lens/tags";
@@ -40,7 +41,10 @@ export type Row =
       readonly reply?: { readonly quote: string; readonly body: string; readonly target: string | undefined } | undefined;
       /** The lead's asks in it that you answered: the button's words, by bubble key. */
       readonly answered?: Readonly<Record<string, string>> | undefined;
-      /** The reply a turn ended with: how long the turn took ("Worked for 4s"), a quiet stamp beside it. */
+      /**
+       * The reply a turn ended with: how long the turn took ("Worked for 4s"), a quiet stamp beside it. The reply whose
+       * run closed an order, whenever it was: the order's whole time and agents ("Done in 3m 10s · 3 agents"), as stored.
+       */
       readonly worked?: string | undefined;
       /** The tagged chat's line over a run: its order and whom it is for (lens/tags.ts). */
       readonly tag?: Tag | undefined;
@@ -287,6 +291,7 @@ export function chatRows(i: RowsInput): Row[] {
       const tag = tags?.lens !== undefined && whom !== undefined && run && whom === lensFor ? (named?.order === undefined ? undefined : { order: named.order }) : named;
       if (whom !== undefined && run) lensFor = whom;
       const parts = step.parts;
+      const closed = item.message?.closed;
       out.push({
         kind: "message",
         key: rowKeyOf(item),
@@ -297,7 +302,7 @@ export function chatRows(i: RowsInput): Row[] {
         history: false,
         ...(by === undefined ? {} : { by }),
         ...extras(i.items, n),
-        ...(n === reply ? { worked } : {}),
+        ...(closed !== undefined ? { worked: turnStamp({ ms: 0, order: closed }) } : n === reply ? { worked } : {}),
         ...(tag === undefined ? {} : { tag }),
         ...(parts === undefined ? {} : { parts }),
       });

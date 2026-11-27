@@ -4,7 +4,7 @@
 import type { Task, TaskFile, TaskState } from "./contracts";
 import { workedFor } from "./turnWords";
 
-export { agentsWord, orderAgents, orderStamp, turnStamp } from "./stamp";
+export { agentsWord, turnStamp } from "./stamp";
 
 /** How an agent ended, in one word; undefined while it hasn't. */
 export const endedWord = (state: TaskState): "Finished" | "Failed" | "Stopped" | undefined =>

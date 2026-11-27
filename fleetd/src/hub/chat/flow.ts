@@ -52,6 +52,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
+import { stampClosed } from "./closed.ts";
 import { completedRuns, leadMessages, leadSource, leadText, madeUpAt, madeUpLine, order, question, steer, type ThreadMessage } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
@@ -953,6 +954,12 @@ async function ended(hub: Hub, r: ProjectRef, thread: ThreadRef, event: HubEvent
       settleEnded(hub, r, thread.threadId, event.seq);
     } catch (error) {
       console.warn("chat: the run's tags not settled:", error);
+    }
+    // The reply that closed an order keeps its "Done in…" stamp, whoever reads the chat later.
+    try {
+      stampClosed(hub, r, thread.threadId, event.seq);
+    } catch (error) {
+      console.warn("chat: the closing reply not stamped:", error);
     }
   }
 }

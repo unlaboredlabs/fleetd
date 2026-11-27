@@ -104,6 +104,7 @@ export function serialize(m: ChatMessage): string {
     "updatedAt",
     "state",
     "clientRequestId",
+    "closed",
     "delivery",
     "by",
     "lead",

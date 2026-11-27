@@ -3920,6 +3920,36 @@
       ],
       "x-open": true
     },
+    "ChatClosed": {
+      "description": "The order a lead reply's run closed, as the hub stamped the reply when the run ended: the order's whole time (its start\nto its close) and the agents its lead started, and the run itself (from the run before's end to its own), which the\nstamp opens.",
+      "properties": {
+        "agents": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "agents",
+        "ms",
+        "since",
+        "until",
+        "workstreamId"
+      ],
+      "type": "object"
+    },
     "ChatDelivery": {
       "description": "How a human message reached the lead.",
       "oneOf": [
@@ -4330,6 +4360,10 @@
           "description": "A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy.",
           "minLength": 1,
           "type": "string"
+        },
+        "closed": {
+          "$ref": "#/$defs/ChatClosed",
+          "description": "A lead reply whose run closed an order: its stamp, \"Done in 3m 10s · 3 agents\", kept with it."
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"

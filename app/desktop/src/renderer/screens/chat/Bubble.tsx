@@ -5,7 +5,7 @@
 // shows the bubble it answers above it.
 import { Check, Paperclip, Pin, PinOff, Reply, Send, Tag } from "lucide-react";
 import { lazy, Suspense, useContext, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { AttachmentRef } from "../../../shared/contracts";
+import type { AttachmentRef, ChatClosed } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
@@ -151,6 +151,8 @@ function BubbleLine(props: {
   receipt?: boolean | undefined;
   /** The last bubble of the reply a turn ended with: how long the turn took, a quiet stamp beside it. */
   worked?: string | undefined;
+  /** And the order its run closed, which the stamp opens with the run. */
+  closed?: ChatClosed | undefined;
   /** An ask the lead waits on: Not needed goes in its card, beside its own buttons. */
   skip?: (() => void) | undefined;
 }) {
@@ -249,7 +251,7 @@ function BubbleLine(props: {
           <span className={s.worked}>
             {actions !== undefined ? (
               <Suspense fallback={props.worked}>
-                <TurnStamp project={actions.project} worked={props.worked} />
+                <TurnStamp project={actions.project} worked={props.worked} closed={props.closed} />
               </Suspense>
             ) : (
               props.worked
@@ -271,7 +273,7 @@ function BubbleLine(props: {
         {props.worked !== undefined && actions !== undefined ? (
           // Under the pointer a turn's stamp stands in its time's place, and opens what the turn did; the time until it loads.
           <Suspense fallback={time}>
-            <TurnStamp project={actions.project} worked={props.worked} time={time} />
+            <TurnStamp project={actions.project} worked={props.worked} closed={props.closed} time={time} />
           </Suspense>
         ) : (
           time
@@ -360,6 +362,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
                 mine={mine}
                 receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
                 worked={n === bubbles.length - 1 ? r.worked : undefined}
+                closed={n === bubbles.length - 1 ? i.message?.closed : undefined}
                 skip={n === askAt ? skip : undefined}
               />,
             ];

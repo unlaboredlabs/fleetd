@@ -75,26 +75,6 @@ describe("what the store keeps for it", () => {
     expect(s.turnWorked[KEY]?.until).toBe(Date.parse("2026-10-28T10:01:00Z"));
   });
 
-  it("keeps the order a turn closed with that turn, so its reply says the order's whole time", () => {
-    const done = (seq: number, at: string, projectId = "shop"): HubEvent =>
-      ({ seq, type: "workstream.done", at, machineId: "m1", projectId, data: { workstreamId: "W7" } }) as HubEvent;
-    // Closed while the lead was idle (a person, the train): no turn's.
-    let s = event(initial(live), done(1, "2026-10-28T09:59:00Z"));
-    s = event(s, waiting(2, "2026-10-28T10:00:00Z", true));
-    // Another bot's order closing is not this turn's either.
-    s = event(s, done(3, "2026-10-28T10:00:05Z", "other"));
-    s = event(s, waiting(4, "2026-10-28T10:00:20Z", false));
-    expect(s.turnWorked[KEY]?.closed).toBeUndefined();
-    s = event(s, waiting(5, "2026-10-28T10:03:00Z", true));
-    s = event(s, done(6, "2026-10-28T10:03:08Z"));
-    s = event(s, waiting(7, "2026-10-28T10:03:10Z", false));
-    expect(s.turnWorked[KEY]?.closed).toEqual({ workstreamId: "W7", at: "2026-10-28T10:03:08Z" });
-    // The next turn starts clean.
-    s = event(s, waiting(8, "2026-10-28T10:05:00Z", true));
-    s = event(s, waiting(9, "2026-10-28T10:05:09Z", false));
-    expect(s.turnWorked[KEY]?.closed).toBeUndefined();
-  });
-
   it("knows no length for a turn whose start it didn't see", () => {
     const s = event(initial(live), waiting(1, "2026-10-28T10:01:00Z", false));
     expect(s.turnWorked[KEY]).toBeUndefined();
