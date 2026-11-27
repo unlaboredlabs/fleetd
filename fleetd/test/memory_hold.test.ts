@@ -288,6 +288,13 @@ test("the upkeep's words: a gate waived in a clause of its own, and what a rewri
   expect(upkeepLoosens("Deploy without asking.", "none", "Don't deploy without asking.")).toBe(true);
   expect(upkeepLoosens("Push to main without review.", "none", "Never push to main without review.")).toBe(true);
   expect(upkeepLoosens("Deploy straight to prod, no review needed.", "none", "Never deploy to prod without review.")).toBe(true);
+  // An exception cut out of a rule loosens it, wherever in its sentence it sits.
+  expect(upkeepLoosens("Never merge without review, except hotfixes.", "none", "Never merge without review.")).toBe(true);
+  expect(upkeepLoosens("Always ask before deploying, unless it's a docs PR.", "none", "Always ask before deploying.")).toBe(true);
+  expect(upkeepLoosens("Never merge without review, other than for hotfixes.", "none", "Never merge without review.")).toBe(true);
+  expect(upkeepLoosens("Always ask before deploying, apart from staging.", "none", "Always ask before deploying.")).toBe(true);
+  // One the old line already had is a rewording.
+  expect(upkeepLoosens("Never merge without review, except for hotfixes.", "none", "Never merge without review, except hotfixes.")).toBe(false);
   expect(upkeepLoosens("Use pnpm, and deploy without review.", "none", "Use pnpm.")).toBe(true);
   expect(upkeepLoosens("Deploys go through the pipeline.", "none", "Always ask before deploying.")).toBe(true);
   expect(upkeepLoosens("Use the fast lane for hotfixes.", "loosens", "Use pnpm.")).toBe(true);
