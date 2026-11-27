@@ -51,6 +51,7 @@
     "./box/mcp_reach": "./fleetd/src/node/mcp_reach.ts",
     "./box/files": "./fleetd/src/node/sandbox/remote/box_files.ts",
     "./box/lead": "./fleetd/src/node/lead/channel.ts",
+    "./box/agent_tools": "./fleetd/src/cli/agent_mcp/tools.ts",
     "./box/mac": "./fleetd/src/node/mac_tool/paths.ts",
     "./node/mac_tool/protocol": "./fleetd/src/node/mac_tool/protocol.ts",
     "./node/mac_tool/queue": "./fleetd/src/node/mac_tool/queue.ts",

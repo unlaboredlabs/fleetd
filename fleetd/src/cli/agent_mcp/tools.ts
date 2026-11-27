@@ -75,6 +75,18 @@ export const toolList = (role: Role) => ({
   tools: toolsFor(role).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
 });
 
+/** Each of `role`'s tools in this build, by name: a hash of what claude takes of it. */
+export const toolMarks = (role: Role): Record<string, string> =>
+  Object.fromEntries(
+    toolList(role).tools.map((t) => [t.name, createHash("sha256").update(JSON.stringify([t.description, t.inputSchema])).digest("hex")]),
+  );
+
+/** Whether a tool claude started with (`started`, its toolMarks) is gone or changed in `now`. claude keeps the
+ * definition of a tool it has, whatever a later tools/list says, so only its next start shows the change; a new tool
+ * alone reaches it through tools/list_changed. */
+export const toolsChanged = (started: Record<string, string>, now: Record<string, string>) =>
+  Object.entries(started).some(([name, mark]) => now[name] !== mark);
+
 type Call = Record<string, unknown>;
 const some = (value: unknown) => value !== undefined && value !== null;
 

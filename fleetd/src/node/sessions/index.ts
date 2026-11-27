@@ -57,6 +57,7 @@ import * as skills from "../actions/skills.ts";
 import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
 import { Stages } from "../../shared/stages.ts";
+import { toolMarks, toolsChanged } from "../../cli/agent_mcp/tools.ts";
 import { tilde } from "../runner/claude/setup.ts";
 import * as setup from "../worktree/setup.ts";
 import { images, takesImage } from "../place/image.ts";
@@ -343,9 +344,15 @@ export const holdHook = (fleetd: string[], home: string) => {
   return `test -e ${hold} || exit 0; exec ${fleetd.map(quote).join(" ")} update-hold ${hold}`;
 };
 
+/** Which of fleetd's tools a session's agent-mcp lists; none for a plain thread. */
+const toolsRole = (role: SessionRole) => (role === "lead" || role === "assistant" ? "lead" : role === "worker" ? "worker" : undefined);
+
+/** In a session's directory: the marks of fleetd's tools its claude started with (cli/agent_mcp/tools.ts `toolMarks`). */
+const TOOLS_FILE = "tools.json";
+
 /** The session's `--mcp-config` entry for fleetd's own MCP server; none for a plain thread. */
 function fleetdServer(fleetd: string[], role: SessionRole, sock: string, sessionId: string): Record<string, unknown> | undefined {
-  const arg = role === "lead" || role === "assistant" ? "lead" : role === "worker" ? "worker" : undefined;
+  const arg = toolsRole(role);
   if (!arg) return undefined;
   return { type: "stdio", command: fleetd[0], args: [...fleetd.slice(1), "agent-mcp", "--role", arg], alwaysLoad: true, env: { FLEETD_NODE_SOCK: sock, FLEETD_THREAD_ID: sessionId } };
 }
@@ -399,6 +406,9 @@ type Live = {
   ending?: state.EndCause;
   /** A shutdown was sent: a new command waits for the exit and respawns. */
   closing: boolean;
+  /** Closed between turns for fleetd's updated tools (`#takeNewTools`): the run that asked waits for the next start,
+   * as does any recorded meanwhile, so its exit ends none. */
+  between?: boolean;
   exited: Promise<void>;
   markExited: () => void;
   secrets: [string, string][];
@@ -1357,6 +1367,7 @@ export class SessionService {
       return { queued };
     });
     if ("again" in recorded) return recorded.again;
+    if (!recorded.queued) this.#takeNewTools(id, runId);
     // A run waiting out a node retry goes again now, ahead of this message, rather than hold it behind the wait.
     this.#retryNow(id);
     if (steer) for (const steerId of [...(steer.riders ?? []), steer.id]) this.#steers.track(id, runId, steerId, recorded.queued);
@@ -1589,6 +1600,14 @@ export class SessionService {
     const live = this.#newLive(link, this.#secrets(row));
     this.#live.set(id, live);
     void this.#pump(id, live, undefined);
+    const tools = toolsRole(row.local.role ?? "plain");
+    if (tools) {
+      try {
+        writeAtomic(join(this.home, "sessions", id, TOOLS_FILE), JSON.stringify(toolMarks(tools)));
+      } catch (error) {
+        console.warn(`${nowIso()} WARN the marks of the session's fleetd tools were not kept {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
+      }
+    }
     stages.end();
     if (ahead && note) {
       this.update(id, (c) => void (c.row.local.unsent = [note, ...(c.row.local.unsent ?? [])]));
@@ -2106,7 +2125,7 @@ export class SessionService {
     this.#scrubTranscript(id, this.screens?.filledSince(id, 0) ?? []);
     // Its agent-browser and its tools went with the process: so do its screens, here or elsewhere.
     this.launch?.ended(id);
-    this.#steers.exited(id, exit.code, (run) => this.#retries.has(run));
+    this.#steers.exited(id, exit.code, (run) => this.#retries.has(run) || !!live.between);
     const cause: state.EndCause = live.ending ?? (this.#stopping ? { kind: "node_stopping" } : { kind: "exited", exit });
     // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session.
     const requested = state.asked(cause);
@@ -2126,7 +2145,7 @@ export class SessionService {
           else delete c.row.local.monitors;
         }
         const retried = c.runs.some((r) => isActive(r.status) && this.#retries.has(r.id));
-        if (requested || !retried) closed = state.closeOut(c.runs, cause, c.at).map((i) => c.runs[i]!.id);
+        if (!live.between && (requested || !retried)) closed = state.closeOut(c.runs, cause, c.at).map((i) => c.runs[i]!.id);
         this.#cancelPending(c);
         if (c.row.local.pid === live.pid) {
           delete c.row.local.pid;
@@ -2198,6 +2217,44 @@ export class SessionService {
     void this.#beginRun(id, runId, monitorsLost(lost, when), "plain").catch((error) =>
       console.warn(`${nowIso()} WARN cannot wake a session whose Monitor was lost {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`),
     );
+  }
+
+  /** A turn starts on a claude that runs between turns: when one of fleetd's tools it started with changed since (an
+   * update), it is closed first, and the turn resumes it on the tools as they are now. Not while a Monitor may still
+   * fire or it holds a screen: a later turn does it. claude keeps a tool's first definition (tools.ts `toolsChanged`).
+   * Not a hosted session: its box goes with its claude, and a box is never started for this. Its new tools reach it
+   * through tools/list_changed, a changed one at its box's next start. */
+  #takeNewTools(id: string, runId: string): void {
+    const live = this.#live.get(id);
+    const row = this.store.session(id);
+    if (!live || live.closing || !row || hostedOf(row.local.hosted) !== undefined) return;
+    const tools = toolsRole(row.local.role ?? "plain");
+    if (!tools) return;
+    // None: started by a node from before the marks, with tools unknown, so it starts again once.
+    let started: Record<string, string> | undefined;
+    try {
+      started = JSON.parse(readFileSync(join(this.home, "sessions", id, TOOLS_FILE), "utf8")) as Record<string, string>;
+    } catch {}
+    if (started && !toolsChanged(started, toolMarks(tools))) return;
+    if ([...live.watching.values()].some((until) => until > this.#now())) return;
+    if ((row.local.monitors ?? []).some((m) => m.untilMs > this.#now())) return;
+    if (this.screens?.holdsScreen(id)) return;
+    console.log(`${nowIso()} INFO resuming a session's claude for fleetd's updated tools {"sessionId":"${id}"}`);
+    this.update(id, (c) =>
+      this.#putItem(c, {
+        id: `tools-${runId}`,
+        runId,
+        status: "completed",
+        title: "Updated tools",
+        startedAt: c.at,
+        completedAt: c.at,
+        updatedAt: c.at,
+        kind: { type: "starting", text: "Picked up fleetd's updated tools" },
+      }),
+    );
+    live.closing = true;
+    live.between = true;
+    live.link.send(shutdown(REAP_GRACE_MS));
   }
 
   /** Closes the processes idle for idleReapMs; one with a Monitor that may still fire waits for its deadline. */
