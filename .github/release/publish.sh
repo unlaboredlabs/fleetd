@@ -180,6 +180,17 @@ if [ "$numbered" = true ]; then
   # The build's own release (see the top): its pins but the Rust-era CLI names, which only release.json's readers use,
   # then its feeds.
   own="build-$BUILD"
+  # A number is one build's for good. Its release made by another commit stops the publish before anything goes up:
+  # on Nov 26 builds that restarted at 0.9.0 put their files and feeds into the older builds' releases of the same
+  # numbers. The same commit's (a re-run of this publish) carries on.
+  if ! tagged="$(git ls-remote --tags --refs origin "refs/tags/$own")"; then
+    echo "::error::couldn't read the $own tag, so this build can't tell its release is its own; run it again"
+    exit 1
+  fi
+  if [ -n "$tagged" ] && [ "${tagged%%[[:space:]]*}" != "$RELEASE_SHA" ]; then
+    echo "::error::$own is already ${tagged%%[[:space:]]*}'s build, not $RELEASE_SHA's: a build number never goes to two builds (build-release.yml's plan)"
+    exit 1
+  fi
   gh release view "$own" >/dev/null 2>&1 ||
     gh release create "$own" --prerelease --latest=false --target "$RELEASE_SHA" --title "fleetd $BUILD" \
       --notes "fleetd $BUILD, built from main at $RELEASE_SHA."

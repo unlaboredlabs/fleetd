@@ -144,3 +144,21 @@ test("a GitHub 5xx on a write is tried again until it passes, and a 4xx fails at
   await expect(rollout(["tick"], ROOT, { GH_FAIL: "edit 422 1" })).rejects.toThrow("HTTP 422");
   expect(readFileSync(calls, "utf8")).toBe("1");
 });
+
+test("a build number listed for one commit is never listed for another: the publish fails, rollout.json stays", async () => {
+  mkdirSync(join(releases, "edge"), { recursive: true });
+  mkdirSync(join(releases, "build-0.9.12"), { recursive: true });
+  const dist = join(home.dir, "dist-reused");
+  mkdirSync(dist, { recursive: true });
+  writeFileSync(join(dist, "release.json"), JSON.stringify({ sha256: { "fleetd-bun-linux-x64": "e".repeat(64) } }));
+  await rollout(["add"], dist, { BUILD: "0.9.12", VERSION: "0.9.12+20261125.274dd98", RELEASE_SHA: "1".repeat(40) });
+  const before = readFileSync(join(releases, "edge/rollout.json"), "utf8");
+  // This publish run again: nothing new.
+  await rollout(["add"], dist, { BUILD: "0.9.12", VERSION: "0.9.12+20261125.274dd98", RELEASE_SHA: "1".repeat(40) });
+  expect(readFileSync(join(releases, "edge/rollout.json"), "utf8")).toBe(before);
+  // As on Nov 27: a later build that got 0.9.12 again.
+  await expect(rollout(["add"], dist, { BUILD: "0.9.12", VERSION: "0.9.12+20261127.6c77787", RELEASE_SHA: "2".repeat(40) })).rejects.toThrow(
+    `0.9.12 is already listed as ${"1".repeat(40)}'s build, not ${"2".repeat(40)}'s`,
+  );
+  expect(readFileSync(join(releases, "edge/rollout.json"), "utf8")).toBe(before);
+});
