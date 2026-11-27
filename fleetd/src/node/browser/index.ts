@@ -395,7 +395,8 @@ function nodeHost(node: Node, broker: () => Broker): BrokerHost {
     vaultFor: vaultFor(home),
     // What a held session's snapshot holds changed: kept again, so even a node that dies takes it over at its start.
     changed: (thread) => broker().keepHeld(thread),
-    downloads: (sessionId) => new Downloads(downloadsDir(home, sessionId)),
+    // A hosted box's browser keeps its downloads in the box: the node has no list of them.
+    downloads: (sessionId, box) => (box === undefined ? new Downloads(downloadsDir(home, sessionId)) : undefined),
     sweepDownloads: (live, now) => sweepDownloads(home, live, now),
   };
 }

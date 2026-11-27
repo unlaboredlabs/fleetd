@@ -33,6 +33,8 @@ export interface DownloadList {
   began(params: Record<string, unknown>): void;
   /** `Browser.downloadProgress`: true when one completed and the list changed. */
   progress(params: Record<string, unknown>): boolean;
+  /** Makes its folder where Chrome runs (a hosted box's list, in the box) before Chrome is told to save there. */
+  ready?(): Promise<void>;
 }
 
 export const PAUSED =
@@ -79,7 +81,7 @@ export class Session implements GuardSession {
   credentialsFilled = 0;
   /** The latest step, for the heartbeat. */
   step: BrowserAction | undefined;
-  /** What its browser downloaded (downloads.ts), once `downloadTo` named its folder; none in a hosted box. */
+  /** What its browser downloaded (downloads.ts), once `downloadTo` named its folder; none where its host keeps none. */
   downloads: DownloadList | undefined;
   /** Who is told when a download completes. */
   onDownload: (() => void) | undefined;
@@ -398,6 +400,7 @@ export class Session implements GuardSession {
   /** Saves what its browser downloads in `list`'s folder, and lists each file as it completes (`downloads`). */
   async downloadTo(list: DownloadList): Promise<void> {
     this.downloads = list;
+    await list.ready?.();
     await this.cdp.call(undefined, "Browser.setDownloadBehavior", { behavior: "allow", downloadPath: list.dir, eventsEnabled: true });
   }
 
