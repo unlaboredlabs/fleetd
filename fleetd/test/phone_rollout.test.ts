@@ -4,7 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_UPDATES, phoneMoving, prunePhone, served, servedText, updateOf, writeServed, type PhoneUpdate } from "../../.github/release/phone-rollout.ts";
+import { cloudPulls, MAX_UPDATES, phoneMoving, prunePhone, served, servedText, updateOf, writeServed, type PhoneUpdate } from "../../.github/release/phone-rollout.ts";
 
 const HOUR = 3_600_000;
 const T0 = Date.parse("2026-11-27T10:00:00Z");
@@ -133,4 +133,18 @@ test("the channel's directory holds each stage's manifest, the back copies a pul
   expect(read("assets/bad.bundle")).toBe("bad bytes");
   expect(read("served.txt")).toBe(servedText(s));
   expect(read("served.txt")).toContain("everyone ios f1 bad back\n");
+});
+
+test("the cloud's per-update totals pull an update by the workspace's own rule, by either platform's id", () => {
+  const updates = [u("new", HOUR), u("old", 10 * HOUR), u("gone", 20 * HOUR, "f1", { pulledAt: at(0) })];
+  const totals = (over: { id: string; fatal?: number; caught?: number }[]) => ({
+    updates: over.map((o, i) => ({ id: o.id, firstAt: T0 - (i + 1) * HOUR, fatal: o.fatal ?? 0, caught: o.caught ?? 0 })),
+  });
+  // A fatal report on the Android side of `new`; nothing on `old`; `gone` is pulled already.
+  expect(cloudPulls({ updates }, totals([{ id: "new-a", fatal: 1 }, { id: "old" }, { id: "gone", fatal: 9 }]), T0)).toEqual([
+    { id: "new", why: "1 fatal error report across the cloud's teams" },
+  ]);
+  // Caught errors at the same rate as the update before: nothing.
+  expect(cloudPulls({ updates }, totals([{ id: "new", caught: 10 }, { id: "old", caught: 10 }]), T0)).toEqual([]);
+  expect(cloudPulls({ updates }, { updates: [] }, T0)).toEqual([]);
 });

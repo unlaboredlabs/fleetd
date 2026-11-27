@@ -2,7 +2,7 @@
 // rollout (.github/release/phone-rollout.ts), as it is the workspaces' (update settings' `ring: "first"` with
 // `reportTo`). It counts the reports `app_error_report` takes by the update they ran, and pulls one on any fatal report,
 // or on more than CAUGHT_AT_MOST caught ones at over twice the rate of the update seen before it (reports an hour since
-// each was first reported). A pull is `rollout.yml`'s phone-pull: every stage then serves the update everyone had.
+// each was first reported; the first one it hears of has none to weigh against, so only a fatal report pulls it). A pull is `rollout.yml`'s phone-pull: every stage then serves the update everyone had.
 // Only counts are kept, in `<hub home>/update/phone-errors.json`, so a restart (each new build) keeps them; never a
 // message or a stack.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -24,9 +24,11 @@ export function spike(counts: readonly UpdateCounts[], id: string, now: number):
   if (u === undefined || u.pulledAt !== undefined) return undefined;
   if (u.fatal > 0) return `${u.fatal} fatal error report${u.fatal === 1 ? "" : "s"}`;
   if (u.caught <= CAUGHT_AT_MOST) return undefined;
-  const rate = (u.caught / Math.max(MINUTE, now - u.firstAt)) * HOUR;
+  // With no update before it to weigh against, only a fatal report pulls.
   const before = counts[at + 1];
-  const was = before === undefined ? 0 : (before.caught / Math.max(MINUTE, u.firstAt - before.firstAt)) * HOUR;
+  if (before === undefined) return undefined;
+  const rate = (u.caught / Math.max(MINUTE, now - u.firstAt)) * HOUR;
+  const was = (before.caught / Math.max(MINUTE, u.firstAt - before.firstAt)) * HOUR;
   if (rate <= 2 * was) return undefined;
   return `${u.caught} caught errors, ${rate.toFixed(1)} an hour against ${was.toFixed(1)} an hour on the update before`;
 }

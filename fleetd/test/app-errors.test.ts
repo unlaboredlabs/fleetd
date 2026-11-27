@@ -151,6 +151,8 @@ test("an update's caught errors are weighed against the update before it, an hou
   expect(spike(now(12), "u", T + H)).toBeUndefined();
   // 21 in an hour: over twice.
   expect(spike(now(21), "u", T + H)).toBe("21 caught errors, 21.0 an hour against 10.0 an hour on the update before");
+  // With none before it, caught errors alone never pull.
+  expect(spike([{ id: "u", firstAt: T, fatal: 0, caught: 50 }], "u", T + H)).toBeUndefined();
   // Any fatal one, whatever came before; an update already pulled, never again.
   expect(spike(now(0, 1), "u", T + H)).toBe("1 fatal error report");
   expect(spike([{ id: "u", firstAt: T, fatal: 3, caught: 0, pulledAt: T }], "u", T + H)).toBeUndefined();

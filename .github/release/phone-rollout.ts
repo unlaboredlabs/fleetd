@@ -17,6 +17,7 @@
 
 import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { spike } from "../../fleetd/src/hub/app_errors/pull.ts";
 
 export type Platform = "ios" | "android";
 export const PLATFORMS: readonly Platform[] = ["ios", "android"];
@@ -148,4 +149,26 @@ export function writeServed(s: Served[], packageDir: (id: string) => string, out
     cpSync(join(packageDir(x.from), ...(x.back ? ["back"] : []), x.runtime, x.platform), join(out, x.dir, x.runtime, x.platform));
   }
   writeFileSync(join(out, "served.txt"), servedText(s));
+}
+
+/** The cloud's per-update totals of its teams' phone error reports (only counts: never a message, a stack or a team),
+ * as `CLOUD_PHONE_ERRORS_URL` serves them. */
+export type CloudErrors = { updates: { id: string; firstAt: number; fatal: number; caught: number }[] };
+
+/** The listed updates whose cloud totals spike by the workspace's own rule (hub/app_errors/pull.ts), to pull, each with
+ * why; an update counts by any of its platforms' ids. */
+export function cloudPulls(r: PhoneRollout, cloud: CloudErrors, now: number): { id: string; why: string }[] {
+  const counts = [...cloud.updates].sort((a, b) => b.firstAt - a.firstAt);
+  const out: { id: string; why: string }[] = [];
+  for (const u of r.updates) {
+    if (u.pulledAt !== undefined) continue;
+    for (const id of new Set([u.id, ...Object.values(u.platforms).map((p) => p!.id)])) {
+      const why = spike(counts, id, now);
+      if (why !== undefined) {
+        out.push({ id: u.id, why: `${why} across the cloud's teams` });
+        break;
+      }
+    }
+  }
+  return out;
 }
