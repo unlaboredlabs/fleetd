@@ -162,8 +162,22 @@
   width: 100%;
   height: 100%;
 }
-.pdfNote {
-  margin: auto;
+/* A PDF that can't be shown: its line and its two ways out, where its pages would be. */
+.pdfFailed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+.pdfFailedActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
 }
 /* pdf.js's text layer, as its own viewer styles it: transparent words over the picture, there to select. */
 .pdfText {

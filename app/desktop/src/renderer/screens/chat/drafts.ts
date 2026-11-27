@@ -139,7 +139,8 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
       if (file === undefined) return;
       set(key, (d) => {
         const { error: _, ...rest } = d;
-        return { ...rest, attached: d.attached.map((x) => (x.local === local ? { local, name: x.name, bytes: x.bytes } : x)) };
+        // Uploading again, as it first did; a picture keeps its square.
+        return { ...rest, attached: d.attached.map((x) => (x.local === local ? { local, name: x.name, bytes: x.bytes, ...(x.thumb === undefined ? {} : { thumb: x.thumb }) } : x)) };
       });
       void file.slice(0, TEXT_HEAD).arrayBuffer().then(async (head) => {
         const mime = mimeFor(file.name, looksText(head));

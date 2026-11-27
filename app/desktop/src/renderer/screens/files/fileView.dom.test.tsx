@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // A chat file opened in the wide panel: a big CSV shows its first rows as a grid read from the file's start only, its
 // cells select as a spreadsheet's and copy as cells; JSON folds; Markdown renders; code is numbered; a Word file says
-// it opens in its own app. The card's Open lands here for what fleetd shows, and in this computer's app otherwise.
+// it opens in its own app; a PDF that can't be shown says so, with Download and Open in app, never blank pages. The
+// card's Open lands here for what fleetd shows, and in this computer's app otherwise.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -25,9 +26,33 @@ vi.hoisted(() =>
     files: {
       open: (_hub: unknown, r: { attachmentId: string }) => (opened.push(`open ${r.attachmentId}`), Promise.resolve({ ok: true })),
       save: (_hub: unknown, r: { attachmentId: string }) => (opened.push(`save ${r.attachmentId}`), Promise.resolve({ ok: true })),
+      download: (_hub: unknown, r: { attachmentId: string }) => (opened.push(`download ${r.attachmentId}`), Promise.resolve({ ok: true, path: "/tmp/x.pdf", name: "x.pdf" })),
     },
   }),
 );
+/**
+ * pdf.js, standing in: a document of two pages, or one that fails as `pdfMode.how` says (it won't open, a page won't
+ * draw, a page drew blank for a picture that didn't decode, a range of it the workspace couldn't send).
+ */
+type PdfHow = "ok" | "open" | "page" | "range" | "blank";
+const pdfMode = vi.hoisted((): { how: PdfHow; drawn: number } => ({ how: "ok", drawn: 0 }));
+vi.mock("./pdf", () => ({
+  drewBlank: () => Promise.resolve(pdfMode.how === "blank"),
+  TextLayer: class {
+    render = () => Promise.resolve();
+    cancel = () => undefined;
+  },
+  openPdf: (_source: unknown, _size: number, _first: unknown, failed: () => void) => {
+    if (pdfMode.how === "open") return { doc: Promise.reject(new Error("Invalid PDF structure.")), close: () => undefined };
+    const page = {
+      getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
+      render: () => ((pdfMode.drawn += 1), { promise: pdfMode.how === "page" ? Promise.reject(new Error("JpxError: unsupported image")) : Promise.resolve(), cancel: () => undefined }),
+      streamTextContent: () => ({}),
+    };
+    if (pdfMode.how === "range") setTimeout(failed, 0);
+    return { doc: Promise.resolve({ numPages: 2, getPage: () => Promise.resolve(page) }), close: () => undefined };
+  },
+}));
 vi.mock("../../ui/lib/clipboard", () => ({ copyText: (text: string) => (copied.push(text), Promise.resolve(true)) }));
 
 const SHOP = { machineId: "devbox", projectId: "shop" } as const;
@@ -52,6 +77,7 @@ const FILE: Record<string, { name: string; mime: string; bytes: Uint8Array }> = 
   F3: { name: "summary.md", mime: "text/plain", bytes: enc.encode("# Weekly summary\n\nThe **checkout** fix shipped.") },
   F4: { name: "restock.py", mime: "text/plain", bytes: enc.encode("LOW = 120\n\ndef low(units):\n    return units < LOW\n") },
   F5: { name: "notes.docx", mime: DOCX, bytes: new Uint8Array(4000) },
+  F6: { name: "scan.pdf", mime: "application/pdf", bytes: enc.encode("%PDF-1.4\n") },
 };
 /** The bytes each read asked for. */
 const reads: { id: string; offset: number; length: number }[] = [];
@@ -207,4 +233,43 @@ it("opens a card's file in the panel when fleetd shows it, and in this computer'
   expect(opened).toEqual(["open F5"]);
   // Its kind says what it is.
   expect(host.textContent).toContain("CSV · 5.4 MB");
+});
+
+it("shows a PDF's pages, and one that can't be shown says so with Download and Open in app, never blank pages", async () => {
+  // The panel has a width, so pages draw.
+  const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 800 });
+  try {
+    for (const how of ["ok", "open", "page", "blank", "range"] as const) {
+      pdfMode.how = how;
+      pdfMode.drawn = 0;
+      opened.length = 0;
+      act(() => root.unmount());
+      root = createRoot(host);
+      await mount(file("F6"));
+      const failed = host.querySelector("[data-pdf='failed']");
+      if (how === "ok") {
+        expect(failed).toBeNull();
+        expect(pdfMode.drawn).toBeGreaterThan(0);
+        expect(host.querySelectorAll("[data-page]")).toHaveLength(2);
+        continue;
+      }
+      expect(failed?.textContent, how).toContain("This PDF couldn’t be shown here.");
+      expect(host.querySelectorAll("[data-page]"), how).toHaveLength(0);
+      const button = (label: string) => [...(failed?.querySelectorAll("button") ?? [])].find((b) => b.textContent === label);
+      await act(async () => {
+        button("Download")?.click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        button("Open in app")?.click();
+        await Promise.resolve();
+      });
+      await settle();
+      expect(opened, how).toEqual(["download F6", "open F6"]);
+    }
+  } finally {
+    if (width !== undefined) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+    pdfMode.how = "ok";
+  }
 });
