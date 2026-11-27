@@ -67,38 +67,53 @@ export function gatesOf(text: string): Set<string> {
   return new Set(GATE_EACH.flatMap(([gate, word]) => (word.test(t) ? [gate] : [])));
 }
 
+/** A waiving word as one name: "don't" is "dont", "skipping" is "skip", "okay to" is "ok to". */
+const waiveName = (word: string) => {
+  const w = word.replace(/'/gu, "").replace(/^okay/u, "ok");
+  return /^(skip|stop|bypass|ignor|auto)/u.exec(w)?.[1] ?? w;
+};
+
+const waiversOf = (text: string) => [...new Set([...text.matchAll(new RegExp(WAIVE.source, "gu"))].map((m) => waiveName(m[1] as string)))].sort();
+
 /**
- * The gates a text waives: those named in a clause (cut at commas, colons, dashes, brackets) that also has a waiving
- * word, so "runs in Helsinki, deploys from main, without asking" waives asking and not deploying. A sentence whose
- * words loosen with no such clause ("Never, ever deploy") waives every gate it names.
+ * How a text waives its gates: each gate named in a clause (cut at commas, colons, dashes, brackets) with the waiving
+ * words of that clause, "merge:never+without". So "runs in Helsinki, deploys from main, without asking" pairs asking
+ * with "without" and leaves deploying alone, and "Merge without review." pairs differently from "Never merge without
+ * review.". A sentence whose words loosen with no such clause ("Never, ever deploy") pairs every gate it names with
+ * its waiving words.
  */
-export function waivedGates(text: string): Set<string> {
-  const waived = new Set<string>();
+export function pairingsOf(text: string): Set<string> {
+  const pairs = new Set<string>();
+  const pair = (part: string) => {
+    const waivers = waiversOf(part).join("+");
+    for (const gate of gatesOf(part)) pairs.add(`${gate}:${waivers}`);
+  };
   for (const sentence of lower(text).split(/[.;!?]+(?:\s|$)|\n/u)) {
-    const before = waived.size;
-    for (const clause of sentence.split(/[,:()[\]]|\s[-–—]+\s|—/u)) {
-      if (WAIVE.test(clause)) for (const gate of gatesOf(clause)) waived.add(gate);
-    }
-    if (waived.size === before && loosensByWords(sentence)) for (const gate of gatesOf(sentence)) waived.add(gate);
+    const before = pairs.size;
+    for (const clause of sentence.split(/[,:()[\]]|\s[-–—]+\s|—/u)) if (WAIVE.test(clause)) pair(clause);
+    if (pairs.size === before && loosensByWords(sentence)) pair(sentence);
   }
-  return waived;
+  return pairs;
 }
 
-const within = (some: Set<string>, all: Set<string>) => [...some].every((gate) => all.has(gate));
+/** The gates a text waives, by `pairingsOf`. */
+export const waivedGates = (text: string): Set<string> => new Set([...pairingsOf(text)].map((p) => p.slice(0, p.indexOf(":"))));
+
+const within = (some: Set<string>, all: Set<string>) => [...some].every((x) => all.has(x));
 
 /**
  * Whether a change by the nightly memory upkeep loosens (decision memory.upkeep-rewrites-no-hold): it rewords or
  * merges lines already in memory, so it loosens only by what it adds. A line written (`text`, in place of `replaced`
- * when it rewrites one) loosens when it waives a gate the line it replaces didn't, or the upkeep's own `effect` says
- * it loosens and the line it replaces didn't by its words; it drops a gate when the line it replaces named one the new
- * line doesn't. A line taken out (`text` undefined) loosens when it names a gate no line the upkeep wrote this run
- * (`written`) carries. Deterministic, as `changeLoosens`, which a person's change keeps.
+ * when it rewrites one) loosens when it pairs a gate with waiving words the line it replaces didn't pair it with
+ * ("Never merge without review." made "Merge without review." holds), when the upkeep's own `effect` says it loosens,
+ * or when it drops a gate the line it replaces named. A line taken out (`text` undefined) loosens when it names a gate
+ * no line the upkeep wrote this run (`written`) carries. Deterministic, as `changeLoosens`, which a person's change keeps.
  */
 export function upkeepLoosens(text: string | undefined, effect: MemoryEffect | undefined, replaced: string | undefined, written: readonly string[] = []): boolean {
   if (text === undefined) return replaced !== undefined && !within(gatesOf(replaced), gatesOf(written.join("\n")));
   const old = replaced ?? "";
-  if (effect === "loosens" && !loosensByWords(old)) return true;
-  return !within(waivedGates(text), waivedGates(old)) || !within(gatesOf(old), gatesOf(text));
+  if (effect === "loosens") return true;
+  return !within(pairingsOf(text), pairingsOf(old)) || !within(gatesOf(old), gatesOf(text));
 }
 
 /**

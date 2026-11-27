@@ -7,7 +7,7 @@ import { Registry } from "../src/hub/api/registry.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
 import { answer } from "../src/hub/memory/calls.ts";
-import { changeLoosens, holdsForAdmin, loosens, loosensByWords, namesGate, upkeepLoosens, waivedGates } from "../src/hub/memory/hold_rules.ts";
+import { changeLoosens, holdsForAdmin, loosens, loosensByWords, namesGate, pairingsOf, upkeepLoosens, waivedGates } from "../src/hub/memory/hold_rules.ts";
 import { Memory, projectTarget } from "../src/hub/memory/index.ts";
 import { putRun } from "../src/hub/memory/refresh_store.ts";
 import { registerAll } from "../src/hub/serve/areas.ts";
@@ -281,8 +281,13 @@ test("the upkeep's words: a gate waived in a clause of its own, and what a rewri
   // A rewrite that keeps the old line's waived gates and its gates adds nothing.
   const old = "The cloud runs in Helsinki, without asking.";
   expect(upkeepLoosens("The cloud runs on Hetzner in Helsinki behind a tunnel, without asking.", "none", old)).toBe(false);
-  expect(upkeepLoosens("The cloud runs on Hetzner in Helsinki behind a tunnel, without asking.", "loosens", old)).toBe(false);
-  // One that waives a gate the old line didn't, drops a gate, or that the upkeep says loosens on a plain line, does.
+  expect([...pairingsOf("Never merge without review.")].sort()).toEqual(["merge:never+without", "review:never+without"]);
+  // One that waives a gate the old line didn't, turns a strict line around, drops a gate, or that the upkeep says loosens, does.
+  expect(upkeepLoosens("The cloud runs on Hetzner in Helsinki behind a tunnel, without asking.", "loosens", old)).toBe(true);
+  expect(upkeepLoosens("Merge without review.", "none", "Never merge without review.")).toBe(true);
+  expect(upkeepLoosens("Deploy without asking.", "none", "Don't deploy without asking.")).toBe(true);
+  expect(upkeepLoosens("Push to main without review.", "none", "Never push to main without review.")).toBe(true);
+  expect(upkeepLoosens("Deploy straight to prod, no review needed.", "none", "Never deploy to prod without review.")).toBe(true);
   expect(upkeepLoosens("Use pnpm, and deploy without review.", "none", "Use pnpm.")).toBe(true);
   expect(upkeepLoosens("Deploys go through the pipeline.", "none", "Always ask before deploying.")).toBe(true);
   expect(upkeepLoosens("Use the fast lane for hotfixes.", "loosens", "Use pnpm.")).toBe(true);
@@ -301,7 +306,7 @@ test("the nightly upkeep's rewrites and merges save at once; one that adds a loo
   const helsinki = "The hosted cloud runs on Hetzner in Helsinki: agents restart its services there without asking.";
   Memory.of(hub).set(
     projectTarget(PROJECT),
-    `- ${helsinki}\n- Use pnpm.\n- Always ask before deploying.\n- Deploys go through staging first.\n- Always ask before a release.\n`,
+    `- ${helsinki}\n- Use pnpm.\n- Always ask before deploying.\n- Deploys go through staging first.\n- Always ask before a release.\n- Never merge without review.\n`,
   );
   // Nov 27's kind of rewrite: the line already said "without asking", and gets new facts. It saves at once.
   const reworded = "The hosted cloud runs on Hetzner in Helsinki behind Cloudflare Tunnel, on Postgres: agents restart its services there without asking.";
@@ -313,10 +318,13 @@ test("the nightly upkeep's rewrites and merges save at once; one that adds a loo
   // A rewrite that adds a way to skip review, and a gate line dropped with nothing carrying it, wait.
   expect(upkeep("remember", { scope: "project", effect: "none", text: "Use pnpm, and deploy without review.", replaces: "Use pnpm." }).held).toBe(true);
   expect(upkeep("forget", { scope: "project", entry: "Always ask before a release.", reason: "stale" }).held).toBe(true);
-  expect(core()).toBe(`- ${reworded}\n- Use pnpm.\n- ${merged}\n- Always ask before a release.\n`);
+  // So does a strict line turned around.
+  expect(upkeep("remember", { scope: "project", effect: "none", text: "Merge without review.", replaces: "Never merge without review." }).held).toBe(true);
+  expect(core()).toBe(`- ${reworded}\n- Use pnpm.\n- ${merged}\n- Always ask before a release.\n- Never merge without review.\n`);
   expect(lines().filter((m) => m.remembered?.hold === "waiting").map((m) => m.text)).toEqual([
     "Waiting for an admin's OK: Use pnpm, and deploy without review.",
     "Waiting for an admin's OK to forget: Always ask before a release.",
+    "Waiting for an admin's OK: Merge without review.",
   ]);
   // A member's rewrite of the same line keeps today's rule: it waits.
   turnFor(BEA);
