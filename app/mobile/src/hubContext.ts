@@ -126,6 +126,8 @@ export type ChatInfoParams = {
   Watcher: { key: Key; automationId?: string };
   /** How its risky actions are approved, and what ran without asking (Approvals.tsx). */
   Approvals: { key: Key };
+  /** What it remembers, with who taught each line, and the lines held for an admin's OK (BotMemory.tsx). */
+  Memory: { key: Key };
   /** Who merges its PRs, and its risk rules (WhoMerges.tsx). */
   WhoMerges: { key: Key };
   /** All that ran without asking, read in pages as it scrolls (ApprovedLog.tsx). */

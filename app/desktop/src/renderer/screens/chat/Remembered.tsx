@@ -1,11 +1,14 @@
 // Undo on a "Remembered: …" or "Forgot: …" line, so a wrong memory has a way out, and the night's "Memory refreshed"
 // line: one summary with Undo all, which opens to its changes, each with Undo. The hub re-sends the line marked
-// undone, which replaces a button with a word; only a failed Undo is kept here.
+// undone, which replaces a button with a word; only a failed Undo is kept here. A bot's line held for an admin's OK has
+// Review, to the bot's memory where an admin keeps it, and Undo, which takes the ask back; once answered, only words.
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { ChatMessage, MemoryRefreshed, RememberedItem } from "../../../shared/contracts";
 import { Button, cx, Text } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
+import { navigate } from "../shell/navigation";
 import type { ProjectRef } from "./slots";
 import { InlineText } from "./text";
 import s from "./view.module.css";
@@ -15,6 +18,9 @@ export function RememberedUndo({ project, message }: { project: ProjectRef; mess
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   if (message.remembered === undefined) return null;
+  const hold = message.remembered.hold;
+  // Not kept, or its ask taken back: the line's words say so.
+  if (hold === "dropped") return null;
   if (message.remembered.undone) {
     return (
       <Text size="xs" tone="quiet" className={s.undone}>
@@ -32,6 +38,11 @@ export function RememberedUndo({ project, message }: { project: ProjectRef; mess
   };
   return (
     <>
+      {hold === "waiting" ? (
+        <Button size="sm" variant="link" onClick={() => navigate({ id: "settings", tab: "instructions", for: projectKey(project) })}>
+          Review
+        </Button>
+      ) : null}
       <Button size="sm" variant="link" disabled={busy} onClick={undo}>
         Undo
       </Button>

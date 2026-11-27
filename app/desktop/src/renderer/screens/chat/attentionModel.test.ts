@@ -127,6 +127,15 @@ describe("what the lead waits on", () => {
     expect(waitingOn([item("a", "human", "search is slow"), question, theirs], LOADED, NOW, "UTC", "p_dana")?.what).toBe("1 command to approve");
     expect(waitingOn([item("a", "human", "search is slow"), question], LOADED, NOW, "UTC", "p_dana")?.what).toBe("1 question, asked at 09:02");
   });
+
+  it("a memory line held for an admin waits on that admin only, loaded or not", () => {
+    const open = [
+      { messageId: "m7", kind: "memory_hold", for: "p_ada" },
+      { messageId: "m7", kind: "memory_hold", for: "p_ola" },
+    ];
+    expect(waitingOn([], { older: false, open }, NOW, "UTC", "p_ada")).toEqual({ what: "1 memory line to keep or not", targets: [{ id: "m7" }] });
+    expect(waitingOn([], { older: false, open }, NOW, "UTC", "p_bea")).toBeUndefined();
+  });
 });
 
 describe("what there is to look at", () => {

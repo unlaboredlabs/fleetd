@@ -152,7 +152,7 @@ test("a write past the core's cap lands, and starts a tidy a minute later instea
   // A project write past its cap is still refused.
   hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('index', 1000)").run();
   Memory.of(hub).set({ project: PROJECT }, `- ${"x".repeat(990)}\n`);
-  expect(() => leadCall(hub, "remember", { scope: "project", text: "One more." })).toThrow("past its cap");
+  expect(() => leadCall(hub, "remember", { scope: "project", effect: "none", text: "One more." })).toThrow("past its cap");
 });
 
 test("the night's tidy runs after the bots' refreshes, in the person's own bot, and reads their whole memory and own words", async () => {

@@ -196,6 +196,7 @@
     "./hub/mcp_servers/model": "./fleetd/src/hub/mcp_servers/model.ts",
     "./hub/mcp_servers/vault_values": "./fleetd/src/hub/mcp_servers/vault_values.ts",
     "./hub/mcp_servers/rules": "./fleetd/src/hub/mcp_servers/rules.ts",
+    "./hub/memory/hold_rules": "./fleetd/src/hub/memory/hold_rules.ts",
     "./hub/memory/import_rules": "./fleetd/src/hub/memory/import_rules.ts",
     "./hub/memory/redact": "./fleetd/src/hub/memory/redact.ts",
     "./hub/memory/refresh_rules": "./fleetd/src/hub/memory/refresh_rules.ts",

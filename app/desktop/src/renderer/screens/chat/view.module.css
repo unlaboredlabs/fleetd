@@ -181,7 +181,7 @@
 }
 
 /*
- * A bubble with what goes beside it: the tapbacks and reply on hover, the time on hover. Three quarters of the
+ * A bubble with what goes beside it: the reply on hover, the time on hover. Three quarters of the
  * column at most, like a messaging app's; a rich block takes the column.
  */
 .line {
@@ -354,7 +354,7 @@
   max-width: 100%;
   min-width: 0;
 }
-/* The quiet side of the line, shown while the row is hovered or has focus: tapback, reply, the time. */
+/* The quiet side of the line, shown while the row is hovered or has focus: reply, the time. */
 .aside {
   display: flex;
   flex: none;
@@ -590,60 +590,6 @@ span.changeUndo {
    step quieter. */
 .quietMessage .theirs {
   --text: var(--quiet);
-}
-
-/* Tapbacks: a small badge on the bubble's upper outer corner, and room above the bubble for it. */
-.reacted {
-  margin-top: 12px;
-}
-.tapbacks {
-  position: absolute;
-  z-index: 1;
-  top: -14px;
-  display: flex;
-  gap: 1px;
-  padding: 1px 5px;
-  border: 2px solid var(--bg);
-  border-radius: var(--radius-pill);
-  background: var(--bubble);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-}
-.theirs > .tapbacks,
-.blockBubble > .tapbacks,
-.jumbo > .tapbacks {
-  right: -10px;
-}
-.mineBubble > .tapbacks {
-  left: -10px;
-}
-.picker {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-}
-.pick {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: none;
-  font-size: 17px;
-  cursor: pointer;
-}
-.pick:hover {
-  background: var(--hover);
-}
-.pick[aria-pressed="true"] {
-  background: var(--selected);
-}
-.pick:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 0;
 }
 
 /* The bubble a message answers, quoted small above it; pressed, the chat goes to it. */

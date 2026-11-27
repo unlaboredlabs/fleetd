@@ -23,6 +23,7 @@ const SYMBOLS = {
   denied: ["xmark.circle.fill", "cancel"],
   offline: ["wifi.slash", "cloud_off"],
   sparkles: ["sparkles", "auto_awesome"],
+  memory: ["brain", "psychology"],
   folder: ["folder", "folder"],
   table: ["tablecells", "table_chart"],
   block: ["rectangle.on.rectangle", "desktop_windows"],

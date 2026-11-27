@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// A bubble's right-click menu: copy its words plain or as written, and on the lead's, reply to it or react.
+// A bubble's right-click menu: copy its words plain or as written, and on the lead's, reply to it. Reactions are gone.
 import { act, useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -14,7 +14,7 @@ import { MessageView } from "./Bubble";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 // A fade on a closed surface, which happy-dom never ends: as in the app when the surface's entrance went unseen, a
-// closed picker or menu left to Radix would wait for it and stay on screen.
+// closed menu left to Radix would wait for it and stay on screen.
 const fade = document.createElement("style");
 fade.textContent = `.${o.surface}[data-state="closed"] { animation-name: fade; animation-duration: 120ms; }`;
 document.head.appendChild(fade);
@@ -33,7 +33,7 @@ beforeEach(() => {
   copy.mockClear();
   window.localStorage.clear();
   reply.mockClear();
-  actions = { project: PROJECT, waitedOn: undefined, send: () => undefined, reply, show: () => undefined };
+  actions = { project: PROJECT, send: () => undefined, reply, show: () => undefined };
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -91,7 +91,7 @@ const choose = async (label: string) => {
 it("the lead's bubble copies its words plain or as markdown, and replies", async () => {
   await mount("lead");
   rightClick(bubble());
-  expect(items()).toEqual(["Copy text", "Copy as Markdown", "Reply", "React"]);
+  expect(items()).toEqual(["Copy text", "Copy as Markdown", "Reply"]);
   await choose("Copy text");
   expect(copy).toHaveBeenLastCalledWith("Merged the fix. Shall I release it?");
   rightClick(bubble());
@@ -134,40 +134,22 @@ it("Reply leaves the cursor in the box, where the reply goes, once the menu has 
   expect(document.activeElement).toBe(host.querySelector("textarea"));
 });
 
-it("React puts a tapback on the lead's bubble", async () => {
+it("a lead's bubble has no reactions: no React in its menu, no reaction button beside it", async () => {
   await mount("lead");
+  expect(host.querySelector("button[aria-label='Tapback']")).toBeNull();
+  expect([...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Reply"]);
   rightClick(bubble());
-  const react = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === "React");
-  if (react === undefined) throw new Error("no React");
-  act(() => {
-    react.focus();
-    react.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-  });
-  await act(() => new Promise((done) => setTimeout(done, 0)));
-  await choose("👍Like");
-  expect(host.querySelector("[aria-label='You reacted: Like']")?.textContent).toBe("👍");
+  expect(items()).not.toContain("React");
 });
 
-it("your own bubble copies, and neither replies nor reacts", async () => {
+it("your own bubble copies, and doesn't reply", async () => {
   await mount("human");
   rightClick(bubble());
   expect(items()).toEqual(["Copy text", "Copy as Markdown"]);
 });
 
-it("the tapback picker and the menu leave the page once a pick closes them", async () => {
+it("the menu leaves the page once a pick closes it", async () => {
   await mount("lead");
-  const picker = host.querySelector<HTMLButtonElement>("button[aria-label='Tapback']");
-  act(() => {
-    picker?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
-    picker?.click();
-  });
-  const love = document.querySelector<HTMLButtonElement>("[role='dialog'][aria-label='Tapbacks'] button[aria-label='Love']");
-  expect(love).not.toBeNull();
-  act(() => love?.click());
-  await act(() => new Promise((done) => setTimeout(done, 0)));
-  expect(host.querySelector("[aria-label='You reacted: Love']")).not.toBeNull();
-  expect(document.querySelector("[aria-label='Tapbacks']")).toBeNull();
-
   rightClick(bubble());
   await choose("Copy text");
   expect(document.querySelector("[role='menu']")).toBeNull();

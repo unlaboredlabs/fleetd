@@ -1,4 +1,5 @@
-// memory_get, memory_set and memory_undo: Settings > Memory and the chat's Undo.
+// memory_get, memory_set, memory_undo and memory_hold_answer: Settings > Memory, the chat's Undo, and an admin's Keep
+// or Don't keep on a bot memory line held for their OK (hold_rules.ts).
 // Writes are a person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. Each
 // person's own memory is theirs alone, admins included, except to delete a removed person's. The caps are an admin's;
 // the shared user.md of before people is read and edited as Your memory only on a hub with no people yet.
@@ -8,11 +9,17 @@ import { allows } from "../auth/index.ts";
 import type { Hub } from "../api/hub.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import { state } from "../chat/flow.ts";
 import { chat } from "../chat/index.ts";
 import { requireHuman, unknownProject } from "../leads/seams.ts";
 import { store } from "../store/hub_store.ts";
-import { changed } from "./calls.ts";
-import { activePeople, Memory, projectTarget, type Target, type You, youTarget, userTarget } from "./index.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
+import { mayChangeBot } from "../api/bot_admin.ts";
+import { nowMs } from "../store/time.ts";
+import { changed, hold } from "./calls.ts";
+import { changeLoosens, holdsForAdmin, namesGate } from "./hold_rules.ts";
+import { activePeople, isIndexLine, linesOf, Memory, projectTarget, type Target, type You, youTarget, userTarget } from "./index.ts";
+import { anyAdmin, authors, held, isAdmin, personRef, taught } from "./lines.ts";
 import { registerImportAndRefresh } from "./import.ts";
 import { lineItems, listed, putLineItems } from "./refresh_store.ts";
 import { lastTidied, pageLine, setPageLine } from "./tidy.ts";
@@ -75,6 +82,25 @@ function mayUndo(hub: Hub, caller: Caller, item: RememberedItem): void {
 }
 
 /**
+ * An Undo of a bot's line as the change it makes, when it loosens what asks or merges and the caller isn't an owner
+ * or admin (hold_rules.ts): undoing a "Forgot" puts its line back, undoing a "Remembered" takes its line out (and puts
+ * back the one it replaced). That change is held for an admin as a forget or a remember would be, and nothing is
+ * undone yet. Undefined: the Undo goes ahead.
+ */
+function heldUndo(hub: Hub, caller: Caller, r: ProjectRef, item: RememberedItem): RememberedItem | undefined {
+  if (item.scope !== "project" || mayChangeBot(hub, caller, r.machineId) || !anyAdmin(hub.db)) return undefined;
+  const added = item.forgotten === true ? item.text : item.replaced;
+  const removed = item.forgotten === true ? undefined : item.text;
+  if (!holdsForAdmin(changeLoosens(added, undefined, removed), false, true)) return undefined;
+  const topic = item.topic === undefined ? {} : { topic: item.topic };
+  if (item.forgotten === true) return { scope: "project", ...topic, text: item.text };
+  if (item.replaced !== undefined) return { scope: "project", ...topic, text: item.replaced, replaced: item.text };
+  return { scope: "project", ...topic, text: item.text, forgotten: true };
+}
+
+const UNDO_HELD = "That Undo loosens what asks or merges, so it waits for an admin's OK; memory stays as it is until then.";
+
+/**
  * Undo on a "Memory refreshed" line: the change at `index`, or every change not yet undone, newest first. Each one
  * undone is marked, even when a later one can't be: that one says why. Undo all of a tidy's line whose person's memory
  * is still as the tidy left it puts it back exactly as the tidy found it.
@@ -113,6 +139,7 @@ function undoRefreshed(
   const memory = Memory.of(hub);
   let failed: unknown;
   let done = 0;
+  let waiting = 0;
   for (const i of picked) {
     const item = items[i] as RememberedItem;
     let allowed = true;
@@ -123,6 +150,12 @@ function undoRefreshed(
     }
     // Undo all leaves another person's memory alone.
     if (item.undone === true || !allowed) continue;
+    const waits = heldUndo(hub, caller, r, item);
+    if (waits) {
+      hold(hub, r, waits, caller.person);
+      waiting += 1;
+      continue;
+    }
     try {
       memory.undo(r, item);
     } catch (error) {
@@ -138,7 +171,51 @@ function undoRefreshed(
     shown(listed(items));
   }
   if (failed !== undefined) throw failed;
+  if (waiting > 0) return { ok: true as const, next: waiting === 1 ? UNDO_HELD : `${waiting} of these Undos loosen what asks or merges, so they wait for an admin's OK.` };
   return { ok: true as const, ...(done === 0 ? { next: "Already undone." } : {}) };
+}
+
+/**
+ * A person's edit of a bot's memory file: each line it adds is theirs (lines.ts). From someone who isn't an owner or
+ * admin, a line added that loosens what asks or merges is left out and held, and one taken out that names a gate is
+ * kept and its removal held (hold_rules.ts): `text` is what to write, `holds` the changes that wait.
+ */
+function projectEdit(hub: Hub, caller: Caller, memory: Memory, t: Target, edited: string): { text: string; holds: RememberedItem[] } {
+  const r = t.project as ProjectRef;
+  // Every line but a blank or a topic's is an entry, written with "- " or without.
+  const entryOf = (line: string) => {
+    const l = line.trimEnd();
+    return l.trim() === "" || isIndexLine(l) ? undefined : l.replace(/^(- )+/, "");
+  };
+  const entries = (text: string) => linesOf(text).flatMap((l) => entryOf(l) ?? []);
+  const before = new Set(entries(memory.read(t)));
+  const after = new Set(entries(edited));
+  const person = caller.person?.personId;
+  const holding = !isAdmin(hub.db, person) && anyAdmin(hub.db);
+  const topic = t.topic === undefined ? {} : { topic: t.topic };
+  const holds: RememberedItem[] = [];
+  const out: string[] = [];
+  for (const line of linesOf(edited)) {
+    const entry = entryOf(line);
+    if (entry !== undefined && !before.has(entry)) {
+      if (holding && holdsForAdmin(changeLoosens(entry, undefined, undefined), false, true)) {
+        holds.push({ scope: "project", ...topic, text: entry });
+        continue;
+      }
+      taught(hub.db, r, t.topic, entry, person, nowMs(hub.clock));
+    }
+    out.push(line);
+  }
+  if (holding) {
+    for (const entry of before) {
+      if (after.has(entry) || !namesGate(entry)) continue;
+      holds.push({ scope: "project", ...topic, text: entry, forgotten: true });
+      // Kept where an index line would follow it: above the topics, as `remember` puts entries.
+      const i = out.findIndex((l) => isIndexLine(l.trimEnd()));
+      out.splice(i < 0 ? out.length : i, 0, `- ${entry}`);
+    }
+  }
+  return { text: out.length === 0 ? "" : `${out.join("\n")}\n`, holds };
 }
 
 export function register(tools: Registry): void {
@@ -156,8 +233,20 @@ export function register(tools: Registry): void {
       return { ...yours, caps: memory.caps, next: "memory_get with projectRef adds that bot's MEMORY.md and topic files." };
     }
     knownProject(hub, caller, r, "read");
-    const files = [memory.file(projectTarget(r)), ...memory.topics(r).map((t) => memory.file(projectTarget(r, t)))];
-    return { ...yours, files, projectChars: memory.projectChars(r), projectCap: memory.caps.project, caps: memory.caps };
+    const files = [undefined, ...memory.topics(r)].map((topic) => {
+      const file = memory.file(projectTarget(r, topic));
+      const taughtBy = authors(hub.db, r, topic, file.text);
+      return taughtBy.length > 0 ? { ...file, authors: taughtBy } : file;
+    });
+    const waiting = held(hub, r);
+    return {
+      ...yours,
+      files,
+      ...(waiting.length > 0 ? { held: waiting } : {}),
+      projectChars: memory.projectChars(r),
+      projectCap: memory.caps.project,
+      caps: memory.caps,
+    };
   });
 
   tools.add("memory_set", (hub, caller, input) => {
@@ -186,10 +275,59 @@ export function register(tools: Registry): void {
       );
     }
     const memory = Memory.of(hub);
+    if (project) {
+      const { text, holds } = projectEdit(hub, caller, memory, t, input.text);
+      memory.set(t, text);
+      changed(hub, project, input.topic, caller.name);
+      for (const item of holds) hold(hub, project, item, caller.person);
+      const file = memory.file(t);
+      const taughtBy = authors(hub.db, project, input.topic, file.text);
+      return {
+        file: taughtBy.length > 0 ? { ...file, authors: taughtBy } : file,
+        ...(holds.length > 0 ? { next: `${holds.length === 1 ? "A change waits" : `${holds.length} changes wait`} for an admin's OK; the rest is saved.` } : {}),
+      };
+    }
     memory.set(t, input.text);
     changed(hub, project, input.topic, caller.name);
     t = t as Target;
     return { file: Memory.of(hub).file(t) };
+  });
+
+  tools.add("memory_hold_answer", (hub, caller, input) => {
+    requireHuman(caller, "memory_hold_answer");
+    const r = input.projectRef;
+    knownProject(hub, caller, r, "operate");
+    if (!mayChangeBot(hub, caller, r.machineId)) {
+      throw new ToolError("forbidden", "Only the workspace's owners and admins keep a held memory line.", `Ask one of them, or to make you an admin in ${settingsPath("People")}.`);
+    }
+    const message = chat(hub).byId(input.messageId);
+    const item = message?.remembered;
+    if (!message || !item || message.projectRef.machineId !== r.machineId || message.projectRef.projectId !== r.projectId || item.hold === undefined) {
+      throw new ToolError("not_found", "That memory line isn't waiting in this bot.");
+    }
+    if (item.hold !== "waiting") return { ok: true, next: item.hold === "kept" ? "Already kept." : "Already answered: not kept." };
+    const name = (caller.person && personRef(hub.db, caller.person.personId)?.name) ?? caller.name;
+    const topic = item.topic === undefined ? {} : { topic: item.topic };
+    if (!input.keep) {
+      chat(hub).setRemembered(message, { ...item, hold: "dropped" }, `Not kept by ${name}: ${item.text}`);
+      state(hub, r);
+      return { ok: true };
+    }
+    const memory = Memory.of(hub);
+    if (item.forgotten === true) {
+      memory.forget(r, undefined, { scope: "project", ...topic, entry: item.text });
+    } else {
+      // The entry it was to replace may have gone since: then it is added.
+      const still = item.replaced !== undefined && linesOf(memory.read(projectTarget(r, item.topic))).some((l) => l.trimEnd() === `- ${item.replaced}`);
+      memory.remember(r, undefined, { scope: "project", ...topic, text: item.text, ...(still ? { replaces: item.replaced } : {}) });
+      taught(hub.db, r, item.topic, item.text, item.by?.personId, nowMs(hub.clock));
+    }
+    changed(hub, r, item.topic, caller.name);
+    const said = item.forgotten === true ? `Forgot, kept by ${name}: ${item.text}` : `Remembered, kept by ${name}: ${item.text}`;
+    chat(hub).setRemembered(message, { ...item, hold: "kept" }, said);
+    // No longer waiting on the admins.
+    state(hub, r);
+    return { ok: true };
   });
 
   tools.add("memory_undo", (hub, caller, input) => {
@@ -212,7 +350,19 @@ export function register(tools: Registry): void {
     const item = message.remembered;
     if (!item) throw notFound();
     if (item.undone === true) return { ok: true, next: "Already undone." };
+    // A held line isn't in memory: its Undo only takes the ask back.
+    if (item.hold === "waiting") {
+      chat(hub).setRemembered(message, { ...item, hold: "dropped", undone: true });
+      state(hub, r);
+      return { ok: true };
+    }
+    if (item.hold === "dropped") return { ok: true, next: "It was never kept." };
     mayUndo(hub, caller, item);
+    const waits = heldUndo(hub, caller, r, item);
+    if (waits) {
+      hold(hub, r, waits, caller.person);
+      return { ok: true, next: UNDO_HELD };
+    }
     Memory.of(hub).undo(r, item);
     changed(hub, item.scope === "project" ? r : undefined, item.topic, caller.name);
     chat(hub).setRemembered(message, { ...item, undone: true });

@@ -201,7 +201,7 @@ export function ContextMenuRadioItem({ className, children, ...rest }: Component
   );
 }
 
-/** An item that opens more items beside it (React's tapbacks, the sidebar's Move to section). */
+/** An item that opens more items beside it (a message's About…, the sidebar's Move to section). */
 export function ContextMenuSub({ label, icon, children }: { label: ReactNode; icon?: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (

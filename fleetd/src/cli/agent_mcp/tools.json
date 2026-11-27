@@ -520,11 +520,20 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Keep one memory entry in plain words for later sessions: scope user for how the person works, project for this bot. A scope has a short core every session reads and topic files (topic) for detail. replaces (an entry's exact words) takes its place: never two versions. A project file past its cap is refused: merge entries, retry. Shown in chat with Undo. Never a secret.",
+   "description": "Keep a memory entry for later sessions: scope user for how the person works, project for this bot. A scope has a short core every session reads and topic files (topic) for detail. replaces (an entry's exact words) takes its place: never two versions. A project file past its cap is refused: merge entries. Shown in chat with Undo. Never a secret.",
    "inputSchema": {
     "properties": {
+     "effect": {
+      "enum": [
+       "none",
+       "loosens"
+      ],
+      "type": "string"
+     },
+     "own": {
+      "type": "boolean"
+     },
      "replaces": {
-      "description": "Must match one entry of the file.",
       "maxLength": 1000,
       "minLength": 1,
       "pattern": "^[^\\r\\n]*$",
@@ -2830,6 +2839,16 @@
    }
   },
   "remember": {
+   "/effect": {
+    "variants": [
+     "none",
+     "loosens"
+    ],
+    "expected": "string or map"
+   },
+   "/own": {
+    "expected": "a boolean"
+   },
    "/replaces": {
     "expected": "a string"
    },

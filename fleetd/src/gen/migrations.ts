@@ -196,6 +196,7 @@ import m192 from "../hub/store/migrations/202611261400_workspace_usage.sql" with
 import m193 from "../hub/store/migrations/202611261900_machine_sims.sql" with { type: "text" };
 import m194 from "../hub/store/migrations/202611261901_share_links.sql" with { type: "text" };
 import m195 from "../hub/store/migrations/202611261915_chat_status_lines.sql" with { type: "text" };
+import m196 from "../hub/store/migrations/202611262230_memory_lines.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -394,4 +395,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611261900_machine_sims", sql: m193 },
   { name: "202611261901_share_links", sql: m194 },
   { name: "202611261915_chat_status_lines", sql: m195 },
+  { name: "202611262230_memory_lines", sql: m196 },
 ];

@@ -1,15 +1,14 @@
 // A message as bubbles: the lead's on the left, yours on the right in the accent, a run from one author drawn as one
 // stack, its inner corners tight. A lead message the hub split shows one bubble per part, its blocks as
 // cards. While the lead writes, its bot stands in the reply's place saying so (WakeRow.tsx) until the text is whole. Hovering a bubble shows its time and, on the
-// lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
+// lead's, Reply; right-clicking one copies it, and on the lead's replies to it too. A reply of yours
 // shows the bubble it answers above it.
-import { Check, Paperclip, Pin, PinOff, Reply, Send, SmilePlus, Tag } from "lucide-react";
+import { Check, Paperclip, Pin, PinOff, Reply, Send, Tag } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
-import { projectKey } from "../../src/data/store";
 import { useSeen } from "../live";
 import {
   Button,
@@ -19,9 +18,6 @@ import {
   ContextMenuSeparator,
   ContextMenuSub,
   cx,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
   Text,
   Tooltip,
   Truncate,
@@ -31,7 +27,7 @@ import { fmtBytes, imageFit, pngDensity } from "./attachments";
 import { FileCard } from "./blocks/FileCard";
 import { ImageViewer, ImageViewerContext, useOpenImage } from "./ImageViewer";
 import { Block } from "./blocks/Block";
-import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, unshownOnly, type Bubble, type Tapback } from "./bubbles";
+import { bubblesOf, isWide, quoteOf, unshownOnly, type Bubble } from "./bubbles";
 import { MessageReceipt, ReceiptMarkView } from "./Composer";
 import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, isMineRow, viaOf, type Arrival, type Row } from "./model";
@@ -41,7 +37,6 @@ import { useLooked } from "./looked";
 import { shotsOf } from "./shots";
 import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
-import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
 import { Message } from "./text";
 import { TagLine } from "./lens/Lens";
 import { aboutOf, partAbout } from "./lens/tags";
@@ -127,55 +122,14 @@ export function useEnter(arrival: Arrival | undefined, step = 0): { className?: 
 /** One to three emoji and nothing else: shown large, without a bubble, as a messaging app does. */
 const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
 
-function TapbackPicker({ current, onPick }: { current: Tapback | undefined; onPick: (t: Tapback) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip content="Tapback">
-        <PopoverTrigger asChild>
-          <Button variant="quiet" iconOnly aria-label="Tapback">
-            <SmilePlus />
-          </Button>
-        </PopoverTrigger>
-      </Tooltip>
-      {/* Above the bubble, or below it when there's no room above. Once the bubble scrolls out of the chat the
-          picker hides with it rather than following it past the window's edge. Gone the moment it closes, as a
-          tooltip is: left to Radix, a closed picker stays until its entrance reports an end that may never come. */}
-      {open ? (
-        <PopoverContent side="top" hideWhenDetached aria-label="Tapbacks">
-          <div className={s.picker}>
-            {TAPBACKS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={s.pick}
-                aria-label={TAPBACK_WORD[t]}
-                aria-pressed={current === t}
-                title={TAPBACK_WORD[t]}
-                onClick={() => {
-                  setOpen(false);
-                  onPick(t);
-                }}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </PopoverContent>
-      ) : null}
-    </Popover>
-  );
-}
-
 function BubbleLine(props: {
   item: ChatItem;
   bubble: Bubble;
   first: boolean;
   last: boolean;
-  /** The lead's: it takes tapbacks and replies. */
+  /** The lead's: it takes replies. */
   lead: boolean;
   answer: string | undefined;
-  tapback: Tapback | undefined;
   enter: Arrival | undefined;
   /** Its place in the message, for the stagger as the message enters. */
   step: number;
@@ -202,15 +156,6 @@ function BubbleLine(props: {
   const mark = markOf(actions?.shown, item.id, bubble.key) ?? (props.opening ? markOf(actions?.shown, item.id) : undefined);
   const box = useRef<HTMLDivElement>(null);
   const shown = useShown(box, mark);
-  const pick = (t: Tapback) => {
-    if (actions === undefined) return;
-    const was = props.tapback;
-    toggleTapback(projectKey(actions.project), bubbleKey(item.id, bubble.key), t);
-    // Taking a 👍 off never sends anything; putting one on may answer.
-    if (was === t) return;
-    const send = tapbackSend(t, bubble, actions.waitedOn === item.id, props.answer === undefined);
-    if (send !== undefined) actions.send(send.text);
-  };
   const reply = () => actions?.reply({ id: item.id, part: Number(bubble.key), quote: quoteOf(bubble.text) });
   const words = bubble.text.trim() !== "";
   const answers = lead && actions !== undefined;
@@ -237,13 +182,6 @@ function BubbleLine(props: {
           <ContextMenuItem icon={<Reply />} onSelect={reply}>
             Reply
           </ContextMenuItem>
-          <ContextMenuSub label="React" icon={<SmilePlus />}>
-            {TAPBACKS.map((t) => (
-              <ContextMenuItem key={t} icon={<span aria-hidden>{t}</span>} hint={props.tapback === t ? <Check aria-label="On" /> : undefined} onSelect={() => pick(t)}>
-                {TAPBACK_WORD[t]}
-              </ContextMenuItem>
-            ))}
-          </ContextMenuSub>
         </>
       ) : null}
       {retags && (words || answers) ? <ContextMenuSeparator /> : null}
@@ -269,7 +207,7 @@ function BubbleLine(props: {
     </>
   );
   return (
-    <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
+    <div className={cx(s.line, wide && s.wide, enter.className)} style={enter.style}>
       <ContextMenu menu={menu} disabled={!words && !answers && !retags && !pinnable}>
         <div
           ref={box}
@@ -289,11 +227,6 @@ function BubbleLine(props: {
           data-part={bubble.key}
         >
           {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} blocks={blocks} />}
-          {props.tapback !== undefined ? (
-            <span className={s.tapbacks} role="img" aria-label={`You reacted: ${TAPBACK_WORD[props.tapback]}`}>
-              {props.tapback}
-            </span>
-          ) : null}
         </div>
       </ContextMenu>
       {props.receipt !== undefined ? <ReceiptMarkView item={item} latest={props.receipt} /> : null}
@@ -306,7 +239,6 @@ function BubbleLine(props: {
       <span className={s.aside}>
         {lead && actions !== undefined ? (
           <>
-            <TapbackPicker current={props.tapback} onPick={pick} />
             <Tooltip content="Reply">
               <Button variant="quiet" iconOnly aria-label="Reply" onClick={reply}>
                 <Reply />
@@ -336,7 +268,6 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
     return only === undefined ? all : all.filter((b) => only.includes(b.key));
   }, [i, body, only]);
   const tags = actions?.tags;
-  const marks = useTapbacks(actions === undefined ? "" : projectKey(actions.project));
   const typing = i.state === "streaming";
   const files = i.attachments.length > 0;
   const target = r.reply?.target;
@@ -389,7 +320,6 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
                 last={r.end && n === bubbles.length - 1 && !files}
                 lead={lead}
                 answer={r.answered?.[b.key]}
-                tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
                 enter={enter}
                 step={n}
                 opening={n === 0}

@@ -73,10 +73,23 @@
   min-width: 0;
 }
 .entryText {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
   padding-top: 2px;
   overflow-wrap: anywhere;
+}
+/* Who taught a bot's line: one quiet line under its words. */
+.author {
+  overflow-wrap: anywhere;
+}
+/* Keep and Don't keep, always shown: a held line waits on them. */
+.heldActions {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
 }
 /* On the entry's first line: its 2 px over a 20 px line, the controls 28 px. */
 .cardActions {

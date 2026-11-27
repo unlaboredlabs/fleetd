@@ -51,6 +51,7 @@ export const CARRIED = [
   "mcp_servers",
   "mcp_settings",
   "memory_imports",
+  "memory_lines",
   "memory_refresh_lines",
   "memory_refreshes",
   "memory_settings",

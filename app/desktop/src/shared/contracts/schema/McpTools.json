@@ -4673,10 +4673,11 @@
       "type": "object"
     },
     "ChatOpenItemKind": {
-      "description": "`ChatItem`'s kind.",
+      "description": "`ChatItem`'s kind, or `memory_hold`: a bot memory line held for an admin's OK, one per owner or admin.",
       "enum": [
         "secret_request",
-        "command_approval"
+        "command_approval",
+        "memory_hold"
       ],
       "type": "string",
       "x-open": true
@@ -12745,6 +12746,12 @@
         "memory_get.output": {
           "$ref": "#/$defs/MemoryGetOutput"
         },
+        "memory_hold_answer.input": {
+          "$ref": "#/$defs/MemoryHoldAnswerInput"
+        },
+        "memory_hold_answer.output": {
+          "$ref": "#/$defs/MemoryHoldAnswerOutput"
+        },
         "memory_import.input": {
           "$ref": "#/$defs/MemoryImportInput"
         },
@@ -13733,6 +13740,8 @@
         "mcp_servers_get.output",
         "memory_get.input",
         "memory_get.output",
+        "memory_hold_answer.input",
+        "memory_hold_answer.output",
         "memory_import.input",
         "memory_import.output",
         "memory_refresh_run.input",
@@ -14276,6 +14285,13 @@
     },
     "MemoryFile": {
       "properties": {
+        "authors": {
+          "description": "A bot's file: who taught each line that has a record, in the file's order. Absent: none has.",
+          "items": {
+            "$ref": "#/$defs/MemoryAuthor"
+          },
+          "type": "array"
+        },
         "cap": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -14338,6 +14354,14 @@
           "items": {
             "$ref": "#/$defs/MemoryFile"
           },
+          "type": "array"
+        },
+        "held": {
+          "description": "With projectRef: the bot's changes held for an admin's OK, oldest first. Absent when none waits.",
+          "items": {
+            "$ref": "#/$defs/MemoryHeld"
+          },
+          "maxItems": 100,
           "type": "array"
         },
         "next": {
@@ -20567,9 +20591,17 @@
     "RememberedItem": {
       "description": "What a `remember` or `forget` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
       "properties": {
+        "by": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "A bot's line: who taught it, the person the lead's turn was for or whose edit wrote it. Absent: the lead's own,\na line in user scope, or one from an older workspace."
+        },
         "forgotten": {
           "description": "`forget` removed `text`; Undo puts it back.",
           "type": "boolean"
+        },
+        "hold": {
+          "$ref": "#/$defs/MemoryHold",
+          "description": "A bot's change held for an admin's OK, as it loosens what asks or merges: waiting (nothing written yet), kept by an\nadmin (written), or dropped. Absent: written at once."
         },
         "person": {
           "$ref": "#/$defs/PersonId",
@@ -29848,6 +29880,123 @@
       "required": [
         "itemId",
         "label"
+      ],
+      "type": "object"
+    },
+    "MemoryHold": {
+      "description": "Waiting for an admin, kept by one, or not kept.",
+      "enum": [
+        "waiting",
+        "kept",
+        "dropped"
+      ],
+      "type": "string"
+    },
+    "MemoryAuthor": {
+      "description": "Who taught a line of a bot's memory file.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When they taught it."
+        },
+        "by": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Absent: the lead's own."
+        },
+        "text": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "The entry, as the file has it without its \"- \"."
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "type": "object"
+    },
+    "MemoryHeld": {
+      "description": "A bot memory change held for an admin's OK: `memory_hold_answer` keeps it or not.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Who taught it; absent: the lead, on no one's message."
+        },
+        "forgotten": {
+          "description": "It takes `text` out of the file instead of adding it.",
+          "type": "boolean"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId",
+          "description": "Its chat line, which `memory_hold_answer` names."
+        },
+        "replaced": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "The whole entry it goes in place of."
+        },
+        "text": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic"
+        }
+      },
+      "required": [
+        "messageId",
+        "text",
+        "at"
+      ],
+      "type": "object"
+    },
+    "MemoryHoldAnswerInput": {
+      "properties": {
+        "keep": {
+          "description": "True writes it to the bot's memory; false drops it.",
+          "type": "boolean"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId",
+          "description": "The held line's chat line (`MemoryHeld.messageId`)."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId",
+        "keep"
+      ],
+      "type": "object"
+    },
+    "MemoryHoldAnswerOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
       ],
       "type": "object"
     }

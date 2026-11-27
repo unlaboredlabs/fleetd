@@ -18,6 +18,7 @@ import { findPinsShown } from "../../messagePins";
 import { DaySheet, FindView, useChatFind } from "./ChatFind";
 import { listTime } from "../../chatView";
 import { BOT_ADMIN_ONLY, isArchived, mergesOf, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
+import { heldForMe, heldValue } from "../../botMemory";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { NEW_SCREEN } from "../../screen";
 import { space, type, useTheme, type Palette } from "../../theme";
@@ -124,6 +125,8 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const [forgot, setForgot] = useState(false);
   const [typing, setTyping] = useState<DeleteWords | null>(null);
   const v = info.value;
+  // Memory lines waiting for this person's OK, as an owner or admin.
+  const heldCount = heldForMe(state.chatStates[key]?.openItems, state.me);
 
   // The chat's search: the bar's words and the filters, the hits for them, and the day sheet.
   const searchable = findPinsShown(state.hub);
@@ -335,6 +338,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <ListRow title="Approvals" icon="approvals" {...(live ? { onPress: () => navigation.navigate("Approvals", { key }) } : {})} />
         <ListRow title="Payments" icon="money" {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} />
         {vaultShown(state.hub) ? <ListRow title="Vault" icon="lock" onPress={() => navigation.navigate("Vault", { key })} /> : null}
+        <ListRow title="Memory" icon="memory" {...(heldCount > 0 ? { value: heldValue(heldCount), valueDot: t.warning } : {})} {...(live ? { onPress: () => navigation.navigate("Memory", { key }) } : {})} />
         {skills ? <ListRow title="Skills" icon="sparkles" {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
         {artifactsShown(state.hub) ? <ListRow title="Artifacts" icon="fileDoc" onPress={() => navigation.navigate("Artifacts", { key })} /> : null}
       </ListSection>

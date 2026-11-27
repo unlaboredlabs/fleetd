@@ -2,17 +2,19 @@
 // Instructions & memory, which only its sessions get; your own memory, on You › Your memory, which only the agents of
 // work you start read, and only you edit. The lead writes with `remember`; here a person reads
 // each file as a list of entries (one card per line, with where and when the lead
-// remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
-// from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
+// remembered it when the hub knows, and on a bot's, who taught it), edits or deletes one (its buttons, or its right-click
+// menu), and undoes a delete from its toast. A bot's change that loosens what asks or merges, from someone who isn't an
+// admin, waits on top until an admin keeps it or not. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
 // memory_set, a human key's write.
 import { MessageSquareText, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
-import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
+import type { MemoryFile, MemoryHeld, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenu, ContextMenuItem, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
+  authorWord,
   capState,
   fileName,
   lineMatches,
@@ -25,6 +27,7 @@ import {
   type MemoryLine,
 } from "./memoryModel";
 import { RefreshedChanges } from "../chat/Remembered";
+import { useBotLocked } from "./botAdmin";
 import { DangerButton, GroupNote, scopeName, SettingsList, SettingsListRow, SettingsSection, useProjects } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
@@ -101,6 +104,7 @@ export function Memory({ project }: { project: Scope | null }) {
         </div>
         {total ? <CapMeter state={total} label="This bot's memory" /> : null}
       </SettingsSection>
+      {ref && d?.held && d.held.length > 0 ? <HeldLines project={ref} held={d.held} /> : null}
       {ref && d?.files
         ? files.map((f) =>
             group(
@@ -449,7 +453,14 @@ function EntryCard(props: {
             )}
           >
             <div className={m.cardBody}>
-              <Text className={m.entryText}>{line.text}</Text>
+              <div className={m.entryText}>
+                <Text>{line.text}</Text>
+                {line.by !== undefined ? (
+                  <Text size="xs" tone="quiet" className={m.author}>
+                    From {line.by}
+                  </Text>
+                ) : null}
+              </div>
               <div className={m.cardActions}>
                 {line.note ? <Source note={line.note} /> : null}
                 <Tooltip content="Edit">
@@ -520,6 +531,71 @@ function EntryCard(props: {
         ) : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * A bot's changes that wait for an admin's OK, as they loosen what asks or merges: each with who taught it, and for an
+ * owner or admin Keep (written to memory then) and Don't keep. A member sees them waiting, with no buttons.
+ */
+function HeldLines({ project, held }: { project: ProjectRef; held: ReadonlyArray<MemoryHeld> }) {
+  const locked = useBotLocked();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const answer = (h: MemoryHeld, keep: boolean) => {
+    setBusy(h.messageId);
+    setError(null);
+    hubCall("memory_hold_answer", { projectRef: project, messageId: h.messageId, keep })
+      .then(() => refetch(["memory_get"]))
+      .then(
+        () => setBusy(null),
+        (e: unknown) => {
+          setBusy(null);
+          setError(errorText(e));
+        },
+      );
+  };
+  const hint = locked
+    ? "These loosen what asks or merges, so they wait for an owner or admin. Until then the bot goes by its memory as it is."
+    : "These loosen what asks or merges. Nothing changes until you keep one.";
+  return (
+    <SettingsSection title="Waiting for an admin" hint={hint} data={{ "data-memory-held": "" }}>
+      <ul className={m.entries} aria-label="Waiting for an admin">
+        {held.map((h) => (
+          <li key={h.messageId} className={m.card}>
+            <div className={m.cardBody}>
+              <div className={m.entryText}>
+                <Text>{h.text}</Text>
+                <Text size="xs" tone="quiet" className={m.author}>
+                  {[`From ${authorWord(h)}`, h.forgotten === true ? "would take this out" : h.replaced !== undefined ? `in place of “${h.replaced}”` : undefined, h.topic]
+                    .filter((w) => w !== undefined)
+                    .join(" · ")}
+                </Text>
+              </div>
+              {locked ? null : (
+                <div className={m.heldActions}>
+                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => answer(h, true)}>
+                    Keep
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => answer(h, false)}>
+                    Don't keep
+                  </Button>
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div role="status">
+        {error ? (
+          <Text size="xs" tone="danger">
+            {error}
+          </Text>
+        ) : null}
+      </div>
+    </SettingsSection>
   );
 }
 
