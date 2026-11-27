@@ -31,26 +31,48 @@ vi.hoisted(() =>
   }),
 );
 /**
- * pdf.js, standing in: a document of two pages, or one that fails as `pdfMode.how` says (it won't open, a page won't
- * draw, a page drew blank for a picture that didn't decode, a range of it the workspace couldn't send).
+ * pdf.js, standing in: a document of three pages, or one that fails as `pdfMode.how` says: it won't open, or its page
+ * `pdfMode.bad` won't draw, draws blank for a picture that didn't decode, or waits on a part of the file the workspace
+ * couldn't send (until `retry` asks for it again). `drawn` lists the pages drawn, in turn.
  */
 type PdfHow = "ok" | "open" | "page" | "range" | "blank";
-const pdfMode = vi.hoisted((): { how: PdfHow; drawn: number } => ({ how: "ok", drawn: 0 }));
+const pdfMode = vi.hoisted((): { how: PdfHow; bad: number; drawn: number[]; retries: number; release: (() => void) | undefined } => ({
+  how: "ok",
+  bad: 2,
+  drawn: [],
+  retries: 0,
+  release: undefined,
+}));
 vi.mock("./pdf", () => ({
-  drewBlank: () => Promise.resolve(pdfMode.how === "blank"),
+  drewBlank: (p: { n: number }) => Promise.resolve(pdfMode.how === "blank" && p.n === pdfMode.bad),
   TextLayer: class {
     render = () => Promise.resolve();
     cancel = () => undefined;
   },
   openPdf: (_source: unknown, _size: number, _first: unknown, failed: () => void) => {
-    if (pdfMode.how === "open") return { doc: Promise.reject(new Error("Invalid PDF structure.")), close: () => undefined };
-    const page = {
+    const none = { retry: () => undefined, close: () => undefined };
+    if (pdfMode.how === "open") return { doc: Promise.reject(new Error("Invalid PDF structure.")), ...none };
+    const page = (n: number) => ({
+      n,
       getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
-      render: () => ((pdfMode.drawn += 1), { promise: pdfMode.how === "page" ? Promise.reject(new Error("JpxError: unsupported image")) : Promise.resolve(), cancel: () => undefined }),
+      render: () => {
+        const fails = pdfMode.how === "page" && n === pdfMode.bad;
+        if (!fails) pdfMode.drawn.push(n);
+        return { promise: fails ? Promise.reject(new Error("JpxError: unsupported image")) : Promise.resolve(), cancel: () => undefined };
+      },
       streamTextContent: () => ({}),
+    });
+    const getPage = (n: number) => {
+      if (pdfMode.how !== "range" || n !== pdfMode.bad) return Promise.resolve(page(n));
+      // Its part of the file doesn't come: the workspace's read fails, and the page waits for it.
+      setTimeout(failed, 0);
+      return new Promise((done) => (pdfMode.release = () => done(page(n))));
     };
-    if (pdfMode.how === "range") setTimeout(failed, 0);
-    return { doc: Promise.resolve({ numPages: 2, getPage: () => Promise.resolve(page) }), close: () => undefined };
+    const retry = () => {
+      pdfMode.retries += 1;
+      pdfMode.release?.();
+    };
+    return { doc: Promise.resolve({ numPages: 3, getPage }), retry, close: () => undefined };
   },
 }));
 vi.mock("../../ui/lib/clipboard", () => ({ copyText: (text: string) => (copied.push(text), Promise.resolve(true)) }));
@@ -235,41 +257,76 @@ it("opens a card's file in the panel when fleetd shows it, and in this computer'
   expect(host.textContent).toContain("CSV · 5.4 MB");
 });
 
-it("shows a PDF's pages, and one that can't be shown says so with Download and Open in app, never blank pages", async () => {
-  // The panel has a width, so pages draw.
+/** Every page near the view, so each draws (happy-dom has no layout to scroll). */
+class AllInView {
+  constructor(private cb: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    queueMicrotask(() => this.cb([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver));
+  }
+  disconnect() {}
+}
+
+const openPdfView = async (how: PdfHow) => {
+  pdfMode.how = how;
+  pdfMode.drawn = [];
+  pdfMode.retries = 0;
+  pdfMode.release = undefined;
+  opened.length = 0;
+  act(() => root.unmount());
+  root = createRoot(host);
+  await mount(file("F6"));
+};
+const pageState = () => [...host.querySelectorAll<HTMLElement>("[data-page]")].map((p) => p.dataset.state);
+
+it("says a PDF that won't open can't be shown, with Download and Open in app", async () => {
+  await openPdfView("open");
+  const failed = host.querySelector("[data-pdf='failed']");
+  expect(failed?.textContent).toContain("This PDF couldn’t be shown here.");
+  expect(host.querySelectorAll("[data-page]")).toHaveLength(0);
+  const button = (label: string) => [...(failed?.querySelectorAll("button") ?? [])].find((b) => b.textContent === label);
+  await act(async () => {
+    button("Download")?.click();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    button("Open in app")?.click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(opened).toEqual(["download F6", "open F6"]);
+  pdfMode.how = "ok";
+});
+
+it("fails only the page that can't be shown, with Try again, and keeps the others readable", async () => {
+  // The panel has a width, so pages draw, and every page is in view.
   const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 800 });
+  const seen = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = AllInView as unknown as typeof IntersectionObserver;
   try {
-    for (const how of ["ok", "open", "page", "blank", "range"] as const) {
-      pdfMode.how = how;
-      pdfMode.drawn = 0;
-      opened.length = 0;
-      act(() => root.unmount());
-      root = createRoot(host);
-      await mount(file("F6"));
-      const failed = host.querySelector("[data-pdf='failed']");
-      if (how === "ok") {
-        expect(failed).toBeNull();
-        expect(pdfMode.drawn).toBeGreaterThan(0);
-        expect(host.querySelectorAll("[data-page]")).toHaveLength(2);
-        continue;
-      }
-      expect(failed?.textContent, how).toContain("This PDF couldn’t be shown here.");
-      expect(host.querySelectorAll("[data-page]"), how).toHaveLength(0);
-      const button = (label: string) => [...(failed?.querySelectorAll("button") ?? [])].find((b) => b.textContent === label);
+    await openPdfView("ok");
+    expect(pageState()).toEqual(["drawn", "drawn", "drawn"]);
+    for (const how of ["page", "blank", "range"] as const) {
+      await openPdfView(how);
+      // Page 2 of 3 fails: its note in its place, pages 1 and 3 drawn, and no line for the whole file.
+      expect(host.querySelector("[data-pdf='failed']"), how).toBeNull();
+      expect(pageState(), how).toEqual(["drawn", "failed", "drawn"]);
+      expect(pdfMode.drawn.filter((n) => n !== 2).sort(), how).toEqual([1, 3]);
+      const note = host.querySelector("[data-page='2'] [role='alert']");
+      expect(note?.textContent, how).toContain("This page couldn’t be shown.");
+      // Try again: the page draws again, or its missing part is asked for again; this time it comes.
+      if (how !== "range") pdfMode.how = "ok";
       await act(async () => {
-        button("Download")?.click();
-        await Promise.resolve();
-      });
-      await act(async () => {
-        button("Open in app")?.click();
+        [...(note?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Try again")?.click();
         await Promise.resolve();
       });
       await settle();
-      expect(opened, how).toEqual(["download F6", "open F6"]);
+      expect(pageState(), how).toEqual(["drawn", "drawn", "drawn"]);
+      if (how === "range") expect(pdfMode.retries).toBe(1);
     }
   } finally {
     if (width !== undefined) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+    globalThis.IntersectionObserver = seen;
     pdfMode.how = "ok";
   }
 });
