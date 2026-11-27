@@ -110,9 +110,11 @@ export function Memory({ project }: { project: Scope | null }) {
       >
         {read.isLoadingError ? <FileError read={read} /> : null}
         {searching && d && hits === 0 ? (
-          <Text size="sm" tone="quiet" role="status">
-            No entry has “{query.trim()}”.
-          </Text>
+          <div role="status">
+            <Text size="sm" tone="quiet">
+              No entry has “{query.trim()}”.
+            </Text>
+          </div>
         ) : null}
       </SettingsSection>
       {ref && core ? group(core, projectTarget(ref, core), cap, false) : null}

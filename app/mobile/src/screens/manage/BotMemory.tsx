@@ -113,7 +113,10 @@ export function BotMemory({ route }: ChatInfoProps<"Memory">) {
           ) : null}
           {topics.length > 0 ? (
             <ListSection header="Topics" footer="Each is read only when its work comes up.">
-              {topics.flatMap((f) => topicRows(f, opened.has(`topic:${f.topic ?? ""}`), () => toggle(`topic:${f.topic ?? ""}`)))}
+              {topics.flatMap((f) => {
+                const name = f.topic ?? "";
+                return topicRows(f, opened.has(`topic:${name}`), opened.has(`all:${name}`), () => toggle(`topic:${name}`), () => toggle(`all:${name}`));
+              })}
             </ListSection>
           ) : null}
         </>
@@ -122,27 +125,41 @@ export function BotMemory({ route }: ChatInfoProps<"Memory">) {
   );
 }
 
-/** A topic: one row with how many lines it holds, and its lines under it once tapped open. */
-function topicRows(f: BotFile, open: boolean, onPress: () => void) {
+/**
+ * A topic: one row with how many lines it holds, and its lines under it, set in, once tapped open: the first few of a
+ * long one, then Show All.
+ */
+function topicRows(f: BotFile, open: boolean, all: boolean, onPress: () => void, onAll: () => void) {
   const name = f.topic ?? "";
+  const fold = folded(f.lines, FOLD, all);
   return [
     <ListRow key={`t:${name}`} title={name} value={lines(f.lines.length)} chevron={false} accessory={<Disclosure open={open} />} onPress={onPress} />,
-    ...(open ? f.lines.map((l, i) => <Line key={`t:${name}:${String(i)}:${l.text}`} line={l} />) : []),
+    ...(open
+      ? [
+          ...fold.shown.map((l, i) => <Line key={`t:${name}:${String(i)}:${l.text}`} line={l} inset />),
+          ...(fold.more > 0 || all ? [<More key={`t:${name}:more`} words={all ? "Show Fewer" : `Show All ${String(f.lines.length)}`} onPress={onAll} inset />] : []),
+        ]
+      : []),
   ];
 }
 
 function Disclosure({ open }: { open: boolean }) {
   const t = useTheme();
-  return <Icon name={open ? "chevronDown" : "chevron"} size={14} color={t.tertiary} weight="semibold" />;
+  // A mark, not words: the row says whether it's open.
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Icon name={open ? "chevronDown" : "chevron"} size={14} color={t.tertiary} weight="semibold" />
+    </View>
+  );
 }
 
 /** Show More, Show All, Show Fewer or Keep All: a row in the link's blue, as the desktop's are. */
-function More({ words, onPress }: { words: string; onPress: () => void }) {
+function More({ words, onPress, inset = false }: { words: string; onPress: () => void; inset?: boolean }) {
   const t = useTheme();
   return (
     <Pressable accessibilityRole="button" onPress={onPress}>
       {({ pressed }) => (
-        <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
+        <View style={[styles.row, inset && styles.inset, pressed && { backgroundColor: t.fillQuiet }]}>
           <Text style={[type.body, { color: t.link }]}>{words}</Text>
         </View>
       )}
@@ -174,13 +191,16 @@ function Held({ held: h, locked, busy, onAnswer }: { held: HeldShape; locked: bo
   );
 }
 
-/** One line of a file: two lines of its words until tapped, then all of them and who taught it when the workspace knows. */
-function Line({ line }: { line: BotLine }) {
+/**
+ * One line of a file: two lines of its words until tapped, then all of them and who taught it when the workspace knows.
+ * `inset`, a topic's line, set in under its topic's row.
+ */
+function Line({ line, inset = false }: { line: BotLine; inset?: boolean }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
   return (
     <Pressable
-      style={styles.row}
+      style={[styles.row, inset && styles.inset]}
       accessibilityState={{ expanded: open }}
       accessibilityLabel={line.by === undefined ? line.text : `${line.text}${/[.!?]$/u.test(line.text) ? "" : "."} From ${line.by}`}
       onPress={() => setOpen(!open)}
@@ -195,5 +215,6 @@ function Line({ line }: { line: BotLine }) {
 
 const styles = StyleSheet.create({
   row: { gap: 2, paddingHorizontal: space.lg, paddingVertical: 11 },
+  inset: { paddingLeft: space.lg * 2 },
   actions: { flexDirection: "row", gap: space.sm, marginTop: space.sm },
 });

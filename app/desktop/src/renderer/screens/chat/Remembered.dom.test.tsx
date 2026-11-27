@@ -213,7 +213,17 @@ describe("a Memory refreshed line with more changes than it lists", () => {
 
 describe("a line held for an admin's OK", () => {
   it("has Review, which opens the bot's Instructions & memory at the waiting list", async () => {
-    const held = { ...message, messageId: "m40", text: "Waiting for an admin's OK: Never ask before deploying.", memoryRefreshed: undefined, remembered: { scope: "project", text: "Never ask before deploying.", hold: "waiting" } } as ChatMessage;
+    const held: ChatMessage = {
+      messageId: "m40",
+      projectRef: project,
+      seq: 40,
+      author: "system",
+      text: "Waiting for an admin's OK: Never ask before deploying.",
+      createdAt: "2026-10-27T04:30:00.000Z",
+      state: "final",
+      attachments: [],
+      remembered: { scope: "project", text: "Never ask before deploying.", hold: "waiting" },
+    };
     let wanted: string | null = null;
     function Wanted() {
       wanted = useWanted();
