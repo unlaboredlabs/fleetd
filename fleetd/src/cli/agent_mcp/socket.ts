@@ -59,7 +59,7 @@ function normalize(path: string): string {
 }
 
 /** The node's answer, checked against the contract: a `lead_result` or `browser_result` with an id and exactly one
- * of result and error, or `held`. Anything else is a frame this CLI cannot read. */
+ * of result and error, `held`, or `agent_tools` with its hash. Anything else is a frame this CLI cannot read. */
 function decodeResultFrame(line: string): Record<string, unknown> | undefined {
   let frame: unknown;
   try {
@@ -69,6 +69,7 @@ function decodeResultFrame(line: string): Record<string, unknown> | undefined {
   }
   if (!isObject(frame)) return;
   if (frame.t === "held") return Number.isInteger(frame.steps) && (frame.steps as number) >= 0 ? frame : undefined;
+  if (frame.t === "agent_tools") return typeof frame.hash === "string" ? frame : undefined;
   if (frame.t !== "lead_result" && frame.t !== "browser_result") return;
   if (typeof frame.id !== "string" || frame.id === "") return;
   const result = frame.result ?? null;
