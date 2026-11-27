@@ -233,7 +233,8 @@ export function readPasses(file: string): Pass[] {
  */
 export function since(repo: string, pass: Pass, tree: string, base: string): string[] | undefined {
   if (pass.base !== base && tried(repo, "merge-base", "--is-ancestor", pass.base, base) === undefined) return undefined;
-  const commit = tried(repo, "commit-tree", pass.tree, "-p", pass.base, "-m", "check.sh pass");
+  // A throwaway commit for merge-tree, so a name of its own: a machine with no git identity (CI's runners) has none.
+  const commit = tried(repo, "-c", "user.name=check.sh", "-c", "user.email=check.sh@localhost", "commit-tree", pass.tree, "-p", pass.base, "-m", "check.sh pass");
   if (commit === undefined) return undefined;
   // Exits 1 on a conflict, so `tried` gives undefined.
   const merged = tried(repo, "merge-tree", "--write-tree", `--merge-base=${pass.base}`, base, commit)?.split("\n")[0];
