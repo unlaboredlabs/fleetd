@@ -186,8 +186,9 @@
   pointer-events: none;
 }
 /* A banner under the row (the shell's) is the row's edge then: the fade stops at the row rather than run on over the
-   banner's first line, and the row's own menus still open over the banner. */
-.under:has([data-banners]:not(:empty)) > .topBar::before {
+   banner's first line, and the row's own menus still open over the banner. A class (AppFrame bannered), never a :has()
+   on the frame: that tests the frame again on every change under it, a key press in the composer included. */
+.under.bannered > .topBar::before {
   bottom: 0;
   background: var(--bg);
 }

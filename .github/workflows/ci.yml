@@ -359,10 +359,10 @@ jobs:
 
   desktop-budgets:
     # app/desktop's Linux perf budgets on the test build, on each PR and batch (.fleetd/train.json fastChecks), so a PR
-    # that regresses them never merges. The start and keypress are gated scaled to the runner's own bare Electron start
-    # (perf/budgets.ts perRunner), which keeps a slow shared runner from reading as a regression, and the start by its
-    # fastest warm launches (startTimes); both are measured again once before a regression counts, which keeps a
-    # runner's noisy spell from reading as one.
+    # that regresses them never merges. The start is gated over a bare Electron window's and the composer's key presses
+    # over a bare textarea's, each scaled to its reference on this runner (perf/budgets.ts scaledBy), which keeps a slow
+    # shared runner from reading as a regression, and the start by its fastest warm launches (startTimes); both are
+    # measured again once before a regression counts, which keeps a runner's noisy spell from reading as one.
     # Same scope as desktop.
     # The image perf/baseline-linux.json was measured on. The same app reads ~15 MB more idle memory and ~25 ms more
     # "app over bare" on ubuntu-26.04 (ubuntu-latest from Nov 18), so a new image means new baselines, not a regression.

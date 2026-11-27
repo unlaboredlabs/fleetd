@@ -1,6 +1,7 @@
-// The first-paint reference (perf/run.ts): a bare Electron window, made as the app makes its own (size, hidden
-// until ready-to-show, sandboxed), painting one line of text, and reporting the same FLEETD_PERF line. CI gates the
-// app's first paint over this one, which moves with the runner but not with the app.
+// The references perf/run.ts measures the app against: a bare Electron window, made as the app makes its own (size,
+// hidden until ready-to-show, sandboxed), reporting the same FLEETD_PERF line. It paints one line of text (index.html),
+// which CI gates the app's first paint over, or with FLEETD_REFERENCE=keys a bare textarea (keys.html), which CI
+// gates the composer's key presses over. Both move with the runner but not with the app.
 import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
 
@@ -33,5 +34,5 @@ void app.whenReady().then(() => {
       );
     });
   });
-  void win.loadFile(join(import.meta.dirname, "index.html"));
+  void win.loadFile(join(import.meta.dirname, process.env["FLEETD_REFERENCE"] === "keys" ? "keys.html" : "index.html"));
 });

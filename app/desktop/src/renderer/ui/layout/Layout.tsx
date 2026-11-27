@@ -56,6 +56,8 @@ export function AppFrame(props: {
   asideOpen?: boolean;
   /** The screen's content scrolls under the top row rather than starting below it. */
   under?: boolean;
+  /** A banner shows under the top row (the shell's): the row's fade stops at the row rather than run over it. */
+  bannered?: boolean;
   /** The window's own frame: its sidebar shows the window's translucent material where there is one (macOS). */
   translucent?: boolean;
   children: ReactNode;
@@ -68,7 +70,7 @@ export function AppFrame(props: {
   return (
     <SetTitleSlot.Provider value={setSlot}>
       <TitleSlot.Provider value={slot}>
-        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.sidebarToggle) && s.withToggle, Boolean(props.aside) && s.withAside, props.under && s.under, props.translucent && s.translucent, props.className)}>
+        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.sidebarToggle) && s.withToggle, Boolean(props.aside) && s.withAside, props.under && s.under, props.bannered && s.bannered, props.translucent && s.translucent, props.className)}>
           {side.kept === null ? null : (
             <div id="sidebar" className={s.side} {...side.attrs}>
               <div className={s.sideTop}>{side.kept[1]}</div>

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { frameStats, median, quantile, regressionLimit, regressions, startTimes, withinBudget, type Results } from "./budgets.ts";
+import { frameStats, keyTimes, quantile, regressionLimit, regressions, startTimes, withinBudget, type Results } from "./budgets.ts";
 
-const base: Results = { firstPaintMs: 300, firstPaintRefMs: 200, firstPaintOverMs: 100, chatShownMs: 500, chatOverMs: 300, idleMemoryMb: 200, idleRssMb: 500, scrollFps: 60, streamFps: 60, keyP95Ms: 6 };
+const base: Results = { firstPaintMs: 300, firstPaintRefMs: 200, firstPaintOverMs: 100, chatShownMs: 500, chatOverMs: 300, idleMemoryMb: 200, idleRssMb: 500, scrollFps: 60, streamFps: 60, keyP95Ms: 6, keyRefP95Ms: 2, keyOverMs: 4 };
 
 describe("budgets", () => {
   it("passes strictly under a ceiling and at or over a floor; a metric without a budget has no verdict", () => {
@@ -25,17 +25,27 @@ describe("budgets", () => {
   });
 
   it("reports only the gated metrics that got worse past their limit", () => {
-    // A slow runner (both launches slower, the app's overhead the same) and summed RSS doubling are not regressions.
+    // A slow runner (both launches slower, the app's overhead the same; both key presses twice as slow) and summed RSS
+    // doubling are not regressions.
     expect(
-      regressions({ firstPaintMs: 900, firstPaintRefMs: 800, firstPaintOverMs: 100, chatShownMs: 1100, chatOverMs: 300, idleMemoryMb: 260, idleRssMb: 1000, scrollFps: 61, streamFps: 59, keyP95Ms: 2 }, base),
+      regressions({ firstPaintMs: 900, firstPaintRefMs: 800, firstPaintOverMs: 100, chatShownMs: 1100, chatOverMs: 300, idleMemoryMb: 260, idleRssMb: 1000, scrollFps: 61, streamFps: 59, keyP95Ms: 12, keyRefP95Ms: 4, keyOverMs: 8 }, base),
     ).toEqual([{ metric: "idleMemoryMb", value: 260, limit: 230, base: 200 }]);
-    expect(regressions({ ...base, firstPaintOverMs: 161, chatOverMs: 391, scrollFps: 50, streamFps: 20, keyP95Ms: 15 }, base).map((r) => r.metric)).toEqual([
+    expect(regressions({ ...base, firstPaintOverMs: 161, chatOverMs: 391, scrollFps: 50, streamFps: 20, keyP95Ms: 8.1, keyOverMs: 6.1 }, base).map((r) => r.metric)).toEqual([
       "firstPaintOverMs",
       "chatOverMs",
       "scrollFps",
       "streamFps",
-      "keyP95Ms",
+      "keyOverMs",
     ]);
+  });
+
+  it("reads keypress over bare by round pairs, so a slow spell on one pair moves it no more than any one round", () => {
+    const round = (p95: number) => ({ p95, p50: p95 / 2, slow: 0 });
+    // The third pair typed through a stall: the composer read 14 ms and the textarea 6 beside it.
+    const keys = keyTimes({ rounds: [7, 7.2, 14, 6.9, 7.1].map(round), bareRounds: [2, 2.1, 6, 2, 2.2].map(round) });
+    expect(keys.keyP95Ms).toBeCloseTo(7.1);
+    expect(keys.keyRefP95Ms).toBeCloseTo(2.1);
+    expect(keys.keyOverMs).toBeCloseTo(5);
   });
 
   it("scales the start's baselines to the runner's own bare Electron start", () => {
@@ -54,32 +64,39 @@ describe("budgets", () => {
 
 describe("CI's runs against perf/baseline-linux.json", () => {
   const baseline = JSON.parse(readFileSync(new URL("./baseline-linux.json", import.meta.url), "utf8")) as Results;
-  const rest = { idleMemoryMb: 370, idleRssMb: 600, scrollFps: 60, streamFps: 60 };
+  const rest = { idleMemoryMb: 370, idleRssMb: 600, scrollFps: 60, streamFps: 60, keyP95Ms: baseline.keyP95Ms, keyRefP95Ms: baseline.keyRefP95Ms, keyOverMs: baseline.keyOverMs };
   // The warm launches the desktop-budgets job logged, ms.
   // Main at 6e93c42a7, re-run (Xeon 6975P): red, its runner slow for a few launches in a row.
   const noisy = { app: [368, 911, 717, 762, 377], chat: [478, 1027, 833, 879, 491], bare: [225, 366, 404, 207, 195] };
   // Main at 910b7d595, the same app on the same kind of runner, green.
   const green = { app: [528, 796, 720, 372, 389], chat: [630, 906, 833, 476, 498], bare: [441, 385, 364, 206, 196] };
-  // Main at 6e93c42a7, first attempt (Xeon 8370C): red on keypress, a p95 of 12.6 to 14.9 ms in all five rounds.
-  const slowKeys = { app: [512, 1004, 494, 483, 507], chat: [666, 1154, 642, 628, 653], bare: [280, 454, 260, 270, 269], keyP95Ms: median([14.2, 14.9, 13.7, 12.6, 12.6]) };
 
   it("reads a noisy runner's start by its fastest launches, so the same app passes on both runs", () => {
     // Medians put the noisy run 492 ms over bare (limit 235 then) and the green one 163.
     expect(startTimes(noisy)).toMatchObject({ firstPaintOverMs: 173, chatOverMs: 283 });
     expect(startTimes(green)).toMatchObject({ firstPaintOverMs: 176, chatOverMs: 280 });
-    expect(regressions({ ...rest, ...startTimes(noisy), keyP95Ms: 7.9 }, baseline)).toEqual([]);
-    expect(regressions({ ...rest, ...startTimes(green), keyP95Ms: 8.5 }, baseline)).toEqual([]);
+    expect(regressions({ ...rest, ...startTimes(noisy) }, baseline)).toEqual([]);
+    expect(regressions({ ...rest, ...startTimes(green) }, baseline)).toEqual([]);
   });
 
   it("still fails a start every launch of which got slower, however noisy the runner", () => {
     const slower = (ms: number) => ({ app: noisy.app.map((t) => t + ms), chat: noisy.chat.map((t) => t + ms), bare: noisy.bare });
-    expect(regressions({ ...rest, ...startTimes(slower(40)), keyP95Ms: 7.9 }, baseline).map((r) => r.metric)).toEqual([]);
-    expect(regressions({ ...rest, ...startTimes(slower(120)), keyP95Ms: 7.9 }, baseline).map((r) => r.metric)).toEqual(["firstPaintOverMs", "chatOverMs"]);
+    expect(regressions({ ...rest, ...startTimes(slower(40)) }, baseline).map((r) => r.metric)).toEqual([]);
+    expect(regressions({ ...rest, ...startTimes(slower(120)) }, baseline).map((r) => r.metric)).toEqual(["firstPaintOverMs", "chatOverMs"]);
   });
 
-  it("scales keypress to the runner, so a slower kind of runner isn't a regression but slower keys on it are", () => {
-    expect(regressions({ ...rest, ...startTimes(slowKeys), keyP95Ms: slowKeys.keyP95Ms }, baseline)).toEqual([]);
-    expect(regressions({ ...rest, ...startTimes(slowKeys), keyP95Ms: slowKeys.keyP95Ms * 1.3 }, baseline).map((r) => r.metric)).toEqual(["keyP95Ms"]);
+  // One commit's key presses on Nov 27's one-off runs, ms: what the composer added over the bare textarea, and the
+  // textarea's own p95, on each kind of runner; then the same with #2250's :has() rule put back, its ~40% on each key.
+  const fixed = { fast6975P: [5.1, 1.3], slow6975P: [6.0, 1.9], epyc9V45: [7.6, 2.1], epyc7763: [7.6, 2.4] };
+  const slowed = { xeon6975P: [9.2, 1.9], epyc7763: [10.8, 2.2], epyc9V74: [10.8, 2.1] };
+  const keys = ([keyOverMs, keyRefP95Ms]: number[]) => ({ ...rest, ...startTimes(green), keyOverMs: keyOverMs ?? 0, keyRefP95Ms: keyRefP95Ms ?? 0 });
+
+  it("scales keypress to the runner's bare textarea, so no kind of runner fails the same code", () => {
+    for (const run of Object.values(fixed)) expect(regressions(keys(run), baseline)).toEqual([]);
+  });
+
+  it("fails #2250's slowdown on every kind of runner", () => {
+    for (const run of Object.values(slowed)) expect(regressions(keys(run), baseline).map((r) => r.metric)).toEqual(["keyOverMs"]);
   });
 });
 

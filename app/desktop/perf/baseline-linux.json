@@ -8,5 +8,7 @@
   "idleRssMb": 589,
   "scrollFps": 58,
   "streamFps": 49,
-  "keyP95Ms": 11.7
+  "keyP95Ms": 11.7,
+  "keyRefP95Ms": 2.4,
+  "keyOverMs": 7.8
 }

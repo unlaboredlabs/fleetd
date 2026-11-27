@@ -7,7 +7,7 @@
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge. The sidebar and the
 // panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the chat's pill opens
 // the panel too. ⌘K, not a button, opens the palette.
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
 import { AppFrame, preloadable, preloadWhenIdle, toast, TopBar, useShownYet } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
@@ -186,6 +186,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   // A restart's held view (data/store.ts RESTART_HOLD_MS): what shows is as it was, so it steps back a little.
   const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
+  // Whether a banner shows under the top row, which then ends its fade at the row (AppFrame bannered).
+  const [banners, bannered] = useHasChildren();
   const projects = usePlaced(hubs, route.at);
   // ⌘1–9 open the rows the sidebar numbers: those on show (sidebarLayout.ts), in its order.
   const view = useSidebarView();
@@ -413,6 +415,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         translucent
         topBar={top}
         under={under}
+        bannered={bannered}
         sidebarTop={<SidebarTop go={go} hub={viewHub} />}
         sidebarOpen={!sidebar.hidden}
         sidebarToggle={chrome ? toggle : undefined}
@@ -431,7 +434,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         <div className={s.column} data-under={under || undefined}>
           {/* Over the chat they float under the top row, as it does, rather than push the conversation down as they
               come and go with the link. */}
-          <div className={s.banners} data-floats="" data-banners="">
+          <div ref={banners} className={s.banners} data-floats="" data-banners="">
             {/* Fixture data must never pass for a live hub. */}
             {window.fleetd.fixture !== null ? (
               <div className={s.fixtureBanner} role="status">
@@ -497,6 +500,26 @@ function UpdatesOf({ hubs, on }: { hubs: readonly HubView[]; on: HubId }) {
       ))}
     </>
   );
+}
+
+/**
+ * Whether the element the ref is on shows anything (a banner: each decides for itself whether to render), watched with
+ * a MutationObserver on its own children. A `:has(:not(:empty))` on the frame said the same in CSS, but made every
+ * change anywhere in the window (a key in the composer) test the frame again: +2 ms a key press (#2250).
+ */
+function useHasChildren(): [(el: HTMLElement | null) => void, boolean] {
+  const [shown, setShown] = useState(false);
+  const watch = useRef<MutationObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    watch.current?.disconnect();
+    watch.current = null;
+    if (el === null) return;
+    const read = () => setShown(el.childElementCount > 0);
+    read();
+    watch.current = new MutationObserver(read);
+    watch.current.observe(el, { childList: true });
+  }, []);
+  return [ref, shown];
 }
 
 /**
