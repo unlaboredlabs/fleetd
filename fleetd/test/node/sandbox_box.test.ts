@@ -5,7 +5,7 @@
 // tries channels it shouldn't.
 import { afterAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -14,9 +14,11 @@ import { leadChannel, LeadRelay, type LeadSocketHooks } from "../../src/node/lea
 import { Masker } from "../../src/node/mask.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import { HostLink, marker, PROTOCOL, shutdown, stop, type RunnerEvent } from "../../src/node/runner/host.ts";
+import { statOf } from "../../src/node/runner/procs.ts";
 import { Box } from "../../src/node/sandbox/box.ts";
 import { GUEST_PROTOCOL } from "../../src/node/sandbox/guest.ts";
 import { HOST, Mux, type Target } from "../../src/node/sandbox/mux.ts";
+import { keptFile, keptText } from "../../src/shared/share_kept.ts";
 
 const MAIN = join(import.meta.dir, "../../src/main.ts");
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-box-"));
@@ -570,4 +572,62 @@ test.skipIf(process.platform !== "linux")("a box that redials its guest started 
   // A line sent twice would have made claude answer once more.
   expect(await Promise.race([link.next(), Bun.sleep(1_000).then(() => "nothing more")])).toBe("nothing more");
   box.close();
+}, 30_000);
+
+// A dev server as an agent's Bash starts one: its own process, a port written to `<argv[2]>` as `<port> <pid>` once it
+// listens.
+const DEV_SERVER = `
+const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("kept app") });
+require("node:fs").writeFileSync(process.argv[2] + ".tmp", s.port + " " + process.pid);
+require("node:fs").renameSync(process.argv[2] + ".tmp", process.argv[2]);
+setInterval(() => {}, 1000);
+`;
+
+test.skipIf(process.platform !== "linux")("a dev server the box's agent shared outlives its session, by the port alone, and nothing else of it does", async () => {
+  const b = await standIn();
+  const box = await Box.open({ session: "s-kept", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 10_000 });
+  const dev = await program("dev-server.ts", DEV_SERVER);
+  const [keptAt, otherAt] = [join(b.dir, "kept"), join(b.dir, "other")];
+  // As claude's Bash tool runs an agent's `vite &`, once per call: a shell in a session of its own, its server in the
+  // shell's group.
+  const claude = await program(
+    "claude-kept",
+    `#!/bin/sh
+echo '{"type":"system","subtype":"init","claude_code_version":"2.1.302","model":"m0","cwd":"/fake"}'
+setsid sh -c '"${process.execPath}" "${dev}" "${keptAt}" &'
+setsid sh -c '"${process.execPath}" "${dev}" "${otherAt}" &'
+exec cat > /dev/null
+`,
+  );
+  // The cloud's box spawns mark their processes with the session id alone (its start's spawnEnv).
+  await box.start({ sessionId: "s-kept", program: claude, args: [], cwd: b.dir, env: { ...process.env, FLEETD_RUNNER_SESSION: "s-kept" } });
+  const link = await HostLink.connect("", { dial: (h) => box.dialHost(h), registration: boxRegistration });
+  expect(await applyInits(link, 1)).toEqual(["m0"]);
+  const listening = async (at: string) => {
+    for (let i = 0; !existsSync(at); i++) {
+      if (i > 500) throw new Error(`no dev server wrote ${at}`);
+      await Bun.sleep(10);
+    }
+    const [port, pid] = readFileSync(at, "utf8").split(" ").map(Number) as [number, number];
+    return { port, pid };
+  };
+  const [kept, other] = [await listening(keptAt), await listening(otherAt)];
+  const registered = JSON.parse(readFileSync(join(b.dir, "hosts", "s-kept", "host.json"), "utf8")) as { hostPid: number };
+  try {
+    // What the cloud writes into the box before its stop: the port alone, no group.
+    writeFileSync(keptFile(join(b.dir, "hosts", "s-kept")), keptText([{ port: kept.port, untilMs: Date.now() + 60_000 }]));
+    link.send(shutdown(500));
+    while ((await within(link.next(), 15_000, "the exit")) !== undefined) link.applied++;
+    // The host ends after its last sweep by the marker.
+    for (let i = 0; statOf(registered.hostPid) !== undefined && !statOf(registered.hostPid)!.zombie; i++) {
+      if (i > 1000) throw new Error("the session host didn't end");
+      await Bun.sleep(10);
+    }
+    expect(await (await fetch(`http://127.0.0.1:${kept.port}/`)).text()).toBe("kept app");
+    expect(statOf(other.pid) === undefined || statOf(other.pid)!.zombie).toBe(true);
+  } finally {
+    const g = statOf(kept.pid)?.pgid;
+    if (g !== undefined && g > 1) process.kill(-g, "SIGKILL");
+    box.close();
+  }
 }, 30_000);
