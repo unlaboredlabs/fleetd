@@ -18,6 +18,8 @@ export const CI_TIMED_OUT = "CI timed out";
 /** The `lastError` of a Change that left the train with its project (`dropRemovedChanges`). */
 export const REMOVED_PROJECT = "its bot was removed from fleetd";
 export const CI_WATCHED = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
+/** What its author does about a head whose checks never ran or never reported: GitHub runs them on a new push. */
+export const PUSH_AGAIN = "push to it again (an empty commit will do) to start its CI";
 export const CI_SUPERSEDED = "a push to the PR replaced the head its CI ran on; the train takes the new head";
 export const CI_CANCELLED = "its CI timed out, then was cancelled, and re-running it didn't finish it";
 export const RESOLVED =

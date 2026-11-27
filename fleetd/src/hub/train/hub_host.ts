@@ -10,7 +10,7 @@ import { chat } from "../chat/index.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { archived, mergeModeOf, mergesOf, riskRulesOf } from "../project_lead/store.ts";
 import { time as timeArea } from "../time/index.ts";
-import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "./host.ts";
+import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView, WriterSpawn } from "./host.ts";
 import { isLabelBrief } from "./label.ts";
 import * as seams from "./seams.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
@@ -21,7 +21,10 @@ export type TaskCaller = { projectRef: ProjectRef; by: string };
 
 /** `hub.peek("tasks")`, the tasks area's service (T2343). */
 export type TasksPort = {
-  spawn(caller: TaskCaller, input: { workstreamId: string; title: string; kind: "review"; prompt: string; pr: string }): Promise<Task>;
+  spawn(
+    caller: TaskCaller,
+    input: { workstreamId: string; title: string; kind: "review" | "write"; prompt: string; pr: string; profile?: string; notDuplicateOf?: string[]; notDuplicateWhy?: string },
+  ): Promise<Task>;
   message(caller: TaskCaller, taskId: string, text: string): Promise<unknown>;
   holdMessage(taskId: string, text: string): Promise<void>;
   waitingOn(taskId: string, except?: string): string | undefined;
@@ -56,6 +59,7 @@ export function taskView(task: Task): TaskView {
   const result = (task as { result?: { prUrl?: string; tail?: string } }).result;
   if (result?.prUrl !== undefined) view.prUrl = result.prUrl;
   if (result?.tail !== undefined) view.resultTail = result.tail;
+  if (task.profile !== undefined) view.profile = task.profile;
   return view;
 }
 
@@ -152,7 +156,9 @@ export class HubHost implements TrainHost {
     try {
       for (const workstreamId of seams.openWorkstreams(this.hub.db.conn, r, WRITERS_MAX)) {
         for (const t of seams.tasks<Task>(this.hub.db.conn, { projectRef: r, workstreamId, limit: WRITERS_MAX })) {
-          if (t.kind === "write" && ["queued", "running", "idle"].includes(t.state)) out.push({ taskId: t.taskId, workstreamId, text: `${t.title}\n${t.prompt}` });
+          if (t.kind === "write" && ["queued", "running", "idle"].includes(t.state)) {
+            out.push({ taskId: t.taskId, workstreamId, text: `${t.title}\n${t.prompt}`, ...(t.pr !== undefined ? { pr: t.pr } : {}) });
+          }
         }
       }
     } catch (error) {
@@ -189,6 +195,11 @@ export class HubHost implements TrainHost {
       { workstreamId: spawn.workstreamId, title: spawn.title, kind: "review", prompt: spawn.prompt, pr: spawn.pr },
     );
     return taskView(task);
+  }
+
+  async spawnWriter(spawn: WriterSpawn): Promise<TaskView> {
+    const { projectRef, by, ...input } = spawn;
+    return taskView(await this.tasks().spawn({ projectRef, by }, { ...input, kind: "write" }));
   }
 
   workstream(id: string): WorkstreamView | undefined {

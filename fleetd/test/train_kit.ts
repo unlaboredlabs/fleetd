@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { HubDb } from "../src/hub/store/db.ts";
 import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
 import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
-import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "../src/hub/train/host.ts";
+import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView, WriterSpawn } from "../src/hub/train/host.ts";
 import { isLabelBrief } from "../src/hub/train/label.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
 import type { Brief, Change, Merger, MergeMode, ProjectRef, RiskRules } from "../src/shared/contracts.ts";
@@ -666,6 +666,17 @@ export class FakeHost implements TrainHost {
   async spawnReview(spawn: ReviewSpawn): Promise<TaskView> {
     const task: TaskView = { taskId: `T${50 + this.spawns.length}`, projectRef: spawn.projectRef, workstreamId: spawn.workstreamId, kind: "review", state: "running", prUrl: spawn.pr };
     this.spawns.push(spawn);
+    this.tasks.set(task.taskId, task);
+    return task;
+  }
+  /** The write tasks the train started, each for a PR whose writer can't go on. */
+  readonly writerSpawns: WriterSpawn[] = [];
+  /** When set, why Tasks refuses the train's writer spawns. */
+  writerRefusal: string | undefined;
+  async spawnWriter(spawn: WriterSpawn): Promise<TaskView> {
+    if (this.writerRefusal !== undefined) throw new Error(this.writerRefusal);
+    const task: TaskView = { taskId: `T${70 + this.writerSpawns.length}`, projectRef: spawn.projectRef, workstreamId: spawn.workstreamId, kind: "write", state: "running" };
+    this.writerSpawns.push(spawn);
     this.tasks.set(task.taskId, task);
     return task;
   }
