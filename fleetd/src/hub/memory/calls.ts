@@ -2,7 +2,8 @@
 // User scope is a person's own memory: the one whose message the turn answers
 // (a project's owner), and refused when that is nobody; a tidy's, the person it tidies. A nightly refresh's or tidy's
 // changes are kept for its one line at the end. A bot's line records who taught it (lines.ts), and one that loosens what
-// asks or merges, taught by someone who isn't an admin, waits for an admin's OK instead (hold_rules.ts).
+// asks or merges, taught by someone who isn't an admin, waits for an admin's OK instead (hold_rules.ts); the nightly
+// refresh's, only when it adds a loosening the lines it rewrites didn't have.
 import type { MemoryScope, PersonId, PersonRef, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -15,9 +16,9 @@ import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
 import { events } from "../store/events.ts";
 import { isoMs, nowMs } from "../store/time.ts";
 import { FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, userTarget, type You, youOf } from "./index.ts";
-import { changeLoosens, holdsForAdmin, MEMORY_EFFECTS, type MemoryEffect } from "./hold_rules.ts";
+import { changeLoosens, holdsForAdmin, MEMORY_EFFECTS, type MemoryEffect, upkeepLoosens } from "./hold_rules.ts";
 import { anyAdmin, heldLines, isAdmin, taught } from "./lines.ts";
-import { record, refreshYou } from "./refresh_store.ts";
+import { getRun, record, refreshYou } from "./refresh_store.ts";
 import { recordTidy } from "./tidy_store.ts";
 
 export const OPS = ["remember", "forget", "memory_read"] as const;
@@ -97,7 +98,9 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
       const taughtBy = teacher(hub, caller);
       const { already, replaced } = memory.wouldRemember(r, undefined, remember);
       if (already) return { file: nameOf(projectTarget(r, remember.topic)), next: "Already remembered, word for word." };
-      const loosening = changeLoosens(call.text, call.effect as MemoryEffect, replaced);
+      const loosening = upkeep(caller)
+        ? upkeepLoosens(call.text, call.effect as MemoryEffect, replaced)
+        : changeLoosens(call.text, call.effect as MemoryEffect, replaced);
       if (holdsForAdmin(loosening, isAdmin(hub.db, taughtBy?.personId), anyAdmin(hub.db))) {
         return hold(hub, r, { scope: "project", ...topicOf(remember.topic), text: call.text, ...(replaced === undefined ? {} : { replaced }) }, taughtBy);
       }
@@ -131,7 +134,8 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
     if (scope === "project") {
       const taughtBy = teacher(hub, caller);
       const whole = memory.entryOf(projectTarget(r, forget.topic), forget.entry);
-      if (holdsForAdmin(changeLoosens(undefined, undefined, whole), isAdmin(hub.db, taughtBy?.personId), anyAdmin(hub.db))) {
+      const loosening = upkeep(caller) ? upkeepLoosens(undefined, undefined, whole, writtenTonight(hub, r)) : changeLoosens(undefined, undefined, whole);
+      if (holdsForAdmin(loosening, isAdmin(hub.db, taughtBy?.personId), anyAdmin(hub.db))) {
         return hold(hub, r, { scope: "project", ...topicOf(forget.topic), text: whole, forgotten: true, ...(forget.reason === undefined ? {} : { reason: forget.reason }) }, taughtBy);
       }
     }
@@ -165,6 +169,13 @@ function teacher(hub: Hub, caller: LeadCaller): PersonRef | undefined {
   if (caller.agent.kind === "memory_refresh") return undefined;
   return aboutFor(hub, caller.projectRef, nowMs(hub.clock)).for;
 }
+
+/** The nightly upkeep of a bot's memory, whose rewrites and merges hold only for what they add (hold_rules.ts `upkeepLoosens`). */
+const upkeep = (caller: LeadCaller) => caller.agent.kind === "memory_refresh" && caller.agent.person === undefined;
+
+/** The bot memory lines the running upkeep of `r` wrote so far: a line it takes out may carry its gates into one. */
+const writtenTonight = (hub: Hub, r: ProjectRef) =>
+  getRun(hub.db, r).items.flatMap((i) => (i.scope === "project" && i.forgotten !== true && i.undone !== true ? [i.text] : []));
 
 const topicOf = (topic: string | undefined) => (topic === undefined ? {} : { topic });
 
