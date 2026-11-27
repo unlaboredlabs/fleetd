@@ -147,18 +147,29 @@ export class Upstream {
     (this.agent as unknown as { createConnection: () => Duplex }).createConnection = () => lazySocket(this.open, this.limits.onBytes);
   }
 
-  /** The dev server's answer to `req`, streamed; a 503 page when it can't be reached, a 413 past maxRequestBytes. */
+  /**
+   * The dev server's answer to `req`, streamed; a 503 page when it can't be reached, a 413 past maxRequestBytes. A
+   * visitor who leaves (`req.signal`) frees its stream at once: the link keeps only a few, and one held for a visitor
+   * who is gone would keep every later visitor waiting.
+   */
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const t = this.target;
     const declared = Number(req.headers.get("content-length") ?? "0");
     if (declared > this.limits.maxRequestBytes) return new Response("Request too large for a preview", { status: 413 });
+    if (req.signal.aborted) return unreachable(t.port);
     return await new Promise<Response>((resolve) => {
       let settled = false;
       const done = (r: Response) => {
         if (!settled) (settled = true), resolve(r);
       };
       let timer: Timer | undefined;
+      const left = () => {
+        clearTimeout(timer);
+        out.destroy();
+        done(unreachable(t.port));
+      };
+      const finish = () => (clearTimeout(timer), req.signal.removeEventListener("abort", left));
       const out = http.request(
         { agent: this.agent, method: req.method, path: url.pathname + url.search, headers: toDev(req.headers, t), setHost: false },
         (res) => {
@@ -168,31 +179,43 @@ export class Upstream {
           };
           idle();
           const empty = req.method === "HEAD" || res.statusCode === 204 || res.statusCode === 304;
+          // Once the visitor cancels the body, the dev server's later pieces and its end go nowhere: the controller
+          // throws on them.
+          let open = true;
           const body = empty
             ? null
             : new ReadableStream<Uint8Array>({
                 start(c) {
                   res.on("data", (chunk: Buffer) => {
+                    if (!open) return;
                     idle();
                     c.enqueue(new Uint8Array(chunk));
                     if ((c.desiredSize ?? 1) <= 0) res.pause();
                   });
-                  res.on("end", () => (clearTimeout(timer), c.close()));
-                  res.on("error", (e) => (clearTimeout(timer), c.error(e)));
+                  res.on("end", () => {
+                    finish();
+                    if (open) (open = false), c.close();
+                  });
+                  res.on("error", (e) => {
+                    finish();
+                    if (open) (open = false), c.error(e);
+                  });
                 },
                 pull() {
                   res.resume();
                 },
                 cancel() {
-                  clearTimeout(timer);
+                  open = false;
+                  finish();
                   res.destroy();
                 },
               });
-          if (empty) res.resume().on("end", () => clearTimeout(timer));
+          if (empty) res.resume().on("end", finish);
           done(new Response(body, { status: res.statusCode ?? 502, statusText: res.statusMessage ?? "", headers: fromDev(res.rawHeaders, t) }));
         },
       );
-      out.on("error", () => (clearTimeout(timer), done(unreachable(t.port))));
+      out.on("error", () => (finish(), done(unreachable(t.port))));
+      req.signal.addEventListener("abort", left, { once: true });
       timer = setTimeout(() => (out.destroy(), done(unreachable(t.port))), this.limits.idleMs);
       void (async () => {
         if (!req.body) return void out.end();

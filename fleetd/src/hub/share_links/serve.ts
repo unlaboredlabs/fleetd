@@ -23,6 +23,11 @@ import { type Held, isOpen, shareLinks } from "./store.ts";
 
 /** What a preview may carry on a workspace: a request's body, and how long an answer may go quiet. */
 export const LIMITS: Limits = { maxRequestBytes: 64 << 20, idleMs: 60_000 };
+/**
+ * How long a visitor's connection may sit quiet waiting on a preview, in seconds: past LIMITS.idleMs, so the page saying
+ * the dev server isn't answering still reaches them. Bun's own 10 s cut is shorter than a dev server's first compile.
+ */
+export const PREVIEW_IDLE_S = LIMITS.idleMs / 1000 + 5;
 /** A link's kept-open streams close after this long unused. */
 const UPSTREAM_IDLE_MS = 5 * 60_000;
 
@@ -251,6 +256,7 @@ export async function servePreview(hub: Hub, req: Request, server: Server<Socket
     dev.socket.destroy();
     return new Response("Expected a WebSocket upgrade", { status: 426 });
   }
+  server.timeout(req, PREVIEW_IDLE_S);
   const answer = await upstreamOf(hub, l, origin).fetch(req);
   if (refreshDue(pass.expMs, now, l.expiresMs)) {
     const exp = cookieEnd(now, l.expiresMs);
