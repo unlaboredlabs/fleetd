@@ -36,6 +36,14 @@ const SENT_AS: Readonly<Record<string, string>> = { "boat.dev": "boat" };
  */
 export const RUNNER_ID = "hosted";
 
+/**
+ * The line a share link of a port on fleetd's computers shows, on its chat card and its Settings row: the link keeps
+ * that computer up, billed as computer time, for at most 2 h past its agent's last step unless a person renews it, and
+ * never past the link's end (decision hosted.share-link-box-cap). None for a port on one of the team's own machines.
+ */
+export const keptRunning = (machineId: string): string | undefined =>
+  machineId === RUNNER_ID ? "Its computer keeps running up to 2\u00a0h after the agent finishes. Renew to keep it longer." : undefined;
+
 /** The reveal key of a provider's row in Hub › Machines (Sandboxes.tsx), where every link to hosted sandboxes lands. */
 export const providerReveal = (id: string): string => `hub.sandbox.${id}`;
 

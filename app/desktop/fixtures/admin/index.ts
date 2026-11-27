@@ -155,7 +155,8 @@ const auditList = (f: Fixture): void => {
   f.answer("audit_list", undefined, { events: rows, more: true });
 };
 
-/** Settings › Workspace › Share links: on, at the workspace's own preview name, an agent's link and Alice's. */
+/** Settings › Workspace › Share links: on, at the workspace's own preview name, an agent's link, one on fleetd's
+ * computers (which says its computer keeps running) and Alice's. */
 const shareLinks = (f: Fixture): void => {
   const at = (minutes: number) => new Date(Date.parse(f.now) + minutes * 60_000).toISOString();
   const links: JsonObject[] = [
@@ -170,6 +171,17 @@ const shareLinks = (f: Fixture): void => {
       expiresAt: at(100),
       projectRef: { machineId: "devbox", projectId: "bot-storefront" },
       threadRef: { machineId: "devbox", threadId: "th-storefront-1" },
+    },
+    {
+      name: "h4n8t2v6c3pw",
+      url: "https://h4n8t2v6c3pw.preview.example.com",
+      machineId: "hosted",
+      port: 3000,
+      label: "Pricing page",
+      createdBy: { kind: "agent", name: "An agent" },
+      createdAt: at(-30),
+      expiresAt: at(90),
+      threadRef: { machineId: "hosted", threadId: "th-storefront-2" },
     },
     { name: "p2r8w4c6d1ze", url: "https://p2r8w4c6d1ze.preview.example.com", machineId: "buildbox", port: 3000, createdBy: by(alice), createdAt: at(-50), expiresAt: at(70) },
   ];

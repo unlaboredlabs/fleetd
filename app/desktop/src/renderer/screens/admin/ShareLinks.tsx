@@ -1,6 +1,7 @@
 // Settings › Workspace › Share links (#/settings/hub/share): the switch that lets agents and people share a dev
 // server's port as a link only the workspace's signed-in members open, where links live (a self-hosted workspace's own
-// wildcard name; the cloud's is its own), every open link with Open, Renew and Stop, and sharing a port by hand.
+// wildcard name; the cloud's is its own), every open link with Open, Renew and Stop, and sharing a port by hand. Renew
+// here is a person's, so on fleetd's computers it also keeps the link's computer running to the link's new end.
 import { Link2, MonitorPlay } from "lucide-react";
 import { useState } from "react";
 import type { ShareLink } from "../../../shared/contracts";
@@ -12,6 +13,7 @@ import { untilText, useMachineName, useOpenPreview } from "../chat/blocks/Previe
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { EmptyState, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "../settings/parts";
 import { selectMachines } from "../../src/data/selectors";
+import { keptRunning } from "../../../shared/providers";
 import s from "../settings/settings.module.css";
 
 const noInput = {};
@@ -126,6 +128,11 @@ function LinkList({ links, disabled, act }: { links: readonly ShareLink[]; disab
           <Text size="sm" tone="quiet">
             {madeBy(l)} · open {untilText(l.expiresAt)}
           </Text>
+          {keptRunning(l.machineId) !== undefined ? (
+            <Text as="div" size="sm" tone="quiet" data-kept="">
+              {keptRunning(l.machineId)}
+            </Text>
+          ) : null}
         </SettingsListRow>
       ))}
     </SettingsList>

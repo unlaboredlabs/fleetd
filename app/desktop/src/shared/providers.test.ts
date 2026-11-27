@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { atOnceWord, computerStateWord, MAC_OWN_ONLY, providedChoices, providedValue } from "./provided";
-import { canWords, KINDS, linuxChoices, linuxValue, machinesRun, ordered, PROVIDERS, SCREEN_KINDS, serves, specOf } from "./providers";
+import { canWords, keptRunning, KINDS, linuxChoices, linuxValue, machinesRun, ordered, PROVIDERS, RUNNER_ID, SCREEN_KINDS, serves, specOf } from "./providers";
 
 describe("the providers, as one model", () => {
   it("says what each runs, so each group lists the ones that serve it", () => {
@@ -16,6 +16,13 @@ describe("the providers, as one model", () => {
   it("names one a newer hub has by its id, as a provider of agents, after the ones it knows", () => {
     expect(specOf("modal")).toEqual({ id: "modal", name: "modal", can: ["agents"] });
     expect(ordered(["modal", "boat"])).toEqual(["boat", "modal"]);
+  });
+});
+
+describe("a share link's computer", () => {
+  it("says a link on fleetd's computers keeps its computer running, and one on the team's own machine says nothing", () => {
+    expect(keptRunning(RUNNER_ID)).toBe("Its computer keeps running up to 2\u00a0h after the agent finishes. Renew to keep it longer.");
+    expect(keptRunning("devbox")).toBeUndefined();
   });
 });
 
