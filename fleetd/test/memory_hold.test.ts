@@ -7,8 +7,9 @@ import { Registry } from "../src/hub/api/registry.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
 import { answer } from "../src/hub/memory/calls.ts";
-import { changeLoosens, holdsForAdmin, loosens, loosensByWords, namesGate } from "../src/hub/memory/hold_rules.ts";
+import { changeLoosens, holdsForAdmin, loosens, loosensByWords, namesGate, upkeepLoosens, waivedGates } from "../src/hub/memory/hold_rules.ts";
 import { Memory, projectTarget } from "../src/hub/memory/index.ts";
+import { putRun } from "../src/hub/memory/refresh_store.ts";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { events } from "../src/hub/store/events.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
@@ -269,4 +270,57 @@ test("a member's Undo of a nightly refresh's change that loosens waits for an ad
   expect((await ok(member, "memory_undo", { projectRef: PROJECT, messageId: again.messageId })).next).toContain("waits for an admin's OK");
   expect(core()).toBe("- Always ask before deploying.\n");
   expect(lines().filter((m) => m.remembered?.hold === "waiting").map((m) => m.remembered?.text)).toEqual(["Merge without review."]);
+});
+
+test("the upkeep's words: a gate waived in a clause of its own, and what a rewrite adds", () => {
+  expect([...waivedGates("The cloud runs in Helsinki, deploys from main, without asking.")]).toEqual(["ask"]);
+  expect([...waivedGates("Deploy without review.")].sort()).toEqual(["deploy", "review"]);
+  // Words that loosen with no clause of their own still waive what the sentence names.
+  expect([...waivedGates("Never, ever deploy on Fridays.")]).toEqual(["deploy"]);
+  expect([...waivedGates("Always ask before deploying.")]).toEqual([]);
+  // A rewrite that keeps the old line's waived gates and its gates adds nothing.
+  const old = "The cloud runs in Helsinki, without asking.";
+  expect(upkeepLoosens("The cloud runs on Hetzner in Helsinki behind a tunnel, without asking.", "none", old)).toBe(false);
+  expect(upkeepLoosens("The cloud runs on Hetzner in Helsinki behind a tunnel, without asking.", "loosens", old)).toBe(false);
+  // One that waives a gate the old line didn't, drops a gate, or that the upkeep says loosens on a plain line, does.
+  expect(upkeepLoosens("Use pnpm, and deploy without review.", "none", "Use pnpm.")).toBe(true);
+  expect(upkeepLoosens("Deploys go through the pipeline.", "none", "Always ask before deploying.")).toBe(true);
+  expect(upkeepLoosens("Use the fast lane for hotfixes.", "loosens", "Use pnpm.")).toBe(true);
+  // A new line holds as before; a line taken out holds unless a line written tonight carries its gates.
+  expect(upkeepLoosens("Never ask before deploying.", "none", undefined)).toBe(true);
+  expect(upkeepLoosens(undefined, undefined, "Always ask before deploying.", ["Always ask before deploying from staging."])).toBe(false);
+  expect(upkeepLoosens(undefined, undefined, "Always ask before deploying.", ["Deploys go through staging."])).toBe(true);
+  expect(upkeepLoosens(undefined, undefined, "Use pnpm.", [])).toBe(false);
+});
+
+test("the nightly upkeep's rewrites and merges save at once; one that adds a loosening still waits", () => {
+  const { hub, turnFor, leadCall, core, lines } = setup();
+  const refresh: LeadCaller = { projectRef: PROJECT, by: "memory-refresh", agent: { kind: "memory_refresh" } };
+  const upkeep = (op: string, args: Record<string, unknown>) => answer(hub, refresh, { op, ...args } as LeadCall);
+  putRun(hub.db, PROJECT, { watermark: 0, threadId: "th-refresh", startedMs: 0, items: [] });
+  const helsinki = "The hosted cloud runs on Hetzner in Helsinki: agents restart its services there without asking.";
+  Memory.of(hub).set(
+    projectTarget(PROJECT),
+    `- ${helsinki}\n- Use pnpm.\n- Always ask before deploying.\n- Deploys go through staging first.\n- Always ask before a release.\n`,
+  );
+  // Nov 27's kind of rewrite: the line already said "without asking", and gets new facts. It saves at once.
+  const reworded = "The hosted cloud runs on Hetzner in Helsinki behind Cloudflare Tunnel, on Postgres: agents restart its services there without asking.";
+  expect(upkeep("remember", { scope: "project", effect: "none", text: reworded, replaces: "in Helsinki" }).held).toBeUndefined();
+  // A merge: the merged line in place of one, the other taken out, its gate carried into the merged line.
+  const merged = "Always ask before deploying; deploys go through staging first.";
+  expect(upkeep("remember", { scope: "project", effect: "none", text: merged, replaces: "Always ask before deploying." }).held).toBeUndefined();
+  expect(upkeep("forget", { scope: "project", entry: "Deploys go through staging first.", reason: "merged" }).held).toBeUndefined();
+  // A rewrite that adds a way to skip review, and a gate line dropped with nothing carrying it, wait.
+  expect(upkeep("remember", { scope: "project", effect: "none", text: "Use pnpm, and deploy without review.", replaces: "Use pnpm." }).held).toBe(true);
+  expect(upkeep("forget", { scope: "project", entry: "Always ask before a release.", reason: "stale" }).held).toBe(true);
+  expect(core()).toBe(`- ${reworded}\n- Use pnpm.\n- ${merged}\n- Always ask before a release.\n`);
+  expect(lines().filter((m) => m.remembered?.hold === "waiting").map((m) => m.text)).toEqual([
+    "Waiting for an admin's OK: Use pnpm, and deploy without review.",
+    "Waiting for an admin's OK to forget: Always ask before a release.",
+  ]);
+  // A member's rewrite of the same line keeps today's rule: it waits.
+  turnFor(BEA);
+  const hers = "The hosted cloud runs in Helsinki: agents restart its services there without asking.";
+  expect(leadCall("remember", { scope: "project", effect: "none", text: hers, replaces: "in Helsinki" }).held).toBe(true);
+  expect(core()).toContain(reworded);
 });
