@@ -16,6 +16,11 @@ import { preloadChunks } from "./scripts/preloadChunks.ts";
  * (ui/lib/idle.ts).
  */
 const FIRST_CHAT = ["src/renderer/src/main.tsx"];
+/**
+ * Primitives only later screens draw. ui/index.ts names every primitive, and a module with styles of its own counts as
+ * having side effects, so each would come with the first load whether drawn or not; these come with what draws them.
+ */
+const LATER_PRIMITIVES = /[\\/]src[\\/]renderer[\\/]ui[\\/]primitives[\\/](Select|Tabs)\.tsx$/u;
 const first = firstLoadChunks({ entry: "src/web/main.tsx", app: "src/renderer/src/main.tsx" });
 
 export default defineConfig({
@@ -34,6 +39,9 @@ export default defineConfig({
     // Every browser of `target` follows <link rel="modulepreload"> itself.
     modulePreload: { polyfill: false },
     // The app and the first chat's icons as a file each (scripts/firstLoadChunks.ts).
-    rolldownOptions: { output: { codeSplitting: { groups: first.groups } } },
+    rolldownOptions: {
+      treeshake: { moduleSideEffects: (id: string) => (LATER_PRIMITIVES.test(id) ? false : undefined) },
+      output: { codeSplitting: { groups: first.groups } },
+    },
   },
 });

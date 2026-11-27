@@ -11,7 +11,6 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, 
 import type { HubId } from "../../../shared/hubs";
 import { AppFrame, preloadable, preloadWhenIdle, TopBar, useShownYet } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
-import { NewBot, ProjectsHost } from "../projects";
 import { ConnectionsHost } from "../connections/ConnectionsHost";
 import { useMetricsSupport } from "../factory/support";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
@@ -47,6 +46,12 @@ import { onWeb } from "../../src/web";
 const MovedBanner = preloadable(() => import("../admin/MoveToCloud").then((m) => m.MovedBanner));
 if (onWeb()) preloadWhenIdle(MovedBanner);
 else MovedBanner.preload().catch(() => undefined);
+// New bot's flow and its commands draw nothing until asked for: a chunk, the desktop's at once, the web's once the chat
+// has shown.
+const NewBot = preloadable(() => import("../projects").then((m) => m.NewBot));
+const ProjectsHost = preloadable(() => import("../projects").then((m) => m.ProjectsHost));
+if (onWeb()) preloadWhenIdle(NewBot, ProjectsHost);
+else for (const host of [NewBot, ProjectsHost]) host.preload().catch(() => undefined);
 /** On the web, the banner mounts once the first chat has shown (or this long), so it never shares the first load. */
 const MOVED_AFTER_CHAT_MAX_MS = 30_000;
 
@@ -133,7 +138,9 @@ export function Shell() {
         ))}
         <Frame route={{ ...route, at: hub.id }} away={away} hubs={hubs} sidebar={sidebar} sheetHub={sheetHub} />
       </HubScope>
-      <NewBot on={viewedHub(view, hubs, hub.id)} />
+      <Suspense fallback={null}>
+        <NewBot on={viewedHub(view, hubs, hub.id)} />
+      </Suspense>
     </>
   );
 }
@@ -468,7 +475,9 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         </Boundary>
       ) : null}
       <PaletteHost />
-      <ProjectsHost />
+      <Suspense fallback={null}>
+        <ProjectsHost />
+      </Suspense>
       <ConnectionsHost />
       <UpdatesOf hubs={hubs} on={route.at} />
     </div>
