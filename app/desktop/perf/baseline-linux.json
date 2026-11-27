@@ -9,6 +9,6 @@
   "scrollFps": 58,
   "streamFps": 49,
   "keyP95Ms": 11.7,
-  "keyRefP95Ms": 2.4,
-  "keyOverMs": 7.8
+  "keyRefP50Ms": 2,
+  "keyOverMs": 4
 }

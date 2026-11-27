@@ -34,9 +34,9 @@ export interface Results {
   readonly streamFps: number;
   /** p95, ms from a key press (its OS timestamp) to the presentation of the frame that shows it: Chromium's EventLatency. The median of a few rounds' p95s. */
   readonly keyP95Ms: number;
-  /** The same for a bare textarea in a bare Electron window (perf/reference keys.html), typed a round each in turn with the composer. */
-  readonly keyRefP95Ms: number;
-  /** What the app adds to a key press over the bare textarea's: the median over round pairs of the composer's p95 minus the textarea's. CI gates it. */
+  /** p50, ms, of a bare textarea's key presses in a bare Electron window (perf/reference keys.html), typed a round each in turn with the composer. The median of the rounds' p50s. */
+  readonly keyRefP50Ms: number;
+  /** What the app adds to a key press over the bare textarea's: the median over round pairs of the composer's p50 minus the textarea's. CI gates it. */
   readonly keyOverMs: number;
 }
 
@@ -81,14 +81,15 @@ export const RULES: Record<Metric, Rule> = {
   streamFps: { label: "chat streaming", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
   // The budget's, not gated in CI: the same code read 6.5 to 9.5 ms on a Xeon 6975P and 12.6 to 14.0 on a Xeon 8370C.
   keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16 },
-  keyRefP95Ms: { label: "bare textarea", unit: "ms", higher: false },
-  // The bare textarea's input, compositing and swap subtracted, what is left is the app's own work. Both move with the
-  // runner: over 12 runs of one commit (Nov 27, Xeon 6975P, 8573C, EPYC 7763, 9V45, 9V74) the app's added 5.1 to 7.6
-  // ms, 3.05 to 3.92 times the textarea's own 1.3 to 2.4, and 4.84 to 6.00 times on 10 with #2250's :has() rule put
-  // back (its ~40% on each key's p95). Scaled by the bare start instead, both sets overlapped (an EPYC 9V45 read
-  // higher with the fix than a 7763 with the rule), as the old gate on the whole p95 did: a +50% margin there let
-  // #2250 through, and every run after it on a fast-starting 6975P sat at its limit.
-  keyOverMs: { label: "keypress over bare", unit: "ms", higher: false, regress: { ratio: 0.33, slack: 1 }, scaledBy: "keyRefP95Ms" },
+  keyRefP50Ms: { label: "bare textarea", unit: "ms", higher: false },
+  // The bare textarea's input, compositing and swap subtracted, what is left is the app's own work, and it moves with
+  // the runner as the textarea's does. On the one-off runs of Nov 27 (Xeon 6975P, 8573C, EPYC 7763, 9V45, 9V74), every
+  // 10 rounds of one commit read the app's p50 1.77 to 2.18 times the textarea's (median 2.00), and 3.38 to 4.08 with
+  // #2250's :has() rule put back (its ~40% on each key's p95). The p95s spread twice as wide (3.05 to 3.92 times on 22
+  // runs), and gated on the whole p95 scaled by the bare start, a +50% margin let #2250 through and left every run
+  // after it on a fast-starting 6975P at its limit. +33% puts the limit at 2.66: the worst of those runs reads 82% of
+  // it, and the same composer 40% slower reads at least 2.88.
+  keyOverMs: { label: "keypress over bare", unit: "ms", higher: false, regress: { ratio: 0.33, slack: 0.5 }, scaledBy: "keyRefP50Ms" },
 };
 
 /** A round of key presses' p95 and p50, ms, and how many took 16 ms or more (perf/run.ts keys). */
@@ -99,10 +100,10 @@ export interface KeyRound {
 }
 
 /** The keypress results from rounds typed in the composer and the bare textarea in turn, paired by index. */
-export const keyTimes = ({ rounds, bareRounds }: { rounds: ReadonlyArray<KeyRound>; bareRounds: ReadonlyArray<KeyRound> }): Pick<Results, "keyP95Ms" | "keyRefP95Ms" | "keyOverMs"> => ({
+export const keyTimes = ({ rounds, bareRounds }: { rounds: ReadonlyArray<KeyRound>; bareRounds: ReadonlyArray<KeyRound> }): Pick<Results, "keyP95Ms" | "keyRefP50Ms" | "keyOverMs"> => ({
   keyP95Ms: median(rounds.map((r) => r.p95)),
-  keyRefP95Ms: median(bareRounds.map((r) => r.p95)),
-  keyOverMs: median(rounds.map((r, i) => r.p95 - (bareRounds[i]?.p95 ?? Number.NaN))),
+  keyRefP50Ms: median(bareRounds.map((r) => r.p50)),
+  keyOverMs: median(rounds.map((r, i) => r.p50 - (bareRounds[i]?.p50 ?? Number.NaN))),
 });
 
 export const METRICS = Object.keys(RULES) as ReadonlyArray<Metric>;
@@ -159,7 +160,7 @@ export const startTimes = ({ app, chat, bare }: Launches): Pick<Results, "firstP
   return { firstPaintMs, firstPaintRefMs, firstPaintOverMs: firstPaintMs - firstPaintRefMs, chatShownMs, chatOverMs: chatShownMs - firstPaintRefMs };
 };
 
-/** The gated start metrics, which perf/run.ts times again once before a regression in them counts, as it does keypress. */
+/** The gated start metrics, which perf/run.ts times again once before a regression in them counts. */
 export const START: ReadonlyArray<Metric> = ["firstPaintOverMs", "chatOverMs"];
 
 export const median = (values: ReadonlyArray<number>): number => quantile(values, 0.5);
