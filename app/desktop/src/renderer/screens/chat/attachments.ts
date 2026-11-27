@@ -38,6 +38,30 @@ export const looksText = (buf: ArrayBuffer): boolean => {
   return (head[0] === 0xfe && head[1] === 0xff) || (head[0] === 0xff && head[1] === 0xfe) || !head.includes(0);
 };
 
+/** A picture's square in the composer, in pixels: 48 points at 2x. */
+export const THUMB_SIDE = 96;
+
+/**
+ * A picture's small square for the composer, as a PNG data: URL (the page's images are its own or data:), the
+ * picture cropped to fill it; undefined for a file this browser can't decode.
+ */
+export async function thumbnail(file: Blob, side = THUMB_SIDE): Promise<string | undefined> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const k = side / Math.min(bitmap.width, bitmap.height);
+    const w = bitmap.width * k;
+    const h = bitmap.height * k;
+    const canvas = document.createElement("canvas");
+    canvas.width = side;
+    canvas.height = side;
+    canvas.getContext("2d")?.drawImage(bitmap, (side - w) / 2, (side - h) / 2, w, h);
+    bitmap.close();
+    return canvas.toDataURL("image/png");
+  } catch {
+    return undefined;
+  }
+}
+
 /** The box an image sent with a message fits in, keeping its shape. */
 export const IMAGE_MAX = { width: 360, height: 280 } as const;
 

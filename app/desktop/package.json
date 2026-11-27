@@ -64,6 +64,7 @@
     "globals": "17.13.0",
     "happy-dom": "21.0.3",
     "lucide-react": "1.59.0",
+    "pdfjs-dist": "6.5.438",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

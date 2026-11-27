@@ -35,6 +35,7 @@ describe("assetType", () => {
   it("types each kind of file the build makes, a module script as JavaScript", () => {
     expect(assetType("/r/index.html")).toBe("text/html; charset=utf-8");
     expect(assetType("/r/assets/index-1.js")).toBe("text/javascript; charset=utf-8");
+    expect(assetType("/r/assets/pdf.worker.min-1.mjs")).toBe("text/javascript; charset=utf-8");
     expect(assetType("/r/assets/ui-1.css")).toBe("text/css; charset=utf-8");
     expect(assetType("/r/assets/a.webp")).toBe("image/webp");
     expect(assetType("/r/assets/inter.woff2")).toBe("font/woff2");

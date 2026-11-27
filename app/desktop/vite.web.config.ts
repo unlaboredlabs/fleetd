@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { firstLoadChunks } from "./scripts/firstLoadChunks.ts";
+import { pdfjsDecoders } from "./scripts/pdfjsDecoders.ts";
 import { preloadChunks } from "./scripts/preloadChunks.ts";
 
 /**
@@ -27,7 +28,7 @@ export default defineConfig({
   root: resolve(import.meta.dirname, "src/web"),
   // From the origin's root: the cloud answers index.html on any path, so a relative asset path would break on a deep one.
   base: "/",
-  plugins: [react(), first.plugin, preloadChunks({ entries: FIRST_CHAT, fonts: /Geist-Regular-basic-/u })],
+  plugins: [react(), first.plugin, pdfjsDecoders(), preloadChunks({ entries: FIRST_CHAT, fonts: /Geist-Regular-basic-/u })],
   build: {
     outDir: resolve(import.meta.dirname, "out/web"),
     emptyOutDir: true,

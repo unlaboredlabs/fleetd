@@ -1,10 +1,13 @@
-// A file in a message as a card: its kind's glyph, name, kind and size, with Open (in this computer's app for its
-// type) and Save. Main reads the file from the hub for either (main/files.ts), so a large one never loads into the
-// page. A lead's `file` block, and any file a message carries that isn't an image.
+// A file in a message as a card: its kind's glyph, name, kind and size, with Open and Save. Open shows a table, a
+// sheet, a note, JSON, a PDF, text or code in the wide panel (screens/files), reading only what it shows; Word,
+// PowerPoint and zips open in this computer's app for their type, where main reads the file from the workspace
+// (main/files.ts), or save on the web. A lead's `file` block, and any file a message carries that isn't an image.
 import { Download, File, FileArchive, FileImage, FileSpreadsheet, FileText, Presentation, type LucideIcon } from "lucide-react";
 import { useState } from "react";
-import { glyphOf, kindOf, type FileGlyph } from "../../../../shared/files";
+import { glyphOf, type FileGlyph } from "../../../../shared/files";
 import { useDataLayer } from "../../../src/data/react";
+import { kindWord } from "../../files/cardKind";
+import { openChatFile } from "../../files/open";
 import { Button, Text, toast, Truncate } from "../../../ui";
 import { fmtBytes } from "../attachments";
 import type { ProjectRef } from "../slots";
@@ -34,10 +37,12 @@ export function FileCard({ project, file, caption }: { project: ProjectRef | und
   const [busy, setBusy] = useState<"open" | "save" | undefined>(undefined);
   const glyph = glyphOf(file.mime);
   const Glyph = GLYPHS[glyph];
+  const kind = kindWord(file.name, file.mime);
   const said = ownCaption(caption, file.name);
-  const meta = file.bytes === undefined ? kindOf(file.mime) : `${kindOf(file.mime)} · ${fmtBytes(file.bytes)}`;
+  const meta = file.bytes === undefined ? kind : `${kind} · ${fmtBytes(file.bytes)}`;
   const act = async (what: "open" | "save") => {
     if (project === undefined || busy !== undefined) return;
+    if (what === "open" && openChatFile(project, file)) return;
     setBusy(what);
     const request = { projectRef: project, attachmentId: file.attachmentId };
     const out = await (what === "open" ? window.fleetd.files.open(hub, request) : window.fleetd.files.save(hub, request)).catch((e: unknown) => ({ ok: false as const, message: String(e) }));

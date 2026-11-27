@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // A chat image opens large when clicked: the lead's image blocks and the images you send. The viewer shows the
-// caption, closes with Esc, a click beside the image or the X, and steps through a message's images with ← and →.
-// A clip still plays where it is.
+// caption, closes with Esc, a click beside the image or the X, and steps through a message's images with ← and →, on
+// into the chat's other pictures. A click zooms in and fits again, as + and 0 do; Copy copies it. A clip still plays
+// where it is.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -12,6 +13,9 @@ import { live, project as PROJECT, snapshot } from "../../src/data/fixtures.test
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { BubbleActionsContext, type BubbleActions } from "./actions";
 import { MessageView } from "./Bubble";
+import { held, zoomAbout } from "./ImageViewer";
+import { ChatShotsContext } from "./viewing";
+import { chatShots } from "./shots";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -265,4 +269,71 @@ it("shows a fleetd-block fence in your own message as the code you wrote, never 
   await mount({ ...mine, text, attachments: [] });
   expect(host.querySelector("[data-unshown]")).toBeNull();
   expect(host.textContent).toContain('"kind":"ask"');
+});
+
+it("steps on past the message into the chat's other pictures", async () => {
+  const both = [lead, mine];
+  const shots = chatShots(both);
+  act(() =>
+    root.render(
+      <DataProvider layer={createDataLayer(HUB)}>
+        <TooltipProvider>
+          <BubbleActionsContext.Provider value={actions}>
+            <ChatShotsContext.Provider value={() => shots}>
+              {both.map((i) => (
+                <MessageView key={i.id} row={{ kind: "message", key: i.id, item: i, run: true, end: true, head: false, history: false }} mineLatest={false} />
+              ))}
+            </ChatShotsContext.Provider>
+          </BubbleActionsContext.Provider>
+        </TooltipProvider>
+      </DataProvider>,
+    ),
+  );
+  act(() => {
+    send(live());
+    send(snapshot(1));
+  });
+  await settle();
+  await open("Open The receipt at 360px");
+  expect(viewer()?.textContent).toContain("1 of 3");
+  await key("ArrowRight");
+  expect(shown()).toBe("checkout.png");
+  expect(viewer()?.textContent).toContain("2 of 3");
+});
+
+it("zooms in where the picture is clicked and fits it again, by the keys too, and copies it", async () => {
+  const copies: string[] = [];
+  vi.stubGlobal("fleetd", { platform: "linux", fixture: null, files: { copyImage: (_hub: unknown, r: { attachmentId: string }) => (copies.push(r.attachmentId), Promise.resolve({ ok: true })) } });
+  await mount(mine);
+  await open("Open cart.png");
+  const img = () => viewer()?.querySelector<HTMLImageElement>("img");
+  expect(img()?.style.transform).toBe("");
+  act(() => img()?.click());
+  await settle();
+  expect(img()?.style.transform).toContain("scale(2.5)");
+  expect(viewer()?.textContent).toContain("250%");
+  act(() => img()?.click());
+  await settle();
+  expect(img()?.style.transform).toBe("");
+  await key("+");
+  expect(img()?.style.transform).toContain("scale(1.5)");
+  await key("0");
+  expect(img()?.style.transform).toBe("");
+  // Stepping to another picture opens it fit.
+  await key("+");
+  await key("ArrowLeft");
+  expect(shown()).toBe("checkout.png");
+  expect(img()?.style.transform).toBe("");
+  act(() => viewer()?.querySelector<HTMLButtonElement>('[aria-label="Copy image"]')?.click());
+  await settle();
+  expect(copies).toEqual(["F2"]);
+});
+
+it("keeps a zoomed picture over the stage: it never leaves an edge bare", () => {
+  const box = { w: 400, h: 300, sw: 800, sh: 600 };
+  // 3x: 1200 × 900 over 800 × 600, so it moves 200 and 150 each way at most.
+  expect(held({ z: 3, x: 999, y: -999 }, box)).toEqual({ z: 3, x: 200, y: -150 });
+  expect(held({ z: 1, x: 50, y: 50 }, box)).toEqual({ z: 1, x: 0, y: 0 });
+  // The point under the pointer stays there: 100 px right of centre, at 2x, moves the picture 100 px left.
+  expect(zoomAbout({ z: 1, x: 0, y: 0 }, 2, { x: 100, y: 0 }, { ...box, w: 800, h: 600 })).toEqual({ z: 2, x: -100, y: 0 });
 });
