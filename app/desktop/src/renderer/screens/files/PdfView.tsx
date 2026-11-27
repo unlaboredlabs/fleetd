@@ -1,8 +1,9 @@
 // A PDF's pages, one under another at the panel's width (or zoomed), each drawn once it scrolls near: its picture at
 // the screen's density and its text over it, so words select and copy. The line under the pages says which page is
-// in view and holds the zoom. A PDF that can't be shown (damaged, locked by a password, a page that won't draw, a part
-// the workspace couldn't send) says so in one line, with Download and, on the desktop, Open in app, never blank pages.
-import { Download, ExternalLink, Minus, Plus } from "lucide-react";
+// in view and holds the zoom. A page that can't be shown (it won't draw, its pictures didn't decode, a part of it the
+// workspace couldn't send) says so in its own place, with Try again, and the other pages stay; a PDF that won't open
+// at all (damaged, locked by a password) says so in one line, with Download and, on the desktop, Open in app.
+import { Download, ExternalLink, Minus, Plus, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Text, Tooltip } from "../../ui";
 import type { FileSource } from "./source";
@@ -17,16 +18,21 @@ const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 /** Room on each side of a page. */
 const SIDE = 16;
 
-/** Why a PDF isn't shown, in a line. */
+/** Why a PDF or one of its pages isn't shown, in a line. */
 const NOT_SHOWN = "This PDF couldn’t be shown here.";
+const PAGE_NOT_SHOWN = "This page couldn’t be shown.";
 const LOCKED = "This PDF has a password, so it can’t be shown here.";
 
 export function PdfView(props: { source: FileSource; size: number; first: Uint8Array; onDownload: () => void; onOpenInApp: (() => void) | undefined }) {
   const { source, size, first, onDownload, onOpenInApp } = props;
   const [state, setState] = useState<{ pdf: Pdf; doc: Doc; aspect: number } | { error: string } | undefined>(undefined);
-  // Any part failing after the pages showed (a range, a page that won't draw) takes the whole view to the line.
-  const [broken, setBroken] = useState(false);
-  const fail = useCallback(() => setBroken(true), []);
+  // A part of the file the workspace couldn't send: the pages waiting on it say so, the others stay.
+  const [missing, setMissing] = useState(false);
+  const retryRanges = useRef<() => void>(() => undefined);
+  const again = useCallback(() => {
+    setMissing(false);
+    retryRanges.current();
+  }, []);
   const [zoom, setZoom] = useState<number>(1);
   const [width, setWidth] = useState(0);
   const [page, setPage] = useState(1);
@@ -37,8 +43,9 @@ export function PdfView(props: { source: FileSource; size: number; first: Uint8A
     let close: () => void = () => undefined;
     void import("./pdf")
       .then(async (pdf) => {
-        const opened = pdf.openPdf(source, size, first, () => live && setBroken(true));
+        const opened = pdf.openPdf(source, size, first, () => live && setMissing(true));
         close = opened.close;
+        retryRanges.current = opened.retry;
         const doc = await opened.doc;
         const one = await doc.getPage(1);
         const v = one.getViewport({ scale: 1 });
@@ -62,16 +69,23 @@ export function PdfView(props: { source: FileSource; size: number; first: Uint8A
 
   const fit = Math.max(200, width - 2 * SIDE);
   const pageWidth = Math.round(fit * zoom);
-  const ready = state !== undefined && "doc" in state && !broken ? state : undefined;
+  const ready = state !== undefined && "doc" in state ? state : undefined;
   const pages = ready?.doc.numPages ?? 0;
   const at = ZOOMS.indexOf(zoom as (typeof ZOOMS)[number]);
-  const error = broken ? NOT_SHOWN : state !== undefined && "error" in state ? state.error : undefined;
+  // The whole view says it only when the file won't open: damaged, locked, or its opening part never came.
+  const unopened = state === undefined && missing;
+  const error = unopened ? NOT_SHOWN : state !== undefined && "error" in state ? state.error : undefined;
   if (error !== undefined) {
     return (
       <div className={f.table}>
         <div className={f.pdfFailed} role="alert" data-pdf="failed">
           <Text size="sm">{error}</Text>
           <span className={f.pdfFailedActions}>
+            {unopened ? (
+              <Button variant="secondary" icon={<RotateCw aria-hidden />} onClick={again}>
+                Try again
+              </Button>
+            ) : null}
             <Button variant="secondary" icon={<Download aria-hidden />} onClick={onDownload}>
               Download
             </Button>
@@ -91,7 +105,7 @@ export function PdfView(props: { source: FileSource; size: number; first: Uint8A
         {ready === undefined ? (
           <div className={f.pdfPage} style={{ width: fit, height: Math.round(fit * 1.294) }} aria-busy="true" />
         ) : (
-          Array.from({ length: pages }, (_, i) => <Page key={i} pdf={ready.pdf} doc={ready.doc} n={i + 1} width={pageWidth} aspect={ready.aspect} onFailed={fail} />)
+          Array.from({ length: pages }, (_, i) => <Page key={i} pdf={ready.pdf} doc={ready.doc} n={i + 1} width={pageWidth} aspect={ready.aspect} missing={missing} onAgain={again} />)
         )}
       </div>
       <div className={f.status}>
@@ -133,12 +147,23 @@ const pageInView = (el: HTMLElement, pages: number): number => {
 /** A draw stopped because the page moved on (zoom, scroll away), not because it failed. */
 const cancelled = (e: unknown) => e instanceof Error && e.name === "RenderingCancelledException";
 
-function Page({ pdf, doc, n, width, aspect, onFailed }: { pdf: Pdf; doc: Doc; n: number; width: number; aspect: number; onFailed: () => void }) {
+/**
+ * One page: drawn once it scrolls near. One that fails to draw, draws blank for its pictures, or waits on a part the
+ * workspace couldn't send shows a note in its place, with Try again: a draw again, or the missing part asked for again.
+ */
+function Page(props: { pdf: Pdf; doc: Doc; n: number; width: number; aspect: number; missing: boolean; onAgain: () => void }) {
+  const { pdf, doc, n, width, aspect, missing, onAgain } = props;
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(n === 1);
   const [shape, setShape] = useState(aspect);
+  // A Try again on a page that failed to draw: draw it again.
+  const [tries, setTries] = useState(0);
+  // How the draw went, of the draw it was: a new width or a Try again starts as drawing.
+  const attempt = `${String(width)}:${String(tries)}`;
+  const [ended, setEnded] = useState<{ readonly attempt: string; readonly phase: "drawn" | "failed" } | undefined>(undefined);
+  const phase = ended?.attempt === attempt ? ended.phase : "drawing";
 
   useEffect(() => {
     const el = holder.current;
@@ -153,7 +178,7 @@ function Page({ pdf, doc, n, width, aspect, onFailed }: { pdf: Pdf; doc: Doc; n:
     let live = true;
     let cancel: () => void = () => undefined;
     const failed = (e: unknown) => {
-      if (live && !cancelled(e)) onFailed();
+      if (live && !cancelled(e)) setEnded({ attempt, phase: "failed" });
     };
     void doc.getPage(n).then(async (p) => {
       const base = p.getViewport({ scale: 1 });
@@ -180,6 +205,7 @@ function Page({ pdf, doc, n, width, aspect, onFailed }: { pdf: Pdf; doc: Doc; n:
       const drawn = task.promise.then(
         async () => {
           if (await pdf.drewBlank(p)) failed(new Error("The page's pictures couldn't be decoded."));
+          else if (live) setEnded({ attempt, phase: "drawn" });
         },
         failed,
       );
@@ -189,12 +215,24 @@ function Page({ pdf, doc, n, width, aspect, onFailed }: { pdf: Pdf; doc: Doc; n:
       live = false;
       cancel();
     };
-  }, [near, width, doc, n, pdf, onFailed]);
+  }, [near, width, doc, n, pdf, attempt]);
 
+  // A page still drawing while a part of the file didn't come is waiting on it.
+  const shown = phase === "failed" || (phase === "drawing" && near && missing) ? "failed" : phase;
   return (
-    <div ref={holder} className={f.pdfPage} data-page={n} style={{ width, height: Math.round(width * shape) }}>
+    <div ref={holder} className={f.pdfPage} data-page={n} data-state={shown} style={{ width, height: Math.round(width * shape) }}>
       <canvas ref={canvas} className={f.pdfCanvas} aria-label={`Page ${String(n)}`} />
       <div ref={text} className={f.pdfText} />
+      {shown === "failed" ? (
+        <div className={f.pdfPageNote} role="alert">
+          <Text size="sm" tone="quiet">
+            {PAGE_NOT_SHOWN}
+          </Text>
+          <Button size="sm" variant="secondary" icon={<RotateCw aria-hidden />} onClick={() => (phase === "failed" ? setTries((x) => x + 1) : onAgain())}>
+            Try again
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
