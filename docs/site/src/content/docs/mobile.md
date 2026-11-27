@@ -164,16 +164,23 @@ Add these secrets, and one variable, `FLEETD_APP_ID`:
 - Your bundle id, such as `com.example.fleetd`: `FLEETD_APP_ID`
 
 Tick **Send the iOS build to TestFlight** to upload it. With the key set, **Mobile release** also runs by itself after
-each merge to `main` whose CI passed, builds that commit, and uploads a new build when the phone app changed since the
-last one that went to TestFlight. A build you sign yourself needs
+each merge to `main` whose CI passed. When the phone app changed, it uploads a new build only if the app's native
+code changed since the last one that went to TestFlight; otherwise it sends the change as an over-the-air update. A build you sign yourself needs
 [its own notification relay](/docs/phone-notifications#own).
 
 ## Over-the-air updates {#updates}
 
-A build signed with an update certificate gets new screens and fixes without a reinstall. It checks at launch and
-uses the new version from its next start. Native changes still need a new build.
+A build signed with an update certificate gets new screens and fixes without a reinstall. It checks at launch and each
+time you come back to the app, and switches to the new version at its next start, or as you come back after a few
+minutes away. If a new version crashes as it starts, the app goes back to the one before it.
 
-Pick the channel when you run **Mobile release**: `edge` gets each build's bundle once that build has reached every
-workspace (see [Builds & rollout](/docs/releases#rings)), `stable` each tagged release. A fork that wants its own updates makes its own key with
+Each update is made for one native fingerprint, a hash of everything native in the app (its native modules, their
+versions, the build settings), so it only ever reaches builds that have the same native code. A change to native
+code makes a new build instead.
+
+Pick the channel when you run **Mobile release**: `edge` gets each change merged to `main`, `stable` each tagged
+release. An edge update goes out in stages: about 1 phone in 10 within minutes, half after an hour, every phone after
+three hours. Which stage a phone is in comes from a random id it keeps for itself. A halted update reaches no more
+phones; a pulled one takes the phones that have it back to the version before it. A fork that wants its own updates makes its own key with
 `npm exec -- expo-updates codesigning:generate` in `app/mobile`, sets `UPDATES_PRIVATE_KEY_PEM`, `UPDATES_CERT_PEM` and
 `FLEETD_UPDATES_URL`, and serves its own `site/`.

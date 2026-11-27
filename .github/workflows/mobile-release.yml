@@ -2,10 +2,13 @@ name: Mobile release
 
 # Signed builds of the phone app, by hand (Actions › Mobile release › Run workflow) or from main by themselves, on
 # GitHub runners only: no EAS, no Expo service. mobile-merged.yml starts one after each push to main whose CI passed,
-# on that very commit (`sha`), so TestFlight only ever gets a commit CI passed on. It builds and sends to TestFlight
-# only when the phone app changed since the last build that went there (`only_if_changed`, .github/release/
-# mobile-due.sh), else it passes saying so in its summary. No schedule: GitHub starts scheduled runs here hours late or
-# not at all, and one would build main's head whatever its CI says. Each platform signs only when its secrets are set
+# on that very commit (`sha`), so phones only ever get a commit CI passed on. With `only_if_changed` it releases only
+# when the phone app changed since the last release, and decides how by the native fingerprint, each platform's
+# runtime version (D800, .github/release/mobile-due.sh): the same as the newest TestFlight build's, the JavaScript and
+# assets go out as a signed over-the-air update (job update), which every build with that fingerprint takes at its
+# next launch or return to the app; another, a new build goes to TestFlight. Nothing new, it passes saying so in its
+# summary. No schedule: GitHub starts scheduled runs here hours late or not at all, and one would build main's head
+# whatever its CI says. Each platform signs only when its secrets are set
 # (.github/release/mobile-sign.sh lists them), so a fork without them still gets a debug-signed APK and skips iOS
 # cleanly, without starting a macOS runner. The guide:
 # docs/site/src/content/docs/mobile.md (fleetd.sh/docs/mobile).
@@ -14,8 +17,9 @@ name: Mobile release
 # signed iOS build needs the one its profile names); UPDATES_CERT_PEM, the code signing certificate for over-the-air
 # updates (D219; without it the app takes none); FLEETD_UPDATES_URL, where the app asks for them (default
 # https://fleetd.sh/updates, which serves this repository's releases' updates); GOOGLE_SERVICES_JSON, the Firebase
-# project's google-services.json for FCM (without it the Android app gets no notifications). build-release.yml
-# publishes the updates on each release, with the same variables (.github/release/mobile-env.sh).
+# project's google-services.json for FCM (without it the Android app gets no notifications). Edge's updates are
+# signed here with the UPDATES_PRIVATE_KEY_PEM secret; build-release.yml signs stable's on each tagged release, with
+# the same variables (.github/release/mobile-env.sh).
 # A build of a given commit says it in its name, where mobile-due.sh reads which commit a run built.
 run-name: ${{ inputs.sha && format('Mobile release of {0}', inputs.sha) || 'Mobile release' }}
 
@@ -31,7 +35,7 @@ on:
         type: boolean
         default: false
       only_if_changed:
-        description: Build only if the phone app changed since the last build sent to TestFlight
+        description: Only if the phone app changed since the last release, as an update when its native code is unchanged
         type: boolean
         default: false
       channel:
@@ -46,7 +50,9 @@ permissions:
   actions: read
 
 # Runs on main one at a time, so one started after a merge while another build is going sees whether that one sent the
-# same files. A newer one waiting replaces an older one, so a burst of merges builds once. A branch's builds don't wait.
+# same files, and an update is always signed after the builds it is for, so it is newer than the bundle they embed
+# (expo-updates runs no update older than that). A newer one waiting replaces an older one, so a burst of merges
+# releases once. A branch's builds don't wait.
 concurrency:
   group: ${{ github.ref == 'refs/heads/main' && 'mobile-release-main' || format('mobile-release-{0}', github.run_id) }}
   cancel-in-progress: false
@@ -68,7 +74,7 @@ env:
 jobs:
   signing:
     # Which platforms have their secrets, decided on Linux so a macOS runner starts only to sign; with `only_if_changed`,
-    # whether there is anything new to build at all (`build`), so a run with nothing new passes here and starts no build.
+    # whether there is anything new to release at all (`due`), so a run with nothing new passes here and starts nothing.
     name: signing
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -77,7 +83,8 @@ jobs:
       ios: ${{ steps.secrets.outputs.ios }}
       testflight: ${{ steps.secrets.outputs.testflight }}
       upload: ${{ steps.upload.outputs.upload }}
-      build: ${{ steps.due.outputs.build || 'true' }}
+      updates: ${{ steps.secrets.outputs.updates }}
+      due: ${{ steps.due.outputs.due || 'true' }}
     steps:
       # The workflow's own commit, not the one to build: its scripts decide, and an older commit's may lack what this
       # workflow calls (build 36 of fb11f5e had no `mobile-due.sh commit`). The build's jobs check out `sha`.
@@ -103,10 +110,17 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          UPDATES_PRIVATE_KEY_PEM: ${{ secrets.UPDATES_PRIVATE_KEY_PEM }}
+          CHANNEL: ${{ inputs.channel || 'edge' }}
         run: |
           echo "android=$(.github/release/mobile-sign.sh android-enabled)" | tee -a "$GITHUB_OUTPUT"
           echo "ios=$(.github/release/mobile-sign.sh ios-enabled)" | tee -a "$GITHUB_OUTPUT"
           echo "testflight=$(.github/release/mobile-sign.sh testflight-enabled)" | tee -a "$GITHUB_OUTPUT"
+          # Over-the-air updates go out from here for main's edge builds alone (UPDATES_CERT_PEM is empty elsewhere);
+          # stable's come with each tagged release (build-release.yml).
+          updates=false
+          if [ -n "$UPDATES_PRIVATE_KEY_PEM" ] && [ -n "$UPDATES_CERT_PEM" ] && [ "$CHANNEL" = edge ]; then updates=true; fi
+          echo "updates=$updates" | tee -a "$GITHUB_OUTPUT"
       - id: upload
         # The iOS build goes to TestFlight when asked, and the key is set.
         env:
@@ -126,13 +140,15 @@ jobs:
         run: .github/release/mobile-due.sh due | tee -a "$GITHUB_OUTPUT"
 
   runtime:
-    # Each platform's runtime version, resolved as build-release.yml's update job resolves it (on Linux, with no
-    # secrets), which each build checks against the one it embeds, so a build whose updates would never arrive fails.
+    # Each platform's runtime version, the native fingerprint, resolved on Linux with no secrets, which each build
+    # checks against the one it embeds, so a build whose updates would never arrive fails. The JavaScript and assets
+    # are exported here too, made for those runtime versions, for the update job should the run release one: no key
+    # and no write token near npm's packages.
     name: runtime
     needs: signing
-    if: needs.signing.outputs.build == 'true'
+    if: needs.signing.outputs.due == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     outputs:
       ios: ${{ steps.runtime.outputs.ios }}
       android: ${{ steps.runtime.outputs.android }}
@@ -156,12 +172,57 @@ jobs:
         run: ../../.github/release/mobile-env.sh ios android
       - id: runtime
         run: printf 'ios=%s\nandroid=%s\n' "$RUNTIME_IOS" "$RUNTIME_ANDROID" >> "$GITHUB_OUTPUT"
+      - name: Export the update
+        # Metro and Hermes compile it: one that doesn't compile fails here and nothing is released.
+        if: needs.signing.outputs.updates == 'true' && inputs.only_if_changed
+        run: |
+          out="$RUNNER_TEMP/export"
+          npx expo export --platform ios --platform android --output-dir "$out/dist"
+          npx expo config --type public --json > "$out/expo-config.json"
+          printf 'ios=%s\nandroid=%s\n' "$RUNTIME_IOS" "$RUNTIME_ANDROID" > "$out/runtimes"
+      - if: needs.signing.outputs.updates == 'true' && inputs.only_if_changed
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-export
+          path: ${{ runner.temp }}/export/
+          if-no-files-found: error
+          retention-days: 1
+
+  decide:
+    # A build or an over-the-air update (mobile-due.sh release, from this workflow's commit): an update when the
+    # runtime versions are the ones the newest TestFlight build embeds, so it reaches only builds it was made for. A
+    # run by hand without `only_if_changed` builds.
+    name: decide
+    needs: [signing, runtime]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.release.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONLY_IF_CHANGED: ${{ inputs.only_if_changed }}
+          UPDATES: ${{ needs.signing.outputs.updates }}
+          BUILD_SHA: ${{ inputs.sha || github.sha }}
+          RUNTIME_IOS: ${{ needs.runtime.outputs.ios }}
+          RUNTIME_ANDROID: ${{ needs.runtime.outputs.android }}
+        run: |
+          if [ "$ONLY_IF_CHANGED" = true ]; then
+            .github/release/mobile-due.sh release | tee -a "$GITHUB_OUTPUT"
+          else
+            echo release=testflight | tee -a "$GITHUB_OUTPUT"
+          fi
 
   android:
     # A release APK for installing directly and an app bundle (.aab) for a store, each signed once, by gradle, with the
     # keystore; without it, the APK alone, debug-signed.
     name: android
-    needs: [signing, runtime]
+    needs: [signing, runtime, decide]
+    if: needs.decide.outputs.release == 'testflight'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
@@ -234,8 +295,8 @@ jobs:
     # An App Store build signed with the distribution certificate and profile, sent to TestFlight when asked and the
     # App Store Connect key is set, else kept as an .ipa.
     name: ios
-    needs: [signing, runtime]
-    if: needs.signing.outputs.ios == 'true'
+    needs: [signing, runtime, decide]
+    if: needs.signing.outputs.ios == 'true' && needs.decide.outputs.release == 'testflight'
     # Xcode 27's iOS 27 SDK: one built against an older SDK runs letterboxed, phone-sized, on the iPhone Duo unfolded,
     # and App Store Connect takes none older from April 2027 (ITMS-90725). macos-latest's default is still Xcode 26.
     runs-on: xcode-27
@@ -287,6 +348,13 @@ jobs:
         run: |
           built="$(find "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications" -path '*/EXUpdates.bundle/fingerprint' | head -1)"
           ../../.github/release/mobile-env.sh check "${built:-/nonexistent}" "$RUNTIME"
+      # mobile-due.sh reads the newest TestFlight build's fingerprint from this step's name: a later merge with the same
+      # goes out as an over-the-air update instead of a build.
+      - name: Native fingerprint ios ${{ needs.runtime.outputs.ios }} android ${{ needs.runtime.outputs.android }}
+        run: echo "Native fingerprint, iOS \`$IOS\`, Android \`$ANDROID\`" | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          IOS: ${{ needs.runtime.outputs.ios }}
+          ANDROID: ${{ needs.runtime.outputs.android }}
       - name: Framework dSYMs
         # Xcode writes dSYMs only for what it compiles: the prebuilt frameworks' (React Native's, Expo's precompiled
         # modules') come from where they're published, so TestFlight crashes in them are symbolicated too.
@@ -313,3 +381,60 @@ jobs:
           path: ${{ runner.temp }}/ipa
           if-no-files-found: ignore
           retention-days: 30
+
+  update:
+    # Signs the runtime job's export (.github/release/mobile-update.sh, with Node alone: no npm install near the key),
+    # with the copy of what everyone has now that a pull would serve, and hands it to the phone's staged rollout
+    # (.github/release/phone-rollout.ts): about 10% of installs at once, 50% after an hour, everyone after 3 hours,
+    # fleetd.sh deployed at each step by its hook. Each build with the same native fingerprint in a stage takes it at its
+    # next launch or return to the app (app/mobile/src/appUpdate.ts); one that crashes as it starts goes back to the
+    # bundle before it, by expo-updates' own error recovery.
+    name: update
+    needs: [signing, runtime, decide]
+    if: needs.decide.outputs.release == 'update'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      # Starts the rollout's ticker, which moves the update through its stages.
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - uses: actions/download-artifact@v8
+        with:
+          name: mobile-export
+          path: ${{ runner.temp }}/export
+      - name: What everyone has now
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/served"
+          if gh release download edge -p mobile-updates.tar.gz -O "$RUNNER_TEMP/served.tar.gz" 2>/dev/null; then
+            tar -xzf "$RUNNER_TEMP/served.tar.gz" -C "$RUNNER_TEMP/served"
+          fi
+      - name: Sign
+        env:
+          UPDATES_PRIVATE_KEY_PEM: ${{ secrets.UPDATES_PRIVATE_KEY_PEM }}
+          # Each merge an update of its own, a revert to an earlier update's JavaScript too.
+          RELEASE_SHA: ${{ inputs.sha || github.sha }}
+        run: .github/release/mobile-update.sh sign "$RUNNER_TEMP/export" edge "$RUNNER_TEMP/phone-update.tar.gz" "$RUNNER_TEMP/served"
+      # mobile-due.sh finds the updates that went out by this step's name.
+      - name: Publish the update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ inputs.sha || github.sha }}
+          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
+        run: |
+          { echo "Over-the-air update for edge, to about 10% of installs first:"; echo; tar -xzOf "$RUNNER_TEMP/phone-update.tar.gz" ./updates.txt | sed 's/^/    /'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          bun .github/release/rollout.ts phone-add "$RUNNER_TEMP/phone-update.tar.gz"
+          gh workflow run rollout.yml -f action=tick

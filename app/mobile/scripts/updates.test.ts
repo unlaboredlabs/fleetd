@@ -13,7 +13,7 @@ import {
 } from "@expo/code-signing-certificates";
 import { parseDictionary } from "structured-headers";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { ALG, BOUNDARY, KEY_ID, type Manifest, publish } from "./updates";
+import { ALG, BOUNDARY, HERMES_MAGIC, KEY_ID, type Manifest, publish } from "./updates";
 
 const RUNTIME = "c000c8604aa0d2894156f26ad966e2a8e5ec81ae";
 const URL = "https://fleetd.sh/updates";
@@ -40,8 +40,8 @@ function exported(iosBundle = "ios bytecode"): string {
   mkdirSync(join(dist, "_expo/static/js/ios"), { recursive: true });
   mkdirSync(join(dist, "_expo/static/js/android"), { recursive: true });
   mkdirSync(join(dist, "assets"));
-  writeFileSync(join(dist, "_expo/static/js/ios/index-1.hbc"), iosBundle);
-  writeFileSync(join(dist, "_expo/static/js/android/index-2.hbc"), "android bytecode");
+  writeFileSync(join(dist, "_expo/static/js/ios/index-1.hbc"), Buffer.concat([HERMES_MAGIC, Buffer.from(iosBundle)]));
+  writeFileSync(join(dist, "_expo/static/js/android/index-2.hbc"), Buffer.concat([HERMES_MAGIC, Buffer.from("android bytecode")]));
   writeFileSync(join(dist, "assets/0f1e"), "png bytes");
   writeFileSync(
     join(dist, "metadata.json"),
@@ -57,7 +57,7 @@ function exported(iosBundle = "ios bytecode"): string {
   return dist;
 }
 
-function published(dist: string, privateKeyPem = keyPem): string {
+function published(dist: string, privateKeyPem = keyPem, more: { served?: string; createdAt?: string } = {}): string {
   const out = mkdtempSync(join(tmpdir(), "updates-out-"));
   publish({
     dist,
@@ -66,8 +66,9 @@ function published(dist: string, privateKeyPem = keyPem): string {
     channel: "edge",
     privateKeyPem,
     runtimes: { ios: RUNTIME, android: RUNTIME },
-    createdAt: "2026-10-28T12:00:00.000Z",
+    createdAt: more.createdAt ?? "2026-10-28T12:00:00.000Z",
     expoClient: { name: "fleetd", slug: "fleetd" },
+    ...(more.served === undefined ? {} : { served: more.served }),
   });
   return out;
 }
@@ -95,11 +96,11 @@ function parts(body: string): { headers: Map<string, string>; body: string }[] {
 
 /** The manifest part, checked as expo-updates checks it: the signature dictionary's sig, keyid and alg, then
  * RSA-SHA256 over the part's bytes with the certificate's key. */
-function verified(file: string): Manifest {
+function verified<T = Manifest>(file: string, name: "manifest" | "directive" = "manifest"): T {
   const all = parts(readFileSync(file, "utf8"));
   expect(all).toHaveLength(1);
   const [part] = all;
-  expect(part!.headers.get("content-disposition")).toBe('form-data; name="manifest"');
+  expect(part!.headers.get("content-disposition")).toBe(`form-data; name="${name}"`);
   expect(part!.headers.get("content-type")).toMatch(/^application\/json/u);
   const sig = parseDictionary(part!.headers.get("expo-signature")!);
   expect(sig.get("keyid")?.[0]).toBe(KEY_ID);
@@ -107,7 +108,7 @@ function verified(file: string): Manifest {
   const signature = Buffer.from(String(sig.get("sig")?.[0]), "base64");
   const ok = verify("sha256", Buffer.from(part!.body, "utf8"), new X509Certificate(certPem).publicKey, signature);
   if (!ok) throw new Error("Incorrect signature");
-  return JSON.parse(part!.body) as Manifest;
+  return JSON.parse(part!.body) as T;
 }
 
 const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("base64url");
@@ -136,7 +137,7 @@ describe("update manifests", () => {
       expect(a.hash).toBe(sha256(bytes));
       expect(a.key).toBe(createHash("md5").update(bytes).digest("hex"));
     }
-    expect(readFileSync(join(out, m.launchAsset.url.slice(`${URL}/edge/`.length)), "utf8")).toBe("ios bytecode");
+    expect(readFileSync(join(out, m.launchAsset.url.slice(`${URL}/edge/`.length))).subarray(HERMES_MAGIC.length).toString()).toBe("ios bytecode");
   });
 
   it("keep their id while the bundle is the same, so phones don't download it again", () => {
@@ -161,6 +162,48 @@ describe("update manifests", () => {
     expect(() =>
       publish({ dist: exported(), out: mkdtempSync(join(tmpdir(), "updates-out-")), url: URL, channel: "edge", privateKeyPem: keyPem, runtimes: { ios: "../x" }, createdAt: "" }),
     ).toThrow("isn't one site/vercel.json routes");
+  });
+
+  it("are an update of their own for each merge, a revert to an earlier update's JavaScript too", () => {
+    const at = (commit?: string) => {
+      const out = mkdtempSync(join(tmpdir(), "updates-out-"));
+      publish({ dist: exported(), out, url: URL, channel: "edge", privateKeyPem: keyPem, runtimes: { ios: RUNTIME }, createdAt: "2026-10-28T12:00:00.000Z", ...(commit === undefined ? {} : { commit }) });
+      return verified(join(out, RUNTIME, "ios")).id;
+    };
+    // The same bundle from two merges: two updates, so the later one goes out over whatever came between.
+    expect(at("a".repeat(40))).not.toBe(at("b".repeat(40)));
+    expect(at("a".repeat(40))).toBe(at("a".repeat(40)));
+    expect(at()).not.toBe(at("a".repeat(40)));
+  });
+
+  it("carry what takes a phone back should they be pulled: the update everyone had, signed again as a newer one", () => {
+    // What fleetd.sh serves everyone now: an older update of the same runtime version.
+    const served = published(exported("older bytecode"), keyPem, { createdAt: "2026-10-28T11:00:00.000Z" });
+    const out = published(exported(), keyPem, { served });
+    for (const platform of ["ios", "android"]) {
+      const m = verified(join(out, RUNTIME, platform));
+      const before = verified(join(served, RUNTIME, platform));
+      const back = verified(join(out, "back", RUNTIME, platform));
+      // The same bundle and files as the update everyone had, newer than the update it takes phones back from (a phone
+      // takes nothing older than what it runs), under an id of its own.
+      expect({ ...back, id: before.id, createdAt: before.createdAt }).toEqual(before);
+      expect(back.createdAt).toBe("2026-10-28T12:00:00.001Z");
+      expect(back.id).not.toBe(before.id);
+      expect(back.id).not.toBe(m.id);
+      for (const a of [back.launchAsset, ...back.assets]) expect(sha256(readFileSync(join(out, a.url.slice(`${URL}/edge/`.length))))).toBe(a.hash);
+    }
+  });
+
+  it("take a phone back to the bundle its build embeds when no update came before", () => {
+    const out = published(exported(), keyPem, { served: mkdtempSync(join(tmpdir(), "updates-served-")) });
+    const directive = verified<{ type: string; parameters: { commitTime: string } }>(join(out, "back", RUNTIME, "ios"), "directive");
+    expect(directive).toEqual({ type: "rollBackToEmbedded", parameters: { commitTime: "2026-10-28T12:00:00.001Z" } });
+  });
+
+  it("refuse a launch bundle that isn't Hermes bytecode, which the builds couldn't run", () => {
+    const dist = exported();
+    writeFileSync(join(dist, "_expo/static/js/ios/index-1.hbc"), "globalThis.app = 1;");
+    expect(() => published(dist)).toThrow("_expo/static/js/ios/index-1.hbc isn't Hermes bytecode");
   });
 });
 
@@ -195,6 +238,24 @@ describe("site/vercel.json", () => {
     // site/mobile-updates.sh unpacks a channel's files into updates/<channel>/.
     verified(join(out, to!.slice("/updates/edge/".length)));
     expect(route("/updates", { ...ask, "expo-channel-name": "stable", "expo-platform": "android" })).toBe(`/updates/stable/${RUNTIME}/android`);
+  });
+
+  it("routes an edge install by its id: about 10% to the first stage, 50% to the first two, the rest to everyone", () => {
+    // expo-updates sends the install's random id with every check (EAS-Client-ID), iOS in capitals, Android not.
+    const at = (id: string, channel = "edge") => route("/updates", { ...ask, "expo-channel-name": channel, "eas-client-id": id });
+    expect(at("00C1D2E3-0000-4000-8000-000000000000")).toBe(`/updates/edge/stage10/${RUNTIME}/ios`);
+    expect(at("19ffffff-0000-4000-8000-000000000000")).toBe(`/updates/edge/stage10/${RUNTIME}/ios`);
+    expect(at("1A000000-0000-4000-8000-000000000000")).toBe(`/updates/edge/stage10/${RUNTIME}/ios`);
+    expect(at("1b000000-0000-4000-8000-000000000000")).toBe(`/updates/edge/stage50/${RUNTIME}/ios`);
+    expect(at("7FFFFFFF-0000-4000-8000-000000000000")).toBe(`/updates/edge/stage50/${RUNTIME}/ios`);
+    expect(at("80000000-0000-4000-8000-000000000000")).toBe(`/updates/edge/${RUNTIME}/ios`);
+    // Of every 256 ids by their first two digits, 27 reach the first stage and 128 the first two.
+    const firsts = Array.from({ length: 256 }, (_, i) => `${i.toString(16).padStart(2, "0")}000000-0000-4000-8000-000000000000`);
+    expect(firsts.filter((id) => at(id)?.includes("/stage10/")).length).toBe(27);
+    expect(firsts.filter((id) => /\/stage(10|50)\//u.test(at(id) ?? "")).length).toBe(128);
+    // Stable has no stages, and an install that sends no id is everyone's.
+    expect(at("00C1D2E3-0000-4000-8000-000000000000", "stable")).toBe(`/updates/stable/${RUNTIME}/ios`);
+    expect(route("/updates", ask)).toBe(`/updates/edge/${RUNTIME}/ios`);
   });
 
   it("routes nothing else", () => {

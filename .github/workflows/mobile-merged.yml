@@ -1,6 +1,7 @@
-# After each push to main whose CI passed, starts Mobile release (mobile-release.yml) on main to build that very commit
-# (`sha`: never main's newest, whose CI may still run) and send it to TestFlight if the phone app changed since the last
-# build that went there; nothing new, it passes in seconds (.github/release/mobile-due.sh). Not a schedule: GitHub
+# After each push to main whose CI passed, starts Mobile release (mobile-release.yml) on main to release that very commit
+# (`sha`: never main's newest, whose CI may still run) if the phone app changed since the last release: as an
+# over-the-air update when its native fingerprint is the newest TestFlight build's, else as a new TestFlight build;
+# nothing new, it passes in seconds (.github/release/mobile-due.sh). Not a schedule: GitHub
 # starts scheduled runs in this repository hours late or not at all (Nightly's 04:17 UTC ran at 12:39 and 14:49;
 # Staple's half-hourly one ran 5 times in 36 hours, Nov 22-23).
 #

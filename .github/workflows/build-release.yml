@@ -588,14 +588,15 @@ jobs:
         run: .github/release/publish.sh
 
   mobile-export:
-    # The phone app's over-the-air updates (D219), once the release they go with is out, in two jobs so the code
-    # signing key and a write token are never near npm's packages. This one has neither: it installs the app, exports
-    # its JavaScript and resolves the runtime version this commit's native builds have, with mobile-release.yml's
-    # build settings (.github/release/mobile-env.sh), since the runtime version takes them in. mobile-updates signs and
-    # publishes. Without the update certificate there is nothing to do: a fork has no updates until it makes its own
-    # (fleetd.sh/docs/mobile#updates).
+    # The phone app's stable over-the-air updates (D219), once the tagged release they go with is out, in two jobs so
+    # the code signing key and a write token are never near npm's packages. Edge's go out after each merge instead,
+    # from mobile-release.yml, when the native fingerprint is the newest TestFlight build's (D800). This one has
+    # neither: it installs the app, exports its JavaScript and resolves the runtime version this commit's native builds
+    # have, with mobile-release.yml's build settings (.github/release/mobile-env.sh), since the runtime version takes
+    # them in. mobile-updates signs and publishes. Without the update certificate there is nothing to do: a fork has no
+    # updates until it makes its own (fleetd.sh/docs/mobile#updates).
     needs: publish
-    if: always() && needs.publish.result == 'success' && needs.publish.outputs.skipped != 'true' && vars.UPDATES_CERT_PEM != ''
+    if: always() && inputs.channel == 'stable' && needs.publish.result == 'success' && needs.publish.outputs.skipped != 'true' && vars.UPDATES_CERT_PEM != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -637,11 +638,11 @@ jobs:
           retention-days: 1
 
   mobile-updates:
-    # Signs the export's manifests with the code signing key (app/mobile/scripts/updates.ts, which needs only Node's
+    # Signs the export's manifests with the code signing key (.github/release/mobile-update.sh, which needs only Node's
     # own modules: no npm install here) and puts them on the release as mobile-updates.tar.gz. fleetd.sh's build
     # unpacks each channel's (site/mobile-updates.sh) and serves them by the app's request headers (site/vercel.json).
     # Without the key, nothing is published and the job passes.
-    needs: [plan, mobile-export]
+    needs: mobile-export
     if: always() && needs.mobile-export.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -678,35 +679,19 @@ jobs:
           UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
           FLEETD_UPDATES_URL: ${{ vars.FLEETD_UPDATES_URL }}
           CHANNEL: ${{ inputs.channel }}
-        run: |
-          export="$RUNNER_TEMP/export"
-          key="$RUNNER_TEMP/updates-key.pem"
-          (umask 077 && printf '%s\n' "$UPDATES_PRIVATE_KEY_PEM" > "$key")
-          trap 'rm -f "$key"' EXIT
-          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON app/mobile/scripts/updates.ts --dist "$export/dist" \
-            --out "$RUNNER_TEMP/updates" --url "${FLEETD_UPDATES_URL:-https://fleetd.sh/updates}" --channel "$CHANNEL" \
-            --key "$key" --config "$export/expo-config.json" \
-            --runtime "$(grep '^ios=' "$export/runtimes")" --runtime "$(grep '^android=' "$export/runtimes")"
-          # The same updates signed with another certificate's key are new ones too.
-          echo "cert $(printf '%s\n' "$UPDATES_CERT_PEM" | sha256sum | cut -d' ' -f1)" >> "$RUNNER_TEMP/updates/updates.txt"
-          tar -czf "$RUNNER_TEMP/mobile-updates.tar.gz" -C "$RUNNER_TEMP/updates" .
+        run: .github/release/mobile-update.sh sign "$RUNNER_TEMP/export" "$CHANNEL" "$RUNNER_TEMP/mobile-updates.tar.gz"
       - name: Publish
         id: publish
         if: steps.key.outputs.sign == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          CHANNEL: ${{ inputs.channel }}
-          BUILD: ${{ needs.plan.outputs.build }}
         run: |
-          if [ "$CHANNEL" = edge ]; then tag=edge; else tag="${GITHUB_REF_NAME:?}"; fi
-          cat "$RUNNER_TEMP/updates/updates.txt"
-          if [ "$CHANNEL" = edge ] && [ -n "$BUILD" ]; then
-            # The build's own release's (publish.sh): the rollout puts it on edge once the build reached everyone, and
-            # deploys fleetd.sh then (rollout.ts tick).
-            gh release upload "build-$BUILD" "$RUNNER_TEMP/mobile-updates.tar.gz" --clobber
-          # Edge re-exports on every push; when the JavaScript is the same, the release keeps what it has.
-          elif gh release download "$tag" -p mobile-updates.tar.gz -O "$RUNNER_TEMP/held.tar.gz" 2>/dev/null &&
-            tar -xzOf "$RUNNER_TEMP/held.tar.gz" ./updates.txt 2>/dev/null | cmp -s - "$RUNNER_TEMP/updates/updates.txt"; then
+          tag="${GITHUB_REF_NAME:?}"
+          tar -xzOf "$RUNNER_TEMP/mobile-updates.tar.gz" ./updates.txt > "$RUNNER_TEMP/updates.txt"
+          cat "$RUNNER_TEMP/updates.txt"
+          # When the JavaScript is the same, the release keeps what it has.
+          if gh release download "$tag" -p mobile-updates.tar.gz -O "$RUNNER_TEMP/held.tar.gz" 2>/dev/null &&
+            tar -xzOf "$RUNNER_TEMP/held.tar.gz" ./updates.txt 2>/dev/null | cmp -s - "$RUNNER_TEMP/updates.txt"; then
             echo "$tag already holds these updates"
           else
             gh release upload "$tag" "$RUNNER_TEMP/mobile-updates.tar.gz" --clobber
