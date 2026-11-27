@@ -42,3 +42,19 @@ describe("PR mentions in chat text", () => {
     expect(codeRuns("[docs](https://example.com)")).toEqual([{ code: false, text: "[docs](https://example.com)" }]);
   });
 });
+
+describe("a person fleetd names in its line", () => {
+  const line = "[ada.park](person:p_aaaaaaaa) stopped “Stuck”. By [first_last \\[ops\\]](person:p_b).";
+  it("keeps the mention whole: no name in it is set as code", () => {
+    expect(machineCode(line)).toBe(line);
+    expect(machineCode("ada.park asked")).toBe("`ada.park` asked");
+  });
+  it("is one text run, for RefText to show as the name", () => {
+    expect(codeRuns(machineCode(line))).toEqual([
+      { code: false, text: "[ada.park](person:p_aaaaaaaa)" },
+      { code: false, text: " stopped “Stuck”. By " },
+      { code: false, text: "[first_last \\[ops\\]](person:p_b)" },
+      { code: false, text: "." },
+    ]);
+  });
+});
