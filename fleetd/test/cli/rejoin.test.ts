@@ -66,7 +66,10 @@ test("a Mac removed from the hub stops as that machine, and joined again with a 
   expect(removed.code).toBe(0);
   node = start();
   expect(await node.proc.exited).toBe(0);
-  expect(await node.said).toContain("mac-1 was removed from this hub");
+  // In the node's own words, naming the workspace's address: the wire's reason says "hub" for older nodes.
+  const said = await node.said;
+  expect(said).toContain("mac-1 was removed from http");
+  expect(said).not.toContain("hub");
   expect(config()).toMatchObject({ enrolled: false, removed: true, machineId: "mac-1", agentsMac: true });
 
   // Its service starts it again: it waits for a new join, and runs no checks as the removed machine. Stopped once it

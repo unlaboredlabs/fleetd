@@ -1,0 +1,20 @@
+diff --git a/node_modules/react-native-screens/ios/helpers/image/RNSImageLoadingHelper.mm b/node_modules/react-native-screens/ios/helpers/image/RNSImageLoadingHelper.mm
+index c979ad3..f14454f 100644
+--- a/node_modules/react-native-screens/ios/helpers/image/RNSImageLoadingHelper.mm
++++ b/node_modules/react-native-screens/ios/helpers/image/RNSImageLoadingHelper.mm
+@@ -12,6 +12,15 @@
+ 
+   RCTImageSource *imageSource = [RCTConvert RCTImageSource:jsonImageSource];
+   RCTAssert(imageSource != nil, @"[RNScreens] Expected nonnil image source");
++  // fleetd: a data: image is decoded at once, so the item has it as it is made. The iPhone Duo's side strip shows only
++  // the image an item has then, not one set on it later. Drop once react-native-screens loads data: images in time.
++  NSURL *url = imageSource.request.URL;
++  if ([url.scheme isEqualToString:@"data"]) {
++    NSData *data = [NSData dataWithContentsOfURL:url];
++    UIImage *image = data == nil ? nil : [UIImage imageWithData:data scale:imageSource.scale];
++    imageLoadingCompletionBlock([RNSImageLoadingHelper handleRenderingModeForImage:image isTemplate:isTemplate]);
++    return;
++  }
+ 
+ #if !defined(NDEBUG) // We're in debug mode here
+   if (imageSource.packagerAsset) {

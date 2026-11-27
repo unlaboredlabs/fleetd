@@ -64,7 +64,7 @@ export type Redeemed = { name?: string; role: Role; personId?: PersonId; inviteI
 
 export class RedeemError extends Error {
   constructor(readonly kind: "invalid" | "expired") {
-    super(kind === "expired" ? "pairing code expired" : "unknown or already used pairing code");
+    super(kind === "expired" ? "This pairing code has expired." : "This pairing code was already used, or isn't one this workspace made.");
   }
 }
 

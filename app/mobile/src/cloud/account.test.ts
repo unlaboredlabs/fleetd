@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeAccounts } from "../../../../fleetd/test/fake-accounts.ts";
 import { fakeHub } from "../hub/fake";
 import {
+  afterForget,
   afterSignIn,
   authorizeUrl,
   makeWorkspace,
@@ -89,6 +90,21 @@ describe("in several teams", () => {
     expect(shownAfterSignIn(hubs, out.picked)?.hubName).toBe("lab");
     // No pick: the first team, as before.
     expect(shownAfterSignIn(hubs, undefined)?.hubName).toBe("acme");
+  });
+});
+
+describe("a workspace that goes", () => {
+  const refused: KeptHub = { hub: "http://devbox:4790", key: "fld_old", hubName: "devbox" };
+  const team: KeptHub = { hub: "https://acme.fleetd.dev", key: "fld_team", hubName: "acme", cloud: true };
+
+  it("Disconnect, or Not Now on a refused key: the next one kept shows", () => {
+    expect(afterForget([refused, team], refused.hub, false)).toEqual({ next: team, hubs: [team] });
+    expect(afterForget([refused], refused.hub, false)).toEqual({ next: null, hubs: [] });
+  });
+
+  it("Pair Again from the refused workspace's link: the pairing screens, with another workspace kept too", () => {
+    // Seen in review: with a cloud team kept as well, the team showed instead, and the link's code was never used.
+    expect(afterForget([refused, team], refused.hub, true)).toEqual({ next: null, hubs: [team] });
   });
 });
 

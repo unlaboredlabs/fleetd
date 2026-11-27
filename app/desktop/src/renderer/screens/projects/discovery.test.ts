@@ -33,6 +33,18 @@ const out: ProjectDiscoverOutput = {
 };
 
 describe("discovery", () => {
+  // The second quality sweep (the phone part saw it first): read just as the workspace restarted, before its machines
+  // relinked, New bot said nothing was online with the machine back.
+  it("takes each machine's online state from the app's live status over the read's", () => {
+    const d = discovery(out, names, () => true, (id) => (id === "buildbox" ? true : undefined));
+    expect(d.workers.map((w) => [w.name, w.online])).toEqual([
+      ["devbox-name", true],
+      ["buildbox-name", true],
+    ]);
+    expect(d.problems).toEqual([]);
+    expect(discovery(out, names, () => true, () => false).workers.every((w) => !w.online)).toBe(true);
+  });
+
   it("lists checkouts by machine, then GitHub, and marks what is already a bot", () => {
     const d = discovery(out, names);
     expect(d.best).toBe("devbox");

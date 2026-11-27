@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { filterChoices, filterLabel, linkTone, meAvatar, meSymbol } from "./chatsBar";
+import { filterChoices, filterLabel, linkTone, meAvatar, meMark, meSymbol } from "./chatsBar";
 
 const read = (path: string): string => readFileSync(join(import.meta.dirname, path), "utf8");
 const chats = read("screens/Chats.tsx");
@@ -70,10 +70,15 @@ describe("the avatar that opens Settings", () => {
     expect(meAvatar("Sam", "devbox", "retrying").label).toBe("Settings, Reconnecting…");
   });
 
+  it("marks the avatar only when the link is wrong, never with a dot while connected", () => {
+    // The person, on the folded Duo: "why is there pfp small and there's a ugly green dot".
+    expect([meMark("live"), meMark("busy"), meMark("down"), meMark("restarting")]).toEqual([undefined, "busy", "down", "restarting"]);
+  });
+
   it("is one of iOS's buttons in the iPhone Duo's side strip, which iOS stands there under the status", () => {
     // A view of the app's own stays in a row over the list (F1919): only iOS's buttons move into the strip.
-    expect(chats).toContain("const inStrip = useStrip() !== undefined;");
-    expect(chats).toContain('const left: NativeStackHeaderItem = inStrip ? meItem(me.initial, me.label, t[DOT[me.tone]], openSettings) : { type: "custom", element: avatar };');
+    // So on iOS it is one of iOS's buttons everywhere: a picture of the avatar, the size of + beside it (F1932).
+    expect(chats).toContain("const left = meItem(me.initial, me.label, mark === undefined ? undefined : t[DOT[mark]], meIcon, openSettings);");
     expect([meSymbol("W"), meSymbol("S"), meSymbol("É"), meSymbol(""), meSymbol("7")]).toEqual(["w.circle.fill", "s.circle.fill", "person.crop.circle.fill", "person.crop.circle.fill", "person.crop.circle.fill"]);
   });
 

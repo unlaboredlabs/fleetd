@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPairLink, pairLinkStep, parsePairLink, pastedPair } from "./pairLink";
+import { isPairLink, pairAgainTitle, pairLinkStep, parsePairLink, pastedPair, refusedWords } from "./pairLink";
 
 describe("parsePairLink", () => {
   it("reads the hub's origin and the code from a QR code's link", () => {
@@ -97,7 +97,29 @@ describe("pairLinkStep", () => {
 
   it("never pairs a paired phone, refuses a broken link, and ignores anything else", () => {
     expect(pairLinkStep(LINK, "outside", "devbox")).toMatchObject({ t: "paired", title: "Connected to devbox" });
+    // Seen on the Duo: its key revoked on the workspace, the workspace's new pairing link said "Connected to …,
+    // disconnect under Settings first": it pairs again instead, asking first.
+    expect(pairLinkStep(LINK, "outside", "devbox", null, "phone", "http://devbox.tail1234.ts.net:4790/")).toEqual({
+      t: "repair",
+      hub: "http://devbox.tail1234.ts.net:4790",
+      code: "ABCD-2345",
+      title: "Pair Again with devbox?",
+      message: "devbox refused this phone's key. This code pairs it again.",
+    });
+    // Another workspace's link, or a key that still works: as before.
+    expect(pairLinkStep(LINK, "outside", "devbox", null, "phone", "https://other.example")).toMatchObject({ t: "paired" });
     expect(pairLinkStep("fleetd://pair?code=ABCD-2345", "outside", null)).toMatchObject({ t: "refuse", failure: { message: "This pairing QR code has no workspace address or no code." } });
     expect(pairLinkStep("https://example.com", "scanner", null)).toEqual({ t: "ignore" });
   });
 });
+
+describe("a key the workspace refused", () => {
+  it("says so in the person's words, titled for the device", () => {
+    // Seen on the Duo: the alert read the workspace's own "agent key fld_ep5kxy was revoked", and Settings' row
+    // "Pair This phone Again".
+    expect(pairAgainTitle("phone")).toBe("Pair This Phone Again");
+    expect(pairAgainTitle("iPad")).toBe("Pair This iPad Again");
+    expect(refusedWords("phone", "devbox")).toBe("devbox no longer accepts this phone's key. Pair it again with a new code from the workspace.");
+  });
+});
+

@@ -114,7 +114,8 @@ const useDiscovery = (): Discovery | null => {
       .filter(projectHome)
       .map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }));
     if (query.data !== undefined) {
-      const d = discoveryOf(query.data, name, (id) => projectHome(machines[id]));
+      const live = (id: string) => (machines[id] === undefined ? undefined : machines[id].status !== "offline");
+      const d = discoveryOf(query.data, name, (id) => projectHome(machines[id]), live);
       return d.workers.length > 0 ? d : { ...d, workers: homes };
     }
     if (query.error === null) return null;

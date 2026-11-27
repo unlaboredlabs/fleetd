@@ -125,6 +125,9 @@ const sentence = (said: string): string => {
  * since GitHub is the problem, not the machine. */
 const GITHUB_FAILING = "GitHub's downloads are failing right now, try again later";
 
+/** How they begin when neither GitHub's links nor its API answered at all: the machine's network, not GitHub. */
+const UNREACHED = "this machine can't reach";
+
 const bad = (p: UpdatePart | undefined): p is UpdatePart => p?.state === "failed" || p?.state === "rolled_back";
 
 /** A machine whose fleetd is from before the hub could update it: the hub's words say the one command to run on it,
@@ -136,7 +139,11 @@ const byHand = (p: UpdatePart | undefined): p is UpdatePart => p?.state === "ski
 const whyOf = (p: UpdatePart): string => {
   if (p.state === "rolled_back" || p.stage === "health") return "Didn't start on the new build, so its old one runs again.";
   if (p.stage === "checksum") return "The download didn't match its checksum, so nothing changed.";
-  if (p.stage === "download") return p.message?.startsWith(GITHUB_FAILING) === true ? "GitHub's downloads are failing right now. Try again later." : "Couldn't download the new build.";
+  if (p.stage === "download") {
+    if (p.message?.startsWith(GITHUB_FAILING) === true) return "GitHub's downloads are failing right now. Try again later.";
+    if (p.message?.startsWith(UNREACHED) === true) return "Couldn't reach GitHub. Check the machine's connection, then try again.";
+    return "Couldn't download the new build.";
+  }
   return sentence(p.message ?? "it stopped");
 };
 

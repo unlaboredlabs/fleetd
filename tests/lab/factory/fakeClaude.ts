@@ -176,6 +176,23 @@ const turn = async (msg: Msg) => {
   lifecycle(userUuid, "started");
   out(init());
   out({ type: "system", subtype: "status", status: "requesting", session_id: sessionId, uuid: randomUUID(), user_message_uuids: [userUuid] });
+  // A recorded failure (`lab-replay: auth-expired-401`, a fixture's scenario): its output after the request, in this
+  // session, then claude's exit as recorded.
+  const replay = /^lab-replay: ([a-z0-9-]+)$/mu.exec(text)?.[1];
+  if (replay !== undefined) {
+    const lines = recorded(`claude-${VERSION}-${replay}.jsonl`);
+    const from = lines.findIndex((l) => l.dir === "out" && l.msg.subtype === "status") + 1;
+    for (const l of lines.slice(from)) {
+      if (l.dir === "meta") {
+        current = undefined;
+        process.exit(typeof l.msg.exit === "number" ? l.msg.exit : 1);
+      }
+      if (l.dir !== "out") continue;
+      out({ ...l.msg, session_id: sessionId, ...(l.msg.command_uuid === undefined ? {} : { command_uuid: userUuid }) });
+    }
+    current = undefined;
+    return;
+  }
   const overloadedS = Number(/^lab-overloaded: (\d+)$/mu.exec(text)?.[1] ?? 0);
   for (let attempt = 1, waited = 0; waited < overloadedS && !interrupted; attempt++, waited += 5) {
     out({ type: "system", subtype: "api_retry", attempt, max_retries: 10, retry_delay_ms: 5000, error_status: 529, error: "overloaded", session_id: sessionId, uuid: randomUUID() });

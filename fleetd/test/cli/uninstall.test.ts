@@ -103,7 +103,10 @@ test("a taken port's fix keeps the workspace's own address", () => {
   expect(f.fix).toContain("starts again by itself");
   const named = hubAction(false, "missing", [], "other", "172.17.0.4:4790", "/h", { by: "nginx (pid 812)", move: "fleetd init --listen 172.17.0.4:4791" });
   expect((named as { message: string }).message).toBe("172.17.0.4:4790 is in use by something else: nginx (pid 812)");
-  expect((named as { fix: string }).fix).toContain("fleetd init --listen 172.17.0.4:4791 (paired devices then reach it there)");
+  // With --no-service there is no service to start again by itself, and the move keeps --no-service.
+  expect((named as { fix: string }).fix).toBe(
+    "stop it, then run fleetd init --no-service again; or move the workspace to another port on the same address: fleetd init --listen 172.17.0.4:4791 --no-service (paired devices then reach it there)",
+  );
   // This hub's own service, starting again every 5 s, may hold its database just as init looks: a program seen on
   // the port is still what's in the way.
   const restarting = hubAction(true, "same", [4242], "other", "172.17.0.4:4790", "/h", { by: "nc (pid 9)" });
@@ -119,7 +122,7 @@ test.skipIf(process.platform !== "linux")("init names the program on the workspa
     expect(out.code, out.said).toBe(1);
     expect(out.said).toContain(`127.0.0.2:${server.port} is in use by something else: `);
     expect(out.said).toContain(`(pid ${process.pid})`);
-    expect(out.said).toMatch(new RegExp(`fleetd init --listen 127\\.0\\.0\\.2:\\d+ --url http://127\\.0\\.0\\.2:\\d+ \\(paired`));
+    expect(out.said).toMatch(new RegExp(`fleetd init --listen 127\\.0\\.0\\.2:\\d+ --url http://127\\.0\\.0\\.2:\\d+ --no-service \\(paired`));
     expect(out.said).not.toContain("127.0.0.1:4791");
   } finally {
     server.stop(true);

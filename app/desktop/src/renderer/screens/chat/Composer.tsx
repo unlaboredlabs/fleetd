@@ -19,7 +19,7 @@ import type { AttachmentRef, ChatAbout } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
-import { selectCanStop, selectLeadAtWork, selectLeadWorking } from "../../src/data/selectors";
+import { selectCanStop, selectLeadAtWork, selectLeadHeld, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
@@ -59,6 +59,8 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
+  // Its start held or its turn parked at a usage limit: a message waits for that, not for its next step.
+  const held = useData(selectLeadHeld(projectKey));
   // The hub restarting: what is sent waits for it, and the box says so.
   const away = useData((d) => ((d.hub.phase === "connecting" || d.hub.phase === "retrying") && d.hub.restarting !== undefined ? hubName(d.hub.hub) : undefined));
   const { chat } = useDataLayer();
@@ -328,7 +330,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           ref={box}
           className={c.input}
           aria-label="Message the lead"
-          placeholder={placeholder(working, away, about?.title)}
+          placeholder={placeholder(working === true && !held, away, about?.title)}
           rows={1}
           value={draft.text}
           autoFocus={autoFocus}

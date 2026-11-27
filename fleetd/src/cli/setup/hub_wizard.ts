@@ -495,7 +495,7 @@ export function cloneFailed(full: string, path: string, ghOk: boolean, installGh
 }
 
 async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: string | undefined, ghOk: boolean): Promise<string | undefined> {
-  const title = "project";
+  const title = "bot";
   let existing: { title: string; machineId: string }[] = [];
   try {
     const db = openHub(opts.home);
@@ -741,7 +741,7 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
   } else {
     list.skipped("workers", "need the workspace running");
     list.sectionHeader("Bot");
-    list.skipped("project", "needs the workspace running");
+    list.skipped("bot", "needs the workspace running");
   }
   list.sectionHeader("App & setup");
   const paired = await app(opts, ui, list, summary);

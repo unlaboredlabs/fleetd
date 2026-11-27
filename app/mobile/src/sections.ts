@@ -107,6 +107,17 @@ export const sectionLines = (rows: readonly ChatRow[], sections: readonly Sectio
   return lines;
 };
 
+/**
+ * Whether a hairline runs under the list's line at `index`: only between two chats, as iOS's sidebar lists draw them,
+ * and never on either side of the chat open beside the list (`open`), whose rounded highlight stands on its own.
+ */
+export const lineBelow = (lines: readonly { readonly t: string; readonly row?: { readonly key: Key } }[], index: number, open: Key | undefined): boolean => {
+  const here = lines[index];
+  const next = lines[index + 1];
+  if (here === undefined || next === undefined || here.t === "head" || here.t === "section" || next.t === "head" || next.t === "section") return false;
+  return open === undefined || (here.row?.key !== open && next.row?.key !== open);
+};
+
 /** What VoiceOver says of a label: its name, folded or open, and what a folded one holds. */
 export const labelWords = (line: Extract<SectionLine, { t: "section" }>): string =>
   line.folded ? [line.section.name, "folded", line.count === 1 ? "1 chat" : `${String(line.count)} chats`, ...(line.dot ? ["something new inside"] : [])].join(", ") : `${line.section.name}, open`;

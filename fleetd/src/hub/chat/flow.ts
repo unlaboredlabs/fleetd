@@ -428,12 +428,22 @@ async function go(hub: Hub, r: ProjectRef, message: ChatMessage, now: boolean): 
             : "turn";
       return { message: sent(hub, message, delivery) };
     } catch (error) {
-      const why = error instanceof Error ? error.message : String(error);
-      return { message, waiting: `Not sent yet: ${why}. It goes in as soon as it can.` };
+      return { message, waiting: notSentYet(error) };
     }
   } finally {
     release();
   }
+}
+
+/**
+ * Why a held message isn't in yet, its first sentence whole (the apps show only that): the reason, and that it goes in
+ * by itself; then the fix, when the refusal names one.
+ */
+export function notSentYet(error: unknown): string {
+  const said = (error instanceof Error ? error.message : String(error)).trim();
+  const why = (/^.+?[.!?](?=\s|$)/u.exec(said)?.[0] ?? said).replace(/[.\s]+$/u, "");
+  const fix = typeof error === "object" && error !== null ? (error as { fix?: unknown }).fix : undefined;
+  return `Not sent yet: ${why}; it goes in by itself once that's fixed.${typeof fix === "string" && fix !== "" ? ` ${fix}` : ""}`;
 }
 
 /** `go`'s answer, with why a message the offline queue took waits there: the chat shows it under the message. */

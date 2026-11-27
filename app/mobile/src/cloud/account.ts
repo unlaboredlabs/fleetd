@@ -387,6 +387,16 @@ export const shownAfterSignIn = (hubs: readonly KeptHub[], picked: string | unde
   (picked === undefined ? undefined : hubs.find((h) => h.cloud === true && h.hub === picked)) ?? hubs.find((h) => h.cloud === true) ?? null;
 
 /**
+ * What shows once the hub shown goes (Disconnect, a refused key): the next one kept, or the pairing screens (null). A
+ * refused hub paired again from its own link goes to the pairing screens whatever else is kept, so the link's code pairs
+ * it there rather than another hub showing instead. `hubs`: those kept, without the one gone.
+ */
+export const afterForget = (kept: readonly KeptHub[], gone: string | undefined, pairAgain: boolean): { next: KeptHub | null; hubs: KeptHub[] } => {
+  const hubs = kept.filter((h) => h.hub !== gone);
+  return { next: pairAgain ? null : (hubs[0] ?? null), hubs };
+};
+
+/**
  * The hubs kept once signed in: the person's own hubs stay, the account's teams replace any it had before. `dropped`,
  * each hub whose key goes: a team's key a new one replaces, and the earlier teams this sign-in didn't bring.
  */

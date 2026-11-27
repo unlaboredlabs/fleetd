@@ -83,7 +83,7 @@ test("an enroll token links once; the machine is online once its runner answers"
   const late = new FakeNode(url, { machineId: "worker-2", enrollToken: token });
   expect(await late.closed).toEqual({
     code: 4001,
-    reason: "enrollment token was already used. Fix: on the workspace's machine, run fleetd pair --worker worker-2 for a new code",
+    reason: "this code was already used. Fix: on the workspace's machine, run fleetd pair --worker worker-2 for a new code",
   });
   again.close();
   await again.closed;

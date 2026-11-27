@@ -260,3 +260,16 @@ export const createRefusal = (o: {
   if (o.typedBot !== undefined) return `${tilde(o.typedBot.workspaceRoot)} is already the bot ${o.typedBot.title}: open it from Chats.`;
   return o.block ?? (o.named === "" ? "Name it, or add a repo." : undefined);
 };
+
+/**
+ * The machines a new bot may go to that are online now: as the app's machines say (their events keep them), over what
+ * the workspace's list said when read, at open or as the link came back, maybe a moment before a machine linked again.
+ */
+export const onlineNow = <W extends { readonly machineId: string; readonly online: boolean }>(workers: readonly W[], machines: readonly Machine[]): W[] =>
+  workers
+    .map((w) => {
+      const m = machines.find((x) => x.machineId === w.machineId);
+      return m === undefined ? w : { ...w, online: m.status !== "offline" };
+    })
+    .filter((w) => w.online);
+

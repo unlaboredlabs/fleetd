@@ -6,7 +6,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deletedLine, enrolled, markRemoved } from "../../src/node/index.ts";
 import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
-import { BULK_BYTES, BULK_DEAD_MS, compresses, QUIET_DEAD_MS, QUIET_PROBE_MS, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
+import { BULK_BYTES, BULK_DEAD_MS, compresses, JoinUnreachable, QUIET_DEAD_MS, QUIET_PROBE_MS, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
 import { CapsArea } from "../../src/node/api.ts";
 import type { HubFrame } from "../../src/node/wire.ts";
@@ -155,6 +155,29 @@ test("the enrolling welcome's machine id reaches onEnrolled: the workspace's, el
     hub.server.stop(true);
     home.done();
   }
+});
+
+// A join to a workspace that is down, or to a wrong address, waited forever with nothing said (fleetd init --join spun on
+// "Joining …"). A join gives up once its wait is over, saying the code is still unused; an enrolled node never does.
+test("a join whose workspace never answers gives up after its wait; its code stays unused", async () => {
+  const home = tempHome();
+  const closed = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const url = `http://127.0.0.1:${closed.port}`;
+  closed.stop(true);
+  const started = Date.now();
+  const fatal = await runNode(options(url, home.dir, { enrollToken: "fle_token", joinWithinMs: 300 }));
+  expect(fatal).toBeInstanceOf(JoinUnreachable);
+  expect(Date.now() - started).toBeLessThan(10_000);
+  expect(fatal?.message).toStartWith(`can't reach the workspace at ${url} (connection refused or failed), so this machine hasn't joined and its code is still unused. Fix: `);
+  expect(fatal?.removed).toBe(false);
+  // Enrolled (no code), the node keeps trying for as long as it takes.
+  const stop = new AbortController();
+  const enrolled = runNode(options(url, home.dir, { joinWithinMs: 300, signal: stop.signal }));
+  const ended = await Promise.race([enrolled.then(() => "ended"), Bun.sleep(1500).then(() => "trying")]);
+  expect(ended).toBe("trying");
+  stop.abort();
+  await enrolled;
+  home.done();
 });
 
 test("a refusal (4001, 4002) ends the loop with the workspace's reason; retrying wouldn't help", async () => {

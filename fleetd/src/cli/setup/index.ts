@@ -78,9 +78,11 @@ export function hubAction(
 ): HubAction {
   const pids = holders.join(", ");
   // Never onto another address: a hub on the LAN or the tailnet moved to 127.0.0.1 is out of its devices' reach.
+  // --no-service has no service to start again by itself, and the move keeps --no-service.
+  const move = `${taken.move ?? `fleetd init --listen ${listen.slice(0, listen.lastIndexOf(":") + 1)}<free port>`}${withService ? "" : " --no-service"}`;
   const busy = (what: string): Failure => ({
     message: `${listen} is in use by ${what}${taken.by === undefined ? "" : `: ${taken.by}`}`,
-    fix: `stop it, and the workspace's service starts again by itself within seconds; or move the workspace to another port on the same address: ${taken.move ?? `fleetd init --listen ${listen.slice(0, listen.lastIndexOf(":") + 1)}<free port>`} (paired devices then reach it there)`,
+    fix: `${withService ? "stop it, and the workspace's service starts again by itself within seconds" : "stop it, then run fleetd init --no-service again"}; or move the workspace to another port on the same address: ${move} (paired devices then reach it there)`,
   });
   const held = holders.length > 0;
   // A program seen on the port that isn't this home's hub: so whatever this hub's service does (it starts again every

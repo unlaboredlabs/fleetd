@@ -4,10 +4,10 @@
 // bot, each opening every figure it has (UsageDetail). On fleetd cloud, computer time and spend join them.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Path, Text as SvgText } from "react-native-svg";
 import type { WorkspaceUsageCounts, WorkspaceUsageOutput } from "../../../desktop/src/shared/contracts";
-import { before, change, columnsOf, count, hours, idle, money, onCloud, PERIODS, ticks, wait, type Column, type Period } from "../desktop";
+import { against, change, columnsOf, count, hours, idle, money, onCloud, PERIODS, ticks, wait, type Column, type Period } from "../desktop";
 import { useHub, type SettingsParams, type SettingsProps } from "../hubContext";
 import { deviceZone } from "../zone";
 import { shape, space, type, useTheme, type Palette } from "../theme";
@@ -65,9 +65,9 @@ function Body({ t, usage, days, open }: { t: Palette; usage: WorkspaceUsageOutpu
   const currency = usage.currency ?? "USD";
   const tot = usage.total;
   const was = usage.previous;
-  const vs = (now: number | undefined, prev: number | undefined, better: "up" | "down" | "none", as?: "share" | "wait") => {
+  const vs = (now: number | undefined, prev: number | undefined, better: "up" | "down" | "none", as?: "count" | "share" | "wait") => {
     const c = change(now, prev, better, as);
-    return c === undefined ? undefined : { detail: `${c.text} against ${before(days)}`, color: c.tone === "success" ? t.success : c.tone === "danger" ? t.danger : undefined };
+    return c === undefined ? undefined : { detail: against(c, days), color: c.tone === "success" ? t.success : c.tone === "danger" ? t.danger : undefined };
   };
   const row = (title: string, value: string, d: ReturnType<typeof vs>) => (
     <ListRow key={title} title={title} value={value} {...(d === undefined ? {} : { detail: d.detail, ...(d.color === undefined ? {} : { detailColor: d.color }) })} chevron={false} />
@@ -84,16 +84,16 @@ function Body({ t, usage, days, open }: { t: Palette; usage: WorkspaceUsageOutpu
         <ListRow title="Approvals waiting" value={count(waiting)} chevron={false} />
       </ListSection>
       <ListSection header={`Last ${days} days`}>
-        {row("Orders started", count(tot.orders), vs(tot.orders, was.orders, "up"))}
-        {row("PRs merged", count(tot.merged), vs(tot.merged, was.merged, "up"))}
+        {row("Orders started", count(tot.orders), vs(tot.orders, was.orders, "up", "count"))}
+        {row("PRs merged", count(tot.merged), vs(tot.merged, was.merged, "up", "count"))}
         {row("Ask to merge", tot.askToMergeMs === undefined ? "—" : wait(tot.askToMergeMs), vs(tot.askToMergeMs, was.askToMergeMs, "down", "wait"))}
         {cloud ? row("Spend", money(tot.spendCents ?? 0, currency), vs(tot.spendCents, was.spendCents, "none")) : null}
         {cloud ? row("Computer time", hours(tot.computerMs ?? 0), vs(tot.computerMs, was.computerMs, "none")) : null}
         {row("Agent hours", hours(tot.agentMs), vs(tot.agentMs, was.agentMs, "none"))}
-        {row("Agents run", count(tot.agents), vs(tot.agents, was.agents, "none"))}
-        {row("Messages to leads", count(tot.messages), vs(tot.messages, was.messages, "none"))}
-        {row("Approvals answered", count(tot.approvals), vs(tot.approvals, was.approvals, "none"))}
-        {row("Failed or stopped", count(tot.failed), vs(tot.failed, was.failed, "down"))}
+        {row("Agents run", count(tot.agents), vs(tot.agents, was.agents, "none", "count"))}
+        {row("Messages to leads", count(tot.messages), vs(tot.messages, was.messages, "none", "count"))}
+        {row("Approvals answered", count(tot.approvals), vs(tot.approvals, was.approvals, "none", "count"))}
+        {row("Failed or stopped", count(tot.failed), vs(tot.failed, was.failed, "down", "count"))}
       </ListSection>
       <Chart t={t} usage={usage} />
       <ListSection header="People" footer="A person's orders, agents, hours and merges are those of the orders they started.">
@@ -137,12 +137,14 @@ const PLOT_H = 96;
 const LEFT = 28;
 const BOTTOM = 18;
 
-/** Orders started beside PRs merged, a column a day (a week past a month), as the desktop's first chart. */
+/**
+ * Orders started beside PRs merged, a column a day (a week past a month), as the desktop's first chart. As wide as its
+ * card, measured: the window is wider than the card when Settings sits beside the chats list (an open Duo, an iPad).
+ */
 function Chart({ t, usage }: { t: Palette; usage: WorkspaceUsageOutput }) {
-  const { width: screen } = useWindowDimensions();
+  const [width, setWidth] = useState(0);
   const columns = useMemo(() => columnsOf(usage.days), [usage.days]);
   const weekly = columns.length < usage.days.length;
-  const width = Math.min(screen, 600) - 2 * space.lg - 2 * space.lg;
   const plotW = width - LEFT;
   const slot = columns.length === 0 ? 0 : plotW / columns.length;
   const bar = Math.max(1.5, Math.min(10, (slot - 3) / 2));
@@ -172,33 +174,37 @@ function Chart({ t, usage }: { t: Palette; usage: WorkspaceUsageOutput }) {
             </View>
           ))}
         </View>
-        <Svg width={width} height={4 + PLOT_H + BOTTOM} accessibilityLabel={`${weekly ? "Orders and merges per week" : "Orders and merges per day"}`}>
-          {axis.map((v) => (
-            <Line key={v} x1={LEFT} x2={width} y1={4 + PLOT_H - px(v)} y2={4 + PLOT_H - px(v)} stroke={t.separator} strokeWidth={v === 0 ? 1 : 0.5} />
-          ))}
-          {[0, axis.at(-1) ?? 0].map((v) => (
-            <SvgText key={`t${v}`} x={LEFT - 6} y={4 + PLOT_H - px(v) + 4} fontSize={11} fill={t.secondary} textAnchor="end">
-              {count(v)}
-            </SvgText>
-          ))}
-          {columns.map((c, i) => {
-            const x0 = LEFT + i * slot + (slot - (2 * bar + 1.5)) / 2;
-            return [c.orders, c.merged].map((v, j) =>
-              v <= 0 ? null : <Path key={`${c.from}${j}`} d={rounded(x0 + j * (bar + 1.5), Math.max(1, px(v)))} fill={j === 0 ? colors[0] : colors[1]} />,
-            );
-          })}
-          {[...new Set(shown)].map((i) => {
-            const c = columns[i];
-            if (c === undefined) return null;
-            const anchor = i === 0 ? "start" : i === columns.length - 1 ? "end" : "middle";
-            const x = i === 0 ? LEFT + i * slot : i === columns.length - 1 ? LEFT + (i + 1) * slot : LEFT + i * slot + slot / 2;
-            return (
-              <SvgText key={`x${i}`} x={x} y={4 + PLOT_H + 14} fontSize={11} fill={t.secondary} textAnchor={anchor}>
-                {label(c)}
-              </SvgText>
-            );
-          })}
-        </Svg>
+        <View style={{ height: 4 + PLOT_H + BOTTOM }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
+          {width <= 0 ? null : (
+            <Svg width={width} height={4 + PLOT_H + BOTTOM} accessibilityLabel={`${weekly ? "Orders and merges per week" : "Orders and merges per day"}`}>
+              {axis.map((v) => (
+                <Line key={v} x1={LEFT} x2={width} y1={4 + PLOT_H - px(v)} y2={4 + PLOT_H - px(v)} stroke={t.separator} strokeWidth={v === 0 ? 1 : 0.5} />
+              ))}
+              {[0, axis.at(-1) ?? 0].map((v) => (
+                <SvgText key={`t${v}`} x={LEFT - 6} y={4 + PLOT_H - px(v) + 4} fontSize={11} fill={t.secondary} textAnchor="end">
+                  {count(v)}
+                </SvgText>
+              ))}
+              {columns.map((c, i) => {
+                const x0 = LEFT + i * slot + (slot - (2 * bar + 1.5)) / 2;
+                return [c.orders, c.merged].map((v, j) =>
+                  v <= 0 ? null : <Path key={`${c.from}${j}`} d={rounded(x0 + j * (bar + 1.5), Math.max(1, px(v)))} fill={j === 0 ? colors[0] : colors[1]} />,
+                );
+              })}
+              {[...new Set(shown)].map((i) => {
+                const c = columns[i];
+                if (c === undefined) return null;
+                const anchor = i === 0 ? "start" : i === columns.length - 1 ? "end" : "middle";
+                const x = i === 0 ? LEFT + i * slot : i === columns.length - 1 ? LEFT + (i + 1) * slot : LEFT + i * slot + slot / 2;
+                return (
+                  <SvgText key={`x${i}`} x={x} y={4 + PLOT_H + 14} fontSize={11} fill={t.secondary} textAnchor={anchor}>
+                    {label(c)}
+                  </SvgText>
+                );
+              })}
+            </Svg>
+          )}
+        </View>
       </View>
     </View>
   );

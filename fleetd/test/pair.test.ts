@@ -84,7 +84,7 @@ test("POST /pair trades a code for a human key of the owner, says where the work
   expect(again.status).toBe(401);
   expect(await again.json()).toEqual({
     code: "pair_code_invalid",
-    message: "unknown or already used pairing code",
+    message: "This pairing code was already used, or isn't one this workspace made.",
     fix: "Run `fleetd pair` on the workspace's machine for a new code, or ask whoever invited you for a new invite.",
   });
   const bad = (await pair(post("/pair", "{}"), ctx(hub))) as Response;

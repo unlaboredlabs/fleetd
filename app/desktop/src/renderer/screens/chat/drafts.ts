@@ -183,6 +183,26 @@ export function persistDrafts(drafts: Drafts, storage: Pick<Storage, "setItem" |
   };
 }
 
+/**
+ * Another tab's or window's words, as its storage writes say (the `storage` event, never fired in the window that
+ * wrote): a project's words it changed (sent, cleared, typed) replace this one's, so a draft sent there doesn't wait
+ * here to be sent twice. Projects it didn't change keep this one's words, and files stay. Returns the unsubscribe.
+ */
+export function followDrafts(drafts: Drafts, target: Pick<Window, "addEventListener" | "removeEventListener">): () => void {
+  const on = (e: StorageEvent) => {
+    if (e.key !== STORAGE_KEY) return;
+    const before = readSaved({ getItem: () => e.oldValue });
+    const after = readSaved({ getItem: () => e.newValue });
+    for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (before[k] === after[k]) continue;
+      const text = after[k] ?? "";
+      drafts.set(k, (d) => (d.text === text ? d : { ...d, text }));
+    }
+  };
+  target.addEventListener("storage", on);
+  return () => target.removeEventListener("storage", on);
+}
+
 const all = new WeakMap<object, Drafts>();
 const flushes = new Set<() => void>();
 
@@ -202,6 +222,7 @@ export function useDrafts(): Drafts {
   if (d === undefined) {
     d = createDrafts(layer, readSaved(window.localStorage));
     flushes.add(persistDrafts(d, window.localStorage));
+    followDrafts(d, window);
     all.set(layer, d);
     const { store } = d;
     // Files outlive no reload: the web page waits for them before it switches builds.

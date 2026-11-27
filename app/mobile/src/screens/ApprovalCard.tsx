@@ -51,7 +51,9 @@ export function ApprovalCard({
   const risk = view.risk === undefined ? undefined : RISK[view.risk];
   const shown = view.fields.filter((f) => open || f.more !== true);
   const hidden = view.fields.some((f) => f.more === true);
-  useAnnounce(error?.message);
+  // What went wrong and what to do: "Not connected to the workspace. Wait for the connection to come back."
+  const failed = error === undefined ? undefined : `${error.message} ${error.fix ?? ""}`.trim();
+  useAnnounce(failed);
   const answer = (decision: "approve" | "deny") => {
     haptics.tap();
     void onAnswer(decision).then((ok) => {
@@ -110,9 +112,9 @@ export function ApprovalCard({
           <Icon name="chevronDown" size={12} color={t.accent} weight="semibold" style={open ? styles.flip : undefined} />
         </Pressable>
       )}
-      {error === undefined ? null : (
+      {failed === undefined ? null : (
         <Text style={[type.footnote, { color: t.danger }]} accessibilityLiveRegion="polite">
-          {error.message}
+          {failed}
         </Text>
       )}
       <View style={styles.actions}>
