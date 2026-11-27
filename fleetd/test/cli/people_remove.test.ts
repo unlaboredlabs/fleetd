@@ -31,7 +31,7 @@ test("people remove hands what waited on them to the owner and forgets their sub
     const after = open();
     const messages = chat(after).page(r, undefined, undefined, 50).messages;
     expect(messages.find((m) => m.messageId === question.messageId)?.for).toEqual({ personId: owner.personId, name: owner.name });
-    expect(messages.at(-1)?.text).toBe(`Dana Park was removed from the workspace, so what waited on them waits on ${owner.name} now.`);
+    expect(messages.at(-1)?.text).toBe(`[Dana Park](person:${dana.personId}) was removed from the workspace, so what waited on them waits on [${owner.name}](person:${owner.personId}) now.`);
     expect(accounts(after).subscription(dana.personId)).toBeUndefined();
     expect(people(after).get(dana.personId)?.removedAt).toBeDefined();
     // Gone already: said, not removed twice.

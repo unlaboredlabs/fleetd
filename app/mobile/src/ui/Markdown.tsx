@@ -4,7 +4,7 @@
 // stand, as in Messages: holding one opens its menu, whose Select Text has them.
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
 import { fenceView, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
 import { bubble, fitKey, fitWidth, wordsMax } from "../bubble";
@@ -309,6 +309,9 @@ function Inlines({ nodes, ink, onAccent, small = false }: { nodes: readonly Inli
           case "text":
             // fleetd's ids in the words by name (Names): an agent's or an order's title.
             return <Names key={i} text={n.text} />;
+          case "person":
+            // A person's name as written: "Check T6168" names no agent.
+            return <Fragment key={i}>{n.text}</Fragment>;
           case "code": {
             const kind = refOf(n.text);
             if (kind === "agent" || kind === "order") return <Name key={i} of={{ id: n.text.trim(), kind, opens: false }} />;

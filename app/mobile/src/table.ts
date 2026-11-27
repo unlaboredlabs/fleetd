@@ -34,7 +34,7 @@ export interface Word {
 
 // Code is one word: a cell keeps `fleetd version` on one line, as a command reads.
 const words = (nodes: readonly Inline[]): Word[] =>
-  nodes.flatMap((n) => (n.t === "code" ? [{ text: n.text, code: true }] : n.t === "text" ? n.text.split(/\s+/u).filter((w) => w !== "").map((text) => ({ text, code: false })) : words(n.children)));
+  nodes.flatMap((n) => (n.t === "code" ? [{ text: n.text, code: true }] : n.t === "text" || n.t === "person" ? n.text.split(/\s+/u).filter((w) => w !== "").map((text) => ({ text, code: false })) : words(n.children)));
 
 /** The widest-looking word in a column's cells, to measure: monospace counts wider. */
 export const longestWord = (cells: ReadonlyArray<readonly Inline[]>): Word => {

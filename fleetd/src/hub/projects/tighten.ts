@@ -3,6 +3,7 @@
 // order). Like a person's change it is an admin's: the lead acts for the person its turn answers (bot_admin.ts). The
 // change posts one line in the chat with no Undo, since undoing it would loosen it: a person does that in Settings.
 import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
+import { mention } from "../people/mention.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { requireLeadForAdmin } from "../api/bot_admin.ts";
 import type { Hub } from "../api/hub.ts";
@@ -53,7 +54,7 @@ export function applyTighten(hub: Hub, project: ProjectSummary, change: TightenC
   if (change.merges !== undefined && whoMergesTo(hub, project, change.merges, by)) said.push(`Who merges: ${MERGES_WORDS[change.merges]}`);
   if (change.mergeMode !== undefined && mergeModeTo(hub, project, change.mergeMode, by)) said.push(`How PRs merge: ${MERGE_MODE_WORDS[change.mergeMode]}`);
   if (said.length === 0) return undefined;
-  const asker = person === undefined ? "" : ` ${person.name} asked for it.`;
+  const asker = person === undefined ? "" : ` ${mention(person)} asked for it.`;
   const line = `Made stricter: ${said.join("; ")}`;
   chat(hub).add(r, { author: "system", text: `${line}.${asker} A person loosens it in the bot's settings.` });
   return line;

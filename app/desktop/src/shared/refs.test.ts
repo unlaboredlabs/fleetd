@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasRefs, refOf, refWord, splitRefs, type Ref } from "./refs";
+import { hasRefs, refOf, refWord, shownWords, splitRefs, type Ref } from "./refs";
 
 const ids = (text: string): string[] => splitRefs(text).flatMap((r) => (typeof r === "string" ? [] : [r.id]));
 
@@ -13,6 +13,19 @@ describe("splitRefs", () => {
       { id: "T12", kind: "agent", opens: false },
       "'s PR.",
     ]);
+  });
+
+  it("reads a person's mention as their name, an id-like word in it included, and the ids around it as ids", () => {
+    expect(splitRefs("[Check T6168](person:p_ffffffff) asked for it.")).toEqual(["Check T6168 asked for it."]);
+    expect(splitRefs("T12 stopped. [Ada \\[ops\\]](person:p_1) asked, W3 next.")).toEqual([
+      { id: "T12", kind: "agent", opens: true },
+      " stopped. Ada [ops] asked, ",
+      { id: "W3", kind: "order", opens: false },
+      " next.",
+    ]);
+    expect(shownWords("By [Check T6168](person:p_1).")).toBe("By Check T6168.");
+    // Any other link keeps its words for the markdown to read.
+    expect(ids("[T12](https://example.com)")).toEqual(["T12"]);
   });
 
   it("leaves text with no id as one run", () => {

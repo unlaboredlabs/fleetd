@@ -267,7 +267,7 @@ test("a person stops an agent from its panel: cancelled at once, its slot free, 
   expect(checklistRead(k.hub.db, P).items.map((i) => i.state)).toEqual(["todo", "doing", "done"]);
   expect(chat(k.hub).page(P, undefined, undefined, 50).messages.at(-1)).toMatchObject({
     author: "system",
-    text: "Ada stopped “Stuck” after 1m 12s. Its item in the plan is back under To do.",
+    text: "[Ada](person:p_aaaaaaaa) stopped “Stuck” after 1m 12s. Its item in the plan is back under To do.",
   });
   expect(out.task.result?.tail).toBe("Stopped by the human.");
   expect(k.t.get("T1")?.state).toBe("cancelled");

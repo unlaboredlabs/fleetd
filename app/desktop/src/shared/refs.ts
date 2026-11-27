@@ -75,24 +75,59 @@ export const refOf = (text: string): RefKind | undefined => {
   return m === null ? undefined : kindOf(m[1] ?? "", m[2] ?? "");
 };
 
-/** `text` as runs of words and ids, in order; text with no id is one run, itself. */
+// A person fleetd names in a line of its own, as a mention (the hub's people/mention.ts): `[Ada](person:p_1)`.
+// It reads as the name alone, and nothing in the name is an id: "Check T6168" is a person, not an agent.
+const MENTION = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(person:[\w-]*\)/gu;
+const unescaped = (name: string) => name.replace(/\\([\\[\]])/gu, "$1");
+
+/** The person's mention `text` starts with: their name, and how long the mention is. */
+export const mentionAt = (text: string): { name: string; length: number } | undefined => {
+  const m = new RegExp(`^${MENTION.source}`, "u").exec(text);
+  return m === null ? undefined : { name: unescaped(m[1] ?? ""), length: m[0].length };
+};
+
+/**
+ * `text` as runs of words and ids, in order; text with no id is one run, itself. A person's mention is in the words as
+ * their name.
+ */
 export function splitRefs(text: string): Array<string | Ref> {
+  const named = [...text.matchAll(MENTION)].map((m) => ({ start: m.index, end: m.index + m[0].length, name: unescaped(m[1] ?? "") }));
   const out: Array<string | Ref> = [];
+  const say = (words: string) => {
+    if (words === "") return;
+    const at = out.length - 1;
+    if (typeof out[at] === "string") out[at] += words;
+    else out.push(words);
+  };
   let last = 0;
+  // The words from `last` to `end`, each mention in them as its name.
+  const wordsTo = (end: number) => {
+    for (const n of named) {
+      if (n.start < last || n.start >= end) continue;
+      say(text.slice(last, n.start));
+      say(n.name);
+      last = n.end;
+    }
+    say(text.slice(last, end));
+    last = end;
+  };
   for (const m of text.matchAll(REF)) {
+    if (named.some((n) => m.index >= n.start && m.index < n.end)) continue;
     const kind = kindOf(m[1] ?? "", m[2] ?? "");
     if (kind === undefined) continue;
-    const before = text.slice(last, m.index);
-    if (before !== "") out.push(before);
+    wordsTo(m.index);
     // What comes just before it: nothing, or the end of a sentence or line.
     const near = text.slice(Math.max(0, m.index - 8), m.index);
     const opens = (m.index <= 8 && near.trim() === "") || /(?:[.!?:]\s+|\n\s*)$/u.test(near);
     out.push({ id: m[0], kind, opens });
     last = m.index + m[0].length;
   }
-  if (last < text.length) out.push(text.slice(last));
+  wordsTo(text.length);
   return out.length === 0 ? [text] : out;
 }
+
+/** `text`'s words as the apps read them: each person's mention as their name, ids as written. */
+export const shownWords = (text: string): string => splitRefs(text).map((r) => (typeof r === "string" ? r : r.id)).join("");
 
 /** Whether `text` holds an id the apps would show as a chip. */
 export const hasRefs = (text: string): boolean => splitRefs(text).some((r) => typeof r !== "string");

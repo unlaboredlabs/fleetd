@@ -52,6 +52,7 @@ import {
   waitingIn,
   waitsFor,
 } from "./rules.ts";
+import { mention } from "../people/mention.ts";
 import { ownerOn } from "../people/store.ts";
 
 /** How many of the latest lead and people's messages a question for one person may still wait in. */
@@ -818,7 +819,7 @@ export class Chat {
         this.put(m);
         this.announce(m);
       }
-      this.systemLine(r, `${from.name} was removed from the workspace, so what waited on them waits on ${to.name} now.`);
+      this.systemLine(r, `${mention(from)} was removed from the workspace, so what waited on them waits on ${mention(to)} now.`);
       changed.push(r);
     }
     return changed;

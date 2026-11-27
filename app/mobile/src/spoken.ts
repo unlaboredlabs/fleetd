@@ -42,7 +42,7 @@ export const bubbleActions = (source: string): BubbleAction[] => {
     for (const x of xs) {
       if (x.t === "link") {
         if (!urls.includes(x.url)) urls.push(x.url);
-      } else if (x.t !== "text" && x.t !== "code") inline(x.children);
+      } else if (x.t !== "text" && x.t !== "code" && x.t !== "person") inline(x.children);
     }
   };
   const block = (b: Block): void => {

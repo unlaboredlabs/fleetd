@@ -12,14 +12,20 @@ export function shortElapsed(ms: number): string {
 
 export const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** A line split into text, `code` and app links (as prLinks writes them); an unclosed backtick stays text. */
+// A person fleetd names in its line (shared/refs.ts): `[Ada](person:p_1)`, kept whole for RefText to show as the name.
+const MENTION = /\[(?:\\.|[^\\\]\n])*\]\(person:[\w-]*\)/;
+
+/**
+ * A line split into text, `code` and app links (as prLinks writes them); an unclosed backtick stays text. A person's
+ * mention is text, whole.
+ */
 export function codeRuns(line: string): Array<{ readonly code: boolean; readonly text: string; readonly href?: string }> {
   const out: Array<{ code: boolean; text: string; href?: string }> = [];
-  const re = /`([^`]+)`|\[([^\]\n]+)\]\((#\/[^)\s]*)\)/g;
+  const re = new RegExp(`(${MENTION.source})|\`([^\`]+)\`|\\[([^\\]\\n]+)\\]\\((#\\/[^)\\s]*)\\)`, "g");
   let last = 0;
   for (const m of line.matchAll(re)) {
     if (m.index > last) out.push({ code: false, text: line.slice(last, m.index) });
-    out.push(m[3] === undefined ? { code: true, text: m[1] ?? "" } : { code: false, text: m[2] ?? "", href: m[3] });
+    out.push(m[1] !== undefined ? { code: false, text: m[1] } : m[4] === undefined ? { code: true, text: m[2] ?? "" } : { code: false, text: m[3] ?? "", href: m[4] });
     last = m.index + m[0].length;
   }
   if (last < line.length) out.push({ code: false, text: line.slice(last) });
@@ -27,8 +33,8 @@ export function codeRuns(line: string): Array<{ readonly code: boolean; readonly
 }
 
 // Machine tokens in agent text (ids, hashes, keys): set as code, the machine voice, so they never read as prose.
-// Mirrors the QA gate's raw-text detectors (qa/dom/text-rules.ts).
-const PROTECT = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\]\([^)\n]*\)|<[^>\s]+>|https?:\/\/[^\s)]+|(?:^|\n)(?: {4}|\t)[^\n]*/g;
+// Mirrors the QA gate's raw-text detectors (qa/dom/text-rules.ts). A person's name in a mention is never one.
+const PROTECT = new RegExp(`${MENTION.source}|${/```[\s\S]*?(?:```|$)|`[^`\n]*`|\]\([^)\n]*\)|<[^>\s]+>|https?:\/\/[^\s)]+|(?:^|\n)(?: {4}|\t)[^\n]*/.source}`, "g");
 // Ids and hashes count anywhere (as the gate's \\b rules do); keys only as whole tokens.
 const TOKEN =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[0-9a-f]{7,}\b|(?<![\w./`-])(?:[a-z0-9][a-z0-9_-]*(?:\.[a-z0-9_-]+)+|[a-z][a-z0-9]*(?:_[a-z0-9]+)+|[a-z0-9]+(?:-[a-z0-9]+){2,})(?![\w/`-])/gi;

@@ -10,6 +10,7 @@ import { DataProvider } from "../../src/data/react";
 import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { Markdown, preloadMarkdown, RefsContext, RefText } from "../../ui";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
+import { InlineText } from "../chat/text";
 import { renderRef } from "./RefChip";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -145,8 +146,31 @@ it("shows ids in a message's markdown as chips, a code span of one id too, and l
   expect(host.querySelector("pre")?.textContent).toContain("T5945");
 });
 
+it("shows a person fleetd names as their name, never an id in it as an agent, in words and in markdown", async () => {
+  preloadMarkdown();
+  const line = "Made stricter: Approvals: Ask me about everything. [Check T5945](person:p_ffffffff) asked for it. T5945 finished.";
+  await mount(<RefText text={line} />);
+  expect(host.textContent).toBe("Made stricter: Approvals: Ask me about everything. Check T5945 asked for it. Get started home finished.");
+  expect(chips().map((c) => c[0])).toEqual(["T5945"]);
+  act(() => root?.unmount());
+  await mount(<Markdown source={line} />);
+  await vi.waitFor(async () => {
+    await settle();
+    expect(host.textContent).toContain("Check T5945 asked for it. Get started home finished.");
+  });
+  expect(chips().map((c) => c[0])).toEqual(["T5945"]);
+  expect(host.querySelector("a[href^='person:']")).toBeNull();
+});
+
+it("shows a person's machine-like name as their name in a chat row's one line, never markup or their id", async () => {
+  await mount(<InlineText text="[ada.park](person:p_aaaaaaaa) stopped T5945. [Check T5945](person:p_b) asked." />);
+  expect(host.textContent).toBe("ada.park stopped Get started home. Check T5945 asked.");
+  expect(chips().map((c) => c[0])).toEqual(["T5945"]);
+  expect(host.querySelector("code")).toBeNull();
+});
+
 it("shows ids as written with no app around it", () => {
   root = createRoot(host);
-  act(() => root?.render(<RefText text="T5945 finished" />));
-  expect(host.textContent).toBe("T5945 finished");
+  act(() => root?.render(<RefText text="T5945 finished, [Check T6168](person:p_1) says" />));
+  expect(host.textContent).toBe("T5945 finished, Check T6168 says");
 });

@@ -91,7 +91,7 @@ test("an admin's ask makes approvals and merges stricter, with one line in the c
   );
   const [line] = lines();
   expect(line).toBe(
-    "Made stricter: Approvals: Ask me about everything; Who merges: You merge; How PRs merge: Test, then merge. Ada asked for it. A person loosens it in the bot's settings.",
+    "Made stricter: Approvals: Ask me about everything; Who merges: You merge; How PRs merge: Test, then merge. [Ada](person:p-ada) asked for it. A person loosens it in the bot's settings.",
   );
   expect(chat(hub).page(PROJECT, undefined, undefined, 50).messages.find((m) => m.text === line)?.setupChanged).toBeUndefined();
   // The apps hear it as a person's change, saying who.

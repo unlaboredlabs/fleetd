@@ -10,6 +10,7 @@ import { oneLine } from "../leads/text.ts";
 import { capSet } from "../slots/cap.ts";
 import { chat } from "../chat/index.ts";
 import { taskStopped } from "../checklist/index.ts";
+import { mention } from "../people/mention.ts";
 import { nowMs } from "../store/time.ts";
 import type { Task, TodoItem } from "../../shared/contracts.ts";
 import { tasks } from "./index.ts";
@@ -82,7 +83,7 @@ export function register(tools: Registry): void {
       console.warn("a stopped agent's checklist items were not moved back:", error);
     }
     try {
-      chat(hub).systemLine(r, stoppedLine(caller.person?.name, task, moved.length, now));
+      chat(hub).systemLine(r, stoppedLine(caller.person ? mention(caller.person) : undefined, task, moved.length, now));
     } catch (error) {
       console.warn("a stopped agent's chat line was not posted:", error);
     }
