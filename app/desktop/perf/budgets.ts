@@ -1,7 +1,8 @@
 // The five budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, scripts/perf-mac.sh) and the
 // regression rules the Linux CI job applies against perf/baseline-linux.json. CI runners are not the budget machine
 // and differ from each other, so CI gates regressions only, and the app's start and keypress there only relative to a
-// bare Electron window launched in the same job: the start over it, and both scaled by it (Rule.perRunner).
+// bare Electron window in the same job: the start over a bare window's, the composer's key presses over a bare
+// textarea's, each scaled by its reference (Rule.scaledBy).
 
 export interface Results {
   /** Fastest warm launch, ms from spawning the app until its window is shown and has painted its first content (startTimes). */
@@ -33,6 +34,10 @@ export interface Results {
   readonly streamFps: number;
   /** p95, ms from a key press (its OS timestamp) to the presentation of the frame that shows it: Chromium's EventLatency. The median of a few rounds' p95s. */
   readonly keyP95Ms: number;
+  /** p50, ms, of a bare textarea's key presses in a bare Electron window (perf/reference keys.html), typed a round each in turn with the composer. The median of the rounds' p50s. */
+  readonly keyRefP50Ms: number;
+  /** What the app adds to a key press over the bare textarea's: the median over round pairs of the composer's p50 minus the textarea's. CI gates it. */
+  readonly keyOverMs: number;
 }
 
 export type Metric = keyof Results;
@@ -47,25 +52,23 @@ interface Rule {
   /** Regressed (CI) when worse than the baseline by more than the larger of ratio × baseline and slack. */
   readonly regress?: { readonly ratio: number; readonly slack: number };
   /**
-   * The baseline is first scaled by this run's bare Electron start over the baseline's: what the app adds to a start
-   * is its own JavaScript, as CPU-bound as Electron's start, so it reads ~1.3× a bare start on every runner while in
-   * ms it spreads 1.5× between them (main's runs, Nov 13 to 23: chat over bare 248 ms on an EPYC 9V45, 259 on a Xeon
-   * 6975P, 374 on an EPYC 7763). Unscaled, a fixed limit sat inside the 7763's own spread (352 to 403 for one app).
-   * A key press is as CPU-bound: its p95 read 6.5 to 9.5 ms on a 6975P and 12.6 to 14.0 on a Xeon 8370C for the same
-   * code, and a fixed 12.1 ms limit failed every 8370C run, while over the bare start it reads 0.034 to 0.053 on all
-   * 81 runs of Nov 22 and 23.
+   * The baseline is first scaled by this run's reading of that reference over the baseline's: the bare Electron start
+   * for the app's start, the bare textarea's key press for the composer's. What the app adds to a start is its own
+   * JavaScript, as CPU-bound as Electron's start, so it reads ~1.3× a bare start on every runner while in ms it spreads
+   * 1.5× between them (main's runs, Nov 13 to 23: chat over bare 248 ms on an EPYC 9V45, 259 on a Xeon 6975P, 374 on
+   * an EPYC 7763). Unscaled, a fixed limit sat inside the 7763's own spread (352 to 403 for one app).
    */
-  readonly perRunner?: boolean;
+  readonly scaledBy?: Metric;
 }
 
 export const RULES: Record<Metric, Rule> = {
   firstPaintMs: { label: "first paint", unit: "ms", higher: false, limit: 600 },
   firstPaintRefMs: { label: "bare Electron", unit: "ms", higher: false },
-  firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 }, perRunner: true },
+  firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 }, scaledBy: "firstPaintRefMs" },
   chatShownMs: { label: "chat shown", unit: "ms", higher: false },
   // What a start costs past first paint (the hub's data, the chat's rows and their markdown), which "app over bare"
   // never sees: rows that mounted blank and filled in ~300 ms later read as shown at first paint there.
-  chatOverMs: { label: "chat over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 }, perRunner: true },
+  chatOverMs: { label: "chat over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 }, scaledBy: "firstPaintRefMs" },
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
   // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI reads about 58 a round
@@ -76,10 +79,32 @@ export const RULES: Record<Metric, Rule> = {
   // about 59 on an EPYC 9V45 runner and 49.5 on a 7763, so its baseline is the slower runner's; a formatter made per
   // message took it under 20.
   streamFps: { label: "chat streaming", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
-  // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide ratio and perf/run.ts's
-  // median of five rounds; the slack only keeps a fast runner's few ms from failing on a single slow key.
-  keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 2 }, perRunner: true },
+  // The budget's, not gated in CI: the same code read 6.5 to 9.5 ms on a Xeon 6975P and 12.6 to 14.0 on a Xeon 8370C.
+  keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16 },
+  keyRefP50Ms: { label: "bare textarea", unit: "ms", higher: false },
+  // The bare textarea's input, compositing and swap subtracted, what is left is the app's own work, and it moves with
+  // the runner as the textarea's does. On the one-off runs of Nov 27 (Xeon 6975P, 8573C, EPYC 7763, 9V45, 9V74), every
+  // 10 rounds of one commit read the app's p50 1.77 to 2.18 times the textarea's (median 2.00), and 3.38 to 4.08 with
+  // #2250's :has() rule put back (its ~40% on each key's p95). The p95s spread twice as wide (3.05 to 3.92 times on 22
+  // runs), and gated on the whole p95 scaled by the bare start, a +50% margin let #2250 through and left every run
+  // after it on a fast-starting 6975P at its limit. +33% puts the limit at 2.66: the worst of those runs reads 82% of
+  // it, and the same composer 40% slower reads at least 2.88.
+  keyOverMs: { label: "keypress over bare", unit: "ms", higher: false, regress: { ratio: 0.33, slack: 0.5 }, scaledBy: "keyRefP50Ms" },
 };
+
+/** A round of key presses' p95 and p50, ms, and how many took 16 ms or more (perf/run.ts keys). */
+export interface KeyRound {
+  readonly p95: number;
+  readonly p50: number;
+  readonly slow: number;
+}
+
+/** The keypress results from rounds typed in the composer and the bare textarea in turn, paired by index. */
+export const keyTimes = ({ rounds, bareRounds }: { rounds: ReadonlyArray<KeyRound>; bareRounds: ReadonlyArray<KeyRound> }): Pick<Results, "keyP95Ms" | "keyRefP50Ms" | "keyOverMs"> => ({
+  keyP95Ms: median(rounds.map((r) => r.p95)),
+  keyRefP50Ms: median(bareRounds.map((r) => r.p50)),
+  keyOverMs: median(rounds.map((r, i) => r.p50 - (bareRounds[i]?.p50 ?? Number.NaN))),
+});
 
 export const METRICS = Object.keys(RULES) as ReadonlyArray<Metric>;
 
@@ -98,9 +123,11 @@ export const regressionLimit = (metric: Metric, base: number): number | undefine
   return higher ? base - allowed : base + allowed;
 };
 
-/** The baseline a run is judged against: `baseline`'s, scaled to this run's runner for a perRunner metric. */
-export const runnerBase = (metric: Metric, results: Results, baseline: Results): number =>
-  RULES[metric].perRunner ? (baseline[metric] * results.firstPaintRefMs) / baseline.firstPaintRefMs : baseline[metric];
+/** The baseline a run is judged against: `baseline`'s, scaled to this run's runner by the metric's reference (scaledBy). */
+export const runnerBase = (metric: Metric, results: Results, baseline: Results): number => {
+  const by = RULES[metric].scaledBy;
+  return by === undefined ? baseline[metric] : (baseline[metric] * results[by]) / baseline[by];
+};
 
 export const regressions = (results: Results, baseline: Results): Array<{ metric: Metric; value: number; limit: number; base: number }> =>
   METRICS.flatMap((metric) => {
@@ -133,7 +160,7 @@ export const startTimes = ({ app, chat, bare }: Launches): Pick<Results, "firstP
   return { firstPaintMs, firstPaintRefMs, firstPaintOverMs: firstPaintMs - firstPaintRefMs, chatShownMs, chatOverMs: chatShownMs - firstPaintRefMs };
 };
 
-/** The gated start metrics, which perf/run.ts times again once before a regression in them counts, as it does keypress. */
+/** The gated start metrics, which perf/run.ts times again once before a regression in them counts. */
 export const START: ReadonlyArray<Metric> = ["firstPaintOverMs", "chatOverMs"];
 
 export const median = (values: ReadonlyArray<number>): number => quantile(values, 0.5);

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+    <title>reference</title>
+    <style>
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        font: 14px/20px system-ui, sans-serif;
+      }
+      textarea {
+        width: 640px;
+        height: 20px;
+        margin-bottom: 24px;
+        resize: none;
+        font: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- A line of text for the first paint the launch waits for (main.mjs), then the composer's place in the window: a
+         one-line box near the bottom, at the chat column's width. -->
+    <p>fleetd</p>
+    <textarea aria-label="Message" spellcheck="false"></textarea>
+  </body>
+</html>

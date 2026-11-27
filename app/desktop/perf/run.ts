@@ -4,8 +4,9 @@
 //
 //   --json FILE          also write the numbers as JSON
 //   --baseline FILE      exit 1 when a number regressed past budgets.ts's limit from FILE (the Linux CI job)
-//   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too, and
-//   times the start and keypress again once before a regression in them counts: a runner's slow spell can outlast a set)
+//   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too, and times
+//   the start again once before a regression in it counts: a runner's slow spell can outlast a set; keypress only over
+//   a bare textarea typed in turn with the composer, in one pass)
 //
 // First paint is timed from this script's spawn to the page's first contentful paint (FLEETD_PERF's stderr line),
 // with no debugger attached. Memory is the RSS of every process in the app's tree after 10 s idle. Scroll and
@@ -17,7 +18,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { type Browser, chromium, type Locator, type Page } from "@playwright/test";
 import { devtoolsPort, launch, type Memory, openChat, sleep } from "./app.ts";
-import { frameStats, type Launches, median, type Metric, METRICS, quantile, regressions, type Results, RULES, START, startTimes, withinBudget } from "./budgets.ts";
+import { frameStats, type KeyRound, keyTimes, type Launches, median, type Metric, METRICS, quantile, regressions, type Results, RULES, START, startTimes, withinBudget } from "./budgets.ts";
 import { keyLatencies, traced } from "./trace.ts";
 import { STREAM_IN_LONG_ARRIVE_MS, STREAM_IN_LONG_FROM_MS, STREAM_IN_LONG_TO_MS } from "../fixtures/stream/index.ts";
 
@@ -34,10 +35,13 @@ const SCROLL_ROUNDS = 5;
 // About 160 keys a round: a p95 over fewer swings with two or three slow ones on a shared CI runner.
 const KEYS = "the writer ran the tests again and asked for a review. ".repeat(3).trim();
 /**
- * Rounds of KEYS timed after an untimed first one; the median round's p95 counts. A shared runner stalls now and then
- * for a second or two, and in a single round that put 16 slow keys into its p95 (17 ms against a usual 6-11).
+ * Rounds of KEYS timed after an untimed first one, in the composer and the bare textarea in turn; the medians of the
+ * rounds' p95s and p50s count, and CI gates the p50s. A shared runner stalls now and then for a second or two, and in
+ * a single round that put 16 slow keys into its p95 (17 ms against a usual 6-11); a p50 moves with them far less.
+ * Ten, timed once, with no second pass: every 10 rounds of the same commit read the app over the textarea within
+ * ±12% of its median on Nov 27's runs (budgets.ts keyOverMs).
  */
-const KEY_ROUNDS = 5;
+const KEY_ROUNDS = 10;
 /** Rounds of STREAM_MS timed after an untimed first one, each on a reloaded window (its fixture replays from the start); the median round's rate counts. */
 const STREAM_ROUNDS = 5;
 const STREAM_MS = 4_000;
@@ -190,24 +194,65 @@ const streaming = async () => {
   }
 };
 
-/** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts), by round. */
-const keys = async (browser: Browser, page: Page, composer: Locator) => {
-  await composer.click();
+/** A window typed in: its browser (traced), its page and the box that takes the keys. */
+interface Typed {
+  readonly browser: Browser;
+  readonly page: Page;
+  readonly box: Locator;
+}
+
+const typeRound = async ({ browser, page, box }: Typed, timed: boolean): Promise<KeyRound> => {
+  await box.focus();
   const type = async () => {
     await page.keyboard.type(KEYS, { delay: 60 });
     await sleep(500);
   };
-  // An untimed first round warms the composer up, as the untimed first launch does for first paint.
-  await type();
-  await composer.fill("");
-  const rounds: Array<{ p95: number; p50: number; slow: number }> = [];
-  for (let i = 0; i < KEY_ROUNDS; i++) {
-    const latencies = keyLatencies(await traced(browser, type));
-    await composer.fill("");
-    if (latencies.length < KEYS.length * 0.9) throw new Error(`the trace has ${latencies.length} key presses for ${KEYS.length} keys`);
-    rounds.push({ p95: quantile(latencies, 0.95), p50: quantile(latencies, 0.5), slow: latencies.filter((l) => l >= 16).length });
+  if (!timed) {
+    await type();
+    await box.fill("");
+    return { p95: Number.NaN, p50: Number.NaN, slow: 0 };
   }
-  return { p95: median(rounds.map((r) => r.p95)), rounds };
+  const latencies = keyLatencies(await traced(browser, type));
+  await box.fill("");
+  if (latencies.length < KEYS.length * 0.9) throw new Error(`the trace has ${latencies.length} key presses for ${KEYS.length} keys`);
+  return { p95: quantile(latencies, 0.95), p50: quantile(latencies, 0.5), slow: latencies.filter((l) => l >= 16).length };
+};
+
+/**
+ * The chat's composer and the bare textarea (perf/reference keys.html), a round each in turn, so a runner's slow
+ * spell lands on both: an untimed first round of each (it warms the composer up, as the untimed first launch does for
+ * first paint), then KEY_ROUNDS of each.
+ */
+const keys = async (app: Typed, bare: Typed) => {
+  await app.box.click();
+  await bare.box.click();
+  await typeRound(app, false);
+  await typeRound(bare, false);
+  const rounds: Array<KeyRound> = [];
+  const bareRounds: Array<KeyRound> = [];
+  for (let i = 0; i < KEY_ROUNDS; i++) {
+    rounds.push(await typeRound(app, true));
+    bareRounds.push(await typeRound(bare, true));
+  }
+  return { rounds, bareRounds };
+};
+
+const keyRounds = (rounds: ReadonlyArray<KeyRound>) => rounds.map((r) => `${r.p95.toFixed(1)}/${r.p50.toFixed(1)} (${r.slow})`).join(", ");
+
+/** The bare textarea's window, on a DevTools port of its own. */
+const bareKeys = async () => {
+  const ref = launch({ entry: REFERENCE, debug: true, env: { FLEETD_REFERENCE: "keys" } });
+  try {
+    const port = await devtoolsPort(ref);
+    await ref.waitFor(/^FLEETD_PERF launch /u, 30_000);
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const page = browser.contexts().flatMap((c) => c.pages())[0];
+    if (page === undefined) throw new Error("no reference window over CDP");
+    return { ref, typed: { browser, page, box: page.getByLabel("Message") } };
+  } catch (e) {
+    await ref.stop();
+    throw e;
+  }
 };
 
 const main = async () => {
@@ -233,21 +278,22 @@ const main = async () => {
       if (page === undefined) throw new Error("no app window over CDP");
       const chat = await openChat(page);
       const scrolled = await scroll(page, chat.log);
-      let typed = await keys(browser, page, (await openChat(page)).composer);
-      results = {
-        ...startTimes(paints),
-        idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
-        idleRssMb: median(samples.map((m) => m.rssMb)),
-        scrollFps: scrolled.fps,
-        streamFps: streamed.fps,
-        keyP95Ms: typed.p95,
-      };
-      // Keypress past its limit is typed again, the rounds pooled, before it counts, as the start is timed again below.
-      if (baseline !== undefined && regressions(results, baseline).some((r) => r.metric === "keyP95Ms")) {
-        console.log(`keypress read a p95 of ${typed.p95.toFixed(1)} ms; typing it again`);
-        const rounds = [...typed.rounds, ...(await keys(browser, page, (await openChat(page)).composer)).rounds];
-        typed = { p95: median(rounds.map((r) => r.p95)), rounds };
-        results = { ...results, keyP95Ms: typed.p95 };
+      const typedApp = { browser, page, box: (await openChat(page)).composer };
+      const bare = await bareKeys();
+      let typed: Awaited<ReturnType<typeof keys>>;
+      try {
+        typed = await keys(typedApp, bare.typed);
+        results = {
+          ...startTimes(paints),
+          idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
+          idleRssMb: median(samples.map((m) => m.rssMb)),
+          scrollFps: scrolled.fps,
+          streamFps: streamed.fps,
+          ...keyTimes(typed),
+        };
+      } finally {
+        await bare.typed.browser.close();
+        await bare.ref.stop();
       }
       detail = {
         ...startDetail(paints, 1),
@@ -257,7 +303,9 @@ const main = async () => {
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `the chat-long fixture's chat; median of ${scrolled.rounds.length} rounds of ${SCROLL_MS / 1000} s from a reload, fps (long frames, px): ${scrolled.rounds.map((r) => `${r.fps.toFixed(1)} (${(r.dropped * 100).toFixed(1)}%, ${(r.moved / 1000).toFixed(0)}k)`).join(", ")}; display ${scrolled.rounds[0]?.refreshHz.toFixed(0) ?? "?"} Hz`,
         streamFps: `the stream-in-long fixture's chat (1,550 messages) while a reply streams in at 10 deltas a second; median of ${streamed.rounds.length} rounds of ${STREAM_MS / 1000} s from a reload, fps (worst frame): ${streamed.rounds.map((r) => `${r.fps.toFixed(1)} (${r.worstMs.toFixed(0)} ms)`).join(", ")}`,
-        keyP95Ms: `the chat's composer; EventLatency, key press to presentation; median of ${typed.rounds.length} rounds of ${KEYS.length} keys, p95/p50 (keys at 16 ms or more): ${typed.rounds.map((r) => `${r.p95.toFixed(1)}/${r.p50.toFixed(1)} (${r.slow})`).join(", ")} ms`,
+        keyP95Ms: `the chat's composer; EventLatency, key press to presentation; median of ${typed.rounds.length} rounds of ${KEYS.length} keys, p95/p50 (keys at 16 ms or more): ${keyRounds(typed.rounds)} ms`,
+        keyRefP50Ms: `p50 of a bare textarea's key presses in a bare Electron window, a round each in turn with the composer; p95/p50: ${keyRounds(typed.bareRounds)} ms`,
+        keyOverMs: "the composer's p50 over the bare textarea's, by round pairs: what the app adds to a key press; CI gates this",
       };
     } finally {
       await browser.close();
@@ -283,7 +331,7 @@ const main = async () => {
     const value = results[metric];
     const ok = withinBudget(metric, value);
     // Frame rates to a tenth: 56.7 fps misses a budget of 57, and printed whole it would read 57 next to MISS.
-    const shown = metric === "keyP95Ms" || metric === "scrollFps" || metric === "streamFps" ? value.toFixed(1) : value.toFixed(0);
+    const shown = metric === "keyP95Ms" || metric === "keyRefP50Ms" || metric === "keyOverMs" || metric === "scrollFps" || metric === "streamFps" ? value.toFixed(1) : value.toFixed(0);
     const gate = rule.limit !== undefined ? `budget ${rule.higher ? "≥" : "<"} ${rule.limit} ${rule.unit}` : rule.regress !== undefined ? "CI regression" : "information";
     const verdict = ok === undefined ? "    " : ok ? "ok  " : "MISS";
     return { ok, line: `  ${rule.label.padEnd(19)} ${`${shown} ${rule.unit}`.padStart(8)}   ${gate.padEnd(17)} ${verdict}  ${detail[metric]}` };
@@ -304,8 +352,9 @@ const main = async () => {
   if (baseline !== undefined) {
     const worse = regressions(results, baseline);
     for (const r of worse) {
-      const scaled = RULES[r.metric].perRunner ? `, ${baseline[r.metric]} at bare Electron ${baseline.firstPaintRefMs} ms scaled to this runner's ${results.firstPaintRefMs.toFixed(0)}` : "";
-      console.log(`REGRESSION ${RULES[r.metric].label}: ${r.value.toFixed(1)} past ${r.limit.toFixed(1)} (baseline ${r.base.toFixed(0)}${scaled})`);
+      const by = RULES[r.metric].scaledBy;
+      const scaled = by === undefined ? "" : `, ${baseline[r.metric]} at ${RULES[by].label} ${baseline[by]} ms scaled to this runner's ${results[by].toFixed(1)}`;
+      console.log(`REGRESSION ${RULES[r.metric].label}: ${r.value.toFixed(1)} past ${r.limit.toFixed(1)} (baseline ${r.base.toFixed(1)}${scaled})`);
     }
     failed ||= worse.length > 0;
     if (worse.length === 0) console.log(`no regression from ${flags.baseline}`);
