@@ -110,8 +110,11 @@ export class FakeGh implements GhRunner {
   readonly workflowRuns = new Map<number, unknown>();
   /** The workflow runs the train asked GitHub to re-run whole, in order. */
   readonly runReruns: number[] = [];
-  /** The workflow runs a person or a schedule started, [run id, event]: on every commit. Every other run is a push. */
-  readonly runEvents: [number, string][] = [];
+  /**
+   * The workflow runs a person or a schedule started, [run id, event, its workflow's id]: on every commit. Every other
+   * run is a push.
+   */
+  readonly runEvents: [number, string, number?][] = [];
   /** Each Actions job's log, by job id. */
   readonly jobLogs = new Map<number, string>();
   /** gh before 2.97.0: it knows no `--allow-escape-sequences`, and prints a log with escape sequences as it is. */
@@ -540,7 +543,7 @@ export class FakeGh implements GhRunner {
       );
     }
     if (a === "actions" && b === "runs" && q("head_sha") !== undefined) {
-      return ok({ workflow_runs: this.runEvents.map(([id, event]) => ({ id, event })) });
+      return ok({ workflow_runs: this.runEvents.map(([id, event, workflow_id]) => ({ id, event, workflow_id })) });
     }
     if (a === "actions" && b === "runs" && parts.length === 3) {
       const run = this.workflowRuns.get(Number(c));
