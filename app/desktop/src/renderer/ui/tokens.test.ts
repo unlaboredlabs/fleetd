@@ -119,6 +119,10 @@ describe("the frame", () => {
     const web = /:root\[data-shell="web"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
     expect(web).toMatch(/--traffic-lights-inset:\s*0px;/u);
   });
+  it("leaves no room for the traffic lights in full screen, where macOS hides them", () => {
+    const full = /:root\[data-platform="darwin"\]\[data-full-screen\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
+    expect(full).toMatch(/--traffic-lights-inset:\s*0px;/u);
+  });
   it("gives the traffic lights a strip of their own, as tall as the top row, over the hub's row; none on the web", () => {
     const mac = /:root\[data-platform="darwin"\]\s*\{([^}]*)\}/u.exec(css)?.[1] ?? "";
     expect(mac).toMatch(/--side-strip:\s*var\(--top-bar-height\);/u);

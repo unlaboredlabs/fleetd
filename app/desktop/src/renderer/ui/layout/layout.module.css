@@ -202,12 +202,12 @@
 }
 
 /* The sidebar's button (AppFrame's sidebarToggle), as Finder's and Notes' sit: on macOS its glyph as far after the
-   traffic lights (which end at 80 px) as the pill is after it, 14 px each side; elsewhere in from the window's edge
-   by the top row's own inset. A plain glyph, no fill until pointed at, so nothing solid moves over the see-through
+   traffic lights (which end at 80 px) as the pill is after it, 14 px each side; without them (Linux, the web, macOS in
+   full screen) its round glass (.controls) as far in from the window's edge as from its top. A plain glyph, no fill until pointed at, so nothing solid moves over the see-through
    sidebar as it slides. On macOS it stays put in the sidebar's empty first strip while that shows; elsewhere that row
    is the sidebar's own, so the button is only there while the sidebar is closed. */
 .frame {
-  --side-toggle-x: max(var(--space-2), calc(var(--traffic-lights-inset) + var(--space-1)));
+  --side-toggle-x: max(calc(var(--glass-inset) + var(--controls-pad)), calc(var(--traffic-lights-inset) + var(--space-1)));
   /* The glass under the window's controls (.controls): as far past the button's round end as the button sits in from
      its top, so the two ends are concentric. */
   --controls-pad: calc((var(--top-bar-height) - 2 * var(--glass-inset) - var(--control)) / 2);
@@ -216,8 +216,8 @@
    island, the composer's material, as tall as the pill beside it and on its centre line, so what scrolls under the
    row never runs through the lights. Only after the sidebar has slid out, never over the see-through sidebar or while
    it moves, where a backdrop over the window's material draws black; it comes up quickly, and goes at once when the
-   sidebar comes back over it. Without traffic lights it is the button's own round glass. Still the window's drag
-   region, around the lights too. */
+   sidebar comes back over it. Without traffic lights (macOS hides them in full screen, data-full-screen) it is the
+   button's own round glass. Still the window's drag region, around the lights too. */
 .controls {
   position: absolute;
   z-index: 3;
@@ -238,7 +238,7 @@
     opacity: 0;
   }
 }
-:root[data-platform="darwin"]:not([data-shell="web"]) .controls {
+:root[data-platform="darwin"]:not([data-shell="web"], [data-full-screen]) .controls {
   left: var(--glass-inset);
   width: calc(var(--side-toggle-x) + var(--control) + var(--controls-pad) - var(--glass-inset));
 }

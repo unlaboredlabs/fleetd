@@ -352,6 +352,12 @@
   --hub-row-height: 44px;
 }
 
+/* In full screen macOS hides the traffic lights: no room for them (main says so, renderer/src/main.tsx). The sidebar's
+   first strip stays, where its button sits. */
+:root[data-platform="darwin"][data-full-screen] {
+  --traffic-lights-inset: 0px;
+}
+
 /* The web app (src/web) has no title bar to make room in, on a Mac too. */
 :root[data-shell="web"] {
   --traffic-lights-inset: 0px;

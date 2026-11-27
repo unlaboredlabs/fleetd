@@ -240,6 +240,8 @@ export const IPC = {
   menuCommand: "menu:command",
   /** main → renderer: OpenTarget, from a clicked notification or a fleetd:// link. */
   appOpen: "app:open",
+  /** main → renderer: boolean, whether the window is full screen now, on each change and each load of the page. */
+  windowFullScreen: "window:fullScreen",
 } as const;
 
 type PushChannel =
@@ -247,6 +249,7 @@ type PushChannel =
   | typeof IPC.hubsChanged
   | typeof IPC.menuCommand
   | typeof IPC.appOpen
+  | typeof IPC.windowFullScreen
   | typeof IPC.updatesChanged
   | typeof IPC.machinesJoinHereChanged
   | typeof IPC.macSetupJoinChanged;

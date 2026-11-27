@@ -11,6 +11,11 @@ import "./styles.css";
 
 document.documentElement.dataset["platform"] = window.fleetd.platform;
 if (window.fleetd.vibrancy) document.documentElement.dataset["vibrancy"] = "";
+// In full screen macOS hides the traffic lights, and the top row stops making room for them (ui/tokens.css).
+window.fleetd.app.onFullScreen((on) => {
+  if (on) document.documentElement.dataset["fullScreen"] = "";
+  else delete document.documentElement.dataset["fullScreen"];
+});
 // The person's choice of a solid sidebar over the see-through one, before the first paint. It changes nothing where the
 // sidebar is solid anyway.
 applySeeThrough();

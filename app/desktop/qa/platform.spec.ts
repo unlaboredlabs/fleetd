@@ -188,6 +188,41 @@ test("the chat's pill closes the panel and opens it again", async () => {
   }
 });
 
+// macOS hides the traffic lights in full screen: the glass under the window's controls then holds only the sidebar's
+// button, as far in from the window's edge as from its top, with no empty glass where the lights were; out of full
+// screen it holds the lights again.
+test("in full screen the window's controls' glass shrinks to the sidebar's button, and grows back after", async () => {
+  test.skip(process.platform !== "darwin", "macOS only");
+  const { app, page, close } = await launch("typical");
+  try {
+    await show(page, "shell", "#/");
+    await page.keyboard.press("Meta+b");
+    const button = page.getByRole("button", { name: "Show sidebar" });
+    await button.waitFor();
+    // The glass is the element drawn just before the button (Layout.tsx AppFrame), once the sidebar has slid out.
+    const boxes = () =>
+      button.evaluate((b) => {
+        const glass = b.previousElementSibling;
+        const box = (el: Element | null) => {
+          const r = el?.getBoundingClientRect();
+          return r === undefined ? null : { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+        };
+        return { glass: glass?.getAttribute("aria-hidden") === "true" ? box(glass) : null, button: box(b) };
+      });
+    const setFullScreen = (on: boolean) => app.evaluate(({ BrowserWindow }, v) => BrowserWindow.getAllWindows()[0]?.setFullScreen(v), on);
+    const windowed = { glass: { x: 8, y: 8, width: 110, height: 32 }, button: { x: 88, y: 10, width: 28, height: 28 } };
+    await expect.poll(boxes, { timeout: 5_000 }).toEqual(windowed);
+    await setFullScreen(true);
+    await expect(page.locator("html")).toHaveAttribute("data-full-screen", "", { timeout: 10_000 });
+    await expect.poll(boxes, { timeout: 10_000 }).toEqual({ glass: { x: 8, y: 8, width: 32, height: 32 }, button: { x: 10, y: 10, width: 28, height: 28 } });
+    await setFullScreen(false);
+    await expect(page.locator("html")).not.toHaveAttribute("data-full-screen", /.*/u, { timeout: 10_000 });
+    await expect.poll(boxes, { timeout: 10_000 }).toEqual(windowed);
+  } finally {
+    await close();
+  }
+});
+
 // An HTML artifact (W367) runs its own scripts and nothing else: in the real app, a page framed as the Artifacts tab
 // frames it (main's fleetd-artifact:// address, sandbox allow-scripts) tries every way out it has: fetch, XHR, an
 // image, a stylesheet, a WebSocket, a beacon, a popup, WebRTC (STUN over UDP, TURN over TCP, from its own window and

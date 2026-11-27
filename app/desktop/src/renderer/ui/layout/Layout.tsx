@@ -85,8 +85,9 @@ export function AppFrame(props: {
           {/* After the top row: the edge reaches a few pixels over it, and a control under a drag box that comes after
               it loses its click (base.css). */}
           {props.sidebar && props.sidebarEdge ? <div className={s.sideEdge}>{props.sidebarEdge}</div> : null}
-          {/* The window's controls on glass once the sidebar has gone, under the button that comes after it. */}
-          {props.sidebarToggle && side.kept === null ? <div className={s.controls} aria-hidden /> : null}
+          {/* The window's controls on glass once the sidebar has gone, under the button that comes after it. Floating, as
+              the top row does: what scrolls under its drag box does so by design. */}
+          {props.sidebarToggle && side.kept === null ? <div className={s.controls} aria-hidden data-floats="" /> : null}
           {props.sidebarToggle ? <SidebarToggle {...props.sidebarToggle} shown={Boolean(props.sidebar)} /> : null}
           {aside.kept === null ? null : (
             <div className={s.aside} {...aside.attrs}>
