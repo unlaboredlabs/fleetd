@@ -223,6 +223,12 @@ test.skipIf(!linux)("a session host reads its own kept file, a box's too, by the
   mkdirSync(join(hosts, "th8"));
   writeFileSync(keptFile(join(hosts, "th8")), keptText([{ port: dev.port, untilMs: t.clock.now() + 60_000 }]));
   expect(keptGroups(keptSources(hosts), t.clock.now()).size).toBe(0);
+  // The cloud's box spawns carry the session id alone as their marker: kept for that session, and for no other.
+  const boxed = await devServer("th7", join(home.dir, "tmp", "th7"));
+  writeFileSync(keptFile(join(hosts, "th7")), keptText([{ port: boxed.port, untilMs: t.clock.now() + 60_000 }]));
+  writeFileSync(keptFile(join(hosts, "th8")), keptText([{ port: boxed.port, untilMs: t.clock.now() + 60_000 }]));
+  expect(keptGroups(keptSources(hosts), t.clock.now())).toEqual(new Set([boxed.pid]));
+  expect(keptGroups([{ session: "th8", dir: join(hosts, "th8"), file: keptFile(join(hosts, "th8")) }], t.clock.now()).size).toBe(0);
 });
 
 test("share_kept's links and the kept file are read strictly", () => {

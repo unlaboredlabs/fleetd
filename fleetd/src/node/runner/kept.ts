@@ -35,11 +35,13 @@ export function groupAlive(g: KeptGroup): boolean {
   return now !== undefined && !now.zombie && now.pgid === g.pgid && (g.start === undefined || now.start === g.start);
 }
 
-/** The session a process's marker names (Linux); undefined for one with none, or another user's. */
+/** The session a process's marker names (Linux): a node's spawn's `<session>.<node pid>.<nanos>.<n>`, or the session id
+ * alone, which the cloud's box spawns carry (its claude's marker, as the in-box host then gives every process). Undefined
+ * for one with none, or another user's. */
 export function sessionOf(pid: number): string | undefined {
   const prefix = `${SESSION_MARKER}=`;
-  const marker = argsAndEnv(pid)[1].find((v) => v.startsWith(prefix));
-  return marker === undefined ? undefined : markerSession(marker.slice(prefix.length));
+  const marker = argsAndEnv(pid)[1].find((v) => v.startsWith(prefix))?.slice(prefix.length);
+  return marker ? (markerSession(marker) ?? marker) : undefined;
 }
 
 /** The sockets listening on TCP `port`, by inode, from /proc/net/tcp and tcp6. */
