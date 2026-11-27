@@ -105,3 +105,15 @@ test("after an update changes a tool it has, the next turn resumes it once, and 
   expect(pid()).toBe(after);
   expect(resumes()).toHaveLength(1);
 });
+
+test("a hosted session isn't resumed for a changed tool: its box would go with its claude", async () => {
+  const row = service.store.session(ID)!;
+  row.local.hosted = "boat";
+  service.store.commit(row, [], false);
+  writeFileSync(marksFile(), JSON.stringify({ ...toolMarks("lead"), checklist: "the older checklist" }));
+  const before = pid();
+  await send("r7", "seven");
+  await done("r7");
+  expect(pid()).toBe(before);
+  expect(resumes()).toHaveLength(1);
+});
