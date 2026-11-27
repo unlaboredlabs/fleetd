@@ -5286,7 +5286,9 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Edit “No npm here: use pnpm.”" }).click();
       await page.getByRole("textbox", { name: "Edit the entry in MEMORY.md" }).fill("No npm here: use pnpm, and pin its version.");
-      await page.getByRole("region", { name: "deploys", exact: true }).getByRole("button", { name: "Edit as text" }).click();
+      const deploys = page.locator("[data-memory-topic='deploys']");
+      await deploys.getByRole("button", { name: "deploys", exact: true }).click();
+      await deploys.getByRole("button", { name: "Edit as text" }).click();
       await expect(page.getByRole("textbox", { name: "All of deploys.md" })).toBeVisible();
     },
   },

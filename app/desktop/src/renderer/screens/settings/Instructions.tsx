@@ -11,7 +11,7 @@ import { INSTRUCTIONS, type ProjectRef, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { Memory } from "./Memory";
+import { HeldMemory, Memory } from "./Memory";
 import { MemoryRefreshSetting } from "./Projects";
 import { GroupNote, NoProject, PageHead, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { formatRoute, replaceRoute, type SettingsRoute } from "./route";
@@ -102,7 +102,7 @@ function Editor({ t, label, placeholder, whose }: { t: TextState; label: string;
         aria-label={label}
         value={t.shown?.text ?? ""}
         disabled={!t.ready}
-        minRows={6}
+        minRows={3}
         maxRows={24}
         placeholder={t.ready ? placeholder : "Loading…"}
         onChange={(e) => t.edit(e.target.value)}
@@ -152,8 +152,9 @@ export function HubInstructions() {
 }
 
 /**
- * Settings → Projects › Instructions & memory: the project's own instructions, sent to its agents after the hub-wide
- * ones, then what its leads remember (Memory.tsx), and whether the lead tidies that every night.
+ * Settings → Projects › Instructions & memory: on top, while any wait, the bot's memory changes held for an admin's OK;
+ * the project's own instructions, sent to its agents after the hub-wide ones, then what its leads remember (Memory.tsx),
+ * and whether the lead tidies that every night.
  */
 export function Instructions({ route }: { route: SettingsRoute }) {
   const projects = useProjects();
@@ -170,6 +171,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
         <PageHead title="Instructions & memory" />
+        <HeldMemory project={project} />
         {!t.live ? (
           <SettingsSection title="Instructions" reveal="instructions" hint="What every agent of this bot is told, the lead too.">
             <GroupNote>Not connected. Connect to a workspace to add instructions for its agents.</GroupNote>

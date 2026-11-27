@@ -145,6 +145,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "agents.profiles", label: "Allowed profiles", tab: "agents", keywords: ["task profiles", "profile", "allowed", "model", "effort"] },
   { key: "agents.skills", label: "Skills", tab: "agents", keywords: ["skill", "SKILL.md", "skills.sh", "workflow", "install", ".agents", ".claude"] },
   page("instructions", ["custom instructions", "rules", "my text", "project"]),
+  { key: "memory-held", label: "Memory changes waiting for an admin", tab: "instructions", keywords: ["waiting", "held", "keep", "approve", "admin", "OK"] },
   { key: "memory", label: "Bot memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules", "refresh", "nightly", "tidy"] },
   { key: "project-vault", label: "Bot variables", tab: "project-vault", keywords: ["vault", "env", ".env", "variables", "secrets", "api key", "token"] },
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),

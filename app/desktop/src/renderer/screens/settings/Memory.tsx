@@ -9,7 +9,7 @@
 import { MessageSquareText, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import type { MemoryFile, MemoryHeld, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
-import { Button, ContextMenu, ContextMenuItem, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
+import { Button, ContextMenu, ContextMenuItem, cx, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -47,6 +47,7 @@ type Target = Omit<MemorySetInput, "text">;
 export function Memory({ project }: { project: Scope | null }) {
   const live = useLive();
   const [query, setQuery] = useState("");
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const ref = project ? projectRefOf(project) : undefined;
   const read = useToolQuery("memory_get", ref ? { projectRef: ref } : {}, { enabled: live });
   const hubCall = useHubCall();
@@ -71,53 +72,91 @@ export function Memory({ project }: { project: Scope | null }) {
 
   const d = read.data;
   const files = ref && d?.files ? d.files : [];
-  const all = files;
-  const hits = all.reduce((n, f) => n + memoryLines(f).filter((l) => l.kind === "entry" && lineMatches(l, query)).length, 0);
+  const searching = query.trim() !== "";
+  const matches = (f: MemoryFile) => memoryLines(f).filter((l) => l.kind === "entry" && lineMatches(l, query)).length;
+  const hits = files.reduce((n, f) => n + matches(f), 0);
   const total = ref && d?.files ? projectCapState(files, null, d.projectCap ?? 0) : null;
-  const group = (f: MemoryFile | undefined, target: Target, label: string, help: string, project?: ProjectFiles) => (
+  const group = (f: MemoryFile, target: Target, project: ProjectFiles, bare: boolean) => (
     <MemoryGroup
       key={`${target.projectRef ? scopeKey({ kind: "project", ref: target.projectRef }) : "user"}/${fileName(target)}`}
-      label={label}
-      help={help}
+      label={f.topic ?? "Always on"}
+      help={f.topic ? "Read when needed." : "Always read."}
       name={fileName(target)}
       file={f}
       query={query}
-      {...(project ? { project } : {})}
+      project={project}
       onSave={(text) => save({ ...target, text })}
       reread={() => reread(target)}
       deletable={target.topic !== undefined}
+      bare={bare}
     />
   );
+  const core = files.find((f) => f.topic === undefined);
+  const topics = files.filter((f) => f.topic !== undefined);
+  const cap = { files, cap: d?.projectCap ?? 0 };
   return (
     <>
-      <SettingsSection title="Memory" reveal="memory" hint={head} bare>
-        {read.isLoadingError ? <FileError read={read} /> : null}
-        <div className={m.search}>
-          <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div role="status">
-            {query.trim() && d && hits === 0 ? (
-              <Text size="sm" tone="quiet">
-                No entry has “{query.trim()}”.
-              </Text>
-            ) : null}
+      <SettingsSection
+        title="Memory"
+        reveal="memory"
+        hint={head}
+        intro={total ? <CapMeter state={total} label="This bot's memory" compact /> : undefined}
+        aside={
+          <div className={m.tools}>
+            <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-        </div>
-        {total ? <CapMeter state={total} label="This bot's memory" /> : null}
+        }
+        bare
+      >
+        {read.isLoadingError ? <FileError read={read} /> : null}
+        {searching && d && hits === 0 ? (
+          <Text size="sm" tone="quiet" role="status">
+            No entry has “{query.trim()}”.
+          </Text>
+        ) : null}
       </SettingsSection>
-      {ref && d?.held && d.held.length > 0 ? <HeldLines project={ref} held={d.held} /> : null}
-      {ref && d?.files
-        ? files.map((f) =>
-            group(
-              f,
-              projectTarget(ref, f),
-              f.topic ? f.topic : "Always on",
-              f.topic ? "Read when needed." : "Always read.",
-              { files, cap: d.projectCap ?? 0 },
-            ),
-          )
-        : null}
+      {ref && core ? group(core, projectTarget(ref, core), cap, false) : null}
+      {ref && topics.length > 0 ? (
+        <SettingsSection title="Topics" hint="Each is read only when its work comes up.">
+          <SettingsList label="Topics">
+            {topics.map((f) => {
+              const topic = f.topic as string;
+              const found = searching ? matches(f) : 0;
+              const open = opened.has(topic) || found > 0;
+              const count = memoryLines(f).filter((l) => l.kind === "entry").length;
+              return (
+                <SettingsListRow
+                  key={topic}
+                  name={topic}
+                  label={topic}
+                  meta={searching ? plural(found, "match", "matches") : plural(count, "line")}
+                  expanded={open}
+                  open={{ onClick: () => setOpened(toggled(opened, topic)) }}
+                  data={{ "data-memory-topic": topic }}
+                >
+                  {open ? group(f, projectTarget(ref, f), cap, true) : null}
+                </SettingsListRow>
+              );
+            })}
+          </SettingsList>
+        </SettingsSection>
+      ) : null}
     </>
   );
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${String(n)} ${n === 1 ? one : many}`;
+
+/**
+ * On top of a bot's Instructions & memory, while any wait: its memory changes held for an admin's OK, where the chat's
+ * "Waiting for an admin's OK" line leads (Review). Reads memory_get as the Memory part below does: one call.
+ */
+export function HeldMemory({ project }: { project: Scope | null }) {
+  const live = useLive();
+  const ref = project ? projectRefOf(project) : undefined;
+  const read = useToolQuery("memory_get", ref ? { projectRef: ref } : {}, { enabled: live && ref !== undefined });
+  const held = read.data?.held ?? [];
+  return ref && held.length > 0 ? <HeldLines project={ref} held={held} /> : null;
 }
 
 /**
@@ -259,6 +298,21 @@ function CapMeter({ state, label, changed, inGroup, compact }: { state: CapState
 
 let undoSeq = 0;
 
+/** Entries a long file shows before Show all. */
+const FOLD = 6;
+
+/** The lines up to and with the `n`th entry, headings over them included. */
+function firstEntries(lines: ReadonlyArray<MemoryLine>, n: number): MemoryLine[] {
+  const out: MemoryLine[] = [];
+  let entries = 0;
+  for (const l of lines) {
+    if (entries === n) break;
+    out.push(l);
+    if (l.kind === "entry") entries += 1;
+  }
+  return out;
+}
+
 /** One file: its entries as cards under a search, or the whole text to edit. */
 function MemoryGroup(props: {
   label: string;
@@ -289,7 +343,12 @@ function MemoryGroup(props: {
     (l) => !(gone.text === text && gone.raws.includes(l.raw)),
   );
   const searching = props.query.trim() !== "";
-  const shown = searching ? lines.filter((l) => l.kind === "entry" && lineMatches(l, props.query)) : lines;
+  const [all, setAll] = useState(false);
+  const matched = searching ? lines.filter((l) => l.kind === "entry" && lineMatches(l, props.query)) : lines;
+  // A long file shows its first entries and how many more there are; a search shows every match.
+  const entries = matched.filter((l) => l.kind === "entry").length;
+  const folds = !searching && entries > FOLD + 2;
+  const shown = folds && !all ? firstEntries(matched, FOLD) : matched;
 
   // The project's cap is checked with this file's new text in place of its old.
   // A person's own memory is never refused for size (a tidy trims it), so its cap never blocks a save.
@@ -381,6 +440,13 @@ function MemoryGroup(props: {
                   <EntryCard key={`${String(line.at)}:${line.raw}`} line={line} name={name} capOf={(next) => capOf(withLine(text, name, line, next))} onSave={(next) => write((now) => withLine(now, name, line, next))} onDelete={() => remove(line)} />
                 ),
               )}
+              {folds ? (
+                <li className={m.more}>
+                  <Button variant="link" size="sm" aria-expanded={all} onClick={() => setAll(!all)}>
+                    {all ? "Show fewer" : `Show all ${String(entries)}`}
+                  </Button>
+                </li>
+              ) : null}
             </ul>
           )}
         </>
@@ -400,6 +466,7 @@ function EntryCard(props: {
 }) {
   const { line } = props;
   const [draft, setDraft] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"saving" | "deleting" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -453,14 +520,20 @@ function EntryCard(props: {
             )}
           >
             <div className={m.cardBody}>
-              <div className={m.entryText}>
-                <Text>{line.text}</Text>
-                {line.by !== undefined ? (
+              {/* One line until opened: a long memory scans as a list. Open, its whole words and who taught it. */}
+              <button type="button" className={m.entryText} aria-expanded={open} onClick={() => setOpen(!open)}>
+                <Text className={open ? undefined : m.oneLine}>{line.text}</Text>
+                {line.by !== undefined && open ? (
                   <Text size="xs" tone="quiet" className={m.author}>
                     From {line.by}
                   </Text>
                 ) : null}
-              </div>
+              </button>
+              {line.by !== undefined && line.by !== "the lead" && !open ? (
+                <Text size="xs" tone="quiet" className={m.byline}>
+                  {line.by}
+                </Text>
+              ) : null}
               <div className={m.cardActions}>
                 {line.note ? <Source note={line.note} /> : null}
                 <Tooltip content="Edit">
@@ -536,7 +609,8 @@ function EntryCard(props: {
 
 /**
  * A bot's changes that wait for an admin's OK, as they loosen what asks or merges: each with who taught it, and for an
- * owner or admin Keep (written to memory then) and Don't keep. A member sees them waiting, with no buttons.
+ * owner or admin Keep (written to memory then) and Don't keep, and Keep all while two or more wait. A member sees them
+ * waiting, with no buttons. Each reads as two lines until opened; past the first few, the rest fold under Show.
  */
 function HeldLines({ project, held }: { project: ProjectRef; held: ReadonlyArray<MemoryHeld> }) {
   const locked = useBotLocked();
@@ -544,11 +618,13 @@ function HeldLines({ project, held }: { project: ProjectRef; held: ReadonlyArray
   const refetch = useRefetch();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const answer = (h: MemoryHeld, keep: boolean) => {
-    setBusy(h.messageId);
+  const [all, setAll] = useState(false);
+  // Answered one at a time, in order; the first refusal stops the rest and says why.
+  const answer = (hs: ReadonlyArray<MemoryHeld>, keep: boolean) => {
+    setBusy(hs.length === 1 ? (hs[0]?.messageId ?? null) : "all");
     setError(null);
-    hubCall("memory_hold_answer", { projectRef: project, messageId: h.messageId, keep })
-      .then(() => refetch(["memory_get"]))
+    hs.reduce<Promise<unknown>>((done, h) => done.then(() => hubCall("memory_hold_answer", { projectRef: project, messageId: h.messageId, keep })), Promise.resolve())
+      .finally(() => refetch(["memory_get"]))
       .then(
         () => setBusy(null),
         (e: unknown) => {
@@ -560,33 +636,34 @@ function HeldLines({ project, held }: { project: ProjectRef; held: ReadonlyArray
   const hint = locked
     ? "These loosen what asks or merges, so they wait for an owner or admin. Until then the bot goes by its memory as it is."
     : "These loosen what asks or merges. Nothing changes until you keep one.";
+  const folds = held.length > HELD_FOLD + 2;
+  const shown = folds && !all ? held.slice(0, HELD_FOLD) : held;
   return (
-    <SettingsSection title="Waiting for an admin" hint={hint} data={{ "data-memory-held": "" }}>
+    <SettingsSection
+      title="Waiting for an admin"
+      reveal="memory-held"
+      hint={hint}
+      intro={plural(held.length, "change")}
+      aside={
+        locked || held.length < 2 ? undefined : (
+          <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => answer(held, true)}>
+            {busy === "all" ? "Keeping…" : `Keep all ${String(held.length)}`}
+          </Button>
+        )
+      }
+      data={{ "data-memory-held": "" }}
+    >
       <ul className={m.entries} aria-label="Waiting for an admin">
-        {held.map((h) => (
-          <li key={h.messageId} className={m.card}>
-            <div className={m.cardBody}>
-              <div className={m.entryText}>
-                <Text>{h.text}</Text>
-                <Text size="xs" tone="quiet" className={m.author}>
-                  {[`From ${authorWord(h)}`, h.forgotten === true ? "would take this out" : h.replaced !== undefined ? `in place of “${h.replaced}”` : undefined, h.topic]
-                    .filter((w) => w !== undefined)
-                    .join(" · ")}
-                </Text>
-              </div>
-              {locked ? null : (
-                <div className={m.heldActions}>
-                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => answer(h, true)}>
-                    Keep
-                  </Button>
-                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => answer(h, false)}>
-                    Don't keep
-                  </Button>
-                </div>
-              )}
-            </div>
-          </li>
+        {shown.map((h) => (
+          <HeldLine key={h.messageId} held={h} locked={locked} busy={busy !== null} onAnswer={(keep) => answer([h], keep)} />
         ))}
+        {folds ? (
+          <li className={m.more}>
+            <Button variant="link" size="sm" aria-expanded={all} onClick={() => setAll(!all)}>
+              {all ? "Show fewer" : `Show ${String(held.length - HELD_FOLD)} more`}
+            </Button>
+          </li>
+        ) : null}
       </ul>
       <div role="status">
         {error ? (
@@ -596,6 +673,41 @@ function HeldLines({ project, held }: { project: ProjectRef; held: ReadonlyArray
         ) : null}
       </div>
     </SettingsSection>
+  );
+}
+
+/** Held changes shown before the rest fold. */
+const HELD_FOLD = 3;
+
+/** One held change: its words and who taught it, two lines and one until opened, and Keep and Don't keep. */
+function HeldLine({ held: h, locked, busy, onAnswer }: { held: MemoryHeld; locked: boolean; busy: boolean; onAnswer: (keep: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  // Closed, what it does in a word; open, the line it would replace in full.
+  const replaces = h.replaced === undefined ? undefined : open ? `in place of “${h.replaced}”` : "rewrites a line";
+  const detail = [`From ${authorWord(h)}`, h.forgotten === true ? "would take this out" : replaces, h.topic]
+    .filter((w) => w !== undefined)
+    .join(" · ");
+  return (
+    <li className={m.card}>
+      <div className={m.cardBody}>
+        <button type="button" className={m.entryText} aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Text className={open ? undefined : m.twoLines}>{h.text}</Text>
+          <Text size="xs" tone="quiet" className={open ? m.author : cx(m.author, m.oneLine)}>
+            {detail}
+          </Text>
+        </button>
+        {locked ? null : (
+          <div className={m.heldActions}>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => onAnswer(true)}>
+              Keep
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => onAnswer(false)}>
+              Don't keep
+            </Button>
+          </div>
+        )}
+      </div>
+    </li>
   );
 }
 

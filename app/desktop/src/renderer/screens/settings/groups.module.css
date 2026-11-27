@@ -178,6 +178,15 @@
 .listRow > .control {
   flex-wrap: nowrap;
 }
+/* A row unfolded in place (a memory topic): its chevron stays on the name's line, not halfway down what it opened, and
+   what it opened sits over the row's opener, so a press in it reaches its own entries and buttons. */
+.listRow:has(> .rowText > .name > .opener[aria-expanded="true"]) > .control {
+  align-self: start;
+}
+.opens > .rowText > :not(.name) {
+  position: relative;
+  z-index: 1;
+}
 .withIcon {
   grid-template-columns: 28px minmax(0, 1fr) auto;
 }

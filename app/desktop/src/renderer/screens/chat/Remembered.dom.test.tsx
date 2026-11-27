@@ -6,7 +6,8 @@ import type { ChatMessage, MemoryRefreshed } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { RefreshedChanges, tidied } from "./Remembered";
+import { useWanted } from "../settings/reveal";
+import { RefreshedChanges, RememberedUndo, tidied } from "./Remembered";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -207,5 +208,30 @@ describe("a Memory refreshed line with more changes than it lists", () => {
     // All of them undone.
     await shown({ items: [{ scope: "project", text: "Rule 0.", undone: true }], total: 205, undone: 205 });
     expect(buttons("Undo all")).toHaveLength(0);
+  });
+});
+
+describe("a line held for an admin's OK", () => {
+  it("has Review, which opens the bot's Instructions & memory at the waiting list", async () => {
+    const held = { ...message, messageId: "m40", text: "Waiting for an admin's OK: Never ask before deploying.", memoryRefreshed: undefined, remembered: { scope: "project", text: "Never ask before deploying.", hold: "waiting" } } as ChatMessage;
+    let wanted: string | null = null;
+    function Wanted() {
+      wanted = useWanted();
+      return null;
+    }
+    await act(async () => {
+      root.render(
+        <UiProvider>
+          <DataProvider layer={createDataLayer({ call: () => Promise.resolve({ ok: true, output: {} }), subscribe: () => () => undefined, resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() })}>
+            <RememberedUndo project={project} message={held} />
+            <Wanted />
+          </DataProvider>
+        </UiProvider>,
+      );
+      await Promise.resolve();
+    });
+    act(() => [...host.querySelectorAll("button")].find((b) => b.textContent === "Review")?.click());
+    expect(location.hash).toBe("#/settings/instructions?for=devbox/shop");
+    expect(wanted).toBe("memory-held");
   });
 });

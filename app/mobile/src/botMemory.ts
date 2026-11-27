@@ -42,10 +42,27 @@ export function botLines(f: FileShape): BotLine[] {
   });
 }
 
-/** A held change's quiet line: who taught it, and what it does beyond adding itself. */
-export function heldDetail(h: HeldShape): string {
-  const what = h.forgotten === true ? "would take this out" : h.replaced !== undefined ? `in place of “${h.replaced}”` : undefined;
+/**
+ * A held change's quiet line: who taught it, and what it does beyond adding itself. `short` (the row not opened) says a
+ * rewrite in a word; opened, the line it would replace in full.
+ */
+export function heldDetail(h: HeldShape, short = false): string {
+  const replaces = h.replaced === undefined ? undefined : short ? "rewrites a line" : `in place of “${h.replaced}”`;
+  const what = h.forgotten === true ? "would take this out" : replaces;
   return [`From ${authorWord(h)}`, what, h.topic].filter((w) => w !== undefined).join(" · ");
+}
+
+/** Lines a long file shows before Show All, and held changes before Show More: the desktop's. */
+export const FOLD = 6;
+export const HELD_FOLD = 3;
+
+/**
+ * The first `n` of a long list and how many more there are, or all of it (`all`, or when only a few more would fold).
+ * The screen stays short however big a bot's memory gets.
+ */
+export function folded<T>(items: readonly T[], n: number, all: boolean): { shown: readonly T[]; more: number } {
+  if (all || items.length <= n + 2) return { shown: items, more: 0 };
+  return { shown: items.slice(0, n), more: items.length - n };
 }
 
 /** How many held changes wait on `me`, an owner or admin, by the chat state's open items (one per admin). */
