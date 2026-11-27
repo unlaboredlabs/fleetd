@@ -75,23 +75,32 @@ const waiveName = (word: string) => {
 
 const waiversOf = (text: string) => [...new Set([...text.matchAll(new RegExp(WAIVE.source, "gu"))].map((m) => waiveName(m[1] as string)))].sort();
 
+/** Words that cut an exception out of a rule ("Never merge without review, except hotfixes."). */
+const EXCEPT = /\b(except|unless|other than|apart from)\b/gu;
+
 /**
  * How a text waives its gates: each gate named in a clause (cut at commas, colons, dashes, brackets) with the waiving
  * words of that clause, "merge:never+without". So "runs in Helsinki, deploys from main, without asking" pairs asking
  * with "without" and leaves deploying alone, and "Merge without review." pairs differently from "Never merge without
  * review.". A sentence whose words loosen with no such clause ("Never, ever deploy") pairs every gate it names with
- * its waiving words.
+ * its waiving words, and an exception ("except hotfixes", "unless") joins the words of every gate its sentence names.
  */
 export function pairingsOf(text: string): Set<string> {
   const pairs = new Set<string>();
-  const pair = (part: string) => {
-    const waivers = waiversOf(part).join("+");
-    for (const gate of gatesOf(part)) pairs.add(`${gate}:${waivers}`);
-  };
   for (const sentence of lower(text).split(/[.;!?]+(?:\s|$)|\n/u)) {
-    const before = pairs.size;
-    for (const clause of sentence.split(/[,:()[\]]|\s[-–—]+\s|—/u)) if (WAIVE.test(clause)) pair(clause);
-    if (pairs.size === before && loosensByWords(sentence)) pair(sentence);
+    // An exception anywhere in a sentence waives each gate it names: "except" after a comma still cuts into "never merge".
+    const except = [...new Set([...sentence.matchAll(EXCEPT)].map((m) => m[1] as string))];
+    const paired = new Set<string>();
+    const pair = (part: string, waivers: string[]) => {
+      const words = [...new Set([...waivers, ...except])].sort().join("+");
+      for (const gate of gatesOf(part)) {
+        pairs.add(`${gate}:${words}`);
+        paired.add(gate);
+      }
+    };
+    for (const clause of sentence.split(/[,:()[\]]|\s[-–—]+\s|—/u)) if (WAIVE.test(clause)) pair(clause, waiversOf(clause));
+    if (paired.size === 0 && loosensByWords(sentence)) pair(sentence, waiversOf(sentence));
+    if (except.length > 0) for (const gate of gatesOf(sentence)) if (!paired.has(gate)) pairs.add(`${gate}:${except.sort().join("+")}`);
   }
   return pairs;
 }
