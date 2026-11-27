@@ -160,15 +160,116 @@ test("a writer waiting with wait_ci on its own PR is woken when the PR goes back
   expect(sentTo(k, "T10")).toHaveLength(1);
 });
 
-test("a sent-back PR whose writer was cancelled goes to the lead, once, and the writer is not messaged", async () => {
+test("a PR sent back while its writer is cancelled gets one fresh writer on its branch, which takes the next send-back", async () => {
+  const k = await sentBack("cancelled");
+  expect(sentTo(k, "T10")).toEqual([]);
+  expect(k.host.writerSpawns).toHaveLength(1);
+  const spawn = k.host.writerSpawns[0]!;
+  expect(spawn).toMatchObject({ workstreamId: "W1", pr: `https://github.com/${REPO}/pull/10`, notDuplicateOf: ["X2", "T10"] });
+  expect(spawn.prompt).toContain("from its writer T10, which was cancelled");
+  expect(spawn.prompt).toContain("git checkout -B fleetd/T10-b origin/fleetd/T10-b");
+  expect(spawn.prompt).toContain("the merge train could not rebase it: it conflicts with main");
+  // The fresh writer is the PR's writer now.
+  expect(k.change(10).taskId).toBe("T70");
+  expect(k.host.wakes.filter((w) => w.includes("X2"))).toEqual([]);
+  // Exactly once: the fresh writer ends with no push, and no other one starts.
+  k.host.tasks.get("T70")!.state = "done";
+  await k.settle();
+  await k.settle();
+  expect(k.host.writerSpawns).toHaveLength(1);
+  // It pushes a rebased head whose CI goes red: that send-back goes to it, continued as any ended writer is.
+  k.pr(10, "fleetd/T10-b", { FAIL: "x\n" });
+  k.host.tasks.get("T10")!.state = "cancelled";
+  await k.settle();
+  expect(k.change(10).state).toBe("ci_failed");
+  expect(sentTo(k, "T70")).toHaveLength(1);
+  expect(sentTo(k, "T10")).toEqual([]);
+  expect(k.host.writerSpawns).toHaveLength(1);
+});
+
+test("a writer cancelled after it was told hands its PR, once, to a fresh writer, else to the lead", async () => {
   const k = await sentBack("running");
   k.host.tasks.get("T10")!.state = "cancelled";
   await k.settle();
   await k.settle();
   expect(sentTo(k, "T10")).toHaveLength(1);
-  const wakes = k.host.wakes.filter((w) => w.includes("X2"));
+  expect(k.host.writerSpawns).toHaveLength(1);
+  expect(k.host.writerSpawns[0]!.prompt).toContain("the merge train sent it back: conflicts with main");
+  expect(k.change(10).taskId).toBe("T70");
+  expect(k.host.wakes.filter((w) => w.includes("X2"))).toEqual([]);
+  // Where no writer can start (its order closed, the bot at its max agents), its lead hears, once.
+  const j = await sentBack("running");
+  j.host.writerRefusal = "Workstream W1 is done; tasks run only for open workstreams.";
+  j.host.tasks.get("T10")!.state = "cancelled";
+  await j.settle();
+  await j.settle();
+  const wakes = j.host.wakes.filter((w) => w.includes("X2"));
   expect(wakes).toHaveLength(1);
   expect(wakes[0]).toContain("T10 was cancelled");
+  expect(wakes[0]).toContain("tasks run only for open workstreams");
+  expect(j.change(10).taskId).toBe("T10");
+});
+
+test("a cancelled writer's PR goes to the live writer already pointed at it, never a second one", async () => {
+  const k = kit();
+  k.pr(9, "fleetd/T9-a", { "shared.md": "nine\n" });
+  k.pr(10, "fleetd/T10-b", { "shared.md": "ten\n" });
+  await k.enqueue(9);
+  await k.settle();
+  // The lead stopped T10 and started T40 on its PR.
+  k.host.tasks.get("T10")!.state = "cancelled";
+  k.host.tasks.set("T40", { taskId: "T40", projectRef: PROJECT, workstreamId: "W1", kind: "write", state: "running" });
+  k.host.underWay.push({ taskId: "T40", workstreamId: "W1", text: "Fix PR 10", pr: `https://github.com/${REPO}/pull/10` });
+  await k.enqueue(10);
+  await k.settle();
+  expect(k.change(10).state).toBe("needs_rebase");
+  expect(k.host.writerSpawns).toEqual([]);
+  expect(sentTo(k, "T40")).toHaveLength(1);
+  expect(sentTo(k, "T40")[0]).toContain("conflicts with main");
+  expect(k.change(10).taskId).toBe("T40");
+});
+
+/** PR 25, whose head GitHub ran no CI on (as #2236's on 2026-11-26): its CI times out with T25 in `state`. */
+async function ciNeverRan(state: string, wait?: string): Promise<Kit> {
+  const k = kit();
+  k.gh.unreadable = ["rules"];
+  k.gh.runs = () => [];
+  k.pr(25, "fleetd/T25-x", { "x.md": "x\n" });
+  k.host.tasks.get("T25")!.state = state;
+  if (wait !== undefined) k.host.waits.set("T25", wait);
+  await k.enqueue(25);
+  await k.settle(3);
+  k.clock.ms += 46 * 60_000;
+  await k.settle(3);
+  expect(timedOut(k.change(25))).toBe(true);
+  return k;
+}
+
+test("a PR whose CI never started goes back to its ended writer, continued once with why and to push again", async () => {
+  const k = await ciNeverRan("done");
+  const told = sentTo(k, "T25");
+  expect(told).toHaveLength(1);
+  expect(told[0]).toContain(`https://github.com/${REPO}/pull/25 (X1)`);
+  expect(told[0]).toContain("CI timed out");
+  expect(told[0]).toContain("push to it again (an empty commit will do) to start its CI");
+  await k.settle(3);
+  expect(sentTo(k, "T25")).toHaveLength(1);
+});
+
+test("a PR whose CI never started is held for its writer's armed wait, not woken twice, and continued once that wait is gone", async () => {
+  const k = await ciNeverRan("done", "a Monitor (pre-push check)");
+  expect(sentTo(k, "T25")).toEqual([]);
+  expect(k.host.held.map(([to]) => to)).toEqual(["T25"]);
+  expect(k.host.held[0]![1]).toContain("CI timed out");
+  await k.settle(3);
+  expect(sentTo(k, "T25")).toEqual([]);
+  expect(k.host.held).toHaveLength(1);
+  k.host.waits.delete("T25");
+  await k.settle();
+  expect(sentTo(k, "T25")).toHaveLength(1);
+  expect(sentTo(k, "T25")[0]).toContain("still back with you");
+  await k.settle(3);
+  expect(sentTo(k, "T25")).toHaveLength(1);
 });
 
 test("the lead digest flags a sent-back PR with no push for 30 min, with its writer's state", async () => {

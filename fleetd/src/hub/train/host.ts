@@ -16,10 +16,13 @@ export type TaskView = {
   prUrl?: string;
   /** `result.tail`. */
   resultTail?: string;
+  /** The profile it runs on. */
+  profile?: string;
 };
 
-/** A write task under way (queued, running or idle) as the watch reads it: what it was asked, its title and prompt. */
-export type WorkView = { taskId: string; workstreamId: string; text: string };
+/** A write task under way (queued, running or idle) as the watch reads it: what it was asked, its title and prompt,
+ * and the PR it was pointed at, if any. */
+export type WorkView = { taskId: string; workstreamId: string; text: string; pr?: string };
 
 export type WorkstreamView = {
   workstreamId: string;
@@ -35,6 +38,9 @@ export type EventView = { seq: number; eventType: string; data: unknown };
 
 /** A review task as Tasks.spawn takes it (kind "review"), from the caller `by` in `projectRef`. */
 export type ReviewSpawn = { projectRef: ProjectRef; by: string; workstreamId: string; title: string; prompt: string; pr: string };
+
+/** A write task as Tasks.spawn takes it, pointed at the PR `pr` its prompt hands it, past that PR's own Change. */
+export type WriterSpawn = ReviewSpawn & { profile?: string; notDuplicateOf: string[]; notDuplicateWhy: string };
 
 /** How a command the train ran on a node ended: its exit code (undefined when it timed out or could not run). */
 export type NodeRun = { exitCode?: number; outputTail: string };
@@ -60,6 +66,8 @@ export interface TrainHost {
   cancelTask(projectRef: ProjectRef, by: string, taskId: string, reason: string): Promise<void>;
   /** Tasks.spawn of a review task; throws its message. */
   spawnReview(spawn: ReviewSpawn): Promise<TaskView>;
+  /** Tasks.spawn of a write task; throws its message. Absent: a PR whose writer can't go on is its lead's. */
+  spawnWriter?(spawn: WriterSpawn): Promise<TaskView>;
   workstream(workstreamId: string): WorkstreamView | undefined;
   /** EventLog.append at now, on the project. */
   appendEvent(projectRef: ProjectRef, eventType: string, summary: string, data: unknown): void;

@@ -78,6 +78,7 @@ import {
   NO_CI_REQUEUED,
   PEOPLE,
   PIPELINE_DEPTH,
+  PUSH_AGAIN,
   REMOVED_PROJECT,
   REVIEW_WAIT_MS,
   timedOut,
@@ -876,12 +877,15 @@ export class Train {
     const data: Record<string, unknown> = { changeId: change.changeId, workstreamId: change.workstreamId, checks: failing.map((r) => r.name) };
     if (logUrl) data.logUrl = logUrl;
     this.emit(change.projectRef, "change.ci_failed", `${change.changeId} ${why}`, data);
-    if (stall) {
-      // A push would only start CI again: the lead hears of it, and the author is left to work.
+    if (stall?.kind === "queued" || stall?.kind === "running") {
+      // Its checks are still coming, and a push would only start them again: the lead hears of it, and the author is left to work.
       await this.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, `${why}; ${CI_WATCHED}`));
       return;
     }
-    await this.tellAuthor(parked, `the merge train did not merge it: ${why}`);
+    // Checks that never ran or never reported start only on a push, and a removed job needs its tree changed: either
+    // way it is its author's, as red CI is.
+    const again = stall !== undefined && stall.kind !== "removed" ? `; ${PUSH_AGAIN}` : "";
+    await this.tellAuthor(parked, `the merge train did not merge it: ${why}${again}`);
   }
 
   /** Polls the check runs of `sha` until all are done, one is red, or the timeout passes. */
@@ -1740,7 +1744,11 @@ export class Train {
           if (v.kind === "blocked") await back.stillBack(this, change);
           if (inLine) await this.unstartedChecks(change, pull.base.ref);
         }
-      } else if (timedOut(change)) await this.afterTimeout(change);
+      } else if (timedOut(change)) {
+        await this.afterTimeout(change);
+        const still = this.records.get(change.changeId);
+        if (still && timedOut(still)) await back.stillBack(this, still);
+      }
       else if (inLine) await this.unstartedChecks(change, pull.base.ref);
       else if (change.state === "needs_rebase" || change.state === "ci_failed") await back.stillBack(this, change);
     }
@@ -1853,7 +1861,7 @@ export class Train {
     this.lateReruns.set(change.changeId, reruns);
     if (rerun !== undefined) return;
     if (this.update(change.changeId, ["ci_failed"], (c) => ({ ...c, lastError: errorText(CI_CANCELLED) }))) {
-      await this.tellAuthor(change, `the merge train did not merge it: ${CI_CANCELLED}; push to it again (an empty commit will do) to start its CI`);
+      await this.tellAuthor(change, `the merge train did not merge it: ${CI_CANCELLED}; ${PUSH_AGAIN}`);
     }
   }
 
