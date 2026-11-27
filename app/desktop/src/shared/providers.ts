@@ -38,10 +38,11 @@ export const RUNNER_ID = "hosted";
 
 /**
  * The line a share link of a port on fleetd's computers shows, on its chat card and its Settings row: the link keeps
- * that computer up, billed as computer time. None for a port on one of the team's own machines.
+ * that computer up, billed as computer time, for at most 2 h past its agent's last step unless a person renews it, and
+ * never past the link's end (decision hosted.share-link-box-cap). None for a port on one of the team's own machines.
  */
 export const keptRunning = (machineId: string): string | undefined =>
-  machineId === RUNNER_ID ? "Its computer keeps running, and uses computer time, while the link is open." : undefined;
+  machineId === RUNNER_ID ? "Its computer keeps running, and uses computer time, up to 2 hours after the agent finishes or until the link ends. Renew to keep it longer." : undefined;
 
 /** The reveal key of a provider's row in Hub › Machines (Sandboxes.tsx), where every link to hosted sandboxes lands. */
 export const providerReveal = (id: string): string => `hub.sandbox.${id}`;

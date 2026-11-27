@@ -66,7 +66,7 @@ const card = async (name: string) => {
 
 it("says a link on fleetd's computers keeps its computer running, and names no machine id", async () => {
   const { kept } = await card("h4n8t2v6c3pw");
-  expect(kept).toBe("Its computer keeps running, and uses computer time, while the link is open.");
+  expect(kept).toBe("Its computer keeps running, and uses computer time, up to 2 hours after the agent finishes or until the link ends. Renew to keep it longer.");
   expect(host.textContent).toContain("Port 5173 · ends");
   expect(host.textContent).not.toContain("hosted");
 });
