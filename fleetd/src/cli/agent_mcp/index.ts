@@ -264,8 +264,8 @@ export async function serve(
   let asking: Promise<void> | undefined;
   const ask = () =>
     (asking ??= takeNodeTools(role, deps, served)
-      .then((changed) => {
-        if (changed && listed) return write(rustJson({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }));
+      .then(async (changed) => {
+        if (changed && listed) await write(rustJson({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }));
       })
       .catch(() => {})
       .finally(() => {
