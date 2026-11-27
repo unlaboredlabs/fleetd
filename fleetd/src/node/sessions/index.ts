@@ -28,6 +28,7 @@ import * as antigravity from "../runner/antigravity.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { memoryHook, noteFile } from "../runner/host/memory.ts";
+import { keepsOpen } from "../runner/kept.ts";
 import { reapLeaked, sweepVm } from "../place/left_vm.ts";
 import { hostDir, isRunner, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
 import { boxEnd, boxPlaces, BoxNotReady, checkpoint, hasBox, HostedDown } from "../place/hosted.ts";
@@ -2672,6 +2673,12 @@ export class SessionService {
       const dir = hostDir(this.home, id);
       const ended = await placeAt(dir).end(dir);
       if (ended) console.log(`${nowIso()} INFO ended processes its session left running {"sessionId":"${id}","ended":${ended}}`);
+    }
+    // A dev server an open share link keeps runs from its worktree and scratch: both stay, the agent having ended, and
+    // the hub's removal is tried again by the nightly sweep, days after any link's end (runner/kept.ts).
+    if (keepsOpen(hostDir(this.home, id), this.#now())) {
+      if (removeWorktree && row.local.baseRef) throw invalid(`${row.local.cwd} not removed: a share link keeps its session's dev server running from it`);
+      return { kind: "done" };
     }
     // A session's scratch goes with its worktree, or with its process when it has none.
     if (removeWorktree || !row.local.baseRef) await rm(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });

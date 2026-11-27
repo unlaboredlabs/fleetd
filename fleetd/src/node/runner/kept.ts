@@ -134,6 +134,16 @@ export function keptGroups(sources: KeptSource[], now = Date.now()): Set<number>
   return out;
 }
 
+/** Whether an open link keeps a dev server of the session whose host dir is `dir`: its worktree and scratch dir, which
+ * the server runs from, stay until the link ends. */
+export function keepsOpen(dir: string, now = Date.now()): boolean {
+  try {
+    return readKept(readFileSync(keptFile(dir), "utf8")).some((p) => p.untilMs > now);
+  } catch {
+    return false;
+  }
+}
+
 /** The node: every sweep it runs spares what any session's kept file keeps. */
 export const keepIn = (hosts: string) => spareGroups(() => keptGroups(keptSources(hosts)));
 
