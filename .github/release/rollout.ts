@@ -413,7 +413,10 @@ function add(): void {
   const now = Date.now();
   const r = update(
     (r) => {
-      if (r.builds.some((b) => b.build === build)) return false;
+      // Listed already: this publish run again, or another build that got its number, which must never pass quietly.
+      const listed = r.builds.find((b) => b.build === build);
+      if (listed !== undefined && listed.commit !== commit) throw new Error(`${build} is already listed as ${listed.commit}'s build, not ${commit}'s`);
+      if (listed !== undefined) return false;
       const since = r.builds[0]?.commit;
       const fresh: string[] = [];
       for (const c of changes) {

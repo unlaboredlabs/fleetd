@@ -70,14 +70,24 @@ jobs:
             version="${GITHUB_REF_NAME#v}"
           else
             # The build's version (release.version-scheme): 0.MINOR.PATCH. MINOR is the one line in
-            # .github/release/minor, bumped by hand (1.0 at launch); PATCH counts on from the build edge holds (edge
-            # builds one at a time, edge.yml) and starts at 0 with a new MINOR. A build that fails or isn't published
-            # leaves its number to the next; one that is published and then fails the first ring keeps it.
+            # .github/release/minor, bumped by hand (1.0 at launch); PATCH is one past the highest build-MINOR.* tag
+            # (each published build's own release, publish.sh, which is never deleted), and 0 for the first build of a
+            # new MINOR. A build that fails or isn't published leaves its number to the next; one that is published and
+            # then fails the first ring keeps it. Never from edge's release.json alone: on Nov 26 a read that crossed a
+            # publish got nothing, PATCH went back to 0, and every app on 0.9.42-0.9.49 saw each newer build as a
+            # downgrade. So a tag list that can't be read fails the build rather than guess.
             minor="$(tr -d '[:space:]' < .github/release/minor)"
+            if ! tags="$(git ls-remote --tags --refs origin "refs/tags/build-$minor.*")"; then
+              echo "::error::couldn't list the build-$minor.* tags, so the build's number is unknown; run it again"
+              exit 1
+            fi
+            last="$(sed -n "s|^[0-9a-f]*[[:space:]]*refs/tags/build-${minor//./\\.}\.\([0-9][0-9]*\)$|\1|p" <<< "$tags" | sort -n | tail -1)"
+            # Edge's own build too, should its tag be missing: never below what apps already run.
             held="$(jq -r '.build // empty' <<< "$edge")"
-            patch=0
-            if [ "${held%.*}" = "$minor" ]; then patch=$((${held##*.} + 1)); fi
+            if [ "${held%.*}" = "$minor" ] && [ "${held##*.}" -gt "${last:--1}" ] 2>/dev/null; then last="${held##*.}"; fi
+            patch=$((${last:--1} + 1))
             build="$minor.$patch"
+            echo "highest build-$minor.* tag: ${last:-none}; this build: $build"
             # The UTC day and the commit ride along as build metadata, which every version compare ignores: the apps
             # show "0.9.4 · Nov 23" (version.ts `buildNumber`).
             version="$build+$(date -u +%Y%m%d).${RELEASE_SHA::7}"

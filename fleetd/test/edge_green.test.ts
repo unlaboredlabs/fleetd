@@ -101,8 +101,15 @@ test("Desktop QA on main compares only with a run that passed: after a red one i
 });
 
 /** build-release.yml's plan step run on a repo of two commits, `one` then `two`, with edge's release.json holding
- * `held` (a stand-in curl answers it): its outputs. */
-function plan(release: "one" | "two", held: "one" | "two" | undefined, event = "workflow_run", forceApp = "false"): Record<string, string> {
+ * `held` (a stand-in curl answers it, `heldBuild` its build number) and origin holding the build tags `tags` (none
+ * when origin can't be reached): its outputs, and the step's exit status and output as `status` and `log`. */
+function plan(
+  release: "one" | "two",
+  held: "one" | "two" | undefined,
+  event = "workflow_run",
+  forceApp = "false",
+  { tags = [], heldBuild = "2026.11.23.1" }: { tags?: string[] | null; heldBuild?: string } = {},
+): Record<string, string> {
   const step = (yaml("build-release.yml").jobs.plan.steps as { id?: string; run: string }[]).find((s) => s.id === "plan")!;
   const dir = `${process.env.TMPDIR ?? "/tmp"}/fleetd-edge-plan-${Math.random().toString(36).slice(2)}`;
   const env = { PATH: `${dir}/bin:${process.env.PATH ?? "/usr/bin:/bin"}`, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_NAME: "a", GIT_AUTHOR_EMAIL: "a@example.invalid", GIT_COMMITTER_NAME: "a", GIT_COMMITTER_EMAIL: "a@example.invalid" };
@@ -110,23 +117,36 @@ function plan(release: "one" | "two", held: "one" | "two" | undefined, event = "
   Bun.spawnSync(["mkdir", "-p", `${dir}/bin`, `${dir}/fleetd`]);
   run(["git", "init", "-q", "-b", "main"]);
   Bun.write(join(dir, "fleetd/package.json"), "{}\n");
+  Bun.spawnSync(["mkdir", "-p", `${dir}/.github/release`]);
+  Bun.write(join(dir, ".github/release/minor"), readFileSync(join(import.meta.dir, "../../.github/release/minor")));
   run(["git", "add", "-A"]);
   run(["git", "commit", "-q", "-m", "one"]);
   const one = run(["git", "rev-parse", "HEAD"]);
   run(["git", "commit", "-q", "--allow-empty", "-m", "two"]);
   const two = run(["git", "rev-parse", "HEAD"]);
   const sha = { one, two };
-  const json = held === undefined ? "" : JSON.stringify({ commit: sha[held], appCommit: sha[held], build: "2026.11.23.1" });
+  // origin: a bare repo with the build tags, each at `one`.
+  if (tags !== null) {
+    run(["git", "init", "-q", "--bare", `${dir}/origin.git`]);
+    run(["git", "remote", "add", "origin", `${dir}/origin.git`]);
+    for (const t of tags) run(["git", "push", "-q", "origin", `${one}:refs/tags/${t}`]);
+  } else run(["git", "remote", "add", "origin", `${dir}/gone.git`]);
+  const json = held === undefined ? "" : JSON.stringify({ commit: sha[held], appCommit: sha[held], build: heldBuild });
   Bun.write(join(dir, "bin/curl"), `#!/bin/sh\nprintf '%s' '${json}'\n`);
   Bun.spawnSync(["chmod", "+x", join(dir, "bin/curl")]);
   const out = join(dir, "out.txt");
-  Bun.spawnSync(["bash", "-c", step.run], {
+  // As GitHub runs a step: bash -eo pipefail.
+  const ran = Bun.spawnSync(["bash", "-eo", "pipefail", "-c", step.run], {
     cwd: dir,
     env: { ...env, CHANNEL: "edge", PUBLISH: "true", FORCE_APP: forceApp, GITHUB_EVENT_NAME: event, RELEASE_SHA: sha[release], GITHUB_REPOSITORY: "unlaboredlabs/fleetd", GITHUB_OUTPUT: out },
   });
   const written = Bun.file(out).size > 0 ? readFileSync(out, "utf8") : "";
   Bun.spawnSync(["rm", "-rf", dir]);
-  return Object.fromEntries(written.split("\n").filter(Boolean).map((l) => l.split("=", 2) as [string, string]));
+  return {
+    ...Object.fromEntries(written.split("\n").filter(Boolean).map((l) => l.split("=", 2) as [string, string])),
+    status: String(ran.exitCode),
+    log: `${ran.stdout.toString()}${ran.stderr.toString()}`,
+  };
 }
 
 test("a run for a commit edge already holds, or an older one, builds and publishes nothing: the newest commit builds next", () => {
@@ -143,4 +163,65 @@ test("a run for a commit edge already holds, or an older one, builds and publish
   expect(plan("two", "one").build).toMatch(/\.\d+$/);
   // And a skipped plan skips the publish.
   expect(yaml("build-release.yml").jobs.publish.if).toContain("needs.plan.outputs.skip != 'true'");
+});
+
+test("a build's number is one past the highest build tag of its MINOR, and a plan that can't list the tags fails", () => {
+  const minor = readFileSync(join(import.meta.dir, "../../.github/release/minor"), "utf8").trim();
+  const tags = [5, 9, 10, 49, 3].map((n) => `build-${minor}.${n}`).concat(["build-2026.11.23.4", `build-${minor}9.70`, `build-${minor}.12-x`]);
+  // As on Nov 26 at 20:03: edge's release.json was being replaced and read as nothing, yet the number goes on from 49.
+  expect(plan("two", undefined, "workflow_run", "false", { tags })).toMatchObject({ status: "0", build: `${minor}.50` });
+  expect(plan("two", undefined, "workflow_run", "false", { tags }).version).toStartWith(`${minor}.50+`);
+  // Edge's release.json, read, never pulls it back either, and its own build counts should its tag be missing.
+  expect(plan("two", "one", "workflow_run", "false", { tags, heldBuild: `${minor}.7` }).build).toBe(`${minor}.50`);
+  expect(plan("two", "one", "workflow_run", "false", { tags, heldBuild: `${minor}.60` }).build).toBe(`${minor}.61`);
+  // The first build of a new MINOR, with no tag of it yet, is 0.
+  expect(plan("two", undefined, "workflow_run", "false", { tags: ["build-2026.11.23.4"] }).build).toBe(`${minor}.0`);
+  // origin unreachable: the plan fails loudly and plans no build, rather than start again at 0.
+  const failed = plan("two", undefined, "workflow_run", "false", { tags: null });
+  expect(failed.status).not.toBe("0");
+  expect(failed.build).toBeUndefined();
+  expect(failed.log).toContain(`couldn't list the build-${minor}.* tags`);
+});
+
+/** publish.sh run for build 0.9.12 of `two` (a CLI build in dist/), on a repo whose origin has build-0.9.12 at `tagged`
+ * (none when undefined), against a stand-in gh that logs each call and holds no release: its status, output and gh's
+ * calls. */
+function publishAs(tagged: "one" | "two" | undefined): { status: number; log: string; calls: string[] } {
+  const dir = `${process.env.TMPDIR ?? "/tmp"}/fleetd-edge-publish-${Math.random().toString(36).slice(2)}`;
+  const env = { PATH: `${dir}/bin:${process.env.PATH ?? "/usr/bin:/bin"}`, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_NAME: "a", GIT_AUTHOR_EMAIL: "a@example.invalid", GIT_COMMITTER_NAME: "a", GIT_COMMITTER_EMAIL: "a@example.invalid" };
+  const run = (args: string[]) => Bun.spawnSync(args, { cwd: dir, env }).stdout.toString().trim();
+  Bun.spawnSync(["mkdir", "-p", `${dir}/bin`, `${dir}/dist`]);
+  run(["git", "init", "-q", "-b", "main"]);
+  run(["git", "commit", "-q", "--allow-empty", "-m", "one"]);
+  const one = run(["git", "rev-parse", "HEAD"]);
+  run(["git", "commit", "-q", "--allow-empty", "-m", "two"]);
+  const two = run(["git", "rev-parse", "HEAD"]);
+  run(["git", "init", "-q", "--bare", `${dir}/origin.git`]);
+  run(["git", "remote", "add", "origin", `${dir}/origin.git`]);
+  if (tagged !== undefined) run(["git", "push", "-q", "origin", `${{ one, two }[tagged]}:refs/tags/build-0.9.12`]);
+  Bun.write(join(dir, "dist/fleetd-bun-linux-x64"), "cli\n");
+  // gh: every call logged; no release exists, so each read fails as GitHub's does.
+  Bun.write(join(dir, "bin/gh"), `#!/bin/sh\necho "$*" >> "${dir}/gh.log"\ncase "$2" in download|view) exit 1;; esac\n`);
+  Bun.spawnSync(["chmod", "+x", join(dir, "bin/gh")]);
+  const ran = Bun.spawnSync(["bash", join(import.meta.dir, "../../.github/release/publish.sh")], {
+    cwd: dir,
+    env: { ...env, CHANNEL: "edge", VERSION: "0.9.12+20261127.6c77787", BUILD: "0.9.12", APP_BUILT: "false", CLI_PUBLISH: "true", RELEASE_SHA: two, GH_TOKEN: "x" },
+  });
+  const calls = Bun.file(join(dir, "gh.log")).size > 0 ? readFileSync(join(dir, "gh.log"), "utf8").trim().split("\n") : [];
+  Bun.spawnSync(["rm", "-rf", dir]);
+  return { status: ran.exitCode, log: `${ran.stdout.toString()}${ran.stderr.toString()}`, calls };
+}
+
+test("a publish never puts a build into another commit's build-<number> release", () => {
+  // As on Nov 27: build-0.9.12 is Nov 25's build, and a build that got its number again stops before any upload.
+  const reused = publishAs("one");
+  expect(reused.status).not.toBe(0);
+  expect(reused.log).toContain("build-0.9.12 is already");
+  expect(reused.calls.filter((c) => /^release (create|upload|edit)/.test(c))).toEqual([]);
+  // Its own number, new or (a re-run of the publish) already its own, goes up as before.
+  for (const tagged of [undefined, "two"] as const) {
+    const own = publishAs(tagged);
+    expect(own.log).not.toContain("is already");
+    expect(own.calls).toContainEqual(expect.stringMatching(/^release upload build-0\.9\.12 /));
+  }
 });
