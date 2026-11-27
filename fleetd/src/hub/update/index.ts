@@ -315,6 +315,13 @@ export function pickerIn(dir: string, speed?: Speed): Picker {
   };
 }
 
+/** The repo fleetd's own hub reports to by the settings in `<hub home>/update` (`ring: "first"` with `reportTo`): its
+ * passed builds, and the phone updates whose error reports spike (hub/app_errors/pull.ts). */
+export function reportToIn(hubHome: string): string | undefined {
+  const s = readSettings(join(hubHome, "update"));
+  return s.ring === "first" && typeof s.reportTo === "string" && /^[\w.-]+\/[\w.-]+$/.test(s.reportTo) ? s.reportTo : undefined;
+}
+
 /** How long a node waits for its agents at most by the settings in `<hub home>/update`, else `defaultMs`. */
 export function drainIn(hubHome: string, defaultMs: number): number {
   const m = readSettings(join(hubHome, "update")).drainMinutes;
@@ -502,8 +509,7 @@ export class Updates {
 
   /** The repo fleetd's own hub reports its passed builds to, with `ring: "first"`. */
   reportTo(): string | undefined {
-    const s = readSettings(this.dir);
-    return s.ring === "first" && typeof s.reportTo === "string" && /^[\w.-]+\/[\w.-]+$/.test(s.reportTo) ? s.reportTo : undefined;
+    return reportToIn(dirname(this.dir));
   }
 
   setSettings(auto: boolean | undefined, drainMinutes: number | undefined, speed?: Speed): UpdateSettings {

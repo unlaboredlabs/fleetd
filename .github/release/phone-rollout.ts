@@ -5,6 +5,8 @@
 // own. phone.json on the edge release lists the updates (mobile-release.yml's update job adds each one), and
 // rollout.ts writes what each stage serves into edge's mobile-updates.tar.gz on publish and on every tick.
 //
+// Only the newest update of a runtime version advances: once a newer one is published, an older one still on its way
+// stays at the stage it had reached, so a revert or any later fix stops a bad update from going on to 50% and everyone.
 // A halted update reaches nobody new: each stage serves the newest update before it that reached it. A pulled one
 // also takes back those who have it: every stage serves its back copy, the update everyone had when it was published
 // signed again as a newer one (or expo-updates' rollBackToEmbedded directive when there was none), which its package
@@ -15,6 +17,7 @@
 
 import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { spike } from "../../fleetd/src/hub/app_errors/pull.ts";
 
 export type Platform = "ios" | "android";
 export const PLATFORMS: readonly Platform[] = ["ios", "android"];
@@ -80,12 +83,14 @@ export function served(r: PhoneRollout, now: number): Served[] {
   for (const { runtime, platform } of keys.values()) {
     const mine = r.updates.filter((u) => u.platforms[platform]?.runtime === runtime);
     for (const { percent, dir } of STAGE_DIRS) {
-      for (const u of mine) {
+      for (const [i, u] of mine.entries()) {
         if (u.pulledAt !== undefined) {
           out.push({ dir, runtime, platform, from: u.id, back: true });
           break;
         }
-        if (u.haltedAt !== undefined || phonePercentAt(u, now) < percent) continue;
+        // As far as it got by the time the next newer one was published.
+        const until = i === 0 ? now : Math.min(now, Date.parse(mine[i - 1]!.publishedAt));
+        if (u.haltedAt !== undefined || phonePercentAt(u, until) < percent) continue;
         out.push({ dir, runtime, platform, from: u.id, back: false });
         break;
       }
@@ -96,7 +101,14 @@ export function served(r: PhoneRollout, now: number): Served[] {
 
 /** Whether an update is still on its way to everyone: the ticker keeps ticking. */
 export const phoneMoving = (r: PhoneRollout, now: number): boolean =>
-  r.updates.some((u) => u.haltedAt === undefined && u.pulledAt === undefined && phonePercentAt(u, now) < 100);
+  r.updates.some(
+    (u, i) =>
+      // An older one a newer one stopped (`served`) moves no more.
+      !r.updates.slice(0, i).some((n) => PLATFORMS.some((p) => n.platforms[p] !== undefined && n.platforms[p]?.runtime === u.platforms[p]?.runtime)) &&
+      u.haltedAt === undefined &&
+      u.pulledAt === undefined &&
+      phonePercentAt(u, now) < 100,
+  );
 
 /** Its package's name on the edge release. */
 export const packageOf = (id: string) => `phone-update-${id}.tar.gz`;
@@ -137,4 +149,26 @@ export function writeServed(s: Served[], packageDir: (id: string) => string, out
     cpSync(join(packageDir(x.from), ...(x.back ? ["back"] : []), x.runtime, x.platform), join(out, x.dir, x.runtime, x.platform));
   }
   writeFileSync(join(out, "served.txt"), servedText(s));
+}
+
+/** The cloud's per-update totals of its teams' phone error reports (only counts: never a message, a stack or a team),
+ * as `CLOUD_PHONE_ERRORS_URL` serves them. */
+export type CloudErrors = { updates: { id: string; firstAt: number; fatal: number; caught: number }[] };
+
+/** The listed updates whose cloud totals spike by the workspace's own rule (hub/app_errors/pull.ts), to pull, each with
+ * why; an update counts by any of its platforms' ids. */
+export function cloudPulls(r: PhoneRollout, cloud: CloudErrors, now: number): { id: string; why: string }[] {
+  const counts = [...cloud.updates].sort((a, b) => b.firstAt - a.firstAt);
+  const out: { id: string; why: string }[] = [];
+  for (const u of r.updates) {
+    if (u.pulledAt !== undefined) continue;
+    for (const id of new Set([u.id, ...Object.values(u.platforms).map((p) => p!.id)])) {
+      const why = spike(counts, id, now);
+      if (why !== undefined) {
+        out.push({ id: u.id, why: `${why} across the cloud's teams` });
+        break;
+      }
+    }
+  }
+  return out;
 }

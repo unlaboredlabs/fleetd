@@ -36,7 +36,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRollout, percentAt, STAGES, type Rollout, type RolloutBuild } from "../../fleetd/src/update/rollout.ts";
 import { httpStatus, transient } from "../../fleetd/src/hub/train/github.ts";
-import { packageOf, parsePhoneRollout, phoneMoving, PLATFORMS as PHONE_PLATFORMS, prunePhone, served, servedText, updateOf, writeServed, type PhoneRollout, type PhoneUpdate } from "./phone-rollout.ts";
+import { cloudPulls, packageOf, parsePhoneRollout, phoneMoving, PLATFORMS as PHONE_PLATFORMS, prunePhone, served, servedText, updateOf, writeServed, type CloudErrors, type PhoneRollout, type PhoneUpdate } from "./phone-rollout.ts";
 
 const HOUR = 3_600_000;
 const TAG = "edge";
@@ -46,6 +46,8 @@ export const MAX_BUILDS = 60;
 export const KEEP_MS = 3 * 24 * HOUR;
 const SLOT_MS = 6 * HOUR;
 export const CLOUD_URL = process.env.FLEETD_CLOUD_VERSION_URL ?? "https://app.fleetd.dev/version";
+/** The cloud's per-update totals of its teams' phone error reports (phone-rollout.ts' `CloudErrors`). */
+export const CLOUD_PHONE_ERRORS_URL = process.env.FLEETD_CLOUD_PHONE_ERRORS_URL ?? "https://app.fleetd.dev/phone-errors";
 export const CLOUD_STALE_MS = 6 * HOUR;
 export const CLOUD_WAIT_MS = 2 * HOUR;
 /** The CLI's builds hubs and nodes download, each under its pinned name in the build's release. */
@@ -325,6 +327,20 @@ const dateOf = (commit: string) => {
   return r.status === 0 ? Number(r.stdout.trim()) * 1000 : undefined;
 };
 
+/** The cloud's per-update totals of its teams' phone error reports; none when it doesn't serve them (yet) or fails. */
+async function readCloudErrors(): Promise<CloudErrors> {
+  try {
+    const answer = await fetch(CLOUD_PHONE_ERRORS_URL, { signal: AbortSignal.timeout(15_000) });
+    if (!answer.ok) return { updates: [] };
+    const v = (await answer.json()) as Partial<CloudErrors>;
+    const ok = (u: CloudErrors["updates"][number]) =>
+      typeof u?.id === "string" && [u.firstAt, u.fatal, u.caught].every((n) => typeof n === "number" && Number.isFinite(n));
+    return { updates: Array.isArray(v.updates) ? v.updates.filter(ok) : [] };
+  } catch {
+    return { updates: [] };
+  }
+}
+
 async function readCloud(): Promise<Cloud> {
   try {
     const answer = await fetch(CLOUD_URL, { signal: AbortSignal.timeout(15_000) });
@@ -534,7 +550,8 @@ async function phoneAdd(path: string): Promise<void> {
 
 function phoneFlag(kind: "halt" | "pull" | "resume", id: string): void {
   const now = iso(Date.now());
-  const find = (r: PhoneRollout) => r.updates.find((u) => u.id === id);
+  // By its iOS id or either platform's: fleetd's own workspace pulls by the id a phone reported (hub/app_errors/pull.ts).
+  const find = (r: PhoneRollout) => r.updates.find((u) => u.id === id || Object.values(u.platforms).some((p) => p?.id === id));
   updatePhone(
     (r) => {
       const u = find(r);
@@ -587,7 +604,12 @@ async function tick(): Promise<void> {
   const edge = new Set(assets(TAG));
   writeFeeds(r, now, work, filesOf, edge);
 
-  // The phone's updates: each stage as far as it got, and the packages no longer listed gone.
+  // The phone's updates: pulled when the cloud's teams' reports spike (fleetd's own workspace pulls by its own phones'
+  // reports itself), each stage as far as it got, and the packages no longer listed gone.
+  for (const { id, why } of cloudPulls(readPhone(), await readCloudErrors(), now)) {
+    console.log(`phone update ${id}: ${why}`);
+    phoneFlag("pull", id);
+  }
   let droppedPhone: string[] = [];
   const phone = updatePhone(
     (p) => {

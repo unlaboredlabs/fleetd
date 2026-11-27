@@ -180,7 +180,9 @@ code makes a new build instead.
 
 Pick the channel when you run **Mobile release**: `edge` gets each change merged to `main`, `stable` each tagged
 release. An edge update goes out in stages: about 1 phone in 10 within minutes, half after an hour, every phone after
-three hours. Which stage a phone is in comes from a random id it keeps for itself. A halted update reaches no more
-phones; a pulled one takes the phones that have it back to the version before it. A fork that wants its own updates makes its own key with
+three hours, and an update stops where it got once a newer one is published. Which stage a phone is in comes from a
+random id it keeps for itself. A halted update reaches no more phones; a pulled one takes the phones that have it
+back to the version before it. fleetd's own workspace pulls an update by itself when a phone reports a crash on it, or
+many more errors than on the update before. A fork that wants its own updates makes its own key with
 `npm exec -- expo-updates codesigning:generate` in `app/mobile`, sets `UPDATES_PRIVATE_KEY_PEM`, `UPDATES_CERT_PEM` and
 `FLEETD_UPDATES_URL`, and serves its own `site/`.
