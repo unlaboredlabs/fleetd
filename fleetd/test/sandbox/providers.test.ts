@@ -374,6 +374,8 @@ describe("each provider's own settings", () => {
     // Only Ubuntu's own sources are left in the template, and a release-info change on them is taken.
     expect(readdirSync(join(etc, "sources.list.d"))).toEqual(["ubuntu.sources"]);
     expect(readFileSync(join(etc, "apt.conf.d", "99fleetd-release-info"), "utf8")).toContain('Acquire::AllowReleaseInfoChange "true";');
+    // A file the mirror fails to serve is tried again, and the command-not-found indexes aren't fetched.
+    expect(readFileSync(join(etc, "apt.conf.d", "99fleetd-fetch"), "utf8")).toBe('Acquire::Retries "10";\nAcquire::IndexTargets::deb::CNF::DefaultEnabled "false";\n');
     // Before the recipe's first step.
     const cmds = s.calls.filter((c) => /\/commands$/.test(c.path)).map((c) => c.body.command as string);
     expect(cmds[0]).toContain("sources.list.d");

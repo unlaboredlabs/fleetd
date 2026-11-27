@@ -45,9 +45,12 @@ export const SAVE_MS = 20 * 60_000;
 export const STARTING_POLL_MS = 250;
 export const STARTING_MS = 20_000;
 /** A template build's first step: only Ubuntu's own apt sources stay (noble's ubuntu.sources), and a change of their
- * release info (an Ubuntu point release) is taken rather than failing `apt-get update`. */
+ * release info (an Ubuntu point release) is taken rather than failing `apt-get update`. A file apt fails to fetch
+ * (a 503 from snapshot.ubuntu.com) is tried again more often, and the image's command-not-found indexes, which no
+ * step needs, aren't fetched at all: one of them failing sank a build (`apt-get update` exits 100). */
 export const APT_OWN = `for f in /etc/apt/sources.list.d/*; do [ -e "$f" ] || continue; [ "\${f##*/}" = ubuntu.sources ] || rm -rf -- "$f"; done
-mkdir -p /etc/apt/apt.conf.d && printf 'Acquire::AllowReleaseInfoChange "true";\\n' > /etc/apt/apt.conf.d/99fleetd-release-info`;
+mkdir -p /etc/apt/apt.conf.d && printf 'Acquire::AllowReleaseInfoChange "true";\\n' > /etc/apt/apt.conf.d/99fleetd-release-info
+printf 'Acquire::Retries "10";\\nAcquire::IndexTargets::deb::CNF::DefaultEnabled "false";\\n' > /etc/apt/apt.conf.d/99fleetd-fetch`;
 
 /** The boat type of exactly `size`; a size boat has no type of is refused, never rounded up to a larger one. */
 export function typeFor(size: Size): string {
