@@ -19,6 +19,7 @@ import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { openCount } from "../prs/words";
 import { SessionView } from "../sessions/SessionView";
+import { isWorking } from "../live/words";
 import { preloadable, preloadWhenIdle } from "../../ui";
 import type { CountProps, PaneProps } from "./tabs";
 
@@ -42,12 +43,15 @@ export function AgentsTab({ project, view, onWide }: PaneProps) {
   return <AgentsPane project={project} agent={view.tab === "agents" ? view.agent : null} at={view.tab === "sessions" ? "screens" : null} />;
 }
 
-/** The project's agents at work, the leads not counted; nothing until known. */
+/**
+ * The project's agents at work, the leads not counted, as the sidebar's row and the chat's band count them (one number
+ * means one thing everywhere); the list under the tab still has every agent. Nothing until known, or with none at work.
+ */
 export function AgentCount({ project }: CountProps) {
   useToolQuery("agents_list", ALL);
   const all = useData(selectLiveAgents);
   const key = projectKey(project);
-  const n = useMemo(() => (all === undefined ? 0 : projectAgents(all, key).length), [all, key]);
+  const n = useMemo(() => (all === undefined ? 0 : projectAgents(all, key).filter((a) => isWorking(a.row.status)).length), [all, key]);
   return n > 0 ? String(n) : null;
 }
 
@@ -71,9 +75,12 @@ export function ShippingTab({ project, view, onWide }: PaneProps) {
   return <PrsPane project={project} pr={pr} tab={tab} onTab={pick} at={view.tab === "train" ? "train" : null} />;
 }
 
-/** Its open PRs, once the list has been read: the count alone never asks GitHub. */
-export function PrCount({ project, active }: CountProps) {
-  const rows = usePrList(project, active).list.data?.prs;
+/**
+ * Its open PRs, read as the panel opens (one read per bot, kept until an event says it changed; the workspace caches
+ * GitHub's list), so the count is there before the tab is first opened and the tabs after it never shift.
+ */
+export function PrCount({ project }: CountProps) {
+  const rows = usePrList(project, true).list.data?.prs;
   const n = rows === undefined ? 0 : openCount(rows);
   return n > 0 ? String(n) : null;
 }

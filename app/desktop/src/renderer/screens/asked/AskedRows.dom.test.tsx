@@ -179,7 +179,7 @@ describe("Asked work", () => {
   it("says in one line that nothing was asked, and a read that failed with Retry, where its old tab's link opens", async () => {
     await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers({ ...READ, asks: [] }));
     expect(screen()).toBe("asked");
-    expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing asked yet");
+    expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing asked yetThe work the lead asks other bots for shows here.");
 
     act(() => root.unmount());
     root = createRoot(host);

@@ -176,9 +176,13 @@
 }
 
 /* A role with no choice (your own): its word at the choice's place, why on hover. */
+/* A role that can't change, laid out as the quiet choices above and below it: on their 36 px line, its word ending
+   where theirs end before the chevron (1 px edge, 8 px in, a 14 px chevron 4 px after the word). */
 .roleWord {
   display: inline-flex;
-  padding: 0 var(--space-2);
+  align-items: center;
+  height: var(--field);
+  padding: 0 calc(1px + var(--space-2) + 14px + var(--space-1)) 0 calc(1px + var(--space-3));
 }
 /* The "…"'s room in a row without one, so every role ends on one edge. */
 .menuRoom {

@@ -55,9 +55,10 @@ export function AgentCard({ agent }: { agent: AgentBlock }) {
       ? [known?.title ?? "An agent", known === undefined ? "Not running now." : "Finished."]
       : task.data !== undefined
         ? [task.data.task.title, taskStateText(task.data.task)]
-        : missing
-          ? ["An agent", "This workspace has no such task."]
-          : ["An agent", task.error !== null ? "Its state can't be read now." : ""];
+        : // No internal id or "task" in front of the person: the card says what it can.
+          missing
+          ? ["An agent", "It’s no longer in this workspace."]
+          : ["An agent", task.error !== null ? "Its state can’t be read now." : ""];
   return (
     <div className={b.card} data-block="agent">
       <div className={b.prTop}>

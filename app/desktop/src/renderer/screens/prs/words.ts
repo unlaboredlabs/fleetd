@@ -5,6 +5,7 @@ import type { AgentRole, ChangeState } from "../../../shared/contracts";
 import type { ChecksSummary, PrAuthor, PrCheck, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { profileWord } from "../../ui/primitives/profiles";
 import { ROLE_WORD } from "../../ui/primitives/roles";
+import { clockFormat } from "../../../shared/clock";
 
 /** A state word's colour: the ui kit's status tones. */
 export type Tone = "needs-you" | "failed" | "working" | "quiet" | "idle" | "done";
@@ -272,8 +273,7 @@ export const when = (iso: string, nowMs: number, timeZone?: string): string => {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return "";
   const day = (t: number) => format({ year: "numeric", month: "2-digit", day: "2-digit" }, timeZone).format(t);
-  const hm = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
-  if (day(ms) === day(nowMs)) return format(hm, timeZone).format(ms);
-  if (ms <= nowMs && nowMs - ms < 6 * 86_400_000) return format({ weekday: "short", ...hm }, timeZone).format(ms);
+  if (day(ms) === day(nowMs)) return clockFormat(timeZone).format(ms);
+  if (ms <= nowMs && nowMs - ms < 6 * 86_400_000) return clockFormat(timeZone, { weekday: "short" }).format(ms);
   return format({ day: "numeric", month: "short" }, timeZone).format(ms);
 };

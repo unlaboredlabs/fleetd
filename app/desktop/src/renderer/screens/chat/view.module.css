@@ -86,6 +86,14 @@
 .scroller {
   scrollbar-gutter: stable;
 }
+/* The list is one Tab stop that hands its focus to a bubble (keys.ts): the ring is the bubble's, not the list's. */
+.scroller:focus {
+  outline: none;
+}
+[data-bubble]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 /* A bubble entering from below its place doesn't stretch the scroll past the end for a moment. */
 .scroller > * {
   overflow-y: clip;
@@ -204,12 +212,20 @@
   animation: enter var(--dur-enter) var(--ease-enter) backwards;
   animation-delay: calc(var(--enter-stagger) * var(--enter-step, 0) - var(--enter-since, 0ms));
 }
+/* Your own send starts most of the way in: its words leave the composer on the same frame, so they never vanish for a
+   beat between the two. */
 .mine .enter {
+  animation-name: enter-mine;
   animation-duration: var(--dur-enter-mine);
 }
 @keyframes enter {
   from {
     opacity: 0;
+  }
+}
+@keyframes enter-mine {
+  from {
+    opacity: 0.6;
   }
 }
 /* In a narrow chat (beside the panel, a side window, a phone's browser) the actions and time stay beside the bubble's
@@ -428,6 +444,15 @@
   min-width: min(100%, 320px);
   max-width: 100%;
 }
+/* The lead's cards (a PR, an agent, an ask, a checklist) take the wide blocks' width (.wide: a diff, a table), so
+   stacked they share both edges instead of zig-zagging; a picture and a file keep their own. */
+.line:has(> .blockBubble:is([data-bubble="pr"], [data-bubble="agent"], [data-bubble="ask"], [data-bubble="checklist"])) {
+  width: 100%;
+  max-width: 100%;
+}
+.blockBubble:is([data-bubble="pr"], [data-bubble="agent"], [data-bubble="ask"], [data-bubble="checklist"]) {
+  width: 100%;
+}
 /* One to three emoji: large, with no bubble. */
 .jumbo {
   position: relative;
@@ -631,12 +656,10 @@ span.changeUndo {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
-/* Not needed, under the questions the lead waits on: a quiet link, level with the bubbles' words. */
+/* Not needed, under the questions the lead waits on: a small secondary button, a step under the bubbles, on their edge. */
 .skip {
   display: flex;
-  padding: 2px var(--space-3) 0;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  padding-top: var(--space-1);
 }
 .attachments {
   display: flex;

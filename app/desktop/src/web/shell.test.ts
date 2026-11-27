@@ -201,7 +201,7 @@ describe("the web shell", () => {
     t.api.hub.subscribe(ACME, () => undefined);
     t.sockets[0]?.events.onClose(4401, "unauthorized");
     await vi.runAllTimersAsync();
-    expect(t.went[0]).toMatch(/^\/web\/sign-in/u);
+    expect(t.went[0]).toBe("reload");
     expect([...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"))).toEqual([]);
   });
 
@@ -305,12 +305,16 @@ describe("the web shell", () => {
     expect(sockets).toHaveLength(1);
   });
 
-  it("goes to Sign in, back to where it was, when a refused socket finds the session gone", async () => {
-    const { api, sockets, went } = setup((path) => (path === "/web/session" ? new Response(null, { status: 401 }) : new Response(null, { status: 404 })));
+  it("starts the page again on the gate, saying whose session ended, when a refused socket finds the session gone", async () => {
+    const { api, sockets, went, stored } = setup((path) => (path === "/web/session" ? new Response(null, { status: 401 }) : new Response(null, { status: 404 })));
     api.hub.subscribe(ACME, () => undefined);
     sockets[0]?.events.onClose(4401, "unauthorized");
     await vi.runAllTimersAsync();
-    expect(went[0]).toBe("/web/sign-in?return=%2F%23%2Fsettings%2Fgeneral");
+    expect(went).toEqual(["reload"]);
+    expect(stored.get("fleetd.web.ended")).toBe(SESSION.email);
+    // Signed in again, the app starts with nothing left to say.
+    setup(undefined, SESSION, stored);
+    expect(stored.has("fleetd.web.ended")).toBe(false);
   });
 
   it("starts the page again when the session's teams changed since", async () => {

@@ -26,9 +26,14 @@ export function HubsSettings() {
   const hubs = useHubs();
   return (
     <SettingsSection
-      title="Paired workspaces"
+      // In a browser nothing was paired: the account's workspaces are simply yours.
+      title={onWeb() ? "Workspaces" : "Paired workspaces"}
       reveal="hubs.add"
-      hint="The workspaces this app is paired with. It acts as you on each. With two workspaces or more, a workspace's name shows above its bots and beside its work."
+      hint={
+        onWeb()
+          ? "The workspaces of your fleetd account. With two workspaces or more, a workspace's name shows above its bots and beside its work."
+          : "The workspaces this app is paired with. It acts as you on each. With two workspaces or more, a workspace's name shows above its bots and beside its work."
+      }
       aside={
         // The web app is fleetd cloud's: its hubs are the account's teams, and pairing one of your own is the desktop app's.
         onWeb() ? undefined : (
@@ -61,7 +66,8 @@ export function HubsSettings() {
 function phaseLine(state: HubState): { tone: TextTone; text: string } {
   switch (state.phase) {
     case "live":
-      return { tone: "success", text: "Connected." };
+      // Quiet, as a working machine's or account's state is on their pages: only what needs you is in colour.
+      return { tone: "quiet", text: "Connected." };
     case "connecting":
       return { tone: "quiet", text: state.attempt > 1 ? `Connecting, attempt ${state.attempt}…` : "Connecting…" };
     case "retrying": {
@@ -162,13 +168,13 @@ function HubSetting({ only }: { only: boolean }) {
       reveal={only ? "hubs.hub" : `hubs.${self.id}`}
       // A team on the web goes by its name, one or several.
       title={self.label}
-      hint={account ? "Hosted by fleetd. It came with your fleetd account, and signing out takes it off this app." : undefined}
-      // The hub's fix may name a command in backticks: shown as code.
+      hint={account ? `Hosted by fleetd. It came with your fleetd account, and signing out takes it off this ${onWeb() ? "browser" : "app"}.` : undefined}
+      // The hub's fix may name a command in backticks: shown as code. Its address is the line's tooltip, where an
+      // address goes (ui/DESIGN.md), not words beside it; a hosted one's is fleetd's own, never shown.
       line={
-        <>
+        <span title={hub === null || account ? undefined : hub.replace(/^https?:\/\//u, "")}>
           <HubText>{line.text.replace(/\.$/u, "")}</HubText>
-          {hub && line.tone !== "warning" && line.tone !== "danger" ? <span className={s.addressPart}>{` · ${hub.replace(/^https?:\/\//u, "")}`}</span> : null}
-        </>
+        </span>
       }
       lineTone={line.tone}
       control={
@@ -189,7 +195,7 @@ function HubSetting({ only }: { only: boolean }) {
               label={self.label}
               disabled={busy}
               items={[
-                ...(hub !== null ? [{ label: "Name and colour…", onSelect: () => setEditing(true) }] : []),
+                ...(hub !== null ? [{ label: "Name and color…", onSelect: () => setEditing(true) }] : []),
                 ...(administers && restarts && (state.phase === "live" || busy) ? [{ label: "Restart workspace…", onSelect: () => setConfirmRestart(true) }] : []),
                 ...(hub && !onWeb() ? [{ label: only ? "Disconnect and forget key…" : "Remove…", onSelect: () => setConfirm(true), danger: true }] : []),
               ]}

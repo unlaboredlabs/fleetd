@@ -1,5 +1,6 @@
 // Small formatters the chat shares. Times are shown in the viewer's zone; tests pin the zone.
 import type { PrKey } from "../shell/routes";
+import { clock } from "../../../shared/clock";
 
 /** "40s", "1m12s", "1h05m". */
 export function shortElapsed(ms: number): string {
@@ -102,17 +103,5 @@ export function prLinks(md: string, href: (pr: PrKey) => string): string {
   return out + refs(md.slice(last));
 }
 
-const shortClocks = new Map<string, Intl.DateTimeFormat>();
-
-/** "16:02": a chat message's time (its day is the divider above it). */
-export function shortClock(iso: string, timeZone?: string): string {
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return "";
-  const key = timeZone ?? "";
-  let f = shortClocks.get(key);
-  if (f === undefined) {
-    f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(timeZone ? { timeZone } : {}) });
-    shortClocks.set(key, f);
-  }
-  return f.format(ms);
-}
+/** "4:02 PM" (or "16:02", as the locale says it): a chat message's time (its day is the divider above it). */
+export const shortClock = (iso: string, timeZone?: string): string => clock(iso, timeZone);

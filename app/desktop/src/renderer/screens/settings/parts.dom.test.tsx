@@ -140,3 +140,16 @@ it("a hint for several choices says each on a line of its own, its name first", 
   const lines = [...(named("Role").querySelector("[data-hint]")?.children ?? [])].map((l) => l.textContent);
   expect(lines).toEqual(["Member: their own bots", "Admin: the workspace too"]);
 });
+
+it("draws no head for a section with nothing to put in it: an intro of null is none (Billing's first group)", () => {
+  act(() =>
+    root.render(
+      <SettingsSection intro={null}>
+        <SettingsRow title="Plan" />
+      </SettingsSection>,
+    ),
+  );
+  // An empty head kept its 12 px of padding and moved the page's first group down from where every other page's is.
+  expect(host.querySelector("section")?.firstElementChild?.textContent).toBe("Plan");
+  expect(host.querySelector("section")?.children).toHaveLength(1);
+});

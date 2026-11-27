@@ -116,7 +116,10 @@ export function ChecklistPane({ project, at = null }: { project: ProjectKey; at?
     return (
       <div className={s.screen} data-screen={screen}>
         {liveness}
-        <PanelEmpty title={at === "asked" ? "Nothing asked yet" : "No plan yet"} />
+        <PanelEmpty
+          title={at === "asked" ? "Nothing asked yet" : "No plan yet"}
+          line={at === "asked" ? "The work the lead asks other bots for shows here." : "The lead’s plan for this bot shows here once it makes one."}
+        />
       </div>
     );
   }

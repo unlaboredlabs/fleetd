@@ -59,7 +59,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
           <Button label="Scan QR Code" icon="scan" size="large" onPress={() => navigation.navigate("Scan")} />
           <Button label="Enter Code Manually" kind="plain" size="large" onPress={() => navigation.navigate("Pair")} />
           <Text style={[type.footnote, styles.center, styles.hint, { color: t.secondary }]}>
-            Your workspace shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app. {CLOUD_CODE}
+            Get a code with <Text style={styles.code}>fleetd pair</Text>, or from Pair a phone in the desktop or web app.
           </Text>
         </View>
       )}

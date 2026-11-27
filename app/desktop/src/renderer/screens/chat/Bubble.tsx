@@ -9,6 +9,7 @@ import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
+import { SKIP, SkipButton } from "./SkipButton";
 import { useSeen } from "../live";
 import {
   Button,
@@ -150,6 +151,8 @@ function BubbleLine(props: {
   receipt?: boolean | undefined;
   /** The last bubble of the reply a turn ended with: how long the turn took, a quiet stamp beside it. */
   worked?: string | undefined;
+  /** An ask the lead waits on: Not needed goes in its card, beside its own buttons. */
+  skip?: (() => void) | undefined;
 }) {
   const { item, bubble, first, last, lead, mine } = props;
   const time = <span className={s.time}>{shortClock(item.at)}</span>;
@@ -217,12 +220,12 @@ function BubbleLine(props: {
     </>
   );
   return (
-    <div className={cx(s.line, wide && s.wide, enter.className)} style={enter.style}>
+    <div className={cx(s.line, wide && s.wide, enter.className)} style={enter.style} data-line="">
       <ContextMenu menu={menu} disabled={!words && !answers && !retags && !pinnable}>
         <div
           ref={box}
-          // Focusable from script while it is what Show went to; not a tab stop of its own.
-          tabIndex={shown ? -1 : undefined}
+          // Focusable from script (Show, and the list's arrow keys: keys.ts), never a Tab stop of its own.
+          tabIndex={-1}
           className={cx(
             !block && !bare && s.bubble,
             !block && !bare && (mine ? s.mineBubble : s.theirs),
@@ -236,7 +239,7 @@ function BubbleLine(props: {
           data-bubble={block ? bubble.block.kind : "text"}
           data-part={bubble.key}
         >
-          {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} blocks={blocks} />}
+          {block ? <Block block={bubble.block} answer={props.answer} skip={props.skip} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} blocks={blocks} />}
         </div>
       </ContextMenu>
       {props.receipt !== undefined ? <ReceiptMarkView item={item} latest={props.receipt} /> : null}
@@ -254,11 +257,12 @@ function BubbleLine(props: {
           </span>
         </span>
       ) : null}
-      <span className={s.aside}>
+      {/* Not Tab stops: → from the bubble reaches them (keys.ts). */}
+      <span className={s.aside} data-line-actions="">
         {lead && actions !== undefined ? (
           <>
             <Tooltip content="Reply">
-              <Button variant="quiet" iconOnly aria-label="Reply" onClick={reply}>
+              <Button variant="quiet" iconOnly aria-label="Reply" onClick={reply} tabIndex={-1}>
                 <Reply />
               </Button>
             </Tooltip>
@@ -277,8 +281,7 @@ function BubbleLine(props: {
   );
 }
 
-/** What Not needed sends, under the questions the lead waits on: the lead reads it as your answer. */
-export const SKIP = "Not needed: skip that and go on without an answer.";
+export { SKIP } from "./SkipButton";
 
 export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {
   const i = r.item;
@@ -304,6 +307,10 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
   // The chat's pictures, where the chat gives them, so the viewer steps on past this message's: read only while open.
   const chatPictures = useContext(ChatShotsContext);
   const via = viaOf(i);
+  // Not needed, for the questions the lead waits on: inside its last open ask card, else a quiet button under them.
+  const skippable = lead && !typing && actions !== undefined && actions.skips === i.id;
+  const skip = skippable ? () => actions.send(SKIP) : undefined;
+  const askAt = skippable ? bubbles.findLastIndex((b) => b.kind === "block" && b.block.kind === "ask" && r.answered?.[b.key] === undefined) : -1;
   const [viewing, setViewing] = useState<string | undefined>(undefined);
   return (
     <ImageViewerContext.Provider value={shots.length > 0 ? setViewing : undefined}>
@@ -353,17 +360,14 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
                 mine={mine}
                 receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
                 worked={n === bubbles.length - 1 ? r.worked : undefined}
+                skip={n === askAt ? skip : undefined}
               />,
             ];
           })
         )}
-        {lead && !typing && actions?.skips === i.id ? (
+        {skip !== undefined && askAt === -1 ? (
           <div className={cx(s.skip, tail.className)} style={tail.style}>
-            <Tooltip content={`Sends “${SKIP}”`}>
-              <Button variant="link" onClick={() => actions.send(SKIP)}>
-                Not needed, skip it
-              </Button>
-            </Tooltip>
+            <SkipButton skip={skip} size="sm" />
           </div>
         ) : null}
         {files && actions !== undefined ? (

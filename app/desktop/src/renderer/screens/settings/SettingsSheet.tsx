@@ -33,7 +33,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Button, cx, underModal } from "../../ui";
+import { Button, cx, tabPlace, underModal } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
 import { useBillingShown } from "../admin/billingQuery";
@@ -141,6 +141,8 @@ export function SettingsSheet({ hub: on, onClose }: { hub?: HubView; onClose: ()
   }, []);
   // A modal: the app under it (what comes before the scrim) is out of reach and blurred until the sheet closes.
   useEffect(() => underModal(sheet.current?.parentElement ?? null), []);
+  // The web's tab says Settings over the screen under it (ui/lib/tabTitle).
+  useEffect(() => tabPlace("Settings"), []);
   // Focus goes into the sheet, on the sheet itself, so the first Tab reaches the search and nothing shows a ring.
   useEffect(() => {
     sheet.current?.focus({ preventScroll: true });
@@ -318,7 +320,7 @@ function Index() {
   const searching = query.trim() !== "";
   const results = searchSettings(query, optionsFor(administers, vault, billing, version, signin));
   return (
-    <nav className={n.index} aria-label="Settings">
+    <nav className={n.index} aria-label="Settings" onKeyDown={walkIndex}>
       <div className={n.indexHead}>
         <span className={n.indexTitle}>Settings</span>
       </div>
@@ -360,6 +362,22 @@ function Index() {
   );
 }
 
+/**
+ * ↑ and ↓ walk the index's rows (or a search's results), Home and End go to its ends, as macOS System Settings'
+ * sidebar does; ↑ from the first row goes back to the search. Tab still reaches each row, and Return opens one.
+ */
+function walkIndex(e: KeyboardEvent<HTMLElement>) {
+  const from = e.target;
+  if (!(from instanceof HTMLButtonElement) || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+  const rows = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  const at = rows.indexOf(from);
+  if (at === -1) return;
+  e.preventDefault();
+  const search = e.currentTarget.querySelector<HTMLElement>("input[type='search']");
+  const to = { ArrowDown: rows[at + 1], ArrowUp: rows[at - 1] ?? search, Home: rows[0], End: rows.at(-1) }[e.key];
+  to?.focus();
+}
+
 function SearchField({
   query,
   setQuery,
@@ -375,10 +393,9 @@ function SearchField({
       setQuery("");
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      e.currentTarget
-        .closest("nav")
-        ?.querySelector<HTMLElement>("[data-result]")
-        ?.focus();
+      // To the first result, or with nothing typed, the index's first row.
+      const nav = e.currentTarget.closest("nav");
+      (nav?.querySelector<HTMLElement>("[data-result]") ?? nav?.querySelector<HTMLElement>("button:not(:disabled)"))?.focus();
     } else if (e.key === "Escape" && query !== "") {
       e.preventDefault();
       setQuery("");

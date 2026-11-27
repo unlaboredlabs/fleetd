@@ -7,14 +7,14 @@
 // (EmailInvites.tsx); and once fleetd's computers are on for it, each row says what that person's work spent on them
 // this month, against their spend limit if one is set (Spend limit… in the row's menu, Limits.tsx). A self-hosted
 // hub's page is the one above, with nothing of the cloud on it.
-import { Mail } from "lucide-react";
-import { useState } from "react";
+import { Mail, Plus } from "lucide-react";
+import { useRef, useState } from "react";
 import type { HubRole, Invite, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { Avatar, Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { AddButton, Notice, PageHead, RowMenu, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
+import { Notice, PageHead, RowMenu, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import { openUpdates } from "../updates/state";
 import { invitedBy, InviteSection, OpenInvite } from "./Invites";
@@ -53,6 +53,11 @@ export function People({ me }: { me: Person | undefined }) {
   const read = usePeople();
   const [inviting, setInviting] = useState(false);
   const inviteRef = useReveal<HTMLSpanElement>("hub.invite");
+  const inviteButton = useRef<HTMLButtonElement>(null);
+  const closeInvite = () => {
+    setInviting(false);
+    requestAnimationFrame(() => inviteButton.current?.focus());
+  };
   const canInvite = live && !lacksPeople(read.error);
   // A cloud team's owners and admins invite by email; the team refuses anyone else, so nobody else is offered it.
   const byEmail = useHub().cloud === true && (me?.role === "owner" || me?.role === "admin");
@@ -62,15 +67,19 @@ export function People({ me }: { me: Person | undefined }) {
       <div className={s.column}>
         <PageHead
           title="People"
+          // In words at the title, as Machines' Add machine: the list is what it adds to. Kept (off) while its form is
+          // open, whose Cancel hands the focus back to it.
           aside={
-            canInvite && !inviting ? (
+            canInvite ? (
               <span ref={inviteRef}>
-                <AddButton label={byEmail ? "Invite by email" : "Invite someone"} onClick={() => setInviting(true)} />
+                <Button ref={inviteButton} icon={<Plus aria-hidden />} disabled={inviting} onClick={() => setInviting(true)}>
+                  {byEmail ? "Invite by email" : "Invite someone"}
+                </Button>
               </span>
             ) : undefined
           }
         />
-        {canInvite && inviting ? byEmail ? <EmailInviteSection /> : <InviteSection /> : null}
+        {canInvite && inviting ? byEmail ? <EmailInviteSection onClose={closeInvite} /> : <InviteSection onClose={closeInvite} /> : null}
         {!live ? (
           <Text tone="quiet">Connect to a workspace to see and change this.</Text>
         ) : lacksPeople(read.error) ? (
@@ -231,7 +240,7 @@ function PersonLine({
     >
       <Text size="sm" tone="quiet">
         {invite !== undefined
-          ? `Invited ${invitedBy(invite, me)}. ${expiresLine(invite.expiresAt, now)}.`
+          ? `Invited ${invitedBy(invite, me)} · ${expiresLine(invite.expiresAt, now).toLowerCase()}`
           : row.invited
             ? "Invited, not joined yet"
             : devicesLine(row.devices.length)}

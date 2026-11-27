@@ -6,6 +6,13 @@
   padding: var(--space-8) var(--space-6);
 }
 
+/* No bots yet (GetStarted): its EmptyState fills the main area. */
+.empty {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
 .column {
   display: flex;
   flex-direction: column;

@@ -38,9 +38,17 @@ export function installLine(s: Pick<SkillSummary, "install">): string | null {
   return `Installed from ${s.install.source}${ref}, pinned`;
 }
 
-/** "Agents use .agents/skills's instead", for a skill another of the same name outranks. */
+/** Whose skill outranks one of the same name, in words: the folder it sits in is the label's, not the warning's. */
+const OUTRANKED_BY: Readonly<Record<SkillOrigin, string>> = {
+  repo_agents: "the repo's",
+  repo_claude: "the repo's",
+  project: "this bot's",
+  global: "the workspace-wide",
+};
+
+/** "Overridden by the repo's skill of the same name.", for a skill another of the same name outranks. */
 export function shadowLine(s: Pick<SkillSummary, "shadowedBy">): string | null {
-  return s.shadowedBy ? `Agents use the ${ORIGIN_LABEL[s.shadowedBy]} one of this name instead.` : null;
+  return s.shadowedBy ? `Overridden by ${OUTRANKED_BY[s.shadowedBy]} skill of the same name.` : null;
 }
 
 /** One row's key: a name can be in more than one origin. */

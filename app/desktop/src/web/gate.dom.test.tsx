@@ -53,10 +53,26 @@ afterEach(() => {
   host.remove();
 });
 
+it("signed out after a session ended here: says so, and whom Sign in signs back in as", async () => {
+  await act(async () => {
+    root.render(
+      <UiProvider>
+        <Gate view={{ at: "signed-out" }} actions={{ ...actions, ended: "sam@example.com" }} />
+      </UiProvider>,
+    );
+    await Promise.resolve();
+  });
+  expect(host.textContent).toContain("Your session ended");
+  expect(host.textContent).toContain("Sign in again as sam@example.com to go on where you were.");
+  await press("Sign in");
+  expect(actions.signIn).toHaveBeenCalledOnce();
+});
+
 it("signed out: Welcome to fleetd, and Sign in or Make an account in the box", async () => {
   await show({ at: "signed-out" });
   expect(host.querySelector("[data-screen]")?.getAttribute("data-screen")).toBe("web.sign-in");
   expect(host.querySelector("h1")?.textContent).toBe("Welcome to fleetd");
+  expect(host.textContent).toContain("With Google, GitHub, Apple or a code by email.");
   // The terms and privacy policy, before WorkOS's page: the App Store and the law ask for them where an account is made.
   const links = [...host.querySelectorAll("a")].map((a) => [a.textContent, a.getAttribute("href")]);
   expect(links).toEqual([

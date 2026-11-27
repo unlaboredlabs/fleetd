@@ -261,7 +261,7 @@ describe("the Decisions pane", () => {
   it("has an empty state, an error with Retry, and a loading state", async () => {
     await mount(() => ({ ok: true, output: { decisions: [], orders: [] } }));
     // The way back, by its word where there is nothing to search, and one short line.
-    expect(host.textContent).toBe("HistoryNothing decided yet");
+    expect(host.textContent).toBe("HistoryNothing decided yetWhat the lead decides with you shows here.");
     act(() => root.unmount());
     root = createRoot(host);
     await mount(() => ({ ok: false, error: { code: "invalid", message: "no" } }));

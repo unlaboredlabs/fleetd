@@ -7,7 +7,7 @@ import type { Restart } from "./store";
 export const RESTART_TITLE = "Restart the workspace?";
 export const RESTART_NOTE = "It is back in about a second, and running agents carry on. A lead whose profile changed since it started comes back on the current one, with its chat, memory and open orders.";
 /** Under the row, always. */
-export const RESTART_FOOTER = "The workspace is back in about a second. Agents carry on.";
+export const RESTART_FOOTER = "Back in about a second. Agents carry on.";
 
 /** How long a hub that took the restart may stay up before the row says it didn't restart. */
 export const RESTART_WAIT_MS = 20_000;

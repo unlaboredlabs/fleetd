@@ -188,7 +188,7 @@ function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
         <Skeleton />
       ) : items.length === 0 ? (
         filter.size === 0 ? (
-          <PanelEmpty title="Nothing has happened yet" />
+          <PanelEmpty title="Nothing has happened yet" line="What happens in this bot shows here as it happens." />
         ) : (
           <PanelEmpty
             title="Nothing of this kind"

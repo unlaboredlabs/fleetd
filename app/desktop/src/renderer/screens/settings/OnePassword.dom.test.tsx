@@ -145,7 +145,7 @@ it("guides a person to a service account, seals the pasted token through main, l
   for (let i = 0; i < 2; i++) await settle();
   expect(host.textContent).toContain("Sealed on devbox.");
   // Two vaults want a look: one kept for fleetd is what to make.
-  expect(warning()).toContain("Reads Agents and Shared: it should read only fleetd's vault");
+  expect(warning()).toContain("Reads Agents and Shared, more than fleetd's vault. Use a service account limited to it.");
   // oldbox has no box key, so it doesn't hold it.
   expect(host.textContent).toContain("Not on oldbox yet: agents there fill no logins with it.");
   expect(host.textContent).not.toContain(TOKEN);

@@ -124,7 +124,8 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
     const who = by === undefined || latest?.text === "" ? "" : by.id === "" || by.id === marks.me || name === "" ? "You: " : `${name.split(/\s+/u)[0] ?? name}: `;
     const want = wantOf(r, marks);
     const line = `${who}${latest?.text ?? ""}`;
-    const say = rowLine({ waiting: want?.waiting, leadWorking: r.leadWorking, status: r.status, newest: line === "" ? "No messages yet" : line });
+    // "No messages yet" only for a chat known to hold none: one not read yet (offline, the first moment) says nothing.
+    const say = rowLine({ waiting: want?.waiting, leadWorking: r.leadWorking, status: r.status, newest: line === "" ? (r.lastSeq === 0 ? "No messages yet" : "") : line });
     return { ...r, want, unread, warning: marks.warnings?.get(r.key), line, say, at, pinned: marks.pins?.includes(r.key) === true, section: section.get(r.key) };
   });
 };

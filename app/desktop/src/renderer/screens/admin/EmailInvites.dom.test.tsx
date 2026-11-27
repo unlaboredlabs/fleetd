@@ -166,7 +166,7 @@ const line = (role: "alert" | "status") => host.querySelector(`form[aria-label='
 it("lets a cloud team's owner invite by email, says what happens next, and revoke from the list", async () => {
   await render(sam, true);
   expect(asked).toEqual(["invites hub"]);
-  expect(row("dana@example.com")?.textContent).toContain("Expires in 6 days.");
+  expect(row("dana@example.com")?.textContent).toContain("Expires in 6 days");
   expect(row("dana@example.com")?.textContent).toContain("Member");
   // The plus invites by email; the invite link isn't offered on a cloud team.
   expect(has("Invite someone")).toBe(false);
@@ -179,8 +179,16 @@ it("lets a cloud team's owner invite by email, says what happens next, and revok
   expect(asked.filter((a) => a.startsWith("invite "))).toEqual([]);
 
   await type(" Eve@Example.com ");
-  const adminRole = host.querySelector<HTMLElement>("form [role='radio'][value='admin']");
-  if (adminRole === null) throw new Error("no Admin role");
+  // Role is the same dropdown as each person's row.
+  const roleTrigger = host.querySelector<HTMLElement>("form [role='combobox'][aria-label='Role']");
+  if (roleTrigger === null) throw new Error("no Role picker");
+  await act(async () => {
+    roleTrigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  const adminRole = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Admin");
+  if (adminRole === undefined) throw new Error("no Admin role");
   await click(adminRole);
   await click(button("Invite"));
   expect(asked).toContain("invite hub Eve@Example.com admin");

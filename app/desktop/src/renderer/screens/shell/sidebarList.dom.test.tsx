@@ -52,8 +52,9 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
 });
 
 const ADA = row("Ada");
-const HOME = row("Home");
-const STOREFRONT = row("storefront");
+const HOME = { ...row("Home"), lastSeq: 0 };
+// Not read yet: its line is blank (model.ts says "No messages yet" only for a chat known to hold none).
+const STOREFRONT = { ...row("storefront"), say: { text: "" } };
 
 let host: HTMLDivElement;
 let root: Root;
@@ -134,8 +135,11 @@ describe("one list", () => {
     const names = [...host.querySelectorAll("[data-reorder-row] [class*=name]")].map((n) => n.textContent);
     expect(names).toEqual(["Ada", "Home", "storefront"]);
     expect(button("Ada").querySelector("[class*=line]")?.textContent).toBe("You: ship it");
-    // A chat with nothing in it yet says so.
+    // A chat known to hold nothing yet says so, with no time; one not read yet (offline, the first moment) says nothing.
     expect(button("Home").querySelector("[class*=line]")?.textContent).toBe("No messages yet");
+    expect(button("Home").querySelector("[class*=when]")?.textContent).toBe("");
+    expect(button("storefront").querySelector("[class*=line]")?.textContent).toBe("");
+    expect(button("storefront").querySelector("[class*=when]")?.textContent).toBe("");
     expect(button("Ada").querySelector("[class*=when]")?.textContent).not.toBe("");
     act(() => button("Ada").click());
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "ada" }, message: null }]);

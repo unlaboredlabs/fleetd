@@ -1,5 +1,5 @@
 import { ChevronRight, CircleAlert, Ellipsis, ExternalLink, Plus, TriangleAlert } from "lucide-react";
-import { createContext, useContext, useId, type ReactElement, type ReactNode } from "react";
+import { createContext, useContext, useId, type ReactElement, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 import { Button, cx, Dialog, Dot, Menu, MenuContent, MenuItem, MenuTrigger, Text, Toggle, Tooltip, type ButtonProps, type TextTone } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
@@ -179,7 +179,7 @@ export function SettingsSection(props: {
   const ref = useReveal<HTMLElement>(props.reveal ?? "");
   const hintId = useId();
   const hinted = props.title !== undefined && said(props.hint);
-  const head = props.title !== undefined || props.intro !== undefined || props.aside !== undefined;
+  const head = props.title !== undefined || (props.intro !== undefined && props.intro !== null) || props.aside !== undefined;
   return (
     <section
       ref={ref}
@@ -440,11 +440,32 @@ export function SettingsList(props: { label: string; nested?: boolean | undefine
 }
 
 /** Add is a plus, at the end of its row or its section's label; its words are its name and tooltip. */
-export function AddButton({ label, ...rest }: Omit<ButtonProps, "children" | "iconOnly" | "variant"> & { label: string }) {
+export function AddButton({ label, ...rest }: Omit<ButtonProps, "children" | "iconOnly" | "variant"> & { label: string; ref?: Ref<HTMLButtonElement> | undefined }) {
   return (
     <Button variant="ghost" iconOnly aria-label={label} title={label} className={g.add} {...rest}>
       <Plus size={16} aria-hidden />
     </Button>
+  );
+}
+
+/**
+ * A plus that adds in more than one way (New skill or Install from a source…): the ways are its menu's items, so the
+ * row or section still ends in one control.
+ */
+export function AddMenu(props: { label: string; disabled?: boolean | undefined; items: ReadonlyArray<{ label: string; onSelect: () => void; disabled?: boolean | undefined }> }) {
+  return (
+    <Menu>
+      <MenuTrigger asChild disabled={props.disabled}>
+        <AddButton label={props.label} disabled={props.disabled} />
+      </MenuTrigger>
+      <MenuContent align="end">
+        {props.items.map((i) => (
+          <MenuItem key={i.label} disabled={i.disabled === true} onSelect={i.onSelect}>
+            {i.label}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
   );
 }
 

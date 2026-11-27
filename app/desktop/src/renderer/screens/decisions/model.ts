@@ -2,6 +2,7 @@
 // scope, the one in force on top and the ones it replaced or that were revoked folded under it; the words each row
 // shows; and the search and filters over them. Decision ids (D12) and order ids (W3) never reach a word here.
 import type { Decision, DecisionOrder } from "../../../shared/contracts";
+import { clockFormat } from "../../../shared/clock";
 
 /** Who decided, as the tab says it: the lead, the person reading, or (rarely) an agent's key. */
 export type Who = "lead" | "you" | "agent";
@@ -138,9 +139,8 @@ export const when = (iso: string, nowMs: number, timeZone?: string): string => {
   if (Number.isNaN(ms)) return "";
   const day = (t: number) => format({ year: "numeric", month: "2-digit", day: "2-digit" }, timeZone).format(t);
   const year = (t: number) => format({ year: "numeric" }, timeZone).format(t);
-  const hm = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
-  if (day(ms) === day(nowMs)) return format(hm, timeZone).format(ms);
-  if (ms <= nowMs && nowMs - ms < 6 * 86_400_000) return format({ weekday: "short", ...hm }, timeZone).format(ms);
+  if (day(ms) === day(nowMs)) return clockFormat(timeZone).format(ms);
+  if (ms <= nowMs && nowMs - ms < 6 * 86_400_000) return clockFormat(timeZone, { weekday: "short" }).format(ms);
   if (year(ms) === year(nowMs)) return format({ day: "numeric", month: "short" }, timeZone).format(ms);
   return format({ day: "numeric", month: "short", year: "numeric" }, timeZone).format(ms);
 };

@@ -507,6 +507,13 @@
   display: inline-flex;
   flex: none;
 }
+/* Your picture's place before the workspace has said who you are: the size of it, in a quiet tone, no letter. */
+.meBlank {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--row-on);
+}
 /* Something off: a small mark on your picture, cut from it by the sidebar's own tone. */
 .meMark {
   position: absolute;

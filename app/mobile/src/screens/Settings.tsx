@@ -31,7 +31,7 @@ import { errorWords } from "./manage/parts";
 import { fromLibrary } from "./manage/pick";
 import { cloud, CloudSettings } from "./Cloud";
 import { RestartHub } from "./RestartHub";
-import { UpdateFleetd } from "./UpdateFleetd";
+import { merelyCurrent, UpdateFleetd, useUpdateStatus } from "./UpdateFleetd";
 import { vaultShown } from "./vault/model";
 import { machinesShown } from "../machines";
 import { billingShown, readTeamBilling, type BillingState } from "../billing";
@@ -164,6 +164,9 @@ export function Settings() {
       Alert.alert("Delete Workspace", "Delete the workspace in the desktop app or the web app.");
     }
   };
+  const versionShown = hub.phase === "live" && hub.version !== undefined && paired.cloud !== true;
+  // Up to date with nothing more to say: the Version row says so, rather than a section holding one row.
+  const current = merelyCurrent(useUpdateStatus());
   const picture = <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />;
 
   return (
@@ -193,10 +196,10 @@ export function Settings() {
         {/* Refused (revoked on the workspace): its alert's Not Now leaves the way back here, as its Pair Again does. */}
         {hub.phase === "refused" ? <ListRow title={pairAgainTitle(DEVICE)} onPress={forget} chevron={false} /> : null}
         <ListRow title="Address" value={paired.hub} selectable />
-        {hub.phase === "live" && hub.version !== undefined && paired.cloud !== true ? (
+        {versionShown && hub.version !== undefined ? (
           <ListRow
             title="Version"
-            {...(wholeVersion ? { detail: hub.version } : { value: shortVersion(hub.version) })}
+            {...(wholeVersion ? { detail: hub.version } : { value: current ? `${shortVersion(hub.version)} · Up to date` : shortVersion(hub.version) })}
             onPress={() => {
               haptics.select();
               setWholeVersion((w) => !w);
@@ -213,7 +216,7 @@ export function Settings() {
       </ListSection>
       <CloudSettings />
       <RestartHub />
-      <UpdateFleetd />
+      <UpdateFleetd inVersion={versionShown} />
       {machinesShown(state.admin) ? (
         <ListSection>
           <ListRow title="Usage" onPress={() => navigation.navigate("Usage")} />

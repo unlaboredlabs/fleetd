@@ -72,6 +72,7 @@ import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { openPreview } from "./src/preview";
 import { Session } from "./src/session";
 import type { Key, State } from "./src/store";
+import { useFold } from "./src/hinge";
 import { onHome, openChatKey, splitOf } from "./src/split";
 import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
@@ -642,7 +643,7 @@ const RootStack = createNativeStackNavigator<RootParams>();
 
 function Root() {
   const t = useTheme();
-  const split = splitOf(useWindowDimensions().width);
+  const split = splitOf(useWindowDimensions().width, useFold());
   const wide = split !== undefined;
   const openKey = useOpenChatKey(wide);
   const [asked, setAsked] = useState<Beside["asked"]>(undefined);
@@ -660,13 +661,17 @@ function Root() {
     <BesideContext.Provider value={beside}>
       <View style={styles.panes}>
         {split === undefined ? null : (
-          <View style={[styles.list, { width: split.list, borderRightColor: t.separator }]}>
-            <PaneWidth.Provider value={split.list}>
-              <PaneSide.Provider value="list">
-                <ChatsBeside />
-              </PaneSide.Provider>
-            </PaneWidth.Provider>
-          </View>
+          <>
+            {/* Beside a fold, the crease is the line between the panes: none drawn of its own. */}
+            <View style={[split.fold > 0 ? null : styles.list, { width: split.list, borderRightColor: t.separator }]}>
+              <PaneWidth.Provider value={split.list}>
+                <PaneSide.Provider value="list">
+                  <ChatsBeside />
+                </PaneSide.Provider>
+              </PaneWidth.Provider>
+            </View>
+            {split.fold > 0 ? <View style={{ width: split.fold, backgroundColor: t.bg }} /> : null}
+          </>
         )}
         <View style={styles.fill}>
           <PaneWidth.Provider value={split?.chat}>

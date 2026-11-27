@@ -8,6 +8,7 @@ import { administers } from "../admin/model";
 import { toHash, type HubTab } from "../shell/routes";
 import { tabHref } from "./route";
 import { revealNext } from "./search";
+import { onWeb } from "../../src/web";
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -76,7 +77,7 @@ const pages: Command[] = [
   {
     id: "go:settings.hubs",
     title: "Workspaces & devices",
-    detail: "The workspaces this app is paired with, and your devices",
+    detail: onWeb() ? "Your fleetd account's workspaces, and your devices" : "The workspaces this app is paired with, and your devices",
     group: "settings",
     keywords: ["hub", "hubs", "pair", "add a workspace", "connections"],
     run: () => go(tabHref("hubs")),

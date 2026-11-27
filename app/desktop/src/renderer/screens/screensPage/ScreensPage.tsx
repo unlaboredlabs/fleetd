@@ -64,7 +64,8 @@ function Wall({ all, now }: { all: readonly PageScreen[]; now: number }) {
   const opens = useData((d) => d.features.includes(NEW_SCREEN));
   return (
     <div className={s.screen} data-screen="screens.page">
-      <FrameTitle title="Screens" detail={countLine(all)}>
+      {/* No "0 live" over a page that says it has none. */}
+      <FrameTitle title="Screens" detail={all.length === 0 ? undefined : countLine(all)}>
         {opens ? (
           <Button variant="secondary" size="sm" icon={<Plus aria-hidden />} onClick={() => openNewScreen()}>
             New screen
@@ -73,7 +74,12 @@ function Wall({ all, now }: { all: readonly PageScreen[]; now: number }) {
       </FrameTitle>
       <div className={s.body}>
         {all.length === 0 ? (
-          <EmptyState title="No screens yet">When an agent opens a browser, a device or the agents’ Mac, or you open one with New screen, it shows here.</EmptyState>
+          // New screen only where there is one to press.
+          <EmptyState title="No screens yet">
+            {opens
+              ? "When an agent opens a browser, a device or the agents’ Mac, or you open one with New screen, it shows here."
+              : "When an agent opens a browser, a device or the agents’ Mac, it shows here."}
+          </EmptyState>
         ) : null}
         {asking.length === 0 ? null : (
           <Group title="Needs you" count={asking.length} tone="warning">

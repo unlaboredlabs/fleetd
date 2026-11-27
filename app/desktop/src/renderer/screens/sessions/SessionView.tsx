@@ -13,6 +13,7 @@
 import { Activity, AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
+import { clockFormat } from "../../../shared/clock";
 import { useData, useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
 import { RolePill } from "../agents/parts";
@@ -73,7 +74,7 @@ function useAfter(on: boolean, ms: number): boolean {
   return after;
 }
 
-const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
+const clock = clockFormat();
 
 /** One session; `windowed` in a window of its own (SessionWindow), which pops nothing out and links nowhere. */
 export function SessionView({ project, id, windowed = false, onBack }: { project: ProjectKey; id: string; windowed?: boolean; onBack?: (() => void) | null }) {

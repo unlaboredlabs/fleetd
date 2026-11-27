@@ -111,7 +111,8 @@ const render = async (appUrl = "http://devbox.tail1234.ts.net:4790") => {
 };
 
 const button = (text: string, within: ParentNode = host) => {
-  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
+  // By its words, or by its name for a button that is only an icon (Pair a phone's plus).
+  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.getAttribute("aria-label") === text);
   if (b === undefined) throw new Error(`no button ${text}`);
   return b;
 };

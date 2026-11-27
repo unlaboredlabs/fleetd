@@ -55,6 +55,11 @@ const BLOCK_WORDS: Record<ChatBlock["kind"], (b: ChatBlock) => string> = {
 /** A lead's block that didn't reach a part (a fence as written) says nothing in a preview. */
 const withoutBlockFences = (text: string): string => text.replace(/^ {0,3}(`{3,}|~{3,})[ \t]*fleetd-block[^\n]*\n[\s\S]*?(?:^ {0,3}\1[ \t]*$|(?![\s\S]))/gmu, "");
 
+/** A message's parts as one line: a block's title and the words after it set apart ("Receipts · Discounts changed"),
+ * never run together as one sentence; after a part that ends a sentence, just a space. */
+const joined = (words: readonly string[]): string =>
+  words.filter((w) => w !== "").reduce((line, w) => (line === "" ? w : `${line}${/[.!?:…]$/u.test(line) ? " " : " · "}${w}`), "");
+
 const flat = (text: string): string => {
   const one = text.replace(/\s+/gu, " ").trim();
   return one.length <= MAX ? one : `${one.slice(0, MAX - 1)}…`;
@@ -73,7 +78,7 @@ export const lineOf = (m: ChatMessage): string | null => {
   const words =
     parts.length === 0
       ? plainText(withoutBlockFences(text))
-      : parts.map((p) => (p.block !== undefined && p.block.kind in BLOCK_WORDS ? BLOCK_WORDS[p.block.kind](p.block) : plainText(withoutBlockFences(text.slice(p.start, p.end))))).join(" ");
+      : joined(parts.map((p) => flat(p.block !== undefined && p.block.kind in BLOCK_WORDS ? BLOCK_WORDS[p.block.kind](p.block) : plainText(withoutBlockFences(text.slice(p.start, p.end))))));
   const files = (m.attachments ?? []).map((a) => (a.mime.startsWith("image/") ? "Photo" : a.name)).join(", ");
   const line = flat(words === "" ? files : words);
   return line === "" ? null : line;

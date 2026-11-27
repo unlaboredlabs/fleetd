@@ -49,6 +49,10 @@
 .noSidebar > .main {
   box-shadow: none;
 }
+/* Gliding as the panel comes in (useGlide): what was on its right edge stays drawn until the panel covers it. */
+.main[data-gliding] {
+  overflow: visible;
+}
 
 /* The panel: flush down the window's right edge, its own receding tone, one hairline inside its left edge. Opaque, on
    the translucent frame too: nothing composites over live content. */
@@ -67,7 +71,7 @@
 .withAside::before {
   content: "";
   grid-area: aside;
-  background: var(--frame);
+  background: var(--panel);
 }
 
 /* The sidebar runs flush down the window's left edge, top to bottom, set apart from the chat by its own cool tone and
@@ -173,12 +177,19 @@
   position: absolute;
   z-index: -1;
   /* Clear of the main area's hairline along the sidebar. */
-  inset: 0 0 calc(-1 * var(--space-6)) 1px;
-  /* The sheet's own colour, solid through the top row and 12 px past the pill (60 of its 72 px), so nothing reads under
-     or just below it; then 12 px where what scrolls up dissolves into it. No blur: a blur drew what the solid part
-     hides (a dark bubble just above its edge) down into the fade, as a hard dark band across the chat (W791). */
-  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) 83%, color-mix(in srgb, var(--bg) 60%, transparent) 92%, transparent);
+  inset: 0 0 calc(-1 * (var(--space-6) + var(--space-3))) 1px;
+  /* The sheet's own colour, solid through the top row and 12 px past the pill (60 of its 84 px), so nothing reads under
+     or just below it; then 24 px where what scrolls up dissolves into it, long enough that a dark bubble's edge fades
+     rather than showing as a hard lip. No blur: a blur drew what the solid part hides (a dark bubble just above its
+     edge) down into the fade, as a hard dark band across the chat (W791). */
+  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) 71%, color-mix(in srgb, var(--bg) 55%, transparent) 86%, transparent);
   pointer-events: none;
+}
+/* A banner under the row (the shell's) is the row's edge then: the fade stops at the row rather than run on over the
+   banner's first line, and the row's own menus still open over the banner. */
+.under:has([data-banners]:not(:empty)) > .topBar::before {
+  bottom: 0;
+  background: var(--bg);
 }
 /* With the sidebar hidden, the top row starts after the traffic lights, and after the sidebar's button where there is one. */
 .noSidebar > .topBar {
@@ -467,18 +478,43 @@ button[aria-pressed="true"] > .pressChevron {
   border-radius: var(--radius-sm);
 }
 
+/* EmptyState: one centred column where the eye lands, a third of the way down whatever holds it; a short line wraps
+   in it rather than running the width of a page. */
 .empty {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  max-width: 480px;
-  margin: var(--space-8) auto;
-  padding: 0 var(--space-4);
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 0;
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 24vh var(--space-4) var(--space-4);
+  text-align: center;
+}
+.emptyMark {
+  display: inline-grid;
+  place-items: center;
+  margin-bottom: var(--space-2);
+}
+/* The default mark: the list's open ring, still, on a raised tile. */
+.emptyTile {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--row-on);
+  box-shadow: var(--row-on-lift);
+  color: var(--quiet);
+}
+.emptyLine {
+  text-wrap: pretty;
 }
 .emptyActions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
 }

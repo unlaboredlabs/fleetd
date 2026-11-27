@@ -26,7 +26,7 @@ describe("Settings → Bots → Agents", () => {
     expect(installLine(skill({ install }))).toBe("Installed from acme/skills, pinned");
     expect(installLine(skill({ install: { ...install, ref: "v2" } }))).toBe("Installed from acme/skills (v2), pinned");
     expect(installLine(skill({}))).toBeNull();
-    expect(shadowLine(skill({ shadowedBy: "repo_agents" }))).toBe("Agents use the Repo · .agents/skills one of this name instead.");
+    expect(shadowLine(skill({ shadowedBy: "repo_agents" }))).toBe("Overridden by the repo's skill of the same name.");
     expect(shadowLine(skill({}))).toBeNull();
   });
 

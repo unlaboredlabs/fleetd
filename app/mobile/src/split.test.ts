@@ -10,10 +10,17 @@ describe("splitOf", () => {
 
   it("puts the list beside the chat on a wide window, the two filling it", () => {
     const duo = splitOf(951);
-    expect(duo).toEqual({ list: 342, chat: 609 });
+    expect(duo).toEqual({ list: 342, fold: 0, chat: 609 });
     const mini = splitOf(744);
     expect(mini?.list).toBe(320);
     expect(mini && mini.list + mini.chat).toBe(744);
+  });
+
+  it("meets at the fold where iOS says one runs down the window, so the crease never runs through the chat", () => {
+    expect(splitOf(951, { x: 471, width: 9 })).toEqual({ list: 471, fold: 9, chat: 471 });
+    // A fold too near an edge to leave room for a pane, or none: the panes' own widths.
+    expect(splitOf(951, { x: 120, width: 9 })).toEqual(splitOf(951));
+    expect(splitOf(402, { x: 196, width: 9 })).toBeUndefined();
   });
 
   it("never makes the list narrower than Messages' sidebar or wider than it needs", () => {
@@ -31,6 +38,11 @@ describe("openChatKey", () => {
   it("is none with only the list, or Settings, open", () => {
     expect(openChatKey([{ name: "Home" }])).toBeUndefined();
     expect(openChatKey([{ name: "Home" }, { name: "Settings" }])).toBeUndefined();
+  });
+
+  it("is none with Settings over the chat, which fills the pane beside the list", () => {
+    expect(openChatKey([{ name: "Home" }, { name: "Chat", params: { key: "m1/a" } }, { name: "Settings" }])).toBeUndefined();
+    expect(openChatKey([{ name: "Home" }, { name: "Chat", params: { key: "m1/a" } }, { name: "NewProject" }])).toBe("m1/a");
   });
 
   it("is none with Home over the chat, as Open Approvals leaves it", () => {

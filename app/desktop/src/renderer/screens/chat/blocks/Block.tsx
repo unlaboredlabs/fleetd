@@ -21,7 +21,7 @@ const Chart = preloadable(() => import("./Chart").then((m) => m.Chart));
 if (onWeb()) preloadWhenIdle(AgentCard, PrCard, Diff, Chart);
 else for (const card of [AgentCard, PrCard, Diff, Chart]) card.preload().catch(() => undefined);
 
-function Body({ block, answer }: { block: ChatBlock; answer: string | undefined }) {
+function Body({ block, answer, skip }: { block: ChatBlock; answer: string | undefined; skip: (() => void) | undefined }) {
   switch (block.kind) {
     case "chart":
       return <Chart chart={block} />;
@@ -42,7 +42,7 @@ function Body({ block, answer }: { block: ChatBlock; answer: string | undefined 
     case "file":
       return <BlockFile block={block} />;
     case "ask":
-      return <Ask ask={block} answer={answer} />;
+      return <Ask ask={block} answer={answer} skip={skip} />;
     case "preview":
       return <PreviewCard preview={block} />;
   }
@@ -54,11 +54,12 @@ function BlockFile({ block }: { block: AttachmentBlock }) {
   return <FileCard project={project} file={file} caption={block.caption} />;
 }
 
-export function Block({ block, answer }: { block: ChatBlock; answer?: string | undefined }) {
+/** `skip`: the lead waits on this ask, so its card offers Not needed beside its own buttons. */
+export function Block({ block, answer, skip }: { block: ChatBlock; answer?: string | undefined; skip?: (() => void) | undefined }) {
   return (
     <Boundary part="this part of the message">
       <Suspense fallback={<div aria-busy="true" />}>
-        <Body block={block} answer={answer} />
+        <Body block={block} answer={answer} skip={skip} />
       </Suspense>
     </Boundary>
   );

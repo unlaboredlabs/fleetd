@@ -5,6 +5,7 @@ import {
   draftOf,
   emptyDraft,
   hasProblems,
+  nextRunLine,
   onceLine,
   orderHref,
   problems,
@@ -72,6 +73,14 @@ describe("the automation list", () => {
     expect(triggersLine({ ...nightly, webhook: true })).toBe("At 09:00, Monday to Friday (Europe/Berlin) · Webhook");
     const { schedule: _, ...bare } = nightly;
     expect(triggersLine(bare)).toBe("Run now only");
+  });
+
+  it("says the next run is in your time when the schedule reads in another zone", () => {
+    const at = when("2026-10-19T07:00:00.000Z");
+    expect(nextRunLine(nightly, "America/New_York")).toBe(`Next run ${at} your time`);
+    expect(nextRunLine(nightly, "Europe/Berlin")).toBe(`Next run ${at}`);
+    const { nextRunAt: _, ...none } = nightly;
+    expect(nextRunLine(none)).toBeNull();
   });
 
   it("shows a run's state, why it didn't run, and links its order's page", () => {

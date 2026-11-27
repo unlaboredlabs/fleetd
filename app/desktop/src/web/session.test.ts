@@ -70,6 +70,8 @@ describe("signInPath and teamHubId", () => {
     expect(signInPath("/")).toBe("/web/sign-in");
     expect(signInPath("/#/project/devbox/p1")).toBe("/web/sign-in?return=%2F%23%2Fproject%2Fdevbox%2Fp1");
     expect(signInPath("//evil.example/x")).toBe("/web/sign-in");
+    // The account whose session ended here, filled in on the sign-in page (the cloud passes it on as login_hint).
+    expect(signInPath("/", false, "sam@example.com")).toBe("/web/sign-in?email=sam%40example.com");
     expect(signInPath("https://evil.example/")).toBe("/web/sign-in");
   });
 
@@ -96,7 +98,14 @@ describe("signInPath and teamHubId", () => {
 });
 
 describe("teamFromAddress", () => {
-  const hubs = new Map([["3f2b9c1e-0000-4000-8000-000000000001", "3f2b9c1e00004000"]]);
+  const hubs = new Map([
+    ["3f2b9c1e-0000-4000-8000-000000000001", "3f2b9c1e00004000"],
+    ["9a8b7c6d-0000-4000-8000-000000000002", "9a8b7c6d00004000"],
+  ]);
+  it("names no hub with one team, whose hub is the only one: no id left in the address", () => {
+    const one = new Map([...hubs].slice(0, 1));
+    expect(teamFromAddress({ search: "?team=3f2b9c1e-0000-4000-8000-000000000001", hash: "#/settings/hub/billing" }, one)).toEqual({ search: "", hash: "#/settings/hub/billing" });
+  });
   it("opens the team the address names, on the screen its hash asks for, and takes the parameter away", () => {
     expect(teamFromAddress({ search: "?team=3f2b9c1e-0000-4000-8000-000000000001", hash: "" }, hubs)).toEqual({ search: "", hash: "#/?at=3f2b9c1e00004000" });
     const billing = teamFromAddress({ search: "?billing=paid&team=3f2b9c1e-0000-4000-8000-000000000001", hash: "#/settings/hub/billing" }, hubs);

@@ -86,7 +86,9 @@ describe("setup steps", () => {
 
   it("says what a set-up account runs on, and which steps want the admin now", () => {
     expect(doneWords(step("claude", { status: "done", way: "the workspace's API key" }))).toBe("Uses the workspace's API key");
-    expect(doneWords(step("github", { status: "done", way: "gh on the workspace" }))).toBe("Uses gh on the workspace");
+    expect(doneWords(step("github", { status: "done", way: "the workspace's GitHub App" }))).toBe("Uses the workspace's GitHub App");
+    // The workspace names this way by its tool; the row says what it means.
+    expect(doneWords(step("github", { status: "done", way: "gh on the workspace's machine" }))).toBe("Signed in on the workspace");
     expect(doneWords(step("onepassword", { status: "done" }))).toBe("Done");
     // Only once it is done: a step that needs a look says that instead, and one to do says when it is needed.
     expect(doneWords(step("claude", { status: "look", way: "each machine's own login" }))).toBeUndefined();

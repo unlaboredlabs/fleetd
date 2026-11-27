@@ -15,13 +15,13 @@ describe("whenShort", () => {
     const tuesday = new Date(2026, 10, 15, 8, 0);
     const earlier = new Date(2026, 9, 3, 8, 0);
     const lastYear = new Date(2025, 9, 3, 8, 0);
-    expect(whenShort(today.toISOString(), now)).toBe(today.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
+    expect(whenShort(today.toISOString(), now)).toBe("09:14");
     expect(whenShort(new Date(2026, 10, 17, 23, 0).toISOString(), now)).toBe("Yesterday");
     expect(whenShort(tuesday.toISOString(), now)).toBe(tuesday.toLocaleDateString(undefined, { weekday: "short" }));
     expect(whenShort(earlier.toISOString(), now)).toBe(earlier.toLocaleDateString(undefined, { day: "numeric", month: "short" }));
     expect(whenShort(lastYear.toISOString(), now)).toBe(lastYear.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" }));
     // Asked again, the kept formatter says the same.
-    expect(whenShort(today.toISOString(), now)).toBe(today.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
+    expect(whenShort(today.toISOString(), now)).toBe("09:14");
     expect(whenShort("not a date", now)).toBe("");
   });
 });

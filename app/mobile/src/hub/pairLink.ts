@@ -8,7 +8,7 @@ import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../..
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
 
 /** Where a fleetd cloud team's code comes from, said wherever the phone asks for one beside `fleetd pair`. */
-export const CLOUD_CODE = "On fleetd cloud, choose Pair a phone in the web app's Settings › Workspaces & devices.";
+export const CLOUD_CODE = "On fleetd cloud, it's Pair a phone in the web app's Settings.";
 
 const SCAN_AGAIN = `Show a new pairing code from your workspace (\`fleetd pair\`, or the desktop app) and scan it again, or enter the code by hand. ${CLOUD_CODE}`;
 
@@ -96,7 +96,7 @@ export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWi
   if (pairedWith !== null && link.ok && refusedHub !== null && sameHub(link.hub, refusedHub)) {
     return { t: "repair", hub: link.hub, code: link.code, title: `Pair Again with ${pairedWith}?`, message: `${pairedWith} refused this ${device}'s key. This code pairs it again.` };
   }
-  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another workspace, disconnect under Settings first, then scan its code again." };
+  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "Disconnect it first to pair with another workspace." };
   if (!link.ok) return { t: "refuse", failure: link.failure };
   if (from === "scanner") return { t: "pair", hub: link.hub, code: link.code };
   return {

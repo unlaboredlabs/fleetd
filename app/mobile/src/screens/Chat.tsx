@@ -25,7 +25,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Keyboard, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -36,7 +36,7 @@ import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEW
 import { chatItems, holds, orderStamp, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { openPreview } from "../preview";
-import { onHome } from "../split";
+import { onHome, type Strip } from "../split";
 import { useBeside, useStrip } from "../ui/pane";
 import { SheetRoom } from "../ui/StripRoom";
 import { linkStatus } from "../link";
@@ -112,6 +112,13 @@ const BAR_BUTTON = 44;
  * native bars' there (measured).
  */
 const BAR_TOP_BARE = 26;
+/**
+ * How far toward the iPhone Duo's side strip iOS's bar centres its title from the middle of the thread beside the
+ * strip, in every strip pose (measured: 10.1 pt closed, 9.7 open beside the list).
+ */
+const STRIP_TITLE_DRIFT = 10;
+/** How far under the bar the thread fades in, past the solid ground the bar stands on. */
+const TOP_FADE = 24;
 
 /** Scrolled up further than this from the newest, the button down shows. */
 const AWAY = 280;
@@ -303,8 +310,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // iOS's bar, in the Duo's side-strip poses only: its Back and Info in the strip, the title in it as on Android.
   useLayoutEffect(() => {
     if (Platform.OS !== "ios") return;
-    navigation.setOptions(inStrip ? stripBar(t, () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={busy} onPress={openInfo} />, openInfo) : { headerShown: false });
-  }, [navigation, inStrip, t, title, status, busy, project?.avatar, bot, openInfo]);
+    navigation.setOptions(inStrip ? stripBar(t, () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={busy} strip={strip} onPress={openInfo} />, openInfo) : { headerShown: false });
+  }, [navigation, inStrip, stripLeft, stripRight, t, title, status, busy, project?.avatar, bot, openInfo]);
   // Android's stack draws the bar.
   useEffect(() => {
     if (Platform.OS === "ios") return;
@@ -378,23 +385,46 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const sentUp = sentFrom !== null;
   // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
   // opened at its newest end never scrolls, and older pages come in without a scroll).
-  const scrolled = useRef({ y: 0, length: 0 });
+  const scrolled = useRef({ y: 0, length: 0, at: 0 });
   const onContentSize = (_width: number, length: number) => {
     scrolled.current = { ...scrolled.current, length };
   };
+  // Set by a send until the thread reaches the newest end, or the reader takes it with a drag.
+  const following = useRef(false);
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrolled.current = { y: e.nativeEvent.contentOffset.y, length: e.nativeEvent.contentSize.height };
+    scrolled.current = { y: e.nativeEvent.contentOffset.y, length: e.nativeEvent.contentSize.height, at: Date.now() };
     // How far from the newest end, wherever the keyboard puts it.
     const y = e.nativeEvent.contentOffset.y - newestEnd();
     // In a window far back, the cache keeps the newest end: opened again, the chat lands as it always does.
     session.scrolledTo(chatKey, { offset: win !== undefined || y < AWAY / 3 ? 0 : Math.round(y) });
+    // On its way to the newest end after a send: its own glide down is no reason to hold the rows still again, which
+    // would stop it short as your message went in, under the composer.
+    if (following.current) {
+      if (y > AT_NEWEST) return;
+      following.current = false;
+    }
     if (y > AWAY && awayFrom === null) setAwayFrom(heldAt ?? heldFrom);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
     if (y > AT_NEWEST && heldAt === null) setHeldAt(heldFrom);
     else if (y <= AT_NEWEST && heldAt !== null) setHeldAt(null);
   };
+  // iOS's scroll edge effect under the composer reads where the composer is only as the thread scrolls: a keyboard that
+  // goes without a scroll (a hardware keyboard taking over, an alert) could leave its blur keyboard-tall over the newest
+  // messages. A point's nudge and back once it has gone makes it read again.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      const { y, at } = scrolled.current;
+      // Still moving (a drag that took the keyboard down, gliding on): that scroll makes it read, and a nudge would stop it.
+      if (Date.now() - at < 200) return;
+      list.current?.scrollToOffset({ offset: y + 1, animated: false });
+      requestAnimationFrame(() => list.current?.scrollToOffset({ offset: y, animated: false }));
+    });
+    return () => sub.remove();
+  }, []);
   // The status bar's tap goes a screen older, as chat apps' does, never to the newest end.
   const olderByAScreen = () => {
+    following.current = false;
     const { y, length } = scrolled.current;
     list.current?.scrollToOffset({ offset: olderOffset(y, length, room, height), animated: !reduce });
   };
@@ -575,6 +605,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     }
     setAwayFrom(null);
     setHeldAt(null);
+    following.current = true;
     // It goes at the newest end: a window far back makes way for it.
     const far = state.windows[chatKey] !== undefined;
     if (far) closeWindow();
@@ -583,6 +614,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });
       if (far) list.current?.scrollToOffset({ offset: newestEnd(), animated: false });
       else toNewest();
+      // Already there, no glide comes to end the follow.
+      if (scrolled.current.y - newestEnd() <= AT_NEWEST) following.current = false;
     });
   };
 
@@ -773,6 +806,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               keyboardShouldPersistTaps="handled"
               scrollIndicatorInsets={{ top: composerHeight, bottom: top }}
               onScroll={onScroll}
+              onScrollBeginDrag={() => {
+                following.current = false;
+              }}
               scrollEventThrottle={64}
               onScrollToIndexFailed={(info) => {
                 list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
@@ -829,7 +865,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             list={listTag}
             edge="bottom"
             style={[styles.topEdge, { height: top }]}
-            fallback={<LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} />}
+            // Solid as far as the bar reaches, then a short fade: a bubble under the title capsule reads as gone, not cut.
+            fallback={<LinearGradient pointerEvents="none" colors={[t.thread, t.thread, withOpacity(t.thread, 0)]} locations={[0, top / (top + TOP_FADE), 1]} style={[styles.topFade, { height: top + TOP_FADE }]} />}
           >
             {inStrip ? null : (
               <ChatBar top={barTop} onBack={goBack} onInfo={openInfo}>
@@ -1016,10 +1053,14 @@ function BarButton({ label, symbol, onPress }: { label: string; symbol: "chevron
   );
 }
 
-/** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's chat apps draw it. Tapped, its Info, as Messages'. */
-function ChatTitle({ picture, bot, title, status, busy, onPress }: { picture: Pictured | undefined; bot: BotState | undefined; title: string; status: string | undefined; busy: boolean; onPress: () => void }) {
+/**
+ * The chat's name and how it is, in a glass capsule over the thread, as iOS 26's chat apps draw it. Tapped, its Info, as
+ * Messages'. `strip`: in the Duo's side-strip poses, where iOS's bar centres its title STRIP_TITLE_DRIFT toward the strip from the
+ * thread's middle, the capsule keeps twice that clear on the strip's side, so it centres over the thread under it.
+ */
+function ChatTitle({ picture, bot, title, status, busy, onPress, strip }: { picture: Pictured | undefined; bot: BotState | undefined; title: string; status: string | undefined; busy: boolean; onPress: () => void; strip?: Strip | undefined }) {
   const t = useTheme();
-  return (
+  const face = (
     // The glass gives the press its own response: no dimming, which glass doesn't draw under.
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={status === undefined ? title : `${title}, ${status}`} accessibilityHint="Shows the chat's info">
       <Glass interactive style={styles.titleGlass}>
@@ -1039,6 +1080,9 @@ function ChatTitle({ picture, bot, title, status, busy, onPress }: { picture: Pi
       </Glass>
     </Pressable>
   );
+  if (strip === undefined) return face;
+  const room = 2 * STRIP_TITLE_DRIFT;
+  return <View style={{ paddingLeft: strip.left > 0 ? room : 0, paddingRight: strip.right > 0 ? room : 0 }}>{face}</View>;
 }
 
 interface RowProps {

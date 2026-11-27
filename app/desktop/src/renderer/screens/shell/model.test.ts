@@ -61,7 +61,8 @@ describe("sidebar bots", () => {
         row("run", { working: true, leadWorking: true, status: "Deck sent" }),
         row("deck", { status: "Deck sent to the printer" }),
         row("web", { working: true, running: 2 }),
-        row("new"),
+        row("new", { lastSeq: 0 }),
+        row("unread"),
       ],
       marks,
     );
@@ -77,6 +78,8 @@ describe("sidebar bots", () => {
       // Agents at work with the lead idle: its bot moves, its line stays its newest.
       ["web", { text: "Merged." }],
       ["new", { text: "No messages yet" }],
+      // Not read yet (offline, the first moment): no line, rather than claim a full chat is empty.
+      ["unread", { text: "" }],
     ]);
   });
 
@@ -131,7 +134,7 @@ describe("sidebar bots", () => {
         ["devbox/cart", undefined],
       ]),
     };
-    const rows = [row("api", { needsYou: true }), row("billing", { needsYou: true }), row("cart", { needsYou: true }), row("docs"), row("search")];
+    const rows = [row("api", { needsYou: true }), row("billing", { needsYou: true }), row("cart", { needsYou: true }), row("docs"), row("search", { lastSeq: 0 })];
     const wants = toSidebar(rows, marks)?.map((p) => [p.project.title, p.want?.word, p.want?.count, p.say]);
     expect(wants).toEqual([
       ["api", "approve", 2, { text: "2 commands to approve", tone: "want" }],

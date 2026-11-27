@@ -40,7 +40,8 @@ import { clearWebCache, keepSession, webCache, type CacheStorage } from "./cache
 import { startScreen } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 import { WebHub } from "./hub";
-import { readSession, signInPath, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
+import { clearEnded, markEnded } from "./ended";
+import { readSession, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
 
 /** The address's word, after Delete account, that the welcome page says the account is deleted. */
 export const DELETED_PARAM = "deleted";
@@ -133,6 +134,8 @@ export const frameUrl = (answer: unknown, origin: string): string | null => {
 
 /** The shell for a signed-in session, and its teams' hubs (for followBrowser). */
 export const createWebShell = (session: WebSession, deps: WebDeps): { readonly api: FleetdApi; readonly hubs: readonly WebHub[] } => {
+  // Signed in again: a session that ended here before has nothing more to say.
+  clearEnded(deps.storage);
   const teams = new Map<HubId, WebTeam>();
   const ids = teamHubIds(session.teams.map((t) => t.id));
   for (const team of session.teams) teams.set(ids.get(team.id) ?? teamHubId(team.id), team);
@@ -169,7 +172,9 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       checking = false;
       if (!read.ok && read.signedOut === true) {
         cache.clear();
-        deps.go(signInPath(deps.here()));
+        // The page starts again on the gate, which says the session ended and signs back in as this account.
+        markEnded(deps.storage, session.email);
+        deps.reload();
       }
       else if (read.ok && read.session.teams.map((t) => t.id).join() !== session.teams.map((t) => t.id).join()) deps.reload();
     });

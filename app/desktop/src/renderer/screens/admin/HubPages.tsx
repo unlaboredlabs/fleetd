@@ -204,7 +204,8 @@ function Machines() {
           aside={
             none ? undefined : (
               <span ref={addRef}>
-                <AddMachineButton onClick={add} />
+                {/* Off while its steps are open under it, titled Add machine too. */}
+                <AddMachineButton disabled={open !== undefined} onClick={add} />
               </span>
             )
           }

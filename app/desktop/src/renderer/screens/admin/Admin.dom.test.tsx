@@ -355,8 +355,7 @@ it("never offers an admin a change to the owner", async () => {
 it("creates an invite on People with a name and role, copies its link, and revokes an open one", async () => {
   window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
-  expect(row("Dana Ito").textContent).toContain("Expires in 6 days.");
-  expect(row("Dana Ito").textContent).toContain("Invited by you.");
+  expect(row("Dana Ito").textContent).toContain("Expires in 6 days · invited by you");
 
   // The form opens from Invite someone. No name: nothing is sent.
   expect(host.querySelector("form[aria-label='Invite someone']")).toBeNull();
@@ -372,8 +371,16 @@ it("creates an invite on People with a name and role, copies its link, and revok
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
   });
-  const adminRole = host.querySelector<HTMLElement>("form [role='radio'][value='admin']");
-  if (adminRole === null) throw new Error("no Admin role");
+  // Role is the same dropdown as each person's row.
+  const roleTrigger = host.querySelector<HTMLElement>("form [role='combobox'][aria-label='Role']");
+  if (roleTrigger === null) throw new Error("no Role picker");
+  await act(async () => {
+    roleTrigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  const adminRole = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Admin");
+  if (adminRole === undefined) throw new Error("no Admin role");
   await click(adminRole);
   await click(button("Create invite link"));
   expect(sent("invite_create")).toEqual([{ name: "Eve Park", role: "admin" }]);

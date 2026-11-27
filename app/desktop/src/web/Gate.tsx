@@ -32,6 +32,8 @@ export interface GateActions {
   /** A team of the person's own (someone who came by an invitation has none); its refusal, or null once made. */
   readonly makeTeam: () => Promise<WebFailure | null>;
   readonly signOut: () => void;
+  /** The account whose session ended while the app was open (ended.ts): Sign in says so, and signs back in as it. */
+  readonly ended?: string | undefined;
   /** What deleting the account would take, and the delete: for one in no workspace, with nowhere else to do it. */
   readonly accountPreview: () => Promise<AccountPreviewOutcome>;
   readonly deleteAccount: (email: string) => Promise<DeleteAccountOutcome>;
@@ -71,8 +73,8 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
             <Text tone="quiet">A machine you joined stops fleetd by itself. To remove fleetd there, run fleetd uninstall on it.</Text>
           </div>
         ) : null}
-        <Text strong>Sign in, or make an account</Text>
-        <Text tone="quiet">With Google, GitHub or a code by email.</Text>
+        <Text strong>{actions.ended === undefined ? "Sign in, or make an account" : "Your session ended"}</Text>
+        <Text tone="quiet">{actions.ended === undefined ? "With Google, GitHub, Apple or a code by email." : `Sign in again as ${actions.ended} to go on where you were.`}</Text>
         <div className={st.actions}>
           <Button variant="primary" size="md" onClick={actions.signIn}>
             Sign in

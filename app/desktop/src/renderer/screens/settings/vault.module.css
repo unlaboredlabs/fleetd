@@ -1,10 +1,12 @@
 /* Settings › Vault: what the soft groups (parts.tsx, groups.module.css) don't hold. The search bar with its filter and
    plus; a revealed value, kept as typed; the dialogs' forms and lists of ticks; and the lead's import card in a chat. */
+/* The list's own search, 12 px over what it filters (as Memory's), not a page section's gap away. */
 .bar {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  margin-bottom: calc(var(--space-3) - var(--space-10));
 }
 .search {
   flex: 1;

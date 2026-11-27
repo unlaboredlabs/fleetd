@@ -142,7 +142,10 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
     navigation.setOptions({
       headerSearchBarOptions: {
             placeholder: "Search",
-            hideWhenScrolling: false,
+            // Under the title, tucked away as the page scrolls, as iOS Settings' is: a pill floating at the bottom drew
+            // over the page's last rows.
+            placement: "stacked",
+            hideWhenScrolling: true,
             autoCapitalize: "none",
             tintColor: t.accent,
             onFocus: () => setSearching(true),
@@ -303,7 +306,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
             onPress={() => navigation.navigate("Agent", { key, laneId: a.laneId, taskId: a.taskId, title: a.title })}
           />
         ))}
-        {dms ? <ListRow key="dms" title="DMs Between Agents" value={countValue(v?.dms)} onPress={() => navigation.navigate("Dms", { key })} /> : null}
+        {dms ? <ListRow key="dms" title="DMs between agents" value={countValue(v?.dms)} onPress={() => navigation.navigate("Dms", { key })} /> : null}
       </ListSection>
 
       {orders.length === 0 ? null : (
@@ -367,13 +370,13 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
 
       <ListSection
         header="Sign-ins"
-        footer={forgot ? "Forgotten. Its next browser session starts signed out of every site." : `Its browser stays signed in to the sites it signed into. Their cookies stay on ${machine}.`}
+        footer={forgot ? "Forgotten. Its next browser session starts signed out of every site." : `Signs its browser out of every site. Its cookies are on ${machine} until then.`}
       >
         <ListRow title="Forget Sign-ins…" destructive chevron={false} {...(busy === null && live ? { onPress: forget } : {})} {...(busy === "forget" ? { accessory: spinner } : {})} />
       </ListSection>
 
       {live && state.hub.phase === "live" && state.hub.features?.includes(NEW_SCREEN) === true ? (
-        <ListSection footer={`A browser of your own on ${p.title}'s profile, to sign in to a site for it, or another kind of screen.`}>
+        <ListSection footer={`A browser as ${p.title}, to sign in to a site for it, or a desktop, phone or Mac to try things on.`}>
           <ListRow title="New Screen" icon="browser" onPress={() => navigation.navigate("NewScreen", { key })} />
         </ListSection>
       ) : null}

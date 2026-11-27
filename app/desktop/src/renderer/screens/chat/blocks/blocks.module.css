@@ -271,6 +271,7 @@
   background: none;
   cursor: zoom-in;
 }
+/* A picture on its way: its own room, a quiet tone, no words; only a failure says so. */
 .mediaWait {
   display: grid;
   place-items: center;
@@ -278,6 +279,19 @@
   height: 140px;
   border-radius: var(--radius-md);
   background: var(--bubble);
+}
+.mediaWait[aria-busy="true"] {
+  animation: media-wait 1.6s var(--ease-out) infinite alternate;
+}
+@keyframes media-wait {
+  to {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mediaWait[aria-busy="true"] {
+    animation: none;
+  }
 }
 
 /* A file: its kind's glyph on a tinted tile, its name over its kind and size, Open and Save at the end. Its own name,

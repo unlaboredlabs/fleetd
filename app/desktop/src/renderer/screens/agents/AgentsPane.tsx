@@ -188,7 +188,7 @@ function AgentList({ project: ref, at }: { project: ProjectKey; at: "screens" | 
         // A failed read says so above; the skeleton then waits for Retry, it doesn't claim to be loading.
         <Skeleton busy={!query.isError} />
       ) : items.length === 0 ? (
-        <PanelEmpty title="No agents are working" />
+        <PanelEmpty title="No agents are working" line="The agents the lead starts show here as they work." />
       ) : (
         <div className={s.list}>
           <VirtualList

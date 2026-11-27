@@ -48,10 +48,12 @@ export function Media({ media, clip }: { media: AttachmentBlock; clip: boolean }
   return (
     <figure className={b.media} data-block={clip ? "clip" : "image"}>
       {src === undefined ? (
-        <div ref={box} className={b.mediaWait}>
-          <Text size="xs" tone="quiet">
-            {got.isError ? "Couldn’t load this." : "Loading…"}
-          </Text>
+        <div ref={box} className={b.mediaWait} aria-busy={!got.isError} aria-label={got.isError ? undefined : "Loading the picture"}>
+          {got.isError ? (
+            <Text size="xs" tone="quiet">
+              Couldn’t load this.
+            </Text>
+          ) : null}
         </div>
       ) : clip && data?.mime.startsWith("video/") === true ? (
         <video className={b.mediaItem} src={src} controls preload="metadata" />

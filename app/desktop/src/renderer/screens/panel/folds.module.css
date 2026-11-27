@@ -48,7 +48,7 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  margin: 0 0 0 -2px;
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);
@@ -68,6 +68,7 @@
   flex: none;
   width: 12px;
   height: 12px;
+  color: var(--faint);
   transition: transform var(--dur-quick) var(--ease-snap);
 }
 .chevronOpen {
@@ -83,35 +84,9 @@
   line-height: var(--leading-md);
 }
 
-/* A tab with nothing in it: its one line, quiet, where the eye lands, a third of the way down. */
+/* A tab with nothing in it: its EmptyState fills the tab. */
 .empty {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
   min-height: 0;
-  padding: 24vh var(--space-4) var(--space-4);
-  text-align: center;
-}
-.emptyMark {
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--row-on);
-  box-shadow: var(--row-on-lift);
-  color: var(--quiet);
-}
-.emptyTitle {
-  margin: 0;
-  color: var(--quiet);
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
-  font-weight: var(--weight-medium);
-}
-.emptyActions {
-  display: flex;
-  gap: var(--space-2);
 }

@@ -10,7 +10,7 @@ import { Button, Dialog, Field, IdChip, Input, Text, Textarea } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { HUB, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { AddButton, DangerButton, GroupNote, Notice, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { AddMenu, DangerButton, GroupNote, Notice, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { useAdministers, useHubRole } from "../admin/role";
 import { metaLine } from "../skills/skillsModel";
 import { panelRoute, toHash } from "../shell/routes";
@@ -85,15 +85,16 @@ export function HubSkills() {
 
 type Dialogs = "new" | "install" | null;
 
-/** Install, and New skill as a plus, at the end of the skills' row or section label. */
+/** One plus at the end of the skills' row or section label: New skill, or Install from a source…, from its menu. */
 function SkillActions({ onOpen }: { onOpen: (dialog: Dialogs) => void }) {
   return (
-    <div className={s.inline}>
-      <Button size="sm" variant="ghost" onClick={() => onOpen("install")}>
-        Install from a source…
-      </Button>
-      <AddButton label="New skill" onClick={() => onOpen("new")} />
-    </div>
+    <AddMenu
+      label="Add a skill"
+      items={[
+        { label: "New skill…", onSelect: () => onOpen("new") },
+        { label: "Install from a source…", onSelect: () => onOpen("install") },
+      ]}
+    />
   );
 }
 

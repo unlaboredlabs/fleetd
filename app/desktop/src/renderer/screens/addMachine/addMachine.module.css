@@ -55,6 +55,8 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  /* Edged as a Settings group is (groups.module.css .group): on a white sheet the fill alone doesn't show. */
+  border: 1px solid var(--group-edge);
   border-radius: var(--radius-group);
   background: var(--group);
 }

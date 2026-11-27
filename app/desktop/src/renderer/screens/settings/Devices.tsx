@@ -4,8 +4,8 @@
 // key.paired event refetches people_list), the QR gives way to the new phone, which also joins the list. Each other
 // device has Sign out (device_revoke, once confirmed): its key stops working at once. The hub says which device this
 // app is (people_list's thisDevice), and that one has none: signing it out would cut this app off.
-import { Check, Smartphone } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { AgentKeyInfo, PairCodeCreateOutput } from "../../../shared/contracts";
 import { Button, Dialog, Text } from "../../ui";
 import { HubScope, useData, useHubs } from "../../src/data/react";
@@ -15,7 +15,7 @@ import { Prose } from "../onboarding/Prose";
 import { when } from "../live/when";
 import { codeLife, deviceLine, pairedSince, qrPath, SIGN_OUT_LINE, yourDevices } from "./devicesModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
+import { AddButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
 /** Each paired hub's part of You › Hubs & devices: its list and Pair a phone, the hub named when there are several. */
@@ -44,6 +44,7 @@ function YourDevices({ title, reveal }: { title: string; reveal: string }) {
   // Where this app reaches the hub: the hub puts it in the link unless it is loopback.
   const appUrl = useData((st) => (st.hub.phase === "unpaired" ? undefined : st.hub.hub));
   const [pairing, setPairing] = useState<Pairing | null>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
   const [signingOut, setSigningOut] = useState<AgentKeyInfo | null>(null);
   // Day-grained, so the time the page opened is close enough.
   const [now] = useState(() => Date.now());
@@ -62,15 +63,21 @@ function YourDevices({ title, reveal }: { title: string; reveal: string }) {
       title={title}
       reveal={reveal}
       hint="The apps signed in as you. Each acts as you on this workspace, on every machine."
-      aside={
-        pairing === null ? (
-          <Button icon={<Smartphone size={14} />} disabled={!live || read.data === undefined} onClick={pair}>
-            Pair a phone
-          </Button>
-        ) : null
-      }
+      // A plus like the paired workspaces' above, kept (off) while its steps are open so the head holds its height.
+      aside={<AddButton ref={addRef} label="Pair a phone" disabled={!live || read.data === undefined || pairing !== null} onClick={pair} />}
     >
-      {pairing === null ? null : <PairPhone pairing={pairing} paired={paired} onAgain={pair} onClose={() => setPairing(null)} />}
+      {pairing === null ? null : (
+        <PairPhone
+          pairing={pairing}
+          paired={paired}
+          onAgain={pair}
+          onClose={() => {
+            setPairing(null);
+            // Back to the plus that opened it, once it is on again.
+            requestAnimationFrame(() => addRef.current?.focus());
+          }}
+        />
+      )}
       {read.error ? (
         <GroupNote tone="danger">{`Couldn't read your devices: ${errorText(read.error)}`}</GroupNote>
       ) : read.data === undefined ? (
@@ -193,6 +200,9 @@ function useNow(on: boolean): number {
 function PairPhone({ pairing, paired, onAgain, onClose }: { pairing: Pairing; paired: AgentKeyInfo | undefined; onAgain: () => void; onClose: () => void }) {
   const waiting = pairing.phase === "shown" && paired === undefined;
   const now = useNow(waiting);
+  // The plus that opened it is off now: the focus moves into the steps rather than to the page's start.
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => closeRef.current?.focus(), []);
   return (
     <SettingsRow
       title="Pair a phone"
@@ -203,7 +213,7 @@ function PairPhone({ pairing, paired, onAgain, onClose }: { pairing: Pairing; pa
               New code
             </Button>
           ) : null}
-          <Button variant={paired === undefined ? "ghost" : "primary"} onClick={onClose}>
+          <Button ref={closeRef} variant={paired === undefined ? "ghost" : "primary"} onClick={onClose}>
             {paired === undefined ? "Cancel" : "Done"}
           </Button>
         </>

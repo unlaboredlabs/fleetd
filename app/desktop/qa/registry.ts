@@ -3905,7 +3905,7 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
       await page.getByText("Field notes is ready").first().waitFor();
       await page.evaluate(() => (window.location.hash = "#/settings/projects?for=devbox/field-notes"));
-      await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
+      await page.getByText(/^No repo, a plain folder/u).waitFor({ timeout: 15_000 });
     },
   },
   // W845: Add repo on a GitHub repo whose folder already holds it, no bot using it: two plain choices, the hub's own
@@ -3920,7 +3920,7 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
       await page.getByText("Field notes is ready").first().waitFor();
       await page.evaluate(() => (window.location.hash = "#/settings/projects?for=devbox/field-notes"));
-      await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
+      await page.getByText(/^No repo, a plain folder/u).waitFor({ timeout: 15_000 });
       await page.getByRole("button", { name: "Add a repo" }).click();
       await page.getByRole("textbox", { name: "Repo to add" }).fill("acme/ledger-ui");
       await page.getByRole("button", { name: "Add repo" }).click();
@@ -4937,7 +4937,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["admin-owner"],
     variant: "skills-install",
     open: async (page) => {
-      await page.getByRole("button", { name: "Install from a source…" }).click();
+      await page.getByRole("button", { name: "Add a skill" }).click();
+      await page.getByRole("menuitem", { name: "Install from a source…" }).click();
       await page.getByRole("textbox", { name: "Source" }).fill("acme/agent-skills");
       await page.getByRole("button", { name: "Install", exact: true }).click();
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
@@ -5676,7 +5677,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical"],
     variant: "skills-new",
     open: async (page) => {
-      await page.getByRole("button", { name: "New skill" }).click();
+      await page.getByRole("button", { name: "Add a skill" }).click();
+      await page.getByRole("menuitem", { name: "New skill…" }).click();
       await page.getByRole("textbox", { name: "Name" }).fill("Release Notes");
     },
   },

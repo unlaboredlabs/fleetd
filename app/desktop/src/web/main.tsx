@@ -2,9 +2,10 @@
 // renderer, with window.fleetd made here (shell.ts) before the renderer's first module reads it.
 import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { applyTheme, toast, UiProvider } from "../renderer/ui";
+import { addLaterFonts, applyTheme, followTabTitle, toast, UiProvider } from "../renderer/ui";
 import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
+import { endedEmail } from "./ended";
 import { clearWebCache, keepSession, keptSession } from "./cache";
 import type { GateView } from "./Gate";
 import { createWebShell, DELETED_PARAM, followBrowser, followFreshBuild } from "./shell";
@@ -48,6 +49,9 @@ const teamOf = (body: unknown): string | null => {
 
 // The gate (sign-in, invitations, no team) loads only when it is shown: a signed-in person's first chat never draws it.
 const show = async (view: GateView) => {
+  // Its title and the box's line are medium weight: with no chat to make room for, those faces load now, rather than
+  // the browser bolding Regular (smeared stems) on the first page a new person sees. The app's later call does nothing.
+  addLaterFonts("block");
   const { Gate } = await import("./Gate");
   gate ??= createRoot(element);
   gate.render(
@@ -56,7 +60,8 @@ const show = async (view: GateView) => {
         <Gate
           view={view}
           actions={{
-            signIn: () => window.location.assign(signInPath(here())),
+            ended: endedEmail(window.localStorage),
+            signIn: () => window.location.assign(signInPath(here(), false, endedEmail(window.localStorage))),
             signUp: () => window.location.assign(signInPath(here(), true)),
             retry: () => void boot(),
             join: async (invitation): Promise<WebFailure | null> => {
@@ -113,6 +118,8 @@ const show = async (view: GateView) => {
 const start = async (session: WebSession) => {
   gate?.unmount();
   gate = null;
+  // The tab names where you are (ui/lib/tabTitle), as the desktop's window doesn't.
+  followTabTitle();
   const { api, hubs } = createWebShell(session, browserDeps(VERSION));
   Object.defineProperty(window, "fleetd", { value: api, configurable: false, writable: false });
   // The account the next page opens from at once (cache.ts), now the cache is this account's (createWebShell).

@@ -106,6 +106,9 @@ export const setupLayout = (steps: ReadonlyArray<SetupStep>): SetupLayout => {
   return { accounts, others, done: rest.filter((st) => st.status === "done"), othersFirst: others.some(needsNow) && !accounts.some(needsNow) };
 };
 
+/** Ways the workspace names by their tool, in plain words: GitHub through gh is a sign-in on the workspace. */
+const WAY_WORDS: Readonly<Record<string, string>> = { "gh on the workspace's machine": "Signed in on the workspace" };
+
 /** An account's row once it is set up: which of its ways it is done with, as the hub's checks say, else that it is done. */
 export const doneWords = (step: SetupStep): string | undefined =>
-  step.status !== "done" ? undefined : step.way === undefined || step.way === "" ? "Done" : `Uses ${step.way}`;
+  step.status !== "done" ? undefined : step.way === undefined || step.way === "" ? "Done" : (WAY_WORDS[step.way] ?? `Uses ${step.way}`);
