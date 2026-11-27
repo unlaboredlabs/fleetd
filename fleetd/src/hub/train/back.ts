@@ -43,7 +43,7 @@ function waitingOn(t: Train, change: Change, taskId: string): string | undefined
 export async function tellWriter(t: Train, change: Change, taskId: string, text: string, by = TRAIN_BY): Promise<string | undefined> {
   const state = t.host.task(taskId)?.state;
   if (state === "cancelled" && t.host.spawnWriter) {
-    // Woken for this send-back however it ends: a second writer for it never starts.
+    // Marked woken first, so no second writer ever starts for this send-back; a live writer it goes to is told (handOn).
     mark(t, change, WOKEN);
     return handOn(t, change, taskId, text);
   }
@@ -121,6 +121,8 @@ async function handOn(t: Train, change: Change, taskId: string, text: string): P
       return `telling ${live.taskId}, already on it, failed: ${(error as Error).message}`;
     }
     adopt(t, change, live.taskId);
+    // Told as any running writer is: continued once if its turn ends with no push and nothing armed.
+    t.records.setWait(change.changeId, WAIT_BACK, change.headSha, TOLD);
     console.info(`train: ${change.changeId} back with ${taskId}, which was cancelled: handed to ${live.taskId}, already on its PR`);
     return undefined;
   }
@@ -128,8 +130,9 @@ async function handOn(t: Train, change: Change, taskId: string, text: string): P
   const tail = old?.resultTail ? `\n\nIts last words: ${oneLine(old.resultTail, HANDOFF_TAIL)}` : "";
   const prompt =
     `You take over the PR ${change.prUrl} (${change.changeId}) from its writer ${taskId}, which was cancelled: the merge train sent it back, and ` +
-    `nobody else works on it. Work on its branch ${change.branch}, not a new one: \`git fetch origin ${change.branch} && git checkout -B ` +
-    `${change.branch} origin/${change.branch}\`, then push there (\`git push origin HEAD:${change.branch}\`), so the same PR moves on. Open no new PR.` +
+    `nobody else works on it. Its old worktree may still hold its branch ${change.branch}, so don't check that branch out: put ` +
+    `yours on it (\`git fetch origin ${change.branch} && git reset --hard FETCH_HEAD\`), then push to it ` +
+    `(\`git push origin HEAD:${change.branch}\`, with --force-with-lease after a rebase), so the same PR moves on. Open no new PR.` +
     `${tail}\n\n${text}`;
   let spawned;
   try {
