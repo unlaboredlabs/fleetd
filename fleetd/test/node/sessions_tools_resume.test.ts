@@ -4,8 +4,9 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { toolMarks } from "../../src/cli/agent_mcp/tools.ts";
+import { sessionFile } from "../../src/node/runner/claude.ts";
 import { SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import { tempHome } from "../helpers.ts";
 
@@ -47,6 +48,17 @@ const done = (runId: string) => until(`${runId} to complete`, () => run(runId)?.
 const said = (text: string) => service.store.newestMessages(ID, 200)[0].filter((m) => m.text === text).length;
 const resumes = () => service.store.newestItems(ID, 200)[0].filter((i) => i.kind.type === "starting" && i.kind.text === "Picked up fleetd's updated tools");
 const send = (runId: string, text: string) => ok("send", { sessionId: ID, runId, text });
+/** Claude Code 2.1.314's conversation of a session started on a tool described "OLD-ALPHA": the saved request's
+ * records in it, which a resume sends again unless they come out (../../src/node/sessions/saved_request.ts). */
+const TRANSCRIPT = readFileSync(join(import.meta.dir, "../fixtures/claude-sessions/2.1.314-tool-changed.jsonl"), "utf8");
+const transcript = () => {
+  const row = service.store.session(ID)!;
+  return sessionFile(row.local.configDir, row.local.cwd, ID)!;
+};
+const putTranscript = (text: string) => {
+  mkdirSync(dirname(transcript()), { recursive: true });
+  writeFileSync(transcript(), text);
+};
 
 beforeAll(async () => {
   mkdirSync(repo, { recursive: true });
@@ -82,9 +94,23 @@ test("a tool that is only new needs no resume", async () => {
   expect(resumes()).toHaveLength(0);
 });
 
+test("a conversation not as claude writes it, or without its saved request, keeps its claude on a changed tool", async () => {
+  writeFileSync(marksFile(), JSON.stringify({ ...toolMarks("lead"), checklist: "the older checklist" }));
+  const before = pid();
+  for (const [runId, text] of [["r3a", `${TRANSCRIPT}not json\n`], ["r3b", TRANSCRIPT.split("\n").filter((l) => !l.includes('"prompt_snapshot"') && !l.includes('"api-request-shape"')).join("\n")]]) {
+    putTranscript(text!);
+    await send(runId!, runId!);
+    await done(runId!);
+    expect(pid()).toBe(before);
+    expect(readFileSync(transcript(), "utf8")).toBe(text!);
+  }
+  expect(resumes()).toHaveLength(0);
+});
+
 test("after an update changes a tool it has, the next turn resumes it once, and a message sent meanwhile lands once", async () => {
   // What an older build's node kept: `checklist` as it was before the update gave it a new field.
   writeFileSync(marksFile(), JSON.stringify({ ...toolMarks("lead"), checklist: "the older checklist" }));
+  putTranscript(TRANSCRIPT);
   const before = pid();
   const turn = send("r4", "four");
   await until("the resume's step", () => resumes().length === 1);
@@ -98,6 +124,10 @@ test("after an update changes a tool it has, the next turn resumes it once, and 
   expect(resumes()).toHaveLength(1);
   expect(resumes()[0]!.runId).toBe("r4");
   expect(JSON.parse(readFileSync(marksFile(), "utf8"))).toEqual(toolMarks("lead"));
+  // Its saved request came out before the resume, and nothing else did: claude reads its tools afresh.
+  const kept = readFileSync(transcript(), "utf8");
+  expect(kept).not.toContain("OLD-ALPHA");
+  expect(kept.split("\n").length).toBe(TRANSCRIPT.split("\n").length - 3);
   // One resume per update: the turns after it run on.
   const after = pid();
   await send("r6", "six");
@@ -110,6 +140,7 @@ test("a hosted session isn't resumed for a changed tool: its box would go with i
   const row = service.store.session(ID)!;
   row.local.hosted = "boat";
   service.store.commit(row, [], false);
+  putTranscript(TRANSCRIPT);
   writeFileSync(marksFile(), JSON.stringify({ ...toolMarks("lead"), checklist: "the older checklist" }));
   const before = pid();
   await send("r7", "seven");

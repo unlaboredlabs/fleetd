@@ -22,6 +22,7 @@ import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import { scrubTranscript } from "./scrub.ts";
+import { holdsSavedRequest, takeSavedRequest } from "./saved_request.ts";
 import * as claude from "../runner/claude.ts";
 import * as antigravity from "../runner/antigravity.ts";
 import { current as currentScope } from "../runner/scope.ts";
@@ -1517,6 +1518,7 @@ export class SessionService {
     if (current) {
       await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
       stages.done("exit wait");
+      if (current.between) this.#takeSavedRequest(id);
     }
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
     const row = this.#session(id);
@@ -2223,7 +2225,8 @@ export class SessionService {
    * update), it is closed first, and the turn resumes it on the tools as they are now. Not while a Monitor may still
    * fire or it holds a screen: a later turn does it. claude keeps a tool's first definition (tools.ts `toolsChanged`).
    * Not a hosted session: its box goes with its claude, and a box is never started for this. Its new tools reach it
-   * through tools/list_changed, a changed one at its box's next start. */
+   * through tools/list_changed, a changed one at its box's next start. Nor one whose conversation doesn't hold claude's
+   * saved request as expected: the resume takes that out (`#spawn`), or claude would send its old tools again. */
   #takeNewTools(id: string, runId: string): void {
     const live = this.#live.get(id);
     const row = this.store.session(id);
@@ -2239,6 +2242,8 @@ export class SessionService {
     if ([...live.watching.values()].some((until) => until > this.#now())) return;
     if ((row.local.monitors ?? []).some((m) => m.untilMs > this.#now())) return;
     if (this.screens?.holdsScreen(id)) return;
+    const file = claude.sessionFile(row.local.configDir, row.local.cwd, id);
+    if (!file || !holdsSavedRequest(file)) return;
     console.log(`${nowIso()} INFO resuming a session's claude for fleetd's updated tools {"sessionId":"${id}"}`);
     this.update(id, (c) =>
       this.#putItem(c, {
@@ -2255,6 +2260,22 @@ export class SessionService {
     live.closing = true;
     live.between = true;
     live.link.send(shutdown(REAP_GRACE_MS));
+  }
+
+  /** Claude's saved request out of the session's conversation, once its claude has exited and before it resumes for
+   * fleetd's updated tools (./saved_request.ts); said in the log either way. */
+  #takeSavedRequest(id: string): void {
+    const row = this.store.session(id);
+    const file = row ? claude.sessionFile(row.local.configDir, row.local.cwd, id) : undefined;
+    let taken: number | undefined;
+    try {
+      taken = file ? takeSavedRequest(file) : undefined;
+    } catch (error) {
+      console.warn(`${nowIso()} WARN couldn't take claude's saved request out of a session's conversation {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
+      return;
+    }
+    if (taken !== undefined) console.log(`${nowIso()} INFO claude's saved request came out of a session's conversation for fleetd's updated tools {"sessionId":"${id}","records":${taken}}`);
+    else console.warn(`${nowIso()} WARN a session's conversation no longer held claude's saved request: it resumes on the tools it had {"sessionId":"${id}"}`);
   }
 
   /** Closes the processes idle for idleReapMs; one with a Monitor that may still fire waits for its deadline. */
