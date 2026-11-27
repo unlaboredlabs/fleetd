@@ -21,6 +21,8 @@ import {
   sha256Hex,
   swap,
   retireHelper,
+  SMALL_WAIT_MS,
+  UNREACHED,
   verifiedTo,
 } from "../src/update/index.ts";
 import { servicesIn } from "../src/update/service.ts";
@@ -104,6 +106,21 @@ test("a build lands only when it matches its SHA256SUMS line, resuming a cut-off
   expect((missing as Failure).message).toBe("`fleetd-darwin-arm64` is not in the release");
   const down = await new HttpFeed(`${base}/down`).get("release.json").catch((e) => (e as Error).message);
   expect(down).toBe(`GET \`${base}/down/release.json\`: 503 Service Unavailable`);
+});
+
+// With this machine's network down, fleetd update said "GitHub's downloads are failing right now, try again later"
+// over Bun's "Is the computer able to access the url?"; on one that never answers it said nothing for 10 min a file.
+test("no answer from the release or its API is this machine's network, said plainly", async () => {
+  const closed = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = closed.port;
+  closed.stop(true);
+  const said = await new HttpFeed(`http://127.0.0.1:${port}/rel`, `http://127.0.0.1:${port}/api`).get("rollout.json").catch((e) => (e as Error).message);
+  expect(said).toBe(`${UNREACHED} 127.0.0.1 (connection refused): check its connection, then try again`);
+  expect(said).not.toMatch(/GitHub's downloads|Is the computer able/);
+  // One that answers, with a 503, is GitHub's downloads failing, as before.
+  const down = await new HttpFeed(`${base}/down`, `http://127.0.0.1:${port}/api`).get("release.json").catch((e) => (e as Error).message);
+  expect(down).toStartWith("GitHub's downloads are failing right now");
+  expect(SMALL_WAIT_MS).toBeLessThanOrEqual(30_000);
 });
 
 test("a release that pins its builds downloads the pinned one, whatever its plain name and SHA256SUMS say now", async () => {

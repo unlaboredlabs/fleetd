@@ -56,4 +56,17 @@ describe("what an event reads again", () => {
     expect(reduce(s, { t: "chat_open", key: "m1/p" }).chats["m1/p"]).toMatchObject({ messages: [m(8), m(9)], cached: true, loaded: false });
     expect(reduce(s, { t: "chat_open", key: "m1/q" }).chats["m1/q"]).toMatchObject({ messages: [], loaded: false });
   });
+
+  it("forgets an approval's \"Not connected\" once the workspace is read again, and keeps a refusal", () => {
+    // Seen on the Duo: Approve pressed while the workspace restarted kept "Not connected to the workspace." under the
+    // card after it was back, as if the person still couldn't answer.
+    const s = initial({ phase: "live", hub: "http://devbox:4790" } as never);
+    const offline = { code: "offline", message: "Not connected to the workspace." };
+    const refused = { code: "forbidden", message: "Only the order's owner can answer this." };
+    let out = reduce(s, { t: "answered", requestId: "r1", result: { ok: false, error: offline } } as never);
+    out = reduce(out, { t: "answered", requestId: "r2", result: { ok: false, error: refused } } as never);
+    expect(Object.keys(out.answerErrors)).toEqual(["r1", "r2"]);
+    out = reduce(out, { t: "requests", requests: [] });
+    expect(out.answerErrors).toEqual({ r2: refused });
+  });
 });

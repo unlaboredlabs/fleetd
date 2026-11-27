@@ -28,6 +28,23 @@ test("a worker code enrolls the node with the hub", async () => {
   expect(again.code).not.toBe(0);
 });
 
+// Run again from the shell's history with its spent code, a join wrote enrolled: false before the workspace refused it,
+// and left a working machine un-enrolled: `node run` then said it had never joined.
+test("a join run again with a spent code keeps the machine joined", async () => {
+  const minted = await fleet.run(["pair", "--worker", "builder-2"]);
+  const code = /fle_[a-z2-7]{52}/.exec(minted.stdout)![0];
+  const node = join(fleet.home, "node-twice");
+  const argv = ["node", "join", "--workspace", fleet.hubUrl, "--token", code, "--machine", "builder-2", "--home", node, "--enroll-only"];
+  expect((await fleet.run(argv)).code).toBe(0);
+  const before = readFileSync(join(node, "node.json"), "utf8");
+  const again = await fleet.run(argv);
+  expect(again.code).not.toBe(0);
+  expect(again.stderr).toContain("already used");
+  expect(again.stderr).toContain(`nothing changed here: builder-2 is still joined to ${fleet.hubUrl}`);
+  expect(readFileSync(join(node, "node.json"), "utf8")).toBe(before);
+  expect(JSON.parse(before).enrolled).toBe(true);
+});
+
 // `--mac` reaches the join (it was once dropped, so the agents' Mac joined as a plain runner): off a Mac it refuses
 // before writing anything, with may_join's words. On the Mac it writes `agentsMac` and `mac.enabled`.
 test.skipIf(process.platform === "darwin")("node join --mac off a Mac refuses and writes no config", async () => {

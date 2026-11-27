@@ -39,6 +39,7 @@ import { claudeShown } from "../claude";
 import { deleteTeam, deleteTeamShown, disconnectShown } from "../team";
 import { inAppPage, LEGAL_PAGES } from "../accountDelete";
 import { DEVICE } from "../device";
+import { pairAgainTitle } from "../hub/pairLink";
 
 /** Settings' words for fleetd.sh's pages, in iOS's title case. */
 const LEGAL_TITLES = { privacy: "Privacy Policy", terms: "Terms of Service", support: "Support" } as const;
@@ -189,6 +190,8 @@ export function Settings() {
       {/* A workspace either way; a fleetd cloud one updates itself: no version of its own to read. */}
       <ListSection header="Workspace">
         <ListRow title="Status" value={statusOf(hub.phase)} valueDot={{ live: t.success, busy: t.warning, down: t.tertiary }[linkTone(hub.phase)]} />
+        {/* Refused (revoked on the workspace): its alert's Not Now leaves the way back here, as its Pair Again does. */}
+        {hub.phase === "refused" ? <ListRow title={pairAgainTitle(DEVICE)} onPress={forget} chevron={false} /> : null}
         <ListRow title="Address" value={paired.hub} selectable />
         {hub.phase === "live" && hub.version !== undefined && paired.cloud !== true ? (
           <ListRow

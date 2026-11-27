@@ -61,13 +61,25 @@ export const projectHome = (m: { readonly agentsMac?: boolean } | undefined): bo
  * Each machine's checkouts, then GitHub. Machine ids read as names. `home` leaves out the machines a project can't live
  * on (projectHome): neither offered as a place for it nor listed as a source of checkouts.
  */
-export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) => string, home: (machineId: string) => boolean = () => true): Discovery => {
+/**
+ * `live`: whether a machine is online now, as the app's own machine status has it (undefined: not known). It wins over
+ * the read's, which can be older: after a workspace restart the read lands before the machines have relinked, and a
+ * machine it saw offline then is back a moment later.
+ */
+export const discovery = (
+  out: ProjectDiscoverOutput,
+  name: (machineId: string) => string,
+  home: (machineId: string) => boolean = () => true,
+  live: (machineId: string) => boolean | undefined = () => undefined,
+): Discovery => {
   const workers: Array<Worker> = [];
   const found: Array<Found> = [];
   const problems: Array<Problem> = [];
   for (const m of out.machines) {
     if (!home(m.machineId)) continue;
-    if (m.problem) problems.push(problem(m.problem));
+    const online = live(m.machineId) ?? m.online;
+    // What the read said of a machine it saw offline is stale once it's back.
+    if (m.problem && !(online && !m.online)) problems.push(problem(m.problem));
     for (const r of m.repos) {
       found.push({
         name: r.name,
@@ -80,7 +92,7 @@ export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) 
     workers.push({
       machineId: m.machineId,
       name: name(m.machineId),
-      online: m.online,
+      online,
       ...(m.cloneRoot ? { cloneRoot: m.cloneRoot } : {}),
       ...(m.projectsRoot ? { projectsRoot: m.projectsRoot } : {}),
     });

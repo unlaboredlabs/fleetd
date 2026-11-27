@@ -198,10 +198,19 @@ export const wakePose = (w: Wake, stirred: boolean): BotState => {
   }
 };
 
-/** Claude's retries in one plain line, by why: overloaded, rate-limited, or not answering; with when the next try goes
- * (`at`, in `timeZone`) while one waits for it, never a "retrying…" with no end. */
+/** Claude's retries in one plain line, by why: overloaded, rate-limited, at its usage limit (a turn the workspace parked
+ * until the limit resets: usage_limit, rate_limit), or not answering; with when the next try goes (`at`, in `timeZone`)
+ * while one waits for it, never a "retrying…" with no end. Used up (pool_exhausted) waits for more, not a retry. */
 export const retryWords = (reason: string, at?: number, timeZone?: string): string => {
-  const why = reason === "overloaded" ? "Claude is overloaded" : reason === "429" ? "Claude is busy (rate-limited)" : "Claude isn’t answering";
+  if (reason === "pool_exhausted") return "Claude’s usage is used up; the lead carries on once there’s more";
+  const why =
+    reason === "overloaded"
+      ? "Claude is overloaded"
+      : reason === "429" || reason === "rate_limit"
+        ? "Claude is busy (rate-limited)"
+        : reason === "usage_limit"
+          ? "Claude’s usage limit is reached"
+          : "Claude isn’t answering";
   return at === undefined ? `${why}, retrying…` : `${why}, retrying at ${clockAt(at, timeZone)}`;
 };
 

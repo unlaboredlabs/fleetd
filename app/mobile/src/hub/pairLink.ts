@@ -61,6 +61,15 @@ export const pastedPair = (text: string): Pasted => {
   return code === null ? { ok: false, note: CODE_SHAPE } : { ok: true, code };
 };
 
+/** The refused key's question and Settings' row: "Pair This Phone Again", "Pair This iPad Again". */
+export const pairAgainTitle = (device: string): string => `Pair This ${device === "iPad" ? "iPad" : "Phone"} Again`;
+
+/** Why, in the person's words: the workspace's own reason names keys by their ids ("agent key fld_… was revoked"). */
+export const refusedWords = (device: string, hubName: string): string => `${hubName} no longer accepts this ${device}'s key. Pair it again with a new code from the workspace.`;
+
+/** One hub's address however it ends (devices.ts sameHub, kept here: the package's pair_link imports nothing else). */
+const sameHub = (a: string, b: string): boolean => a.replace(/\/+$/u, "") === b.replace(/\/+$/u, "");
+
 /** What a pairing link does, by where it came from. */
 export type LinkStep =
   /** Not a pairing link: nothing to do (the scanner says it isn't one). */
@@ -69,6 +78,8 @@ export type LinkStep =
   | { readonly t: "refuse"; readonly failure: PairFailure }
   /** This phone is paired already: how to switch hubs. */
   | { readonly t: "paired"; readonly title: string; readonly message: string }
+  /** The hub this phone is paired with refused its key, and this is its link: forget the dead key and pair, asking first. */
+  | { readonly t: "repair"; readonly hub: string; readonly code: string; readonly title: string; readonly message: string }
   /** From outside the app (iOS's Camera, a page, a message): ask before pairing with a hub someone else may run. */
   | { readonly t: "confirm"; readonly hub: string; readonly code: string; readonly title: string; readonly message: string }
   /** From the app's own scanner, which the person opened to pair: pair now. */
@@ -77,11 +88,14 @@ export type LinkStep =
 /**
  * `cloudDomain`: the domain fleetd cloud's teams live under, from the build's accounts address (null without one): a
  * link to a host under it is a team anyone can make, and the question says so. `device`: what the question calls this
- * device (an iPad is an iPad: device.ts).
+ * device (an iPad is an iPad: device.ts). `refusedHub`: the paired hub's address once it refused this device's key.
  */
-export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null, cloudDomain: string | null = null, device = "phone"): LinkStep => {
+export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null, cloudDomain: string | null = null, device = "phone", refusedHub: string | null = null): LinkStep => {
   const link = parsePairLink(text);
   if (link === null) return { t: "ignore" };
+  if (pairedWith !== null && link.ok && refusedHub !== null && sameHub(link.hub, refusedHub)) {
+    return { t: "repair", hub: link.hub, code: link.code, title: `Pair Again with ${pairedWith}?`, message: `${pairedWith} refused this ${device}'s key. This code pairs it again.` };
+  }
   if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another workspace, disconnect under Settings first, then scan its code again." };
   if (!link.ok) return { t: "refuse", failure: link.failure };
   if (from === "scanner") return { t: "pair", hub: link.hub, code: link.code };

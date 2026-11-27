@@ -37,12 +37,16 @@ export const keyNotFound = (keyId: string) =>
 export const notAgentKey = () => new ToolError("invalid", "expected an agent key: `Authorization: Bearer fld_…`", CREATE_KEY_FIX);
 
 /** Why the key of `row` (its row by its hash; undefined for none) is refused, if it is: unknown, revoked, or its person removed. */
-export function keyRefusal(row: { prefix: string; revoked_ms: unknown; person_removed: unknown } | undefined): ToolError | undefined {
+export function keyRefusal(row: { prefix: string; revoked_ms: unknown; person_removed: unknown; person_id?: unknown } | undefined): ToolError | undefined {
   const forbidden = (message: string) => new ToolError("forbidden", message, CREATE_KEY_FIX);
   if (!row) return forbidden("unknown agent key");
   // Removing a person revokes their devices' keys too: what they're told is that they were removed, not how.
   if (row.person_removed) {
     return new ToolError("forbidden", "You were removed from this workspace, so this device is signed out", "Ask one of its owners or admins to invite you again.");
+  }
+  // A person's device (a phone, the desktop, a browser) is told in its own words, never as an agent key by its id.
+  if (row.revoked_ms !== null && row.person_id !== undefined && row.person_id !== null) {
+    return new ToolError("forbidden", "This device's key was revoked, so it's signed out of this workspace", "Pair it again with a new code: `fleetd pair` on the workspace's machine, or ask one of its admins for one.");
   }
   if (row.revoked_ms !== null) return forbidden(`agent key ${row.prefix} was revoked`);
   return undefined;

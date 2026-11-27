@@ -85,5 +85,5 @@ test("a Gemini thread takes writes where claude is logged out; a Claude thread t
   expect(frame.call).toMatchObject({ op: "send", sessionId: "lead-g", text: "hi" });
   reply(frame, { kind: "sent", runId: "run-g", queued: false });
   expect(await sent).toMatchObject({ runId: "run-g", queued: false });
-  await expect(writeQueue(hub).send({ machineId: "devbox", threadId: "lead-c" }, "hi", "req-c")).rejects.toThrow("claude is not logged in");
+  await expect(writeQueue(hub).send({ machineId: "devbox", threadId: "lead-c" }, "hi", "req-c")).rejects.toThrow("Claude isn't signed in on devbox");
 });

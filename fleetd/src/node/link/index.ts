@@ -75,6 +75,18 @@ export class LinkFatal extends Error {
   }
 }
 
+/** A join whose workspace never answered within its wait (`RunNodeOptions.joinWithinMs`): nothing enrolled, and its
+ * code is still unused. Without it a join to a wrong address, or a workspace that is down, waited forever in silence. */
+export class JoinUnreachable extends LinkFatal {
+  constructor(
+    readonly hub: string,
+    why: string,
+  ) {
+    super(why);
+    this.message = `can't reach the workspace at ${hub} (${why.replace(/^cannot reach the workspace: /, "")}), so this machine hasn't joined and its code is still unused. Fix: check that the address is right and the workspace there runs, then run the join again`;
+  }
+}
+
 type LinkEnd =
   | { kind: "lost"; why: string }
   /** The hub closed the link as a restart (`CLOSE.RESTART`): it is back within a moment. */
@@ -168,6 +180,8 @@ export type RunNodeOptions = {
   machineFingerprint?: string;
   /** Sent on links until the hub first welcomes this node, then forgotten. */
   enrollToken?: string;
+  /** With `enrollToken`: how long to keep trying a workspace that never answered before giving up (JoinUnreachable). */
+  joinWithinMs?: number;
   /** Runs after the first welcome of a link that carried the enroll token, with the id the hub enrolled it as. */
   onEnrolled?: (machineId: string) => void;
   /** What the hello lists, at each link. */
@@ -204,6 +218,7 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
   const redial = new Redial();
   let downSince: number | undefined;
   let linkedOnce = false;
+  const started = Date.now();
   while (!options.signal?.aborted) {
     const end = await runLinkOnce(options, enrollToken, (hubId, machineId) => {
       redial.linked();
@@ -231,6 +246,9 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
       continue;
     }
     if (options.signal?.aborted) break;
+    if (!linkedOnce && enrollToken !== undefined && options.joinWithinMs !== undefined && Date.now() - started >= options.joinWithinMs) {
+      return new JoinUnreachable(options.settings.hub, end.why);
+    }
     const delay = redial.next(end.kind === "restarting", Date.now(), 0.8 + Math.random() * 0.4);
     if (downSince === undefined) {
       downSince = Date.now();

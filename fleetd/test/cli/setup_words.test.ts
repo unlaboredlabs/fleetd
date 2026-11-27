@@ -2,11 +2,13 @@
 // that doesn't answer, optional screens, a clone with no GitHub login, and a hub whose own Claude account means no
 // machine needs claude logged in.
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Checklist } from "../../src/cli/setup/checklist.ts";
 import { show, tally, unreachable } from "../../src/cli/setup/doctor.ts";
 import { cloneFailed, hubClaudeAccount } from "../../src/cli/setup/hub_wizard.ts";
+import { joinRefusal, newJoinLine } from "../../src/cli/setup/machine.ts";
+import { noSetupFix } from "../../src/cli/setup/shared.ts";
 import { ClaudeAccountStore } from "../../src/hub/claude_accounts/index.ts";
 import { HubDb } from "../../src/hub/store/db.ts";
 
@@ -120,4 +122,43 @@ test("a workspace with its own Claude API key needs no machine logged in; a fres
   }
   expect(hubClaudeAccount(home)).toBe("the workspace's API key");
   expect(hubClaudeAccount(join(dir, "none"))).toBeUndefined();
+});
+
+// On a worker, fleetd doctor said "Fix: fleetd init (it starts the workspace and repairs its setup)": a worker has no
+// workspace to start, and its own one lives elsewhere.
+test("doctor on a worker says where its workspace is, not to start one here", () => {
+  const fleet = join(dir, "worker-fleet");
+  mkdirSync(join(fleet, "node"), { recursive: true });
+  writeFileSync(join(fleet, "node", "node.json"), JSON.stringify({ hub: "http://devbox.example.ts.net:4790", machineId: "laptop", name: "laptop", enrolled: true }));
+  const before = process.env.FLEETD_HOME;
+  process.env.FLEETD_HOME = fleet;
+  try {
+    const fix = noSetupFix(join(fleet, "hub"));
+    expect(fix).toStartWith("this machine is laptop, a worker of the workspace at http://devbox.example.ts.net:4790: run this on the workspace's machine");
+    expect(fix).not.toContain("starts the workspace");
+  } finally {
+    if (before === undefined) delete process.env.FLEETD_HOME;
+    else process.env.FLEETD_HOME = before;
+  }
+});
+
+// A wrong code in fleetd init --join read "w5 could not join: step 3 failed (exit 1): fleetd: workspace refused this node:
+// …", then two Fix lines, one outside the frame, the second sending a self-hosted workspace's person to fleetd's cloud.
+test("a refused join code is one line and one fix, for the workspace it was for", () => {
+  const stderr = [
+    "fleetd: workspace refused this node: enrollment token expired. Fix: on the workspace's machine, run fleetd pair --worker w5 for a new code",
+  ].join("\n");
+  const own = joinRefusal(stderr, "w5", "http://devbox:4790")!;
+  expect(own).toBe(
+    "http://devbox:4790 refused this machine's code: enrollment token expired.\nFix: a code works once, for 15 minutes: on the workspace's machine, run fleetd pair --worker w5 for a new join line, then run that line here.",
+  );
+  expect(own).not.toContain("step ");
+  expect(own.match(/Fix: /g)).toHaveLength(1);
+  expect(joinRefusal(stderr, "w5", "https://sam.fleetd.dev")).toContain("Fix: a code works once, for 15 minutes: get a new join line from Add machine in the fleetd app, then");
+  // A workspace never reached: the node's own words and fix.
+  const away = joinRefusal("fleetd: can't reach the workspace at http://devbox:4790 (connection refused or failed), so this machine hasn't joined and its code is still unused. Fix: check that the address is right and the workspace there runs, then run the join again\n", "w5", "http://devbox:4790");
+  expect(away).toBe("can't reach the workspace at http://devbox:4790 (connection refused or failed), so this machine hasn't joined and its code is still unused.\nFix: check that the address is right and the workspace there runs, then run the join again.");
+  expect(joinRefusal("some other failure\n", "w5", "http://devbox:4790")).toBeUndefined();
+  expect(newJoinLine("w5", "http://devbox:4790")).not.toContain("cloud");
+  expect(newJoinLine("w5")).toContain("fleetd pair --worker w5");
 });

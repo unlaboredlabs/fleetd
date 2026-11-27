@@ -3,7 +3,7 @@ import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatMessage } from "./chat-contract";
 import { live, snapshot } from "./fixtures.test-util";
 import { createDataLayer, type Batch, type HubApi } from "./queries";
-import { selectCanStop, selectChat, selectLeadAtWork, selectLeadWorking, selectNeedsYou } from "./selectors";
+import { selectCanStop, selectChat, selectLeadAtWork, selectLeadHeld, selectLeadWorking, selectNeedsYou } from "./selectors";
 
 type Answer = { ok: true; output: unknown } | { ok: false; error: HubError };
 
@@ -289,6 +289,24 @@ describe("chat history", () => {
     expect(atWork()).toBe("live");
     fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
     expect(atWork()).toBe("held");
+  });
+
+  // The second quality sweep: a turn parked at Claude's usage limit, or a start held by the team's billing, said "It
+  // reads this at its next step" under the composer, as if a step were running.
+  it("the lead held: its turn parked at a usage limit, or its start held; not while it works a step", async () => {
+    const { fake, layer } = await connected();
+    const held = () => selectLeadHeld(KEY)(layer.store.getState());
+    const at = "2026-10-19T10:00:01.000Z";
+    const laneFrame = (status: string, activity?: Record<string, unknown>): HubFrame =>
+      ({ t: "live", frame: { at, full: false, lanes: [{ laneId: "lead:devbox/storefront", status, ...(activity === undefined ? {} : { activity: { activity, since: at } }) }] } }) as HubFrame;
+    fake.send(laneFrame("working", { kind: "thinking" }));
+    expect(held()).toBe(false);
+    fake.send(laneFrame("parked", { kind: "retrying", attempt: 1, of: 1, reason: "usage_limit" }));
+    expect(held()).toBe(true);
+    fake.send(laneFrame("starting", { kind: "starting", text: "Starting its computer", failed: { reason: "This team has no credits left." } }));
+    expect(held()).toBe(true);
+    fake.send(laneFrame("starting", { kind: "starting", text: "Starting its computer" }));
+    expect(held()).toBe(false);
   });
 
   it("the lead at work ends with its turn", async () => {

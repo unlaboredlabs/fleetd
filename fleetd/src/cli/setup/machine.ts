@@ -352,8 +352,33 @@ export const preparedPlatform = (p: Prepared) => `${p.facts.platform}-${p.facts.
  * Where a joining machine gets a new code: fleetd cloud's Get started for a cloud workspace (its people have no
  * workspace machine), `fleetd pair --worker` on a self-hosted one's.
  */
-export const newJoinLine = (machineId = "<name>") =>
-  `get a new join line where this one came from: Get started on fleetd cloud, or fleetd pair --worker ${machineId} on your workspace's machine`;
+/** Where a new join line comes from: fleetd's cloud (a workspace at *.fleetd.dev) makes them in its app, a self-hosted
+ * workspace on its own machine. Unknown (`hub` absent): both. */
+export function newJoinLine(machineId = "<name>", hub?: string): string {
+  let host = "";
+  try {
+    host = hub === undefined ? "" : new URL(hub).hostname;
+  } catch {}
+  const cloud = "get a new join line from Add machine in the fleetd app";
+  const own = `on the workspace's machine, run fleetd pair --worker ${machineId} for a new join line`;
+  if (hub === undefined) return `${cloud} (fleetd's cloud), or ${own}`;
+  return host === "fleetd.dev" || host.endsWith(".fleetd.dev") ? cloud : own;
+}
+
+/** A join's enrolment that failed, from the node's last line ("fleetd: workspace refused this node: <why>. Fix: <fix>",
+ * or a workspace it never reached): its words alone, rather than "step 3 failed (exit 1):" over the node's whole output
+ * and a second Fix under its own. */
+export function joinRefusal(stderr: string, machineId: string, hub: string): string | undefined {
+  const last = stderr.trim().split("\n").reverse().find((l) => l.startsWith("fleetd: "));
+  if (last === undefined) return undefined;
+  const said = last.slice(8).trim();
+  const at = said.indexOf(" Fix: ");
+  const why = (at < 0 ? said : said.slice(0, at)).replace(/\.+$/, "");
+  const ownFix = at < 0 ? undefined : said.slice(at + 6).replace(/\.+$/, "");
+  const refused = /^workspace refused this node: (.*)$/.exec(why);
+  if (refused === null) return `${why}.\nFix: ${ownFix ?? "fix that, then run the join line again"}.`;
+  return `${hub} refused this machine's code: ${refused[1]}.\nFix: a code works once, for 15 minutes: ${newJoinLine(machineId, hub)}, then run that line here.`;
+}
 
 /** The join to run again after one that stopped before it enrolled. */
 function joinAgain(a: AddArgs, hub: string, code: string, machineId: string): string {
@@ -559,7 +584,7 @@ export async function prepare(
   // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
   if (r.enroll.kind === "keep" && plan.steps.some((s) => s.stdin?.kind === "enrollToken")) {
     throw Stop.fail(
-      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: ${newJoinLine(r.machineId)}, then run it here with --rejoin`,
+      `this machine's node is no longer enrolled with ${input.hubUrl} as ${r.machineId}. Fix: ${newJoinLine(r.machineId, input.hubUrl)}, then run it here with --rejoin`,
     );
   }
   const prepared: Prepared = { facts, plan, input, ...(fetched === undefined ? {} : { fetched }) };
@@ -635,10 +660,12 @@ export async function execute(
     if (result.code !== 0 && stepNeedsGuiSession(plan.platform, result.code)) {
       throw Stop.fail(`${noGuiSession(facts.user, r.joining)}, then run ${r.again}; finished steps are skipped.`);
     }
+    const refused = result.code !== 0 && step.stdin?.kind === "enrollToken" && r.joining ? joinRefusal(result.stderr, r.machineId, r.input.hubUrl) : undefined;
+    if (refused !== undefined) throw Stop.fail(refused);
     if (result.code !== 0) {
       const fix =
         step.stdin?.kind === "enrollToken" && r.joining
-          ? `the code is single use and lasts 15 minutes: ${newJoinLine(r.machineId)}`
+          ? `the code is single use and lasts 15 minutes: ${newJoinLine(r.machineId, r.input.hubUrl)}`
           : r.againByHand !== undefined && noSystemd(plan.platform, step.command, result)
             ? `this machine has no systemd user service to run its node (a container, or WSL without systemd): run ${r.againByHand}, then start the node with ${q(plan.layout.bin)} node run --home ${q(plan.layout.nodeHome)}`
             : `fix that, then run ${r.again}; finished steps are skipped`;

@@ -1,6 +1,7 @@
 // `fleetd node …`: the node's link to its hub, its sessions, the lead socket, cmd
 // checks, sealed secrets, approved commands and node actions. A session's claude runs under a host of its own, this
 // binary's `fleetd session-host` (./runner/host.ts), which outlives the node.
+import { ioMessage } from "../cli/common.ts";
 import { refreshOwnUnit } from "../cli/setup/units.ts";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
@@ -285,6 +286,17 @@ export function joinConfig(home: string, args: JoinArgs): NodeConfig {
   };
 }
 
+function stillEnrolled(home: string): boolean {
+  try {
+    return readConfig(home)?.enrolled === true;
+  } catch {
+    return false;
+  }
+}
+
+/** How long a join keeps trying a workspace that never answers: past a restart's few seconds, short of a person giving up. */
+export const JOIN_WAIT_MS = 60_000;
+
 /** Creates the node key and config, enrolls with the one-time token, then keeps the link up. */
 export async function join_(args: JoinArgs): Promise<number> {
   if (!isMachineId(args.machine)) {
@@ -298,13 +310,26 @@ export async function join_(args: JoinArgs): Promise<number> {
   }
   const home = args.home ?? defaultNodeHome();
   const config = joinConfig(home, args);
+  // A node that joined already keeps its config until the workspace takes the new code: a join run again with a spent
+  // code (from the shell's history, say) wrote enrolled: false first, and left a working machine un-enrolled.
+  let before: NodeConfig | undefined;
   try {
-    writeConfig(home, config);
-  } catch {
-    process.stderr.write(`fleetd: cannot write the node config in ${home}\n`);
-    return 1;
+    before = readConfig(home);
+  } catch {}
+  const joined = before?.enrolled === true ? before : undefined;
+  if (joined === undefined) {
+    try {
+      writeConfig(home, config);
+    } catch (error) {
+      process.stderr.write(`fleetd: cannot write the node config in ${home}: ${ioMessage(error)}\n`);
+      return 1;
+    }
   }
-  return runNodeProcess(home, config, args.token, !!args.enrollOnly);
+  const code = await runNodeProcess(home, config, args.token, !!args.enrollOnly);
+  if (code !== 0 && joined !== undefined && stillEnrolled(home)) {
+    process.stderr.write(`fleetd: nothing changed here: ${joined.machineId} is still joined to ${joined.hub}, and fleetd node run (or its service) keeps it linked\n`);
+  }
+  return code;
 }
 
 /** The hub removed this machine: node.json says so and isn't enrolled any more, so nothing dials the hub as that
@@ -324,6 +349,10 @@ export function markRemoved(home: string, deleted = false): boolean {
 /** What a node whose workspace was deleted says, at the refusal and at each start after it. */
 export const deletedLine = (hub: string) =>
   `${hub} was deleted, so fleetd stopped on this machine. Remove fleetd here with fleetd uninstall, or join another workspace with a new code (fleetd init --join).`;
+
+/** What a node its workspace removed says, at the refusal and at each start after it. */
+export const removedLine = (config: { machineId: string; hub: string }) =>
+  `${config.machineId} was removed from ${config.hub}, so this node stays stopped. To work for it again, join with a new code (fleetd init --join, or Set up this Mac in the app); to take fleetd off this machine, run fleetd uninstall`;
 
 /** Keeps the link up for a node that has joined. */
 export async function run(args: { home?: string }): Promise<number> {
@@ -359,7 +388,7 @@ export async function enrolled(home: string, retry: boolean, signal?: AbortSigna
         error = config?.deleted
           ? deletedLine(config.hub)
           : config?.removed
-            ? `${config.machineId} was removed from ${config.hub}, so this node stays stopped. To work for it again, join with a new code (fleetd init --join, or Set up this Mac in the app); to take fleetd off this machine, run fleetd uninstall`
+            ? removedLine(config)
           : `this node has not joined a workspace (no enrolled config in ${home}): run fleetd node join first`;
       } catch {
         error = `node config in ${home} is unreadable`;
@@ -681,7 +710,7 @@ export async function startNode(
     identity,
     boxPubKey: boxKey.publicKey(),
     machineFingerprint: machineFingerprint(),
-    ...(enrollToken ? { enrollToken } : {}),
+    ...(enrollToken ? { enrollToken, joinWithinMs: JOIN_WAIT_MS } : {}),
     ...(enrolled ? { onEnrolled: enrolled } : {}),
     capabilities: () => (hello = helloCapabilities(own, node.area("caps").list(), mac)),
     heartbeat: async () => {
@@ -711,7 +740,8 @@ export async function startNode(
   void fatal.then(
     (refused) => {
       if (refused) {
-        process.stderr.write(`fleetd: ${refused.message}\n`);
+        // The wire's reason for a removal says "hub" for older nodes' sake (shared/node_link.ts): people read this one.
+        process.stderr.write(`fleetd: ${refused.removed ? removedLine(config) : refused.message}\n`);
         // Setup on the Mac shows the hub's words, not a wait for checks that never come.
         mac?.link("refused", refused.reason);
         // Removed: the node stops as that machine. Its service starts it again, to wait for a new join (`enrolled`).

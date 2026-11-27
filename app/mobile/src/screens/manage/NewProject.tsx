@@ -17,7 +17,7 @@ import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
 import { createCall, discover } from "./api";
 import { closeThenOpen } from "./arrival";
-import { createRefusal, machineName, NOT_CONNECTED, refusalNow } from "./model";
+import { createRefusal, machineName, NOT_CONNECTED, onlineNow, refusalNow } from "./model";
 import { CheckRow, errorWords, FieldRow, Note, Problem, sheetOptions, Symbol, useRead } from "./parts";
 
 type Props = NativeStackScreenProps<RootParams, "NewProject">;
@@ -62,7 +62,7 @@ export function NewProject({ navigation, route }: Props) {
     if (state.projects !== undefined) send({ t: "snapshot", projects: Object.values(state.projects) });
   }, [state.projects, send]);
 
-  const workers = (d?.workers ?? state.machines.filter(projectHome).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }))).filter((w) => w.online);
+  const workers = onlineNow(d?.workers ?? state.machines.filter(projectHome).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" })), state.machines);
   const to = target(d, picked) ?? workers[0] ?? null;
   const nameIssue = nameProblem(name);
   const named = botName(name, repos);

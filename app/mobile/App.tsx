@@ -30,11 +30,11 @@ import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cach
 import { watchNetwork } from "./src/networkWatch";
 import { watchUpdates } from "./src/appUpdateWatch";
 import { webSocketTransport } from "./src/hub/socket";
-import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
+import { afterForget, afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
 import { cloudDomain, WORKSPACE_DELETED, type PairFailure } from "./src/desktop";
 import { deviceName } from "./src/hub/deviceName";
 import { accountPreview, askedOn, deleteAccount } from "./src/accountDelete";
-import { pairLinkStep } from "./src/hub/pairLink";
+import { pairAgainTitle, pairLinkStep, refusedWords } from "./src/hub/pairLink";
 import { HubContext, HubStoreContext, SessionContext, type ChatsParams, type HubContextValue, type HubStore, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import { NotifyAsk } from "./src/screens/NotifyAsk";
@@ -154,13 +154,14 @@ export default function App() {
     } else await pairWith(next);
     setPaired(next);
   }, []);
-  // Disconnect, or a key the hub refused: that hub goes, and the next one kept shows, or the first screen.
+  // Disconnect, or a key the hub refused: that hub goes, and the next one kept shows, or the first screen. Pair Again
+  // from the refused hub's link (`pairAgain`) goes to the pairing screens, where the link's code pairs it.
   const forget = useCallback(
-    (why?: string) => {
-      const rest = hubs.filter((h) => h.hub !== paired?.hub);
+    (why?: string, pairAgain = false) => {
+      const { next, hubs: rest } = afterForget(hubs, paired?.hub, pairAgain);
       setNote(rest.length === 0 ? why : undefined);
       forgetCache();
-      void show(rest[0] ?? null, rest).catch(() => setPaired(null));
+      void show(next, rest).catch(() => setPaired(null));
     },
     [hubs, paired, show],
   );
@@ -201,6 +202,10 @@ export default function App() {
   const [pairShown, setPairShown] = useState(0);
   // A Shortcuts action's link, until the paired hub's screens go there.
   const [opened, setOpened] = useState<ShortcutLink | null>(null);
+  // The paired hub's address once it refused this phone's key (Hub): its own pairing link then pairs again.
+  const [refusedHub, setRefusedHub] = useState<string | null>(null);
+  // A link's hub and code to pair with once the refused hub is forgotten and the pairing screens are up.
+  const repair = useRef<{ readonly hub: string; readonly code: string } | null>(null);
   useEffect(() => {
     if (link === null || paired === undefined) return;
     const shortcut = parseShortcutLink(link);
@@ -209,8 +214,23 @@ export default function App() {
       if (paired !== null) setOpened(shortcut);
       return handled();
     }
-    const step = pairLinkStep(link, "outside", paired?.hubName ?? null, cloud === null ? null : cloudDomain(cloud.accountsUrl), DEVICE);
+    const step = pairLinkStep(link, "outside", paired?.hubName ?? null, cloud === null ? null : cloudDomain(cloud.accountsUrl), DEVICE, refusedHub);
     if (step.t === "ignore") return handled();
+    if (step.t === "repair") {
+      handled();
+      const { hub, code } = step;
+      Alert.alert(step.title, step.message, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Pair Again",
+          onPress: () => {
+            repair.current = { hub, code };
+            forget(undefined, true);
+          },
+        },
+      ]);
+      return;
+    }
     if (step.t === "paired") {
       Alert.alert(step.title, step.message);
       return handled();
@@ -229,7 +249,19 @@ export default function App() {
       { text: "Cancel", style: "cancel" },
       { text: "Connect", onPress: () => pairNav.navigate("Pair", { hub, code, auto: true }) },
     ]);
-  }, [link, paired, pairShown, handled]);
+  }, [link, paired, pairShown, handled, refusedHub, forget]);
+  // The refused hub forgotten: its link's code pairs once the pairing screens are up; another hub shown drops it.
+  useEffect(() => {
+    if (repair.current === null) return;
+    if (paired !== null) {
+      if (paired !== undefined && !sameHub(paired.hub, repair.current.hub)) repair.current = null;
+      return;
+    }
+    if (!pairNav.isReady()) return;
+    const { hub, code } = repair.current;
+    repair.current = null;
+    pairNav.navigate("Pair", { hub, code, auto: true });
+  }, [paired, pairShown]);
   // Behind every screen, as during a push or a keyboard's slide: the scheme's ground, not the build's one color.
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(t.bg).catch(() => undefined);
@@ -260,6 +292,7 @@ export default function App() {
             hubs={hubs}
             account={account}
             onForget={forget}
+            onRefused={setRefusedHub}
             onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch workspaces", `This ${DEVICE} couldn't write its keychain. Try again.`))}
             onMade={(h) => show(h, [...hubs.filter((k) => k.hub !== h.hub), h])}
             onSignedIn={signedIn}
@@ -361,6 +394,8 @@ interface HubProps {
   readonly hubs: readonly KeptHub[];
   readonly account: SavedAccount | null;
   readonly onForget: (why?: string) => void;
+  /** The hub's address while it refuses this phone's key, else null: its pairing link then pairs again. */
+  readonly onRefused: (hub: string | null) => void;
   /** Shows another hub kept. */
   readonly onShow: (hub: KeptHub) => void;
   /** Keeps a workspace just made beside the others, and shows it. */
@@ -372,7 +407,7 @@ interface HubProps {
   readonly onOpened: () => void;
 }
 
-function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSignedOut, opened, onOpened }: HubProps) {
+function Hub({ paired, hubs, account, onForget, onRefused, onShow, onMade, onSignedIn, onSignedOut, opened, onOpened }: HubProps) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), sections: sectionStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const store = useMemo((): HubStore => ({ subscribe: session.subscribe, getState: session.getState }), [session]);
@@ -551,7 +586,15 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
   useEffect(() => {
-    if (refused === undefined || leaving.current) return;
+    onRefused(refused === undefined || refused === WORKSPACE_DELETED ? null : paired.hub);
+    return () => onRefused(null);
+  }, [refused, onRefused, paired.hub]);
+  // Once per refusal: the effect runs again as the hubs kept change (a repair forgetting this one), and an alert
+  // outlives the screen that raised it.
+  const alerted = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (refused === undefined || leaving.current || alerted.current === refused) return;
+    alerted.current = refused;
     // Its workspace was deleted (fleetd cloud's final close): nothing to pair again. It leaves this phone, which then
     // shows the next workspace kept, or the first screen with that line (iPhone sweep S1: "Connecting…" forever).
     if (refused === WORKSPACE_DELETED) {
@@ -562,7 +605,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSi
       return;
     }
     haptics.warning();
-    Alert.alert(DEVICE === "iPad" ? "Pair This iPad Again" : "Pair This Phone Again", refused, [
+    Alert.alert(pairAgainTitle(DEVICE), refusedWords(DEVICE, paired.hubName), [
       { text: "Not Now", style: "cancel" },
       { text: "Pair Again", onPress: () => onForget(`This ${DEVICE}'s key was refused: pair it again.`) },
     ]);

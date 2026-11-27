@@ -2,6 +2,8 @@
 // listen addresses, who holds the hub's database, and this machine's dirs.
 import { readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { fleetdDir } from "../../shared/home.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 import { homeDir } from "../common.ts";
 import { SETUP_USAGE } from "../usages.ts";
 export { SETUP_USAGE };
@@ -168,12 +170,25 @@ export function listenFromArgs(args: string): string | undefined {
   return undefined;
 }
 
-/** The fix for a hub home without setup.json. */
+/** The workspace a node on this machine joined, and as which machine: a worker has no workspace of its own. */
+export function workerOf(): { hub: string; machineId: string } | undefined {
+  try {
+    const node = JSON.parse(readFileSync(join(fleetdDir(), "node", "node.json"), "utf8"));
+    return node?.enrolled === true && typeof node.hub === "string" && typeof node.machineId === "string" ? { hub: node.hub, machineId: node.machineId } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The fix for a hub home without setup.json. On a worker, `fleetd init` "starting the workspace" was the wrong advice. */
 export function noSetupFix(home: string): string {
   const running = runningListen(home);
-  return running !== undefined
-    ? `a workspace you started yourself answers there: fleetd init --no-service --listen ${running}`
-    : "fleetd init (it starts the workspace and repairs its setup)";
+  if (running !== undefined) return `a workspace you started yourself answers there: fleetd init --no-service --listen ${running}`;
+  const worker = workerOf();
+  if (worker !== undefined) {
+    return `this machine is ${worker.machineId}, a worker of the workspace at ${worker.hub}: run this on the workspace's machine, or open ${settingsPath("Setup")} in the app; here, fleetd init checks and repairs the worker`;
+  }
+  return "fleetd init (it starts the workspace and repairs its setup)";
 }
 
 export type Platform = "linux" | "darwin";

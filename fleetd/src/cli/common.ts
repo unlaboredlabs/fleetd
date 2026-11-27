@@ -206,6 +206,8 @@ export function ioMessage(error: unknown): string {
     ENOTDIR: ["Not a directory", 20],
     ENOTEMPTY: ["Directory not empty", 39],
     EPERM: ["Operation not permitted", 1],
+    ENOSPC: ["No space left on device", 28],
+    EROFS: ["Read-only file system", 30],
   };
   const hit = e?.code ? known[e.code] : undefined;
   return hit ? `${hit[0]} (os error ${hit[1]})` : (e?.message ?? String(error));

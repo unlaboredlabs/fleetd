@@ -291,6 +291,9 @@ const withLatest = (s: State, key: Key, messages: readonly ChatMessage[]): State
   return { ...s, latest: { ...s.latest, [key]: newest } };
 };
 
+/** An error from not reaching the workspace, rather than its refusal. */
+const unreached = (e: HubError): boolean => e.code === "offline" || e.code === "timeout";
+
 const without = <T>(map: Readonly<Record<string, T>>, key: string): Readonly<Record<string, T>> =>
   key in map ? Object.fromEntries(Object.entries(map).filter(([k]) => k !== key)) : map;
 
@@ -383,7 +386,9 @@ export const reduce = (s: State, a: Action): State => {
     }
     case "requests": {
       const answering = Object.keys(s.cut).length === 0 ? s.answering : Object.fromEntries(Object.entries(s.answering).filter(([id]) => s.cut[id] === undefined));
-      return { ...s, requests: a.requests.filter((r) => r.state === "open"), requestsRead: true, answering, cut: {} };
+      // Read from the workspace: an answer that failed for want of it ("Not connected", timed out) no longer holds.
+      const answerErrors = Object.values(s.answerErrors).some(unreached) ? Object.fromEntries(Object.entries(s.answerErrors).filter(([, e]) => !unreached(e))) : s.answerErrors;
+      return { ...s, requests: a.requests.filter((r) => r.state === "open"), requestsRead: true, answering, answerErrors, cut: {} };
     }
     case "screens":
       return { ...s, screens: { ...s.screens, [a.key]: a.sessions } };

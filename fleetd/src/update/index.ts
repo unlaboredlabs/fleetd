@@ -61,14 +61,36 @@ export interface Feed {
 }
 
 export const GITHUB_FAILING = "GitHub's downloads are failing right now, try again later";
+/** What a failure says when no answer came at all, from the release nor its API: this machine's network, not GitHub's. */
+export const UNREACHED = "this machine can't reach";
 
 const STALL_MS = 60_000;
-const SMALL_WAIT_MS = 600_000;
+/** A small file's whole wait (rollout.json, release.json): ten minutes of silence each, twice, read as a hang. */
+export const SMALL_WAIT_MS = 30_000;
 const RESUMES = 5;
 const RESUME_WAIT_MS = 1000;
 
 class Again extends Error {}
 class Final extends Error {}
+/** No answer at all (no DNS, no connection, a timeout): an Again, with `short` saying why in a few words. */
+class Unreached extends Again {
+  constructor(
+    message: string,
+    readonly short: string,
+  ) {
+    super(message);
+  }
+}
+
+/** A fetch that got no answer, in a few plain words; undefined for anything else. */
+export function noAnswer(e: unknown): string | undefined {
+  const err = e as { name?: string; code?: unknown; message?: string };
+  if (err?.name === "TimeoutError") return `no answer in ${SMALL_WAIT_MS / 1000} s`;
+  if (err?.code === "ECONNREFUSED" || err?.code === "ConnectionRefused") return "connection refused";
+  if (err?.code === "ENOTFOUND" || err?.code === "EAI_AGAIN") return "its name doesn't resolve";
+  if (err?.code === "ECONNRESET" || err?.code === "ETIMEDOUT" || err?.code === "ENETUNREACH" || err?.code === "EHOSTUNREACH") return "no route to it";
+  return undefined;
+}
 
 /** GitHub's API for the release whose download directory is `base`. */
 export function releaseApi(base: string): string | undefined {
@@ -83,6 +105,14 @@ export function releaseApi(base: string): string | undefined {
 }
 
 const bothFailed = (link: string, api: string) => `${GITHUB_FAILING} (${link}; through GitHub's API: ${api})`;
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+};
+const unreached = (url: string, cause: string) => `${UNREACHED} ${hostOf(url)} (${cause}): check its connection, then try again`;
 const after = (link: string | undefined, e: string) => (link !== undefined ? bothFailed(link, e) : e);
 const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -99,7 +129,8 @@ export class HttpFeed implements Feed {
     try {
       answer = await fetch(api, { headers: { accept: "application/vnd.github+json", "user-agent": `fleetd/${VERSION}` }, signal: AbortSignal.timeout(SMALL_WAIT_MS) });
     } catch (e) {
-      throw new Error(`GET \`${api}\`: ${why(e)}`);
+      const none = noAnswer(e);
+      throw none !== undefined ? new Unreached(`GET \`${api}\`: ${why(e)}`, none) : new Error(`GET \`${api}\`: ${why(e)}`);
     }
     if (!answer.ok) throw new Error(`GET \`${api}\`: ${answer.status} ${answer.statusText}`.trimEnd());
     const release = (await answer.json()) as { assets?: { name: string; url: string }[] };
@@ -117,7 +148,8 @@ export class HttpFeed implements Feed {
     try {
       answer = await fetch(url, { headers, ...(from === undefined ? { signal: AbortSignal.timeout(SMALL_WAIT_MS) } : {}) });
     } catch (e) {
-      throw new Again(`GET \`${url}\`: ${why(e)}`);
+      const none = noAnswer(e);
+      throw none !== undefined ? new Unreached(`GET \`${url}\`: ${why(e)}`, none) : new Again(`GET \`${url}\`: ${why(e)}`);
     }
     const status = `${answer.status} ${answer.statusText}`.trimEnd();
     if (answer.status >= 500 || answer.status === 429) throw new Again(`GET \`${url}\`: ${status}`);
@@ -142,16 +174,20 @@ export class HttpFeed implements Feed {
   async get(name: string): Promise<Uint8Array> {
     const url = `${this.base}/${name}`;
     let link: string;
+    let none: string | undefined;
     try {
       return await this.fetchSmall(url, false);
     } catch (e) {
       if (e instanceof Final || !(e instanceof Again)) throw new Error(why(e));
       link = e.message;
+      if (e instanceof Unreached) none = e.short;
     }
-    if (!this.api) throw new Error(link);
+    if (!this.api) throw new Error(none !== undefined ? unreached(url, none) : link);
     try {
       return await this.fetchSmall(await this.apiUrl(name), true);
     } catch (e) {
+      // Neither answered at all: this machine's network, not GitHub's downloads.
+      if (none !== undefined && e instanceof Unreached) throw new Error(unreached(url, none));
       throw new Error(bothFailed(link, why(e)));
     }
   }
@@ -271,7 +307,7 @@ export async function sums(feed: Feed): Promise<Sums> {
 const notInRelease = (name: string) => new Failure("download", `\`${name}\` is not in the release`);
 const downloadFailed = (name: string, e: string) => downloadFailure(`couldn't download \`${name}\``, e);
 function downloadFailure(what: string, e: string): Failure {
-  return new Failure("download", e.startsWith(GITHUB_FAILING) ? e : `${what}: ${e}`);
+  return new Failure("download", e.startsWith(GITHUB_FAILING) || e.startsWith(UNREACHED) ? e : `${what}: ${e}`);
 }
 const notKept = (path: string, e: unknown) => new Failure("install", `couldn't keep the downloaded build at \`${path}\`: ${why(e)}`);
 
