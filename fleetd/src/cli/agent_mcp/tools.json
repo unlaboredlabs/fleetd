@@ -1867,7 +1867,7 @@
    "lead": false,
    "worker": true,
    "browser": false,
-   "description": "Share a dev server you started (a port on your own machine) as a link only the workspace's signed-in members open, on a computer or phone, hot reload included. Returns the link and a block: put the block in your result as a ```fleetd-block fence for an Open preview card. Sharing the port again renews it.",
+   "description": "Share a dev server you started (a port on your own machine) as a link only the workspace's signed-in members open, on a computer or phone, hot reload included. The server keeps running after you end, until the link expires or is stopped; then fleetd stops it. Returns the link and a block: put the block in your result as a ```fleetd-block fence for an Open preview card. Sharing the port again renews it.",
    "inputSchema": {
     "properties": {
      "label": {

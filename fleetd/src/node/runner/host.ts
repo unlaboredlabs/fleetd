@@ -12,7 +12,7 @@ import type { Env } from "../util.ts";
 import { agentSpawn } from "../oom.ts";
 import { noteFile } from "./host/memory.ts";
 import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
-import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./procs.ts";
+import { dedupe, descendants, gone, signal, statOf, table, unkept, type Proc } from "./procs.ts";
 import { destroyBox } from "../place/left_vm.ts";
 import { HostLink as Link, type HostDial, type Registration } from "./host_link.ts";
 
@@ -223,7 +223,8 @@ export async function endLeft(dir: string): Promise<number> {
     if (p && !p.zombie && p.start === start) roots.push(p);
   }
   const procs = roots.length ? table() : [];
-  const found = dedupe([...roots, ...roots.flatMap((r) => descendants(procs, r.pid))]);
+  // A dev server a share link keeps stays (./kept.ts), and its link's end stops it (../share/keep.ts).
+  const found = unkept(dedupe([...roots, ...roots.flatMap((r) => descendants(procs, r.pid))]));
   signal(found, "SIGKILL");
   await gone(found, STOP_WAIT_MS);
   rmSync(file, { force: true });
@@ -244,7 +245,8 @@ function marked(markerValue: string): number[] {
   return found;
 }
 
-/** SIGKILLs what's left of a host: claude's group, every process carrying the spawn's marker, and the host. */
+/** SIGKILLs what's left of a host: claude's group, every process carrying the spawn's marker but a dev server a share
+ * link keeps (./kept.ts), and the host. */
 export function killTree(r: Registration): void {
   const kill = (pid: number, group = false) => {
     if (pid <= 1 || pid === process.pid) return;
@@ -253,7 +255,8 @@ export function killTree(r: Registration): void {
     } catch {}
   };
   if (r.pid && alive(r.pid, r.start)) kill(r.pid, true);
-  for (const pid of marked(r.marker)) if (pid !== r.hostPid) kill(pid);
+  const markedNow = marked(r.marker).flatMap((pid) => statOf(pid) ?? []);
+  for (const p of unkept(markedNow)) if (p.pid !== r.hostPid) kill(p.pid);
   if (r.pid && alive(r.pid, r.start)) kill(r.pid);
   if (hostAlive(r)) kill(r.hostPid);
 }

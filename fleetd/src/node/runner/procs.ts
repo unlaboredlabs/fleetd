@@ -90,9 +90,21 @@ export function same(p: Proc): boolean {
   return now !== undefined && !now.zombie && now.start === p.start;
 }
 
+/** The process groups no sweep may end (./kept.ts: a dev server a share link keeps); none until a node or a host says. */
+let spared: () => Set<number> = () => new Set();
+export const spareGroups = (groups: () => Set<number>) => void (spared = groups);
+
+/** `procs` but those of a spared group. */
+export function unkept(procs: Proc[]): Proc[] {
+  if (!procs.length) return procs;
+  const groups = spared();
+  return groups.size ? procs.filter((p) => !groups.has(p.pgid)) : procs;
+}
+
 /** Signals every process found: first each group one of them leads (catching members forked since), then each pid.
- * Never the node's own group or pid; errors (already gone, not ours) are ignored. */
-export function signal(procs: Proc[], sig: NodeJS.Signals): void {
+ * Never the node's own group or pid, nor a spared group (`unkept`); errors (already gone, not ours) are ignored. */
+export function signal(found: Proc[], sig: NodeJS.Signals): void {
+  const procs = unkept(found);
   const own = statOf(process.pid);
   const kill = (pid: number) => {
     try {

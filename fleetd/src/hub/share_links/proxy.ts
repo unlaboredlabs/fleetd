@@ -52,8 +52,10 @@ a.b{display:inline-block;background:#1b1b1f;color:#fff;border-radius:8px;padding
   return new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY" } });
 }
 
+// fleetd's own pages answer 503, never 502: Cloudflare's front on the cloud swaps an origin's 502 for its own "Bad
+// gateway" page, so a visitor would never read why.
 const unreachable = (port: number) =>
-  plainPage(502, "The dev server isn't answering", `<p>Nothing answered on port ${port} of the machine this link shares. Start the dev server again, then reload.</p>`);
+  plainPage(503, "The dev server isn't answering", `<p>Nothing answered on port ${port} of the machine this link shares. Start the dev server again, then reload.</p>`);
 
 /** A stream as node:http's Agent takes a socket; it opens when first asked, holding writes until then. */
 function lazySocket(open: Open, onBytes?: (n: number) => void): Duplex {
@@ -145,7 +147,7 @@ export class Upstream {
     (this.agent as unknown as { createConnection: () => Duplex }).createConnection = () => lazySocket(this.open, this.limits.onBytes);
   }
 
-  /** The dev server's answer to `req`, streamed; a 502 page when it can't be reached, a 413 past maxRequestBytes. */
+  /** The dev server's answer to `req`, streamed; a 503 page when it can't be reached, a 413 past maxRequestBytes. */
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const t = this.target;
@@ -240,7 +242,7 @@ export function upgradeToDev(
       const accept = createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
       if (res.headers["sec-websocket-accept"] !== accept) {
         socket.destroy();
-        return resolve({ refused: plainPage(502, "The dev server's WebSocket answered wrong", "<p>Its handshake didn't match.</p>") });
+        return resolve({ refused: plainPage(503, "The dev server's WebSocket answered wrong", "<p>Its handshake didn't match.</p>") });
       }
       const protocol = res.headers["sec-websocket-protocol"];
       resolve({ socket, head, ...(typeof protocol === "string" ? { protocol } : {}) });

@@ -15,6 +15,7 @@ import type { RunnerEvent, SessionCommand } from "./events.ts";
 import { fence } from "./fence.ts";
 import { noteFile, watchMemory } from "./memory.ts";
 import { adoptOrphans, recordLeftIn, SESSION_MARKER } from "./reaper.ts";
+import { keepFor } from "../kept.ts";
 import { startSession, type Session } from "./session.ts";
 
 /** How long a host waits for a node. */
@@ -256,6 +257,8 @@ export async function main(argv: string[]): Promise<number> {
   if (!fenced.fenced) warn(`the session is not fenced: its processes may signal any of this user's: ${fenced.why}`);
   watchMemory(noteFile(dir));
   recordLeftIn(leftFile(dir));
+  // A dev server its session shared stays through its sweeps while the link is open (../kept.ts).
+  keepFor(dir, session);
   adoptOrphans();
   let server: Server;
   try {

@@ -6,7 +6,7 @@ import { dlopen, FFIType } from "bun:ffi";
 import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nowIso } from "../../util.ts";
-import { dedupe, descendants, parseStat, statOf, table, type Proc } from "../procs.ts";
+import { dedupe, descendants, parseStat, statOf, table, unkept, type Proc } from "../procs.ts";
 
 /** The variable every process of a spawn carries: the spawn's marker (../host.ts `marker`). */
 export const SESSION_MARKER = "FLEETD_RUNNER_SESSION";
@@ -56,14 +56,15 @@ export function marked(procs: Proc[], marker: string): Proc[] {
   return procs.filter((p) => p.pid !== process.pid && !p.zombie && markerOf(p.pid) === marker);
 }
 
-/** What a sweep of the spawn rooted at `root` and marked `marker` finds right now. */
+/** What a sweep of the spawn rooted at `root` and marked `marker` finds right now, but a dev server a share link keeps
+ * (../kept.ts). */
 export function sweep(root: number, marker: string): Proc[] {
   const procs = table();
-  return dedupe([...descendants(procs, root), ...marked(procs, marker).filter((p) => p.pid !== root)]);
+  return unkept(dedupe([...descendants(procs, root), ...marked(procs, marker).filter((p) => p.pid !== root)]));
 }
 
 /** What a sweep by `marker` alone finds right now, for a spawn whose root is gone and whose pid may be reused. */
-export const sweepMarked = (marker: string): Proc[] => marked(linux ? table() : [], marker);
+export const sweepMarked = (marker: string): Proc[] => unkept(marked(linux ? table() : [], marker));
 
 /** Still the process that was swept (its pid not reused since), zombie or not. */
 function same(p: Proc): boolean {

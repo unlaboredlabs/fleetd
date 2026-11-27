@@ -245,7 +245,8 @@ export async function servePreview(hub: Hub, req: Request, server: Server<Socket
         b?.close(code, reason);
       },
     };
-    const ok = server.upgrade(req, { data: { handler, state: undefined }, headers: dev.protocol !== undefined ? { "sec-websocket-protocol": dev.protocol } : {} });
+    // No headers at all when the dev server chose no subprotocol: Bun refuses an empty headers object.
+    const ok = server.upgrade(req, { data: { handler, state: undefined }, ...(dev.protocol !== undefined ? { headers: { "sec-websocket-protocol": dev.protocol } } : {}) });
     if (ok) return undefined;
     dev.socket.destroy();
     return new Response("Expected a WebSocket upgrade", { status: 426 });

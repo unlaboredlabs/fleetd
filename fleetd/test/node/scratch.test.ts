@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SCRATCH_KEEP_MS, scratchKept, scratchSwept, SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import type { SessionRow } from "../../src/node/sessions/store.ts";
+import { keptFile, keptText } from "../../src/shared/share_kept.ts";
 import { tempHome } from "../helpers.ts";
 
 // The session host starts twice (sh, then bun), and the repo takes a git process a step: a loaded machine (CI, or a
@@ -162,6 +163,34 @@ test("a removal while a Monitor of the session may still fire is refused, keepin
     expect(readFileSync(join(scratch("t1"), "pg.pid"), "utf8")).toBe("4242\n");
     // Past its deadline, nothing of it can: the removal takes both.
     arm(Date.now() - 1);
+    expect((await call("stop", { sessionId: "t1", removeWorktree: true })).result).toEqual({ ok: { kind: "done" } });
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(scratch("t1"))).toBe(false);
+  } finally {
+    await k.service.stopAll();
+    k.home.done();
+  }
+});
+
+// A dev server an open share link keeps runs from the task's worktree and scratch: a merge's removal stops the agent
+// but keeps both until the link ends (decision product.share-link-outlives-agent).
+test("a removal while a share link keeps the session's dev server stops the agent, keeping the worktree and the scratch dir", async () => {
+  const k = await nodeKit();
+  const { scratch, call, done, launch } = k;
+  try {
+    const launched = await launch("t1", "r1");
+    const path = (launched.result as { ok: { summary: { worktreePath: string } } }).ok.summary.worktreePath;
+    await until("the run", done("t1", "r1"));
+    writeFileSync(join(scratch("t1"), "vite.cache"), "x\n");
+    const kept = keptFile(join(k.home.dir, "node", "hosts", "t1"));
+    writeFileSync(kept, keptText([{ port: 5173, untilMs: Date.now() + 60_000 }]));
+    const refused = await call("stop", { sessionId: "t1", removeWorktree: true });
+    expect((refused.result as { err?: { message: string } }).err?.message).toContain("a share link keeps its session's dev server running from it");
+    expect(k.service.store.session("t1")?.local.pid).toBeUndefined();
+    expect(existsSync(path)).toBe(true);
+    expect(readFileSync(join(scratch("t1"), "vite.cache"), "utf8")).toBe("x\n");
+    // The link ended: the removal takes both.
+    writeFileSync(kept, keptText([{ port: 5173, untilMs: Date.now() - 1 }]));
     expect((await call("stop", { sessionId: "t1", removeWorktree: true })).result).toEqual({ ok: { kind: "done" } });
     expect(existsSync(path)).toBe(false);
     expect(existsSync(scratch("t1"))).toBe(false);

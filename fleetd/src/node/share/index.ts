@@ -2,12 +2,16 @@
 // the node connects it, on its own loopback, to a stream it dials back to the workspace (`/preview/<token>`), raw
 // bytes both ways until either end closes. A link an agent made names its session (`thread`): when that session runs
 // in a hosted box, the port is the box's, so the node dials it inside the box, and never this machine's own port. Only the workspace decides what is shared (its links); a port the node
-// itself holds for fleetd (the workspace's own, when it runs here) is refused whatever the frame says.
+// itself holds for fleetd (the workspace's own, when it runs here) is refused whatever the frame says. While an agent's
+// link is open, its dev server outlives the agent's session (./keep.ts).
 import net from "node:net";
 import type { Duplex } from "node:stream";
 import type { Node } from "../api.ts";
 import { onHub } from "../browser/node.ts";
+import { join } from "node:path";
 import { boxOf, inBox } from "../place/index.ts";
+import { CAP_SHARE_KEPT, keptLinks } from "../../shared/share_kept.ts";
+import { Keeper, TICK_MS } from "./keep.ts";
 
 /** How much the dial-back may hold unsent before the port's socket is paused. */
 const HIGH_WATER = 8 << 20;
@@ -104,6 +108,11 @@ export async function dial(hub: string, token: string, port: number, thread?: st
 }
 
 export function start(node: Node): void {
+  // The dev servers agents' open links keep past their sessions (./keep.ts).
+  const keeper = new Keeper(join(node.home, "hosts"), { now: Date.now, boxed: inBox });
+  node.area("caps").contribute(() => [CAP_SHARE_KEPT]);
+  onHub(node, "share_kept", (f) => void keeper.sync(keptLinks(f.links)).catch((e) => console.warn(`share links' kept ports not synced: ${(e as Error).message}`)));
+  setInterval(() => void keeper.tick().catch((e) => console.warn(`share links' kept ports not looked at: ${(e as Error).message}`)), TICK_MS).unref();
   onHub(node, "preview_dial", (f) => {
     if (typeof f.token !== "string" || !/^[0-9a-f]{64}$/.test(f.token)) return;
     const thread = typeof f.thread === "string" && f.thread !== "" ? f.thread : undefined;

@@ -85,15 +85,31 @@ test("HTTP: the dev server sees a local visit, the visitor the preview's own", a
   }
 });
 
-test("HTTP: a dev server that isn't there is a 502 page", async () => {
+test("HTTP: a dev server that isn't there is a 503 page", async () => {
   const gone = async (): Promise<Duplex> => {
     throw new Error("refused");
   };
   const up = new Upstream(gone, limits, { port: 1, origin: ORIGIN });
   const r = await up.fetch(new Request(`${ORIGIN}/`));
-  expect(r.status).toBe(502);
+  expect(r.status).toBe(503);
   expect(await r.text()).toContain("Nothing answered on port 1");
   up.close();
+});
+
+test("WebSocket: a dev server whose handshake doesn't match is a 503 page, which the cloud's front passes on", async () => {
+  // It answers 101 with an accept of some other key.
+  const wrong = net.createServer((s) => s.once("data", () => s.write("HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\nsec-websocket-accept: bm90IGl0\r\n\r\n")));
+  await new Promise<void>((r) => wrong.listen(0, "127.0.0.1", r));
+  const port = (wrong.address() as net.AddressInfo).port;
+  const dialWrong = async (): Promise<Duplex> => {
+    const s = net.connect(port, "127.0.0.1");
+    await new Promise((r) => s.once("connect", r));
+    return s;
+  };
+  const out = await upgradeToDev(new Request(`${ORIGIN}/hmr`, { headers: { upgrade: "websocket" } }), dialWrong, limits, { port, origin: ORIGIN });
+  expect("refused" in out && out.refused.status).toBe(503);
+  expect("refused" in out && (await out.refused.text())).toContain("answered wrong");
+  wrong.close();
 });
 
 test("WebSocket: the subprotocol comes back, frames go both ways, a close crosses", async () => {

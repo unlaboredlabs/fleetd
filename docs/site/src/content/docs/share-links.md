@@ -11,6 +11,7 @@ An agent that starts a dev server calls `share_port` with the port. The chat the
 
 - The port has to be on the agent's own machine. An agent can't share a port on another machine.
 - Sharing the same port again renews its link rather than making a new one.
+- The dev server keeps running after the agent ends, for as long as its link is open. When the link expires or someone stops it, fleetd stops the server too. Only a server the agent's own session started is kept this way.
 - Each link has a random name. Nobody picks it.
 
 ## Who can open one {#who}
