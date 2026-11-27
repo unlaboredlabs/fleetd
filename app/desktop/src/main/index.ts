@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { homedir, release } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { app, BrowserWindow, clipboard, crashReporter, dialog, Menu, nativeTheme, net, powerMonitor, screen, session, shell, Tray } from "electron";
+import { IPC } from "../shared/channels";
 import { asError } from "../shared/scrub";
 import { AppLog, diagnostics } from "./applog";
 import { RELEASE_BUILD } from "./build";
@@ -196,6 +197,13 @@ const createWindow = (mode: HubsMode): BrowserWindow => {
   // With no window the page can't keep the count current; a stale one would lie.
   win.once("closed", () => app.setBadgeCount(0));
   trackPlacement(win);
+  // macOS hides the traffic lights in full screen: the page's top row stops making room for them (renderer/src/main.tsx).
+  const sayFullScreen = () => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.windowFullScreen, win.isFullScreen());
+  };
+  win.on("enter-full-screen", sayFullScreen);
+  win.on("leave-full-screen", sayFullScreen);
+  win.webContents.on("did-finish-load", sayFullScreen);
   guardWindow(win, {
     log: appLog,
     load: (url) => void win.loadURL(url ?? pageUrl()),

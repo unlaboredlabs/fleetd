@@ -520,6 +520,8 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         openListeners.add(listener);
         return () => openListeners.delete(listener);
       },
+      // A browser tab has no traffic lights to make room for, full screen or not.
+      onFullScreen: () => () => undefined,
       notify: (request) => deps.notify(request.title, { body: request.body, tag: request.tag }, () => opened(request.target)),
       setBadge: (count) => Promise.resolve(deps.setTitle(count)),
       sessionWindow: (request) => {

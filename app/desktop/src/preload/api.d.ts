@@ -327,6 +327,8 @@ export interface FleetdApi {
      * launched the app) are delivered to it. Returns the unsubscribe.
      */
     onOpen(listener: (target: OpenTarget) => void): () => void;
+    /** Whether the window is full screen (macOS then hides the traffic lights): now, then on each change. Returns the unsubscribe. */
+    onFullScreen(listener: (on: boolean) => void): () => void;
     /** False when this system shows no notifications. */
     notify(request: NotifyRequest): Promise<boolean>;
     /** The Dock (or launcher) badge count; 0 clears it. */

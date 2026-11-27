@@ -45,6 +45,14 @@ ipcRenderer.on(IPC.machinesJoinHereChanged, (_event: IpcRendererEvent, hub: HubI
   for (const l of joinListeners) if (l.hub === hub) l.listener(state);
 });
 
+// The last word from main, for a listener that comes after it (the page's first, as it loads).
+let fullScreen = false;
+const fullScreenListeners = new Set<(on: boolean) => void>();
+ipcRenderer.on(IPC.windowFullScreen, (_event: IpcRendererEvent, on: boolean) => {
+  fullScreen = on;
+  for (const listener of fullScreenListeners) listener(on);
+});
+
 const macJoinListeners = new Set<(join: MacJoin) => void>();
 ipcRenderer.on(IPC.macSetupJoinChanged, (_event: IpcRendererEvent, join: MacJoin) => {
   for (const listener of macJoinListeners) listener(join);
@@ -251,6 +259,11 @@ const api: FleetdApi = {
         void ipcRenderer.invoke(IPC.appReady);
       }
       return () => openListeners.delete(listener);
+    },
+    onFullScreen: (listener) => {
+      fullScreenListeners.add(listener);
+      listener(fullScreen);
+      return () => fullScreenListeners.delete(listener);
     },
     notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<boolean>,
     setBadge: (count) => ipcRenderer.invoke(IPC.appBadge, count) as Promise<void>,

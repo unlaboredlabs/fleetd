@@ -172,3 +172,28 @@ it("has no sidebar button without a toggle (no sidebar to bring back)", () => {
   expect(host.querySelector(`.${s.sideToggle}`)).toBeNull();
   expect(frame().classList.contains(s.withToggle ?? "withToggle")).toBe(false);
 });
+
+it("puts the window's controls on glass only once the sidebar has slid out, and takes it away as it comes back", () => {
+  const draw = (shown: boolean) =>
+    act(() =>
+      root.render(
+        <AppFrame topBar={<header />} sidebar={shown ? <nav>Bots</nav> : undefined} sidebarOpen={shown} sidebarToggle={{ onPress: () => undefined, shortcut: "⌘B" }}>
+          <p>chat</p>
+        </AppFrame>,
+      ),
+    );
+  const glass = () => host.querySelector(`.${s.controls}`);
+  draw(true);
+  expect(glass()).toBeNull();
+  // Over the see-through sidebar while it slides, a backdrop draws black: none until it has gone.
+  draw(false);
+  expect(side()?.dataset["motion"]).toBe("out");
+  expect(glass()).toBeNull();
+  end(side());
+  expect(side()).toBeNull();
+  expect(glass()?.getAttribute("aria-hidden")).toBe("true");
+  // Drawn before the button, so the button's no-drag box wins over it.
+  expect(glass()?.nextElementSibling?.classList.contains(s.sideToggle ?? "sideToggle")).toBe(true);
+  draw(true);
+  expect(glass()).toBeNull();
+});
