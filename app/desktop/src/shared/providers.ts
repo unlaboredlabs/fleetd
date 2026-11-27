@@ -36,6 +36,13 @@ const SENT_AS: Readonly<Record<string, string>> = { "boat.dev": "boat" };
  */
 export const RUNNER_ID = "hosted";
 
+/**
+ * The line a share link of a port on fleetd's computers shows, on its chat card and its Settings row: the link keeps
+ * that computer up, billed as computer time. None for a port on one of the team's own machines.
+ */
+export const keptRunning = (machineId: string): string | undefined =>
+  machineId === RUNNER_ID ? "Its computer keeps running, and uses computer time, while the link is open." : undefined;
+
 /** The reveal key of a provider's row in Hub › Machines (Sandboxes.tsx), where every link to hosted sandboxes lands. */
 export const providerReveal = (id: string): string => `hub.sandbox.${id}`;
 

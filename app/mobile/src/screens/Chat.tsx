@@ -35,6 +35,7 @@ import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, t
 import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendStays, sentSays, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
+import { keptRunning } from "../machines";
 import { openPreview } from "../preview";
 import { onHome, type Strip } from "../split";
 import { useBeside, useStrip } from "../ui/pane";
@@ -84,7 +85,7 @@ import { linkTarget } from "./artifacts/model";
 import { liveNow } from "../screen";
 import { ScreenRow, ScreenStrip } from "./ScreenCards";
 import { PIN_ROOM, PinCapsuleView, PinnedSheet } from "./PinnedMessages";
-import { Symbol } from "./manage/parts";
+import { Symbol, useRead } from "./manage/parts";
 import { machineName } from "./manage/model";
 import type { SkillSaved } from "./manage/skillsModel";
 import { setupLine } from "./setupChanged";
@@ -1548,11 +1549,15 @@ function MediaView({
   );
 }
 
-/** A share link's card: Open Preview opens it signed in, in the in-app browser. */
+/** A share link's card: Open Preview opens it signed in, in the in-app browser. One on fleetd's computers says the link
+ * keeps that computer running, from the link as `share_links_list` has it. */
 function PreviewCard({ name, label, port }: { name: string; label: string | undefined; port: number | undefined }) {
   const t = useTheme();
   const session = useSession();
   const [busy, setBusy] = useState(false);
+  const list = useRead(() => session.call("share_links_list", {}), [session]).value;
+  const link = list?.ok === true ? list.output.links.find((l) => l.name === name) : undefined;
+  const kept = link === undefined ? undefined : keptRunning(link.machineId);
   const open = () => {
     if (busy) return;
     haptics.tap();
@@ -1574,6 +1579,11 @@ function PreviewCard({ name, label, port }: { name: string; label: string | unde
             <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={1}>
               {busy ? "Opening…" : port === undefined ? "Open Preview" : `Port ${String(port)} · Open Preview`}
             </Text>
+            {kept === undefined ? null : (
+              <Text style={[type.footnote, { color: t.secondary }]}>
+                {kept}
+              </Text>
+            )}
           </View>
           {busy ? <ActivityIndicator color={t.tertiary} /> : <Icon name="external" size={14} color={t.tertiary} weight="semibold" />}
         </Card>

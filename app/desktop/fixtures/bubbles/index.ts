@@ -133,7 +133,8 @@ const ASK: Draft[] = [
   ),
 ];
 
-/** An agent's dev server as a share link's card, live, and one that has ended. */
+/** An agent's dev server as a share link's card, live, one on fleetd's computers (which says its computer keeps
+ * running), and one that has ended. */
 const PREVIEW: Draft[] = [
   you(12, "can I try the new checkout on my phone?"),
   lead(
@@ -142,12 +143,13 @@ const PREVIEW: Draft[] = [
     { v: 1, kind: "preview", name: "k7f3q9m2x8ab", port: 5173, label: "One-page checkout" },
     "Only people in this workspace can open it, and it ends in two hours.",
   ),
+  lead(8, "The pricing page runs on an agent's computer:", { v: 1, kind: "preview", name: "h4n8t2v6c3pw", port: 3000, label: "Pricing page" }),
   you(3, "and yesterday's receipts one?"),
   lead(2, "That one has ended:", { v: 1, kind: "preview", name: "p2r8w4c6d1ze", port: 3000, label: "Receipts redesign" }, "Say if you want it back."),
 ];
 
 const previewCards = (base: Fixture): Fixture => {
-  const f = chat(base, "bubbles-preview", "A share link's Open preview card for a dev server, and one whose link ended.", PREVIEW);
+  const f = chat(base, "bubbles-preview", "A share link's Open preview card for a dev server, one on fleetd's computers, and one whose link ended.", PREVIEW);
   const at = (minutes: number) => new Date(Date.parse(f.now) + minutes * 60_000).toISOString();
   f.answer("share_links_list", undefined, {
     enabled: true,
@@ -162,6 +164,16 @@ const previewCards = (base: Fixture): Fixture => {
         createdBy: { kind: "agent", name: "The lead" },
         createdAt: at(-11),
         expiresAt: at(109),
+      },
+      {
+        name: "h4n8t2v6c3pw",
+        url: "https://h4n8t2v6c3pw.preview.example.com",
+        machineId: "hosted",
+        port: 3000,
+        label: "Pricing page",
+        createdBy: { kind: "agent", name: "An agent" },
+        createdAt: at(-8),
+        expiresAt: at(112),
       },
     ],
   });
