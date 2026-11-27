@@ -5,6 +5,9 @@
 // It also checks the landing page's device stage once its foldable has opened (STAGE_WIDTHS, at 2x): nothing drawn
 // beside the two devices (no hairline from the folding half, the line a person found on Nov 23), no line on the
 // stage's floor, and neither device past the stage's edge (stray(), below).
+// And each policy page legal.js names, opened as the phone app opens it (?app=1): no site header or footer shows, and
+// no link leads anywhere but another policy page (with the flag kept), a mail address or the status page, so App
+// Review finds no way from the app to pricing or sign-up (appOnly(), below).
 // It talks to Chrome over the DevTools protocol on node's own WebSocket, so it needs no npm install. The page names its
 // fonts and images from the site root (/fonts/...), which a file:// page would look for at the filesystem root, so
 // those requests are answered from site/: the text wraps as it does on fleetd.sh.
@@ -21,6 +24,9 @@ const SITE = path.resolve("site");
  * wider screens', and a phone's (the phone alone). At the first, the window is also resized while the phone unfolds. */
 const STAGE_WIDTHS = [1280, 1440, 1512, 1728, 390];
 const PAGES = ["home.html", "pricing.html", "404.html", "terms.html", "privacy.html", "refunds.html", "imprint.html", "support.html", "security.html", "subprocessors.html", "dpa.html"];
+/** The policy pages the phone app opens with ?app=1: those legal.js keeps the flag on, as <name>.html. */
+const POLICIES = fs.readFileSync(path.join(SITE, "legal.js"), "utf8").match(/var POLICIES = \/\^\\\/\(([a-z|]+)\)\$\//u)?.[1].split("|");
+if (!POLICIES) throw new Error("site/legal.js: no POLICIES list of the policy pages");
 const TYPES = { ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".webm": "video/webm", ".json": "application/json" };
 
 function chromePath() {
@@ -252,6 +258,37 @@ async function stray(width, resize = width === STAGE_WIDTHS[0]) {
   return found;
 }
 
+/** What `page` opened with ?app=1 shows that it shouldn't: the site's header or footer, or a link off the policies. */
+const APP_ONLY = `(() => {
+  const shown = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+  const found = [];
+  if (!document.documentElement.classList.contains("app")) found.push("it isn't in app-only mode (no .app on <html>)");
+  for (const sel of [".top", ".foot"]) {
+    const el = document.querySelector(sel);
+    if (!el) found.push("no " + sel + " for app-only mode to hide");
+    else if (shown(el)) found.push("its " + sel + " (the site's " + (sel === ".top" ? "header" : "footer") + ") shows");
+  }
+  const policies = new RegExp("^/(" + ${JSON.stringify(POLICIES.join("|"))} + ")$");
+  for (const a of document.querySelectorAll("a[href]")) {
+    const url = new URL(a.getAttribute("href"), location.href);
+    if (url.protocol === "mailto:" || url.host === "status.fleetd.dev") continue;
+    if (url.host === location.host && url.pathname === location.pathname && url.hash !== "") continue;
+    if (url.host === location.host && policies.test(url.pathname) && url.searchParams.get("app") === "1") continue;
+    found.push("a link to " + a.getAttribute("href") + " (" + a.textContent.trim().slice(0, 40) + ")");
+  }
+  return found;
+})()`;
+
+async function appOnly(page) {
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: HEIGHT, deviceScaleFactor: 1, mobile: true });
+  const loaded = new Promise((resolve) => listeners.set("Page.loadEventFired", resolve));
+  await send("Page.navigate", { url: `file://${SITE}/${page}?app=1` });
+  await loaded;
+  const { result, exceptionDetails } = await send("Runtime.evaluate", { expression: APP_ONLY, returnByValue: true });
+  if (exceptionDetails) throw new Error(`${page}?app=1: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
+  return result.value;
+}
+
 const problems = [];
 try {
   for (const page of PAGES) for (const width of WIDTHS) {
@@ -266,6 +303,7 @@ try {
     if (scroll > viewport) problems.push(`${page} at ${width}px: the page is ${scroll}px wide, wider than the ${viewport}px viewport; first past the edge: ${wide.join(", ")}`);
   }
   for (const width of STAGE_WIDTHS) problems.push(...(await stray(width)).map((p) => `home.html at ${width}px: ${p}`));
+  for (const name of POLICIES) problems.push(...(await appOnly(`${name}.html`)).map((p) => `${name}.html?app=1, as the phone app opens it: ${p}`));
 } finally {
   ws.close();
   await stop();
@@ -278,3 +316,4 @@ if (problems.length > 0) {
 }
 console.log(`site/${PAGES.join(", site/")}: nothing is wider than the viewport at ${WIDTHS.join(", ")}px`);
 console.log(`site/home.html: nothing stray on the device stage at ${STAGE_WIDTHS.join(", ")}px`);
+console.log(`site/${POLICIES.join(".html, site/")}.html with ?app=1: the policy alone, linking only the policies`);

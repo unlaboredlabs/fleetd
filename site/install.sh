@@ -732,8 +732,9 @@ shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 # as_root: on Linux as root, fleetd's agents can't run (Claude Code won't skip its permission prompts as root), so
 # fleetd goes to a user of its own (D759): with a terminal, asked (yes by default), the user fleetd is made, linger
-# turned on for it with systemd, and this installer run again as fleetd, with the same options; without one, nothing
-# is changed and the commands are printed. Not on fleetd's own computers (IS_SANDBOX), which claude trusts as root.
+# turned on for it with systemd, and this installer run again as fleetd, with the same options and a join's code;
+# without one, nothing is changed and the commands are printed. Not on fleetd's own computers (IS_SANDBOX), which claude
+# trusts as root.
 as_root() {
   [ "$os" = linux ] && [ "$(id -u)" = 0 ] && [ -z "${IS_SANDBOX:-}" ] || return 0
   shell=/bin/sh
@@ -741,7 +742,13 @@ as_root() {
   linger=""
   [ ! -d /run/systemd/system ] || linger="loginctl enable-linger fleetd && "
   line="curl -fsSL https://fleetd.sh | sh${args:+ -s --${args}}"
-  steps="useradd -m -s $shell fleetd && ${linger}su - fleetd -c $(shq "$line")"
+  su_line="su - fleetd -c $(shq "$line")"
+  # A join's code goes to fleetd on su's stdin, which the installer then reads as its FLEETD_JOIN_CODE: never in su's
+  # arguments, which any user on the machine can list (ps).
+  if [ -n "$code" ]; then
+    su_line="printf '%s\\n' $(shq "$code") | su - fleetd -c $(shq "IFS= read -r FLEETD_JOIN_CODE && export FLEETD_JOIN_CODE && $line")"
+  fi
+  steps="useradd -m -s $shell fleetd && ${linger}${su_line}"
   if ! [ -t 2 ] || ! (: </dev/tty) 2>/dev/null; then
     die "fleetd doesn't install for root: Claude Code won't run agents as root, so every agent would fail
 Make a user for fleetd and install it as that user. As root:
@@ -790,7 +797,7 @@ To install it as a user of its own later, as root:
     cp "$0" "$tmp/install.sh"
   else
     get -o "$tmp/install.sh" https://fleetd.sh || die "could not download https://fleetd.sh to install as fleetd
-Check this machine's connection, then run: su - fleetd -c $(shq "$line")"
+Check this machine's connection, then run: ${su_line}"
   fi
   chmod 711 "$tmp"
   chmod 644 "$tmp/install.sh"
@@ -799,6 +806,14 @@ Check this machine's connection, then run: su - fleetd -c $(shq "$line")"
     eval "val=\${$v:-}"
     [ -z "$val" ] || envs="${envs}${v}=$(shq "$val") "
   done
+  # A join's code in a file only fleetd reads, which its shell reads into the installer's environment: the command
+  # names the file, not the code. It goes with $tmp when this exits.
+  if [ -n "$code" ]; then
+    (umask 077 && printf '%s' "$code" >"$tmp/join-code") && chown fleetd "$tmp/join-code" ||
+      die "could not hand the join's code to the user fleetd
+As root, run: ${su_line}"
+    envs="${envs}FLEETD_JOIN_CODE=\"\$(cat $(shq "$tmp/join-code"))\" "
+  fi
   say "installing as the user fleetd from here; later, su - fleetd runs its fleetd commands"
   footer "Continuing as fleetd"
   # su -c runs the command in a session of its own, with no terminal for fleetd init: --pty gives it one.
