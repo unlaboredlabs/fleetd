@@ -25,19 +25,63 @@ const isSaved = (line: string) => {
   return e.type === "api-request-shape" || (e.type === "attachment" && e.attachment?.type === "prompt_snapshot");
 };
 
-test("a real transcript loses only the saved request's records, every other line byte for byte", () => {
+/** claude's chain of messages in `text`, as `--resume` walks it: from the last leaf back along parentUuid. */
+const chain = (text: string) => {
+  const entries = text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+  const byUuid = new Map(entries.filter((e) => e.uuid).map((e) => [e.uuid, e]));
+  const walked: string[] = [];
+  let at: string | null = entries.filter((e) => e.type === "last-prompt").at(-1).leafUuid;
+  while (at !== null) {
+    const e = byUuid.get(at);
+    if (!e) throw new Error(`the chain breaks at ${at}`);
+    walked.push(at);
+    at = e.parentUuid ?? null;
+  }
+  return walked.reverse();
+};
+
+test("a real transcript loses only the saved request's records, and its chain of messages stays whole", () => {
   const file = copy();
   const before = readFileSync(file, "utf8");
   expect(before).toContain("OLD-ALPHA");
   expect(holdsSavedRequest(file)).toBe(true);
   expect(takeSavedRequest(file)).toBe(3);
   const after = readFileSync(file, "utf8");
-  expect(after.split("\n")).toEqual(before.split("\n").filter((l) => l.trim() === "" || !isSaved(l)));
   expect(after).not.toContain("OLD-ALPHA");
   expect(statSync(file).mode & 0o777).toBe(0o600);
+  // The records that stay, in the same order: byte for byte, but for the link of those that named a snapshot.
+  const kept = before.split("\n").filter((l) => l.trim() === "" || !isSaved(l));
+  const now = after.split("\n");
+  expect(now).toHaveLength(kept.length);
+  const relinked = now.flatMap((line, i) => (line === kept[i] ? [] : [i]));
+  expect(relinked).toHaveLength(3);
+  for (const i of relinked) {
+    const [was, is] = [JSON.parse(kept[i]!), JSON.parse(now[i]!)];
+    const changed = Object.keys(was).filter((k) => JSON.stringify(was[k]) !== JSON.stringify(is[k]));
+    expect(changed.length === 1 && ["parentUuid", "leafUuid"].includes(changed[0]!)).toBe(true);
+  }
+  // From the leaf back to the first message, through kept records only: the whole conversation, the snapshots aside.
+  const gone = new Set(before.split("\n").filter((l) => l.trim() && isSaved(l)).map((l) => JSON.parse(l).uuid).filter(Boolean));
+  expect(chain(after)).toEqual(chain(before).filter((u) => !gone.has(u)));
+  expect(chain(after)[0]).toBe(chain(before)[0]);
   // Once out, there is nothing more to take: a second resume for the same tools isn't asked for.
   expect(holdsSavedRequest(file)).toBe(false);
   expect(takeSavedRequest(file)).toBeUndefined();
+});
+
+test("a run of snapshots is skipped whole, and a parent the file doesn't hold leaves it as it is", () => {
+  const line = (o: Record<string, unknown>) => JSON.stringify(o);
+  const snap = (uuid: string, parentUuid: string | null) => line({ type: "attachment", uuid, parentUuid, attachment: { type: "prompt_snapshot" } });
+  const text = [line({ type: "user", uuid: "u1", parentUuid: null }), snap("s1", "u1"), snap("s2", "s1"), line({ type: "assistant", uuid: "a1", parentUuid: "s2" }), line({ type: "last-prompt", leafUuid: "s2" }), ""].join("\n");
+  expect(withoutSavedRequest(text)).toEqual({
+    text: [line({ type: "user", uuid: "u1", parentUuid: null }), line({ type: "assistant", uuid: "a1", parentUuid: "u1" }), line({ type: "last-prompt", leafUuid: "u1" }), ""].join("\n"),
+    taken: 2,
+  });
+  // The first record's own snapshot: what named it names nothing, as claude's first message does.
+  expect(withoutSavedRequest([snap("s0", null), line({ type: "user", uuid: "u1", parentUuid: "s0" })].join("\n"))!.text).toBe(line({ type: "user", uuid: "u1", parentUuid: null }));
+  const orphan = `${text}${line({ type: "user", uuid: "u2", parentUuid: "elsewhere" })}\n`;
+  expect(withoutSavedRequest(orphan)).toBeUndefined();
+  expect(savedRequestMissing(copy(orphan))).toBe("its line 6 names a parent the file doesn't hold");
 });
 
 test("a transcript that isn't as expected is never written", () => {
