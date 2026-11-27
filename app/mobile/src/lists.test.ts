@@ -219,7 +219,8 @@ describe("approvals", () => {
       fields: [
         { label: "Why", value: "Ship the checkout fix", prose: true, lines: true },
         { label: "Command", value: "vercel deploy --prod", mono: true, words: ["vercel", "deploy", "--prod"], lines: true, more: true },
-        { label: "In", value: "/home/devbox/shop", mono: true },
+        { label: "In", value: "~/shop", mono: true },
+        { label: "On", value: "m1" },
       ],
       hidden: false,
     });

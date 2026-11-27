@@ -19,8 +19,6 @@ export interface PaneProps {
 /** A tab's badge, on the row: renders null until it knows a number worth showing. */
 export interface CountProps {
   readonly project: ProjectKey;
-  /** Its tab is on view, so a count may read what only its pane would. */
-  readonly active: boolean;
 }
 
 export interface PanelTabEntry {
@@ -100,10 +98,11 @@ export const PANEL_TABS = [
   },
   {
     id: "activity",
-    label: "Activity",
+    // The panel's tab says History: one place, one name, in search too ("activity" stays a keyword).
+    label: "History",
     icon: Activity,
     detail: "What happened in this bot while you were away",
-    keywords: ["events", "feed", "history", "log", "recent", "away"],
+    keywords: ["activity", "events", "feed", "log", "recent", "away"],
     count: () => import("./counts").then((m) => m.ActivityCount),
   },
   {

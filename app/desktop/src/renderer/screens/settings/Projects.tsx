@@ -7,7 +7,7 @@
 // seals each secret to the project machine's key), project_archive and project_remove. A secret's value is write-only: typed here once,
 // sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
-import { Button, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
+import { Button, copyText, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
 import type { MemoryRefreshJob, ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
 import { refreshRuns, refreshSchedule } from "../automations/model";
 import type { ProjectEnvRequest } from "../../../shared/ipc";
@@ -26,7 +26,7 @@ import { BOT_ADMIN_ONLY, useBotLocked } from "./botAdmin";
 import { BotLimitSetting } from "../admin/Limits";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
-import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
+import { AddMenu, DangerButton, GroupNote, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import { PictureSetting } from "./Picture";
 import { BotLookSetting } from "./BotLook";
 import { MergeModeSetting } from "./MergeMode";
@@ -115,11 +115,21 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
       <div className={s.column}>
         <PageHead title="Bot" />
         {ref === undefined ? <NoProject /> : null}
+        {/* One plain line: the workspace's own words (a call and its arguments) stay behind Copy details. */}
         {read.isLoadingError ? (
-          <div className={s.inline}>
-            <Text tone="danger">{errorText(read.error)}</Text>
-            <Button onClick={() => void read.refetch()}>Try again</Button>
-          </div>
+          <SettingsSection data={{ "data-settings-failed": "" }}>
+            <GroupNote
+              tone="danger"
+              action={
+                <span className={s.inline}>
+                  <Button onClick={() => void copyText(errorText(read.error))}>Copy details</Button>
+                  <Button onClick={() => void read.refetch()}>Try again</Button>
+                </span>
+              }
+            >
+              {`Couldn't load ${summary ? `${summary.title}'s` : "this bot's"} settings.`}
+            </GroupNote>
+          </SettingsSection>
         ) : null}
         {project && ref && !read.isLoadingError ? (
           <ProjectPage
@@ -181,7 +191,8 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
   };
   return (
     <>
-      <SettingsSection title="Bot">
+      {/* The page's first section: the tab above names it. */}
+      <SettingsSection>
         <PictureSetting project={summary ?? { ...ref, title: project.title }} />
         <BotLookSetting project={summary ?? { ...ref, title: project.title }} />
         <NameSetting project={project} />
@@ -196,14 +207,7 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
             reveal="projects.env"
             title="Environment variables"
             hint="Given to every agent the bot starts. Secrets are never shown again."
-            control={
-              <>
-                <Button variant="ghost" disabled>
-                  Paste .env
-                </Button>
-                <AddButton label="Add variable" disabled onClick={() => undefined} />
-              </>
-            }
+            control={<AddMenu label="Add variable" disabled items={[]} />}
           />
         )}
         {summary?.issueOrders !== undefined ? <IssueOrdersSetting projectRef={ref} on={summary.issueOrders} /> : null}
@@ -310,9 +314,6 @@ function NameSetting({ project }: { project: Shell }) {
           ) : dirty && title === "" ? (
             <span className={s.lineBlock}>A bot needs a name.</span>
           ) : null}
-          <Truncate size="sm" tone="quiet" mono>
-            {project.workspaceRoot}
-          </Truncate>
         </>
       }
       control={
@@ -489,12 +490,13 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
       line={echo !== null ? <EchoText echo={echo} /> : full ? `It holds the most it can, ${String(ENV_MAX)}: remove one to add another.` : null}
       lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
       control={
-        <>
-          <Button variant="ghost" onClick={() => setEditing({ kind: "paste" })}>
-            Paste .env
-          </Button>
-          <AddButton label="Add variable" disabled={full} onClick={() => setEditing({ kind: "new" })} />
-        </>
+        <AddMenu
+          label="Add variable"
+          items={[
+            { label: "New variable…", disabled: full, onSelect: () => setEditing({ kind: "new" }) },
+            { label: "Paste .env…", onSelect: () => setEditing({ kind: "paste" }) },
+          ]}
+        />
       }
     >
       {env.length === 0 ? null : (

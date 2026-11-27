@@ -7,6 +7,7 @@ import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import { compareVersions, isEdge } from "../../../shared/pairing";
 import { DEB_INSTALL, knownVersion, shortLabels, versionLabel, type UpdatesState } from "../../../shared/updates";
 import { hubUpdated, type Auto, type Flow } from "./flow";
+import { clock } from "../../../shared/clock";
 
 /** What a status's button does: the whole update (the hub, its machines, then this app), a run that stopped started
  * over, this app's own update, or its check again. */
@@ -101,18 +102,8 @@ const behind = (version: string | undefined, of: string | null | undefined): boo
 
 const named = (version: string): string => `fleetd ${versionLabel(version)}`;
 
-const clocks = new Map<string, Intl.DateTimeFormat>();
-
-/** "23:20", in `timeZone` (the person's own when absent). */
-export const clockAt = (at: string | number, timeZone?: string): string => {
-  const key = timeZone ?? "";
-  let f = clocks.get(key);
-  if (f === undefined) {
-    f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(timeZone ? { timeZone } : {}) });
-    clocks.set(key, f);
-  }
-  return f.format(new Date(at));
-};
+/** "11:20 PM" (or "23:20"), in `timeZone` (the person's own when absent). */
+export const clockAt = (at: string | number, timeZone?: string): string => clock(at, timeZone);
 
 /** The hub's own words as a sentence of this app's: a capital, its labels short, a full stop. */
 const sentence = (said: string): string => {

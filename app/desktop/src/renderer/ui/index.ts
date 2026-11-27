@@ -4,6 +4,8 @@ export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODE
 export { applySeeThrough, canSeeThrough, storedSeeThrough, useSeeThrough } from "./seeThrough";
 export { cx } from "./lib/cx";
 export { underModal } from "./lib/under";
+export { followScrolling } from "./lib/scrolling";
+export { followTabTitle, tabCount, tabPlace } from "./lib/tabTitle";
 export { copyText } from "./lib/clipboard";
 export { arrived, forgetList, noteKeys, useArrivals, useArrived } from "./lib/arrival";
 export { LEAVE_MS, useLeavers, type Shown } from "./lib/leaving";

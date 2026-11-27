@@ -38,9 +38,9 @@ export const useTeamMachines = (): Machine[] | undefined => {
 };
 
 /** Add machine, in words beside its plus, as the page's other buttons (Connect) are. */
-export function AddMachineButton({ onClick }: { onClick: () => void }) {
+export function AddMachineButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean | undefined }) {
   return (
-    <Button icon={<Plus aria-hidden />} onClick={onClick}>
+    <Button icon={<Plus aria-hidden />} disabled={disabled} onClick={onClick}>
       Add machine
     </Button>
   );

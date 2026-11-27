@@ -90,7 +90,7 @@ export function DecisionsPane({ project }: { project: ProjectKey }) {
           <Skeleton />
         )
       ) : threads.length === 0 ? (
-        <PanelEmpty title="Nothing decided yet" />
+        <PanelEmpty title="Nothing decided yet" line="What the lead decides with you shows here." />
       ) : (
         <List
             threads={shown}

@@ -9,9 +9,9 @@ import s from "./shell.module.css";
 export function ColorPick({ value, onChange }: { value: HubColor | null; onChange: (color: HubColor | null) => void }) {
   const options: ReadonlyArray<HubColor | null> = [null, ...HUB_COLORS];
   return (
-    <div className={s.swatches} role="radiogroup" aria-label="Colour">
+    <div className={s.swatches} role="radiogroup" aria-label="Color">
       <Text size="xs" tone="quiet">
-        Colour
+        Color
       </Text>
       {options.map((color) => (
         <button
@@ -19,8 +19,8 @@ export function ColorPick({ value, onChange }: { value: HubColor | null; onChang
           type="button"
           role="radio"
           aria-checked={value === color}
-          aria-label={color ?? "No colour"}
-          title={color ?? "No colour"}
+          aria-label={color ?? "No color"}
+          title={color ?? "No color"}
           className={s.swatch}
           data-none={color === null ? "" : undefined}
           style={color === null ? undefined : { color: HUB_COLOR[color] }}

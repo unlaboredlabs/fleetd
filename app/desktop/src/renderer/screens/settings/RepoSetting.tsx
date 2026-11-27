@@ -5,7 +5,7 @@
 // (project_repo_remove), ending its agents and leaving its files. A plain folder holds none until one is added.
 import { GitBranch } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Button, Dialog, Input, Text } from "../../ui";
+import { Button, Dialog, Input, Text, Truncate } from "../../ui";
 import type { ProjectRepo, ProjectSettings as Settings, ProjectSummary } from "../../../shared/contracts";
 import { useData } from "../../src/data/react";
 import { repoName } from "../factory/model";
@@ -19,7 +19,7 @@ import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
 /** The project as the page knows it before project_settings_get answers. */
-type Project = Pick<Settings, "machineId" | "projectId" | "title">;
+type Project = Pick<Settings, "machineId" | "projectId" | "title"> & { workspaceRoot?: string | undefined };
 
 /**
  * A project's Code section: its repos, a plus to add one, then what `children` adds (its environment variables); and
@@ -40,7 +40,18 @@ export function RepoSection({ project, settings, children }: { project: Project;
         <SettingsRow
           reveal="projects.repos"
           title="Repos"
-          line={repos.length === 0 ? "No repo, a plain folder." : null}
+          // Where the bot's own files are: a plain folder's whole story, or the folder its repos are worked in.
+          line={
+            project.workspaceRoot === undefined ? (
+              repos.length === 0 ? (
+                "No repo, a plain folder."
+              ) : null
+            ) : (
+              <Truncate size="sm" tone="quiet">
+                {repos.length === 0 ? `No repo, a plain folder: ${tilde(project.workspaceRoot)}` : `In ${tilde(project.workspaceRoot)}`}
+              </Truncate>
+            )
+          }
           control={adding ? undefined : <AddButton label="Add a repo" onClick={() => setAdding(true)} />}
         >
           {repos.length === 0 ? null : (

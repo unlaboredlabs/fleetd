@@ -1,7 +1,8 @@
 // A window wide enough for two (the iPhone Duo unfolded, an iPad) shows Chats beside the open chat, as Messages does
 // on an iPad: the list on the left, the chat on the right, and picking another chat swaps it in place rather than
-// pushing it over the one before. A phone, or the Duo folded, keeps the one stack: a chat pushed over the list. Pure,
-// so it is unit-tested; App.tsx lays the panes out.
+// pushing it over the one before. On the Duo half-open or open the two meet at the fold, as iOS says where it runs
+// (src/hinge.ts), so the crease never runs through the chat. A phone, or the Duo folded, keeps the one stack: a chat
+// pushed over the list. Pure, so it is unit-tested; App.tsx lays the panes out.
 import type { Key } from "./store";
 
 /** The narrowest window that has the list beside the chat: under an iPad mini's 744 pt, over any phone's portrait. */
@@ -11,17 +12,36 @@ const LIST_SHARE = 0.36;
 const LIST_LEAST = 320;
 const LIST_MOST = 400;
 
-/** How wide each pane is, in points: the list and the chat beside it. */
+/** Narrower than this, a pane beside the fold would be too cramped: the panes keep their own widths then. */
+const PANE_LEAST = 240;
+
+/** How wide each pane is, in points: the list, the fold between them (none off a foldable), and the chat. */
 export interface Split {
   readonly list: number;
+  readonly fold: number;
   readonly chat: number;
 }
 
-/** The panes of a window `width` points across, or undefined where it's one screen at a time. */
-export const splitOf = (width: number): Split | undefined => {
+/** Where the fold runs down the window, in its points from the left: where it starts and how wide iOS keeps it. */
+export interface Fold {
+  readonly x: number;
+  readonly width: number;
+}
+
+/**
+ * The panes of a window `width` points across, or undefined where it's one screen at a time. With a `fold` down it,
+ * the list ends where the fold starts and the chat starts where it ends.
+ */
+export const splitOf = (width: number, fold?: Fold): Split | undefined => {
   if (width < SPLIT_LEAST) return undefined;
+  if (fold !== undefined) {
+    const list = Math.round(fold.x);
+    const gap = Math.round(fold.width);
+    const chat = width - list - gap;
+    if (list >= PANE_LEAST && chat >= PANE_LEAST) return { list, fold: gap, chat };
+  }
   const list = Math.min(LIST_MOST, Math.max(LIST_LEAST, Math.round(width * LIST_SHARE)));
-  return { list, chat: width - list };
+  return { list, fold: 0, chat: width - list };
 };
 
 /** A root stack's route, as much as is read of it. */
@@ -31,13 +51,14 @@ interface RouteLike {
 }
 
 /**
- * The chat showing in the root stack: its topmost, whatever is over it (its Info), unless Home is over it (Open
- * Approvals goes to Home over whatever was open), where the pane shows none. The list marks its row.
+ * The chat showing in the root stack: its topmost, whatever is over it (its Info, a sheet), unless Home or Settings is
+ * over it (Open Approvals goes to Home over whatever was open; the W beside the list opens Settings in the pane), where
+ * the pane shows none. The list marks its row.
  */
 export const openChatKey = (routes: readonly RouteLike[]): Key | undefined => {
   for (let i = routes.length - 1; i >= 0; i--) {
     const r = routes[i];
-    if (r?.name === "Home") return undefined;
+    if (r?.name === "Home" || r?.name === "Settings") return undefined;
     if (r?.name !== "Chat") continue;
     const key = (r.params as { key?: unknown } | undefined)?.key;
     return typeof key === "string" ? key : undefined;

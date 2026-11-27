@@ -114,10 +114,12 @@ it("follows the task as it ends a turn and its Monitor wakes it again", async ()
   expect(card()).toContain("Running.");
 });
 
-it("says plainly when the hub has no such task", async () => {
+it("says plainly when the workspace has no such agent, with no internal id or word", async () => {
   await mount("T9999");
   expect(card()).toContain("An agent");
-  expect(card()).toContain("This workspace has no such task.");
+  expect(card()).toContain("It’s no longer in this workspace.");
+  expect(card()).not.toContain("T9999");
+  expect(card()).not.toContain("task");
   expect(card()).not.toContain("Not running now");
 });
 

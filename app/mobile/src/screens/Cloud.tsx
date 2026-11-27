@@ -5,7 +5,7 @@
 // Only a build given the cloud's two values (cloud/config.ts) shows any of it; any other is the self-hosted app alone.
 // Back from the sign-in page, iOS's own alerts name the account ("Signed in as <email>", Sign Out or Continue), then
 // ask about each invitation, Join or Not Now, before anything pairs (decision hosted.invites-need-accept). Under the two
-// ways, a quiet Sign in with a review code opens App Review's way in (D737): the demo address and its fixed code, sent
+// ways, a quiet Review code, last on the Terms · Privacy line, opens App Review's way in (D737): the demo address and its fixed code, sent
 // in place of the page, then the same questions and pairing. Signed in, Delete Account (App Store 5.1.1(v)) says what
 // goes (as the cloud reads it first: the workspaces that go and any plan that stops, those left) and asks for the
 // account's email typed back in one iOS prompt, or says what holds it back, then has the cloud delete it; the phone forgets its
@@ -193,16 +193,16 @@ export function Ways({ onOwn, onReview, onSignedIn }: { onOwn: () => void; onRev
         <Button label={WAYS.own.name} kind="tinted" size="large" disabled={busy} onPress={onOwn} />
         <Text style={[type.footnote, styles.center, { color: t.secondary }]}>{WAYS.own.line}</Text>
       </View>
-      <Text style={[type.footnote, styles.review, { color: t.tertiary }]} accessibilityRole="link" onPress={busy ? undefined : onReview} suppressHighlighting={false}>
-        Sign in with a review code
-      </Text>
-      <Legal />
+      <Legal onReview={busy ? undefined : onReview} />
     </View>
   );
 }
 
-/** fleetd.sh's terms and privacy policy, a quiet line of two links in Safari. */
-function Legal() {
+/**
+ * fleetd.sh's terms and privacy policy, a quiet line of links in Safari, and last App Review's way in (ReviewSignIn),
+ * in the same quiet words rather than a line of its own everyone reads.
+ */
+function Legal({ onReview }: { onReview: (() => void) | undefined }) {
   const t = useTheme();
   const open = (id: "terms" | "privacy", label: string) => {
     const page = LEGAL_PAGES.find((p) => p.id === id);
@@ -219,6 +219,12 @@ function Legal() {
         ·
       </Text>
       {open("privacy", "Privacy")}
+      <Text style={[type.footnote, { color: t.tertiary }]} accessibilityElementsHidden importantForAccessibility="no">
+        ·
+      </Text>
+      <Text style={[type.footnote, { color: t.secondary }]} accessibilityRole="link" accessibilityLabel="Sign in with a review code" onPress={onReview} suppressHighlighting={false}>
+        Review code
+      </Text>
     </View>
   );
 }
@@ -450,7 +456,6 @@ const styles = StyleSheet.create({
   center: { textAlign: "center", alignSelf: "center", maxWidth: 320 },
   ways: { gap: space.lg, alignItems: "stretch", alignSelf: "center", width: "100%", maxWidth: COLUMN },
   way: { gap: space.sm },
-  review: { textAlign: "center", alignSelf: "center", paddingVertical: space.xs },
   legal: { flexDirection: "row", justifyContent: "center", gap: space.sm, paddingVertical: space.xs },
   form: { alignSelf: "center", width: "100%", maxWidth: COLUMN },
   fieldRow: { minHeight: TOUCH, justifyContent: "center", paddingHorizontal: space.lg },

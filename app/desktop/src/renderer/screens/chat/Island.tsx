@@ -174,7 +174,7 @@ function FitName({ name }: { name: string }) {
   );
 }
 
-/** The agents at work: a glyph each, a few at most, then how many. */
+/** The agents: a glyph each, a few at most, then how many are at work, as the sidebar's row and the panel's tab count. */
 function Fleet({ strip }: { strip: Strip }) {
   return (
     <span className={s.fleet}>
@@ -183,7 +183,7 @@ function Fleet({ strip }: { strip: Strip }) {
           <FleetGlyph key={a.laneId} agent={a} phase={i} />
         ))}
       </span>
-      <span className={s.count}>{strip.agents}</span>
+      {strip.working > 0 ? <span className={s.count}>{strip.working}</span> : null}
     </span>
   );
 }

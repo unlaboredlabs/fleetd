@@ -194,7 +194,7 @@ it("shows the files alone when nothing is published, and the empty state only wh
   root = createRoot(host);
   files = [];
   await mount(view(null));
-  expect(host.querySelector("[data-screen='artifacts.empty']")?.textContent).toBe("No artifacts yet");
+  expect(host.querySelector("[data-screen='artifacts.empty']")?.textContent).toBe("No artifacts yetThe reports and files the lead shares show here.");
 });
 
 it("renders a Markdown report in the app's style, raw HTML dropped, with every version to pick", async () => {

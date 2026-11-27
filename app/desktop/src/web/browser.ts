@@ -1,9 +1,7 @@
 // The browser's own parts for the shell (WebDeps): kept apart from shell.ts so tests drive the shell with fakes.
 import { browserTransport } from "./hub";
 import { platformOf, type WebDeps } from "./shell";
-
-/** The tab's title, with what waits for the person in front when anything does. */
-const TITLE = "fleetd";
+import { tabCount } from "../renderer/ui/lib/tabTitle";
 
 const download = (name: string, blob: Blob): void => {
   const url = URL.createObjectURL(blob);
@@ -80,7 +78,8 @@ export const browserDeps = (version: string): WebDeps => ({
     () => window.focus(),
   ),
   setTitle: (count) => {
-    document.title = count > 0 ? `(${String(count)}) ${TITLE}` : TITLE;
+    // Where you are, with what waits for you in front (ui/lib/tabTitle).
+    tabCount(count);
     // The installed app's icon too, where the browser has badges (not Firefox).
     if ("setAppBadge" in navigator) void (count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => undefined);
   },

@@ -22,6 +22,7 @@ import {
   emptyDraft,
   hasProblems,
   localZone,
+  nextRunLine,
   onceLine,
   problems,
   runChip,
@@ -196,7 +197,7 @@ function Card(props: { automation: Automation; locked: boolean; onEdit: () => vo
           {triggersLine(a)}
           <br />
           {[
-            a.nextRunAt && !a.paused ? `Next run ${when(a.nextRunAt)}` : null,
+            a.paused ? null : nextRunLine(a),
             last ? `Last run ${when(last.at)}: ${runChip(last).label.toLowerCase()}` : "Not run yet",
           ]
             .filter(Boolean)

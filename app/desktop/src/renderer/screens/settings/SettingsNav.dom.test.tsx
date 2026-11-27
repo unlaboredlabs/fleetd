@@ -192,6 +192,30 @@ it("has You and Bots for a member as one flat list, Bots listing the bots, each 
   }
 });
 
+it("walks the index with the arrow keys, Home and End, and back up into the search", async () => {
+  await render("#/settings/general", false);
+  const index = nav();
+  if (index === null) throw new Error("no index");
+  const search = index.querySelector<HTMLInputElement>("input[type='search']");
+  const press = (key: string) =>
+    act(() => {
+      (document.activeElement ?? index).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    });
+  const focused = () => document.activeElement?.textContent.trim();
+  search?.focus();
+  press("ArrowDown");
+  expect(focused()).toBe("General");
+  press("ArrowDown");
+  press("ArrowDown");
+  expect(focused()).toBe("Memory");
+  press("End");
+  expect(focused()).toBe("storefront");
+  press("Home");
+  expect(focused()).toBe("General");
+  press("ArrowUp");
+  expect(document.activeElement).toBe(search);
+});
+
 it("says Bots isn't connected while the hub isn't live, rather than loading for good", async () => {
   await render("#/settings/projects", false, false);
   expect(screen()).toBe("settings.projects.list");

@@ -12,6 +12,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { SettingsScreen } from "./SettingsScreen";
 import { ProjectSkills } from "./Skills";
+import { chooseFromAdd } from "./rowMenu.testing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -156,7 +157,7 @@ it("opens one of the bot's own skills' history in the panel, which has no Skills
 
 it("writes a member's install into the bot, never hub-wide", async () => {
   await render("settings", false);
-  await click([...document.querySelectorAll("button")].find((b) => b.textContent === "Install from a source…") as HTMLElement);
+  await chooseFromAdd("Add a skill", "Install from a source…");
   const source = document.querySelector<HTMLInputElement>("input[placeholder='vercel-labs/agent-skills']");
   if (source === null) throw new Error("no source field");
   await act(async () => {
@@ -178,14 +179,14 @@ it("keeps Every bot's skills from a member, and reads none of it", async () => {
   await render("admin", false);
   expect(document.querySelector("[data-screen='settings.hub.denied']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([]);
-  expect(texts()).not.toContain("Install from a source…");
+  expect(document.querySelector("button[aria-label='Add a skill']")).toBeNull();
 });
 
 it("lets an admin install, update and remove hub-wide skills on Bot defaults › Agents", async () => {
   await render("admin", true);
   expect(document.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([{}]);
-  expect(texts()).toContain("Install from a source…");
+  expect(document.querySelector("button[aria-label='Add a skill']")).not.toBeNull();
   const pr = rowNamed("pr-review");
   expect(pr).toBeDefined();
   await click((pr as { open: HTMLElement }).open);

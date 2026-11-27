@@ -386,7 +386,7 @@ export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: bool
   if (m === undefined) return null;
   return (
     <Tooltip content={m.words}>
-      <span className={c.receiptMark} data-mark={m.mark} tabIndex={0} aria-label={m.words}>
+      <span className={c.receiptMark} data-mark={m.mark} data-receipt-mark="" tabIndex={-1} aria-label={m.words}>
         <Check aria-hidden className={c.receiptCheck} strokeWidth={2.5} />
       </span>
     </Tooltip>

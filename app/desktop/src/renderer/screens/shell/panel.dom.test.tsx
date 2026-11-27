@@ -502,7 +502,7 @@ it("lands each of the palette's Go to commands, and the view the panel was last 
   await mount({ features: ["browser_sessions", "artifacts", "chat_find_pins"] });
   // Shell.tsx's commands, one per view with a list: each goes to that view's route.
   const commands = PANEL_TABS.filter((t) => !("itemOnly" in t));
-  expect(commands.map((t) => t.label)).toEqual(["Agents", "Screens", "Pull requests", "Train", "Checklist", "Artifacts", "Pinned", "Activity", "Decisions", "Asked work"]);
+  expect(commands.map((t) => t.label)).toEqual(["Agents", "Screens", "Pull requests", "Train", "Checklist", "Artifacts", "Pinned", "History", "Decisions", "Asked work"]);
   const want = new Map(LANDS.map(([route, tab, screen]) => [route, [tab, screen]]));
   for (const tab of commands) {
     await go(toHash(panelRoute(STORE, listView(tab.id))));

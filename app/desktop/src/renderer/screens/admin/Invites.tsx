@@ -4,7 +4,7 @@
 import { Mail } from "lucide-react";
 import { useId, useState } from "react";
 import type { HubRole, Invite, InviteCreateOutput, Person } from "../../../shared/contracts";
-import { Button, copyText, Input, Radio, RadioGroup, Text, Truncate } from "../../ui";
+import { Button, copyText, Input, Select, Text, Truncate } from "../../ui";
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { expiresLine, nameProblem, ROLE_HELP, roleWord } from "./model";
@@ -18,14 +18,14 @@ import a from "./admin.module.css";
 /** The roles an invite offers; owners are made from People, by an owner. */
 const INVITE_ROLES: ReadonlyArray<HubRole> = ["member", "admin"];
 
-/** Invite someone, opened by People's plus: its form and the link just made. */
-export function InviteSection() {
+/** Invite someone, opened from People's title: its form and the link just made; Cancel closes it. */
+export function InviteSection({ onClose }: { onClose: () => void }) {
   const [created, setCreated] = useState<InviteCreateOutput | null>(null);
   const ref = useReveal<HTMLDivElement>("hub.invite");
   return (
     <div ref={ref}>
       <SettingsSection title="Invite someone" hint="A link they open in the fleetd app to join this workspace as themselves. It works once, within 7 days.">
-        <InviteForm onCreated={setCreated} />
+        <InviteForm onCreated={setCreated} onCancel={onClose} />
         {created === null ? null : <CreatedLink created={created} />}
       </SettingsSection>
     </div>
@@ -36,7 +36,7 @@ export function InviteSection() {
 export const invitedBy = (i: Invite, me: Person | undefined): string =>
   i.createdBy === undefined ? "from the workspace machine" : i.createdBy.personId === me?.personId ? "by you" : `by ${i.createdBy.name}`;
 
-function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => void }) {
+function InviteForm({ onCreated, onCancel }: { onCreated: (out: InviteCreateOutput) => void; onCancel: () => void }) {
   const call = useHubCall();
   // With several hubs the button names the hub the invite is for, so it is never minted on the wrong one.
   const hub = useHub();
@@ -77,24 +77,29 @@ function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => voi
         label="Name"
         line={tried && problem !== undefined ? problem : undefined}
         lineTone="danger"
-        control={<Input id={nameId} className={a.inviteName} value={name} placeholder="Alice" autoComplete="off" onChange={(e) => setName(e.target.value)} />}
+        // Opened from People's title: the form's first field takes the focus.
+        control={<Input id={nameId} className={a.inviteName} value={name} placeholder="Alice" autoComplete="off" autoFocus onChange={(e) => setName(e.target.value)} />}
       />
-      <SettingsRow title="Role" titleId="invite-role" hint={<HintLines lines={INVITE_ROLES.map((r) => [roleWord(r), ROLE_HELP[r]] as const)} />}>
-        <RadioGroup value={role} onValueChange={(v) => setRole(v)} aria-labelledby="invite-role">
-          {INVITE_ROLES.map((r) => (
-            <Radio key={r} value={r} label={roleWord(r)} />
-          ))}
-        </RadioGroup>
-      </SettingsRow>
+      {/* The same choice as each person's row below, so a role is picked one way on the page. */}
       <SettingsRow
-        title={several ? `For ${hub.label}` : "The link"}
+        title="Role"
+        hint={<HintLines lines={INVITE_ROLES.map((r) => [roleWord(r), ROLE_HELP[r]] as const)} />}
+        control={<Select aria-label="Role" className={a.role} value={role} options={INVITE_ROLES.map((r) => ({ value: r, label: roleWord(r) }))} onValueChange={setRole} />}
+      />
+      <SettingsRow
+        title={several ? `For ${hub.label}` : "Invite link"}
         hint="Shown once, to send them yourself."
         line={error === undefined ? null : <span role="alert">{`No invite: ${error}`}</span>}
         lineTone="danger"
         control={
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Creating…" : several ? `Create invite link to ${hub.label}` : "Create invite link"}
-          </Button>
+          <>
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? "Creating…" : several ? `Create invite link to ${hub.label}` : "Create invite link"}
+            </Button>
+          </>
         }
       />
     </form>
@@ -163,7 +168,7 @@ export function OpenInvite({ invite: i, role, me }: { invite: Invite; role: HubR
       }
     >
       <Text size="sm" tone="quiet">
-        {`${expiresLine(i.expiresAt, now)}. Invited ${invitedBy(i, me)}.`}
+        {`${expiresLine(i.expiresAt, now)} · invited ${invitedBy(i, me)}`}
       </Text>
       {error === undefined ? null : (
         <p role="alert" className={s.alertLine}>

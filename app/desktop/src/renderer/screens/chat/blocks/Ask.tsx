@@ -4,9 +4,11 @@
 import type { AskBlock } from "../../../../shared/contracts";
 import { Button, Text } from "../../../ui";
 import { useBubbleActions } from "../actions";
+import { SkipButton } from "../SkipButton";
 import b from "./blocks.module.css";
 
-export function Ask({ ask, answer }: { ask: AskBlock; answer: string | undefined }) {
+/** `skip`: the lead waits on it, so Not needed sits at the end of its buttons (Bubble.tsx SkipButton). */
+export function Ask({ ask, answer, skip }: { ask: AskBlock; answer: string | undefined; skip?: (() => void) | undefined }) {
   const actions = useBubbleActions();
   const options = ask.options ?? ["Approve", "Deny"];
   return (
@@ -21,6 +23,7 @@ export function Ask({ ask, answer }: { ask: AskBlock; answer: string | undefined
               {o}
             </Button>
           ))}
+          {skip !== undefined ? <SkipButton skip={skip} /> : null}
         </div>
       )}
     </div>

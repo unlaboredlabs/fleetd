@@ -15,6 +15,8 @@
   padding: var(--space-4);
   border-radius: var(--radius-group);
   background: var(--group);
+  /* Settings' groups' own edge, inside the box: in dark --group is a step off the page and reads as no box at all. */
+  box-shadow: inset 0 0 0 1px var(--group-edge);
 }
 
 /* The controls a step's gap below the words, as on Get started. */

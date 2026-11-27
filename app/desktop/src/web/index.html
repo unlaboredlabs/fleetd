@@ -22,6 +22,11 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Installable (Chrome's and Edge's Install, a phone's Add to Home Screen), its icon then carrying the count of
+         what waits on you (browser.ts setAppBadge); the browser's own bars in the app's page colour in each theme. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121316" media="(prefers-color-scheme: dark)" />
     <!-- Who is signed in, asked as the page starts rather than once its script has loaded and run: main.tsx's first
          read (session.ts) takes this answer. -->
     <link rel="preload" href="/web/session" as="fetch" crossorigin />

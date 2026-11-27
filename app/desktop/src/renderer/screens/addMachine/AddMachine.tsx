@@ -277,7 +277,7 @@ function Choose(props: {
     <>
       <Head
         title="Add machine"
-        line="A machine runs agents and their browsers and devices. It needs claude installed."
+        line="Runs agents, their browsers and devices. It needs Claude Code installed."
         aside={
           props.onClose === undefined ? undefined : (
             <Button variant="ghost" iconOnly aria-label="Close" title="Close" className={s.close} onClick={props.onClose}>
@@ -308,7 +308,7 @@ function Choose(props: {
             <div className={s.rowText}>
               <Text>A machine the workspace can reach</Text>
               <Text size="sm" tone="quiet">
-                Over SSH from the workspace: one in its ~/.ssh/config or on its tailnet.
+                One the workspace can reach over SSH.
               </Text>
             </div>
             <Button className={s.rowAction} onClick={props.onHosts}>
@@ -320,7 +320,7 @@ function Choose(props: {
           <div className={s.rowText}>
             <Text>{props.ssh ? "Any other machine" : "Another machine"}</Text>
             <Text size="sm" tone="quiet">
-              {props.ssh ? "A laptop, or one behind NAT: one line to paste in its terminal. It must reach the workspace." : "One line to paste in its terminal. On fleetd cloud, machines join this way, not over SSH."}
+              {props.ssh ? "Any computer that reaches the workspace, with one line in its terminal." : "One line to paste in its terminal. On fleetd cloud, machines join this way, not over SSH."}
             </Text>
           </div>
           <Button className={s.rowAction} onClick={props.onLine}>

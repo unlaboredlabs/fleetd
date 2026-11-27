@@ -130,7 +130,7 @@ const restarts = () => calls.filter((c) => c === "hub_restart").length;
 
 it("shows Restart hub to an admin of the hub, and nothing of it to a member", async () => {
   await render(false);
-  expect(row().textContent).toContain("Connected ·");
+  expect(row().textContent).toContain("Connected");
   expect(offered()).not.toContain("Restart workspace…");
   expect(offered()).toContain("Disconnect and forget key…");
   act(() => root.unmount());
@@ -141,7 +141,7 @@ it("shows Restart hub to an admin of the hub, and nothing of it to a member", as
 
 it("shows an admin of fleetd cloud, which leaves hub_restart out, no Restart hub: the row keeps the rest", async () => {
   await render(true, ["hub_update", "hub_restart"]);
-  expect(row().textContent).toContain("Connected ·");
+  expect(row().textContent).toContain("Connected");
   expect(offered()).not.toContain("Restart workspace…");
   expect(offered()).toContain("Disconnect and forget key…");
   // A hub that leaves out something else keeps it.
@@ -160,7 +160,7 @@ it("asks first, then restarts: the row says so until the hub has been away and i
   expect(asked.textContent).toContain("A lead whose profile changed since it started comes back on the current one");
   await click(button("Cancel", asked));
   expect(restarts()).toBe(0);
-  expect(row().textContent).toContain("Connected ·");
+  expect(row().textContent).toContain("Connected");
 
   restart = () => Promise.resolve({ ok: true, output: { leads: 2 } });
   await choose("Restart workspace…");
@@ -192,7 +192,7 @@ it("counts a call the restart itself cut off as taken", async () => {
     await Promise.resolve();
   });
   await settle();
-  expect(row().textContent).toContain("Restarted. Connected ·");
+  expect(row().textContent).toContain("Restarted. Connected");
   expect(row().querySelector("[role='alert']")).toBeNull();
 });
 
@@ -207,7 +207,7 @@ it("shows a refusal with its fix, and a hub older than the button", async () => 
   await click(button("Restart", dialog()));
   expect(alert().textContent).toBe("The workspace doesn't run as the service fleetd init sets up, so it can't restart itself. Restart it on its machine: stop fleetd workspace start there and start it again.");
   // The connection's own line stays, and it can be tried again.
-  expect(row().textContent).toContain("Connected ·");
+  expect(row().textContent).toContain("Connected");
   expect(trigger().disabled).toBe(false);
 
   restart = () => Promise.resolve({ ok: false, error: { code: "not_found", message: "No tool workspace_restart." } });

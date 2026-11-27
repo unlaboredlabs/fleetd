@@ -63,6 +63,7 @@ import { onWeb } from "../../src/web";
 import { useCloud } from "../onboarding/cloud";
 import { askedOn } from "./workspaceAsk";
 import { PlaceIcons, useHubsMark, You } from "./You";
+import { clockFormat } from "../../../shared/clock";
 import s from "./sidebar.module.css";
 
 /** The dialogs a menu opens (New workspace, Rename, a section's name), loaded on use, never in the first chat's load:
@@ -258,7 +259,6 @@ function HubSwitcher({ hub: id }: { hub: string }) {
  * more than formatting with it, and every row asks on each render of the sidebar (the start renders it several times).
  */
 const WHEN_FORMATS = {
-  clock: { hour: "numeric", minute: "2-digit" },
   weekday: { weekday: "short" },
   date: { day: "numeric", month: "short" },
   dateYear: { day: "numeric", month: "short", year: "2-digit" },
@@ -273,13 +273,14 @@ const whenFormat = (kind: keyof typeof WHEN_FORMATS, at: Date): string => {
   return f.format(at);
 };
 
-/** When a line was written, as a chats list says it: "09:14" today, "Yesterday", "Tue" this week, else "3 Nov". */
+/** When a line was written, as a chats list says it: "09:14" (or "9:14 AM") today, "Yesterday", "Tue" this week, else "3 Nov". */
 export const whenShort = (iso: string, now = new Date()): string => {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((day(now) - day(at)) / 86_400_000);
-  if (days <= 0) return whenFormat("clock", at);
+  // Today's time on the app's one clock (shared/clock.ts), so it reads as the chat beside says it.
+  if (days <= 0) return clockFormat().format(at);
   if (days === 1) return "Yesterday";
   if (days < 7) return whenFormat("weekday", at);
   return whenFormat(at.getFullYear() === now.getFullYear() ? "date" : "dateYear", at);
@@ -310,6 +311,9 @@ function Line({ p }: { readonly p: SidebarProject }) {
   );
 }
 
+/** The row's time: when its line was written; none for a row with nothing to show yet (a chat not read yet, offline). */
+const whenOf = (p: SidebarProject): string => (p.line === "" && !p.working && p.want === undefined && p.status === undefined ? "" : whenShort(p.at));
+
 interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly p: SidebarProject;
   readonly current: boolean;
@@ -334,7 +338,7 @@ function Row({ p, current, jump, asOf, into, avatar = AVATAR, dense = false, ...
         className={cx(s.row, s.dense)}
         {...(current ? { "aria-current": "page" as const } : {})}
         data-unread={p.unread || undefined}
-        aria-description={[tip, lineOf(p), whenShort(p.at)].filter((w) => w !== undefined && w !== "").join(", ")}
+        aria-description={[tip, lineOf(p), whenOf(p)].filter((w) => w !== undefined && w !== "").join(", ")}
         {...rest}
       >
         <ProjectAvatar project={p.project} size={DENSE_AVATAR} own={botOwn(p)} className={s.avatar} />
@@ -376,7 +380,7 @@ function Row({ p, current, jump, asOf, into, avatar = AVATAR, dense = false, ...
           ) : jump !== null ? (
             <span className={s.jump}>{jump}</span>
           ) : (
-            <span className={s.when}>{whenShort(p.at)}</span>
+            <span className={s.when}>{whenOf(p)}</span>
           )}
         </span>
         <span className={s.bottom}>

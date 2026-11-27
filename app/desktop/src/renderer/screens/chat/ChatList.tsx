@@ -5,7 +5,7 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Button, cx, preloadable, preloadWhenIdle, Text, VirtualList } from "../../ui";
+import { afterShown, Button, cx, preloadable, preloadWhenIdle, Text, VirtualList } from "../../ui";
 import { onWeb } from "../../src/web";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -20,6 +20,7 @@ import { MessageView, useEnter } from "./Bubble";
 import { ChatShotsContext } from "./viewing";
 import { chatShots } from "./shots";
 import { useGlide } from "./glide";
+import type * as Keys from "./keys";
 import { useBubbleActions } from "./actions";
 import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
@@ -31,6 +32,16 @@ import { SkillSavedLine } from "./SkillSaved";
 const VaultImportCardView = preloadable(() => import("./VaultImportCard").then((m) => m.VaultImportCardView));
 if (onWeb()) preloadWhenIdle(VaultImportCardView);
 else VaultImportCardView.preload().catch(() => undefined);
+// The list's keys (one Tab stop, the arrows between bubbles: keys.ts) come as a chunk: at once on the desktop, on the
+// web once the chat has shown, out of its first load. Until then the list has the browser's own keys.
+let chatKeys: typeof Keys | undefined;
+const loadKeys = () =>
+  void import("./keys").then(
+    (m) => (chatKeys = m),
+    () => undefined,
+  );
+if (onWeb()) afterShown(loadKeys);
+else loadKeys();
 /** A screen's card (ScreenCard.tsx): out of the first chat's load, there before a chat with a screen needs it. */
 const ScreenCard = preloadable(() => import("./ScreenCard").then((m) => m.ScreenCard));
 preloadWhenIdle(ScreenCard);
@@ -504,6 +515,9 @@ export function ChatList(props: {
           className={s.scroller}
           virtualizerRef={virtualizer}
           aria-label="Conversation with the lead"
+          tabIndex={0}
+          onKeyDown={(e) => chatKeys?.onChatKey(e)}
+          onFocus={(e) => chatKeys?.onChatFocus(e)}
           renderItem={(r) => (
             <RowView
               row={r}

@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,6 +13,8 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronRight, PanelLeft } from "lucide-react";
 import { cx } from "../lib/cx";
+import { tabPlace } from "../lib/tabTitle";
+import { StateGlyph } from "../primitives/StateGlyph";
 import { Tooltip } from "../primitives/Tooltip";
 import { Text } from "../text/Text";
 import { Truncate } from "../text/Truncate";
@@ -132,8 +135,16 @@ function useGlide(motion: "in" | "out" | undefined) {
     const duration = parseFloat(style.getPropertyValue(motion === "in" ? "--dur-panel-in" : "--dur-panel-out")) || 0;
     const easing = style.getPropertyValue("--ease-panel").trim() || "ease-out";
     const shift = (was - now) / 2;
+    const runs: Animation[] = [];
     for (const m of el.children) {
-      if (m instanceof HTMLElement) m.animate([{ transform: `translateX(${String(shift)}px)` }, { transform: "none" }], { duration, easing });
+      if (m instanceof HTMLElement) runs.push(m.animate([{ transform: `translateX(${String(shift)}px)` }, { transform: "none" }], { duration, easing }));
+    }
+    // While it glides the main area draws past its new edge (layout.module.css): the chat starts where it was, and its
+    // right-hand bubbles show over the panel's column until the panel, drawn after it, slides over them, rather than
+    // being cut at the edge for the frames before the panel reaches them.
+    if (motion === "in" && runs.length > 0) {
+      el.dataset["gliding"] = "";
+      void Promise.allSettled(runs.map((r) => r.finished)).then(() => delete el.dataset["gliding"]);
     }
   }, [motion]);
   return main;
@@ -240,6 +251,8 @@ export interface TitlePress {
  */
 export function FrameTitle(props: { title?: string | undefined; detail?: ReactNode; lead?: ReactNode; glass?: boolean; press?: TitlePress | undefined; children?: ReactNode }) {
   const slot = useContext(TitleSlot);
+  // The web's tab says the same place (ui/lib/tabTitle).
+  useEffect(() => (props.title === undefined || props.title === "" ? undefined : tabPlace(props.title)), [props.title]);
   if (slot === null) return null;
   const press = props.press;
   const title =
@@ -368,15 +381,32 @@ export function SidebarItem({ label, icon, trailing, current, indent, emphasis, 
   );
 }
 
-/** An empty or error state: one headline, a sentence, and the action that gets out of it. */
-export function EmptyState(props: { title: string; children?: ReactNode; actions?: ReactNode; tone?: "default" | "danger" }) {
+/**
+ * An empty or error state, the app's one layout for both, wherever it shows (a page, the panel, a pane): centred a
+ * third of the way down, its mark (the list's own open ring on a tile unless given one, none for an error), one
+ * headline, a sentence of what will show here or what went wrong, and the action that gets out of it.
+ */
+export function EmptyState(props: { title: string; children?: ReactNode; actions?: ReactNode; tone?: "default" | "danger"; mark?: ReactNode }) {
+  const danger = props.tone === "danger";
+  const mark =
+    props.mark ??
+    (danger ? null : (
+      <span className={s.emptyTile}>
+        <StateGlyph state="queued" still />
+      </span>
+    ));
   return (
-    <div className={s.empty} role={props.tone === "danger" ? "alert" : undefined}>
-      <Text as="h2" size="xl" strong tone={props.tone === "danger" ? "danger" : "default"}>
+    <div className={s.empty} role={danger ? "alert" : undefined} data-empty-state="">
+      {mark === null ? null : (
+        <span className={s.emptyMark} aria-hidden>
+          {mark}
+        </span>
+      )}
+      <Text as="h2" size="md" strong tone={danger ? "danger" : "default"}>
         {props.title}
       </Text>
       {props.children ? (
-        <Text as="p" tone="quiet">
+        <Text as="p" size="md" tone="quiet" className={s.emptyLine}>
           {props.children}
         </Text>
       ) : null}

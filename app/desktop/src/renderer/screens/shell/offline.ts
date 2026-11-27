@@ -4,23 +4,13 @@ import { useMemo } from "react";
 import { useData } from "../../src/data/react";
 import { selectOfflineAsOf } from "../../src/data/selectors";
 import { dayLabel } from "../chat/model";
+import { clock } from "../../../shared/clock";
 
-const hm = new Map<string, Intl.DateTimeFormat>();
-
-const hourMinute = (ms: number, timeZone?: string): string => {
-  const key = timeZone ?? "";
-  let f = hm.get(key);
-  if (f === undefined) {
-    f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(timeZone ? { timeZone } : {}) });
-    hm.set(key, f);
-  }
-  return f.format(ms);
-};
 
 /** "as of 09:02"; with the day when it wasn't today: "as of yesterday 18:40", "as of Mon 19 Oct 18:40". */
 export function asOfWords(asOfMs: number, nowMs: number, timeZone?: string): string {
   const day = dayLabel(new Date(asOfMs).toISOString(), nowMs, timeZone);
-  const time = hourMinute(asOfMs, timeZone);
+  const time = clock(asOfMs, timeZone);
   return day === "Today" ? `as of ${time}` : `as of ${day === "Yesterday" ? "yesterday" : day} ${time}`;
 }
 

@@ -1,5 +1,5 @@
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { cx } from "../lib/cx";
 import s from "./VirtualList.module.css";
 
@@ -121,6 +121,10 @@ export interface VirtualListProps<T> {
   "aria-label"?: string;
   /** `presentation` when the rows carry their own roles (a table's rows). */
   role?: "list" | "presentation";
+  /** The list as one Tab stop, its own keys moving within it (the chat's: chat/keys.ts). */
+  tabIndex?: number;
+  onKeyDown?: (e: KeyboardEvent<HTMLDivElement>) => void;
+  onFocus?: (e: FocusEvent<HTMLDivElement>) => void;
 }
 
 /** How many rows' heights a `heights` map keeps, the oldest dropped first. */
@@ -251,6 +255,9 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       className={cx(s.scroller, props.className)}
       role={props.role ?? "list"}
       aria-label={props["aria-label"]}
+      tabIndex={props.tabIndex}
+      onKeyDown={props.onKeyDown}
+      onFocus={props.onFocus}
     >
       <div className={s.inner} style={{ height: virtualizer.getTotalSize() }}>
         {/* The rows on screen stack in flow under the first one's start, rather than each at its own measured start:

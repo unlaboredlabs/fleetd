@@ -85,7 +85,7 @@ export function PrList({ rows, more, train, at = null, project, nowMs }: PrListP
         </span>
       ) : null}
       {items.length === 0 ? (
-        <PanelEmpty title="No pull requests yet" actions={more !== undefined ? <LoadMore more={more} /> : undefined} />
+        <PanelEmpty title="No pull requests yet" line="The pull requests the agents open show here." actions={more !== undefined ? <LoadMore more={more} /> : undefined} />
       ) : (
         <div className={s.listScroll} onKeyDown={onKeyDown}>
           <VirtualList

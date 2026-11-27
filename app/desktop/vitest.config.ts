@@ -9,6 +9,9 @@ const engine = "src/**/*.engine.test.ts";
 export default defineConfig({
   test: {
     environment: "node",
+    // One locale for every run, whatever the machine's: the app says times in the person's own locale
+    // (shared/clock.ts), and a test's expected "16:02" must not turn into "4:02 PM" on another box.
+    env: { LC_ALL: "en_GB.UTF-8" },
     projects: [
       { extends: true, test: { name: "unit", include, exclude: [...configDefaults.exclude, engine] } },
       { extends: true, test: { name: "engine", include: [engine], sequence: { groupOrder: 1 } } },

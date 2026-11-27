@@ -3,7 +3,7 @@
 // A machine gets a row only when it didn't update or is behind. It is where the chats list's word for the hub leads
 // (hubWord.ts): after an update everyone, members too, reads how it ended, without a button.
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { clockAt, serves, startUpdate, useAuto, useFlow, useReady, useRun } from "../desktop";
+import { clockAt, serves, startUpdate, useAuto, useFlow, useReady, useRun, type Status } from "../desktop";
 import { useHub } from "../hubContext";
 import { space, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
@@ -15,17 +15,27 @@ import { updateSection } from "../updates";
 /** The hub's own words carry `code` marks, which a row has no way to show. */
 const plain = (text: string | undefined): string | undefined => text?.replace(/`/gu, "");
 
-export function UpdateFleetd() {
-  const t = useTheme();
-  const { state, session } = useHub();
+/** The section's status as it is now (null where it shows none). */
+export function useUpdateStatus(): Status | null {
+  const { state } = useHub();
   const flow = useFlow();
   const run = useRun();
   const ready = useReady();
   const auto = useAuto();
-  const status = updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready, auto, restart: state.restart, update: state.hubUpdate, updates: serves(state, "hub_update") });
+  return updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready, auto, restart: state.restart, update: state.hubUpdate, updates: serves(state, "hub_update") });
+}
+
+/** Only "Up to date", nothing to do and nothing to say: Settings' Version row says it, with no section of its own. */
+export const merelyCurrent = (status: Status | null): boolean => status !== null && status.kind === "current" && status.updatedAt === undefined && status.detail === undefined && status.action === undefined && status.rows.length === 0;
+
+/** `inVersion`: Settings' Version row shows, and says "Up to date" itself. */
+export function UpdateFleetd({ inVersion = false }: { inVersion?: boolean }) {
+  const t = useTheme();
+  const { session } = useHub();
+  const status = useUpdateStatus();
   // An update as it goes and how it ended; what merely stands (up to date, one to take) is read, not announced.
   useAnnounce(status !== null && (status.kind === "updating" || status.kind === "failed" || status.updatedAt !== undefined) ? status.title : undefined);
-  if (status === null) return null;
+  if (status === null || (inVersion && merelyCurrent(status))) return null;
 
   const action = status.action;
   const go = () => {

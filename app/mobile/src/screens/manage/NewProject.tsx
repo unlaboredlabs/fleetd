@@ -66,6 +66,8 @@ export function NewProject({ navigation, route }: Props) {
   const to = target(d, picked) ?? workers[0] ?? null;
   const nameIssue = nameProblem(name);
   const named = botName(name, repos);
+  // A repo typed in the add field but not added yet names it too (create adds it).
+  const nameable = named !== "" || (adding ?? "").trim() !== "";
   // A machine whose node can't make a bot's folder takes one listed, or typed in the add field.
   const toWorker = d?.workers.find((w) => w.machineId === to?.machineId);
   const block = to === null ? "Nothing that runs agents is online: start fleetd on one of your computers, or connect one in the desktop app." : toWorker === undefined ? undefined : (needsUpdate(toWorker, repos, adding) ?? undefined);
@@ -112,12 +114,13 @@ export function NewProject({ navigation, route }: Props) {
         // Always the one ✓, only its job changing: Create, then Open Chat once the bot is made.
         phase.kind === "made"
           ? { label: "Open Chat", enabled: true, busy: false, onPress: () => openChat(keyOf(phase.bot.project)) }
-          : // Never grey while the link is down: pressed, it says why (createRefusal), as the line under the form does.
-            { label: "Create", enabled: phase.kind === "form", busy: phase.kind === "creating", onPress: () => createNow.current() },
+          : // Grey until there is a name to make it with (typed, or a repo's), as iOS dims Done on an unfinished form;
+            // never for the link being down: pressed, it says why (createRefusal), as the line under the form does.
+            { label: "Create", enabled: phase.kind === "form" && nameable, busy: phase.kind === "creating", onPress: () => createNow.current() },
       ),
     });
     // `openChat` reads what these are; Create reads the newest `create` through its ref.
-  }, [navigation, t, phase]);
+  }, [navigation, t, phase, nameable]);
 
   const list = useMemo(() => (adding === null ? [] : repoSuggestions(adding, d, to?.machineId, repos.map(repoKey), SUGGESTIONS_SHOWN)), [adding, d, to?.machineId, repos]);
 
@@ -175,7 +178,7 @@ export function NewProject({ navigation, route }: Props) {
             setName(v);
             setRefused(undefined);
           }}
-          placeholder={named === "" ? "Name" : named}
+          placeholder={named === "" ? "storefront" : named}
           autoFocus
           maxLength={NAME_MAX + 1}
           autoCapitalize="words"

@@ -5,26 +5,25 @@
 // Back are all routes (shell/routes.ts), so links from the chat, Status and the palette open the same views. Only the
 // open tab's pane is mounted and reads from the hub; the counts on the tabs read only what is cheap.
 import { ChevronLeft, Settings } from "lucide-react";
-import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
+import { Suspense } from "react";
 import { Boundary } from "../../src/Boundary";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { Button, TabPanel, Tabs, Tooltip, cx } from "../../ui";
+import { Button, preloadable, preloadWhenIdle, TabPanel, Tabs, Tooltip, cx, type Preloadable } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { backView, hasItem, listView, panelRoute, projectSkills, type PanelView, type ProjectKey } from "../shell/routes";
 import { listOf, sectionOf, SECTIONS, SectionTabs, servedSection, SKILL } from "./Sections";
 import { PANEL_TABS, served, tabEntry, type CountProps, type PanelTab, type PanelTabEntry, type PaneProps } from "./tabs";
 import s from "./panel.module.css";
 
-// Each tab's pane and count, loaded the first time the panel renders them (lazy loads nothing until then).
-type Lazy<P> = LazyExoticComponent<ComponentType<P>>;
-const PANES: Readonly<Record<string, Lazy<PaneProps>>> = Object.fromEntries([...SECTIONS, SKILL].map((g) => [g.id, lazy(() => g.pane().then((c) => ({ default: c })))]));
-const COUNTS: Readonly<Partial<Record<PanelTab, Lazy<CountProps>>>> = Object.fromEntries(
-  PANEL_TABS.flatMap((t: PanelTabEntry) => {
-    const load = t.count;
-    return load === undefined ? [] : [[t.id, lazy(() => load().then((c) => ({ default: c })))]];
-  }),
+// Each tab's pane and count, loaded once the app has shown and is idle, so the first click on a tab draws its list on
+// the next frame: a plain lazy() suspended on that first render, even with the chunk loaded, and the tab stood blank
+// for ~300 ms.
+const PANES: Readonly<Record<string, Preloadable<PaneProps>>> = Object.fromEntries([...SECTIONS, SKILL].map((g) => [g.id, preloadable(g.pane)]));
+const COUNTS: Readonly<Partial<Record<PanelTab, Preloadable<CountProps>>>> = Object.fromEntries(
+  PANEL_TABS.flatMap((t: PanelTabEntry) => (t.count === undefined ? [] : [[t.id, preloadable(t.count)]])),
 );
+preloadWhenIdle(...Object.values(PANES), ...Object.values(COUNTS));
 
 export function ProjectPanel({ project, view: routed, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
   const features = useData((st) => st.features);
@@ -41,7 +40,7 @@ export function ProjectPanel({ project, view: routed, onWide }: { project: Proje
   const artifacts = useToolQuery("artifacts_list", { projectRef: { machineId: project.machineId, projectId: project.projectId } }, { enabled: served("artifacts", features) });
   const has = (artifacts.data?.artifacts.length ?? 0) + (artifacts.data?.files.length ?? 0) > 0;
   const extra = has ? [section.id, "artifacts"] : [section.id];
-  const count = (tab: PanelTab) => <Count id={tab} project={project} active={tab === view.tab} />;
+  const count = (tab: PanelTab) => <Count id={tab} project={project} />;
   // One screen has the tab's height to itself: its own line has the way back (sessions/SessionView.tsx).
   const alone = hasItem(view) && view.tab === "sessions";
   const back = backView(view);
@@ -57,7 +56,7 @@ export function ProjectPanel({ project, view: routed, onWide }: { project: Proje
       {/* Keyed by the tab, not the view: a link to a place in the open list (its screens, the merge line) moves the
           list, it doesn't read it again. */}
       <Boundary key={section.id} part={`the ${section.label} tab`}>
-        <Suspense fallback={<div className={s.loading} aria-busy="true" />}>{Pane === undefined ? null : <Pane project={project} view={view} onWide={onWide} />}</Suspense>
+        <Suspense fallback={<PaneLoading />}>{Pane === undefined ? null : <Pane project={project} view={view} onWide={onWide} />}</Suspense>
       </Boundary>
     </div>
   );
@@ -83,13 +82,26 @@ export function ProjectPanel({ project, view: routed, onWide }: { project: Proje
   );
 }
 
+/** A tab's pane, the first time it loads before the idle preload has it: the list's lines, still, as Activity's own
+ * loading draws them. */
+function PaneLoading() {
+  return (
+    <div className={s.loading} role="status" aria-label="Loading">
+      <span />
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
 /** A tab's count as bare figures, on its word's baseline; nothing while it loads or has no number worth showing. */
-function Count({ id, project, active }: { id: PanelTab; project: ProjectKey; active: boolean }) {
+function Count({ id, project }: { id: PanelTab; project: ProjectKey }) {
   const Load = COUNTS[id];
   if (Load === undefined) return null;
   return (
     <Suspense fallback={null}>
-      <Load project={project} active={active} />
+      <Load project={project} />
     </Suspense>
   );
 }

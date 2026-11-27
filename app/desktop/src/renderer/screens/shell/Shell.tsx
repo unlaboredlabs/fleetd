@@ -9,7 +9,7 @@
 // the panel too. ⌘K, not a button, opens the palette.
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
-import { AppFrame, preloadable, preloadWhenIdle, TopBar, useShownYet } from "../../ui";
+import { AppFrame, preloadable, preloadWhenIdle, toast, TopBar, useShownYet } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
 import { ConnectionsHost } from "../connections/ConnectionsHost";
 import { useMetricsSupport } from "../factory/support";
@@ -21,7 +21,7 @@ import type { HubView } from "../../src/data/hubs";
 import { homeProject, nextWanting, projectId, routeOf, stepProject, type SidebarProject } from "./model";
 import { useSidebarProjects } from "./data";
 import { dropRows, publishRows, useHubRows } from "./hubRows";
-import { navigate, setRouteHubs, useNamesHub, useRoute, type Routed } from "./navigation";
+import { hashFor, navigate, setRouteHubs, useNamesHub, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, toHash, type ProjectKey, type Screen } from "./routes";
 import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
@@ -251,7 +251,10 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const gone = chatKey !== null && fresh && !listed;
   const stray = gone && seen !== chatKey;
   useEffect(() => {
-    if (stray && !sheet) navigate({ id: "home", at: route.at }, { replace: true });
+    if (!stray || sheet) return;
+    // Said, so a teammate's link from another workspace doesn't pass for the wrong chat.
+    toast({ title: "That bot isn’t in this workspace" });
+    navigate({ id: "home", at: route.at }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stray]);
   const streamed = stray ? null : chatKey;
@@ -428,7 +431,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         <div className={s.column} data-under={under || undefined}>
           {/* Over the chat they float under the top row, as it does, rather than push the conversation down as they
               come and go with the link. */}
-          <div className={s.banners} data-floats="">
+          <div className={s.banners} data-floats="" data-banners="">
             {/* Fixture data must never pass for a live hub. */}
             {window.fleetd.fixture !== null ? (
               <div className={s.fixtureBanner} role="status">
@@ -466,9 +469,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
             <SettingsSheet
               hub={sheetHub}
               onClose={() => {
-                back();
                 // Back to the chat it left; from a link straight to Settings, to the chat `#/` opens, by its own URL.
-                go(away.id === "home" && beneath === away && home !== null ? home : away);
+                back(away.id === "home" && beneath === away && home !== null ? home : away);
               }}
             />
           </Suspense>
@@ -501,10 +503,21 @@ function UpdatesOf({ hubs, on }: { hubs: readonly HubView[]; on: HubId }) {
  * Focus after Settings' Back: the sidebar control that opened it, if that is how it was opened; else the page title,
  * unless the screen gave focus to something itself (the chat's message box). Returns what Back calls first.
  */
-function useSettingsBack(inSettings: boolean): () => void {
+function useSettingsBack(inSettings: boolean): (to: Screen) => void {
   // The last element outside the sheet that had focus: by the time Settings shows, its opener has left the DOM, and
   // the sheet, preloaded, may have focused its search in the same commit.
   const last = useRef<Element | null>(null);
+  // The address Settings was opened from, when it was opened by a step of history (a push): closing it then steps
+  // back, rather than pushing that address again, so Back after closing doesn't open Settings once more.
+  const prior = useRef<string | null>(null);
+  const from = useRef<string | null>(null);
+  useEffect(() => {
+    const on = (e: HashChangeEvent) => {
+      prior.current = new URL(e.oldURL).hash;
+    };
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
   useEffect(() => {
     const on = (e: FocusEvent) => {
       if (e.target instanceof Element && e.target.closest('[data-sheet="settings"]') !== null) return;
@@ -516,9 +529,13 @@ function useSettingsBack(inSettings: boolean): () => void {
   // The sidebar control that opened it, by its data-opens; null when it was opened some other way.
   const fromSidebar = useRef<string | null>(null);
   const returning = useRef(false);
+  // What had focus before Settings, outside it: where focus goes back to, while it is still there.
+  const before = useRef<Element | null>(null);
   useEffect(() => {
     if (inSettings) {
       fromSidebar.current = last.current?.closest('[data-opens="settings"]')?.getAttribute("data-opens") ?? null;
+      before.current = last.current;
+      from.current = prior.current;
       return;
     }
     if (!returning.current) return;
@@ -532,15 +549,15 @@ function useSettingsBack(inSettings: boolean): () => void {
             (fromSidebar.current === "settings" ? document.querySelector<HTMLElement>('[data-opens="you"]') : null));
       if (opener) return opener.focus();
       if (document.activeElement !== null && document.activeElement !== document.body) return;
-      const title = document.querySelector<HTMLElement>("main h1, main h2");
-      if (title === null) return;
-      title.tabIndex = -1;
-      title.focus();
+      // What had focus before, else the chat's composer; never a heading, which drew a ring where nothing is to do.
+      const kept = before.current instanceof HTMLElement && before.current.isConnected ? before.current : null;
+      (kept ?? document.querySelector<HTMLElement>("main [data-composer] textarea"))?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
   }, [inSettings]);
-  return () => {
+  return (to: Screen) => {
     returning.current = true;
+    if (from.current !== null && from.current === hashFor(to)) window.history.back();
+    else navigate(to);
   };
 }
-

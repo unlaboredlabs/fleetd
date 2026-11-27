@@ -169,6 +169,16 @@ export const messageHref = (project: ProjectRef, messageId: string): string => t
 export const when = (iso: string): string =>
   new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
+/**
+ * "Next run Tue 20 Oct, 07:00", in this computer's time: with "your time" after it when the schedule above it reads in
+ * another zone ("At 09:00 … (Europe/Berlin)"), so the two lines don't seem to disagree. Nothing without a next run.
+ */
+export function nextRunLine(a: Pick<Automation, "nextRunAt" | "schedule">, here: string = localZone()): string | null {
+  if (a.nextRunAt === undefined) return null;
+  const zone = a.schedule?.tz.trim() ?? "";
+  return `Next run ${when(a.nextRunAt)}${zone !== "" && zone !== here ? " your time" : ""}`;
+}
+
 /** The line under a run: what a watcher said, why it was skipped or failed, how late a missed run was, a webhook body's size. */
 export function runNote(run: AutomationRun): string | null {
   if (run.said) return run.said;

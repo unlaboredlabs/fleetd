@@ -573,9 +573,13 @@
   text-align: center;
   user-select: none;
 }
+/* A long line wraps under itself with a hanging indent, so its continuation reads as one line, not the next one's
+   start at the code's left edge. */
 .code {
   min-width: 0;
   padding-right: var(--space-3);
+  padding-left: 4ch;
+  text-indent: -4ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

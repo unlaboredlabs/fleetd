@@ -25,7 +25,7 @@
   min-width: 0;
 }
 /* Over the chat, the banners float under the top row on glass: the conversation scrolls on under them, and the link
-   dropping or coming back never moves it. */
+   dropping or coming back never moves it. While one shows, the top row's fade stops at the row (layout.module.css). */
 .column[data-under] > .banners {
   position: absolute;
   z-index: 1;

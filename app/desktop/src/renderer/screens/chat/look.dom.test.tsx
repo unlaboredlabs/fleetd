@@ -285,3 +285,11 @@ it("skips the questions with Not needed, which tells the lead in plain words", a
   await settle();
   expect(sends).toEqual(["Not needed: skip that and go on without an answer."]);
 });
+
+it("puts Not needed inside an ask card, beside its own buttons, and nowhere under it", async () => {
+  const text = "Ready?\n\nX";
+  await mount([msg(1, { text, parts: [{ start: 0, end: 6 }, { start: 8, end: 9, block: { v: 1, kind: "ask", question: "Merge both?" } }] })], { needsYou: true });
+  const card = host.querySelector("[data-block=ask]");
+  expect([...(card?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(["Approve", "Deny", "Not needed, skip it"]);
+  expect([...host.querySelectorAll("button")].filter((b) => b.textContent === "Not needed, skip it")).toHaveLength(1);
+});

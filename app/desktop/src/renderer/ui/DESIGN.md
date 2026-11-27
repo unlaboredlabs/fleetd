@@ -5,13 +5,16 @@ breaks a rule changes this page in the same PR and says why.
 
 ## Layout and separation
 
-- **Spacing and type come first.** Rows are separated by space, never a line between them; groups by a quiet label
-  with room above it. The title is the row's one line in full voice. Everything under it is smaller and `--quiet`.
-  Rows that have ended (merged, closed, done) step back to `--quiet`. A line between every row reads as clutter.
+- **Spacing and type come first.** A list's rows (the sidebar's, the panel's) are separated by space, never a line
+  between them; groups by a quiet label with room above it. The title is the row's one line in full voice. Everything
+  under it is smaller and `--quiet`. Rows that have ended (merged, closed, done) step back to `--quiet`. A line between
+  every row of a list reads as clutter; Settings' groups are the one place rows have one (below).
 - **Settings are soft groups** (`screens/settings/parts.tsx`; every Settings page, and the Vault's, is built from these
   and has no row, line or card style of its own):
-  - a section is a quiet label in small mono capitals (`--label-*`) over **one group**: a `--group` fill inside one
-    `--group-edge` hairline, with `--radius-group` corners and no lines inside it (`SettingsSection`);
+  - a section is its label, 14 px semibold in the text colour, over **one group**: a `--group` fill inside one
+    `--group-edge` hairline, with `--radius-group` corners (`SettingsSection`); its rows read as a table's, one
+    `--hairline` between two, inset from the group's edges, never across the page (`groups.module.css`). A flow
+    inside a page (Add machine, an invite, Pair a phone) is built of the same groups, never loose rows;
   - a row is a title in regular weight and **one control at its right end** (`SettingsRow`); a row that holds a list
     or a form puts it under its title, full width;
   - **at rest a row is its title and its control; what explains it is its `hint`.** The hint shows under the title, in
@@ -30,19 +33,24 @@ breaks a rule changes this page in the same PR and says why.
     opens a page trails a chevron, and when all it has to say is that it needs someone, it says so with one dot at
     its end in the warning's colour, why in its tooltip (`needs`: a machine that is offline or wants a login), never
     a dot and a word;
-  - **add is a plus** (`AddButton`), at the end of its row or section label; a page whose list is the thing to add
-    to says it in words at its title (**Add machine**), and its empty list holds that button itself, never a line
-    pointing at a control elsewhere; **danger is one red pill**
+  - **add is a plus** (`AddButton`), at the end of its row or section label, a second way to add in the plus's menu,
+    so a row keeps one control; a page whose list is the thing to add to says it in words at its title (**Add
+    machine**, **Invite someone**), and its empty list holds that button itself, never a line pointing at a control
+    elsewhere; **danger is one red pill**
     (`DangerButton`, `--danger-fill`), and what it does is confirmed in a dialog;
   - **Save shows once there is something to save**, and a control that can't be used says why in its row's line;
-  - buttons and fields on a group are `--raised`; the column is 760 px, left-aligned under the page title.
+  - buttons and fields on a group are `--raised`; the page's column is 624 px, its title on the column's left edge.
 - **The panel has one row of navigation** (`screens/panel`): its tabs, and a list under them. No tab has tabs of its
   own: where a second row once chose between two views (agents or screens, pull requests or the merge line, this
   project or all), the list holds both, what is over or elsewhere folded at its end (`panel/folds.tsx`). A list takes at
   most one small control that changes what it lists, and only where that earns its place (History's filter). No
   sentence says what a tab or a group is: that is the tab's tooltip, which focus and a screen reader get too. A row is
-  its title and where it stands; an id, a branch or a repo is its tooltip's or the opened view's. An empty list is one
-  short line. Three stacked rows of switches read as menus to work through before the list (D439).
+  its title and where it stands; an id, a branch or a repo is its tooltip's or the opened view's. An empty list is the
+  app's one empty state (below). Three stacked rows of switches read as menus to work through before the list (D439).
+- **One empty state** (`EmptyState`), wherever a list, a tab or a page has nothing yet, and for an error in the same
+  place: centred a third of the way down, a mark (the list's open ring on a tile, or the bot), one headline, one quiet
+  line of what will show there (never only "nothing"), and at most the one action that gets out of it. The chat's own
+  empty state is the same column, the bot as its mark and the lead's question as its headline.
 - **Flush, not floating:** the window is three columns, sidebar, chat and panel, meeting at hairlines. No grey frame
   with rounded sheets set into it, no card around a column. What floats over the app (a dialog, the Settings sheet,
   the palette, the composer island, the top row's glass capsules) is the only thing with lift.
@@ -100,6 +108,12 @@ breaks a rule changes this page in the same PR and says why.
   on the middle of the line of words beside it (halfway between its x-height and cap height), within 1 px: a row's
   tile on its name's line, an end control on a one-line row's line. Desktop QA's `align` check measures it on every
   screen. A count is bare figures in `--faint` with tabular numerals, on the word's baseline at the same size. No pill.
+  A count of agents is the agents at work, the same number on the sidebar's row, the chat's band and the panel's tab;
+  the list under the tab has every agent.
+- **One clock:** a time of day is said as the person's own locale says it (`shared/clock.ts`), "9:02 AM" on a US Mac
+  and "09:02" on a British one, the same in the sidebar, the chat and every panel.
+- **Keys:** a list as long as a conversation is one Tab stop: ↑/↓ move through it, → reaches a row's own actions (a
+  bubble's reply and receipt), so Tab never walks every message on its way to the panel (`chat/keys.ts`).
 
 ## Motion
 

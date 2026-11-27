@@ -12,6 +12,11 @@
   align-items: center;
   gap: 6px;
 }
+/* The dots' row is set in by its ring (2 + 1.5 px), so a picked dot's ring ends on the control edge with the shapes'
+   squares, not past it. */
+.radios:has(> .swatch) {
+  padding-inline: 3.5px;
+}
 .swatch,
 .shape {
   flex: none;

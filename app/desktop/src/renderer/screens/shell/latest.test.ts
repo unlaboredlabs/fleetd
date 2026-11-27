@@ -33,6 +33,15 @@ describe("a chat's line", () => {
     expect(lineOf(message({ text, parts }))).toBe("Opened it. Pull request #12: Fix alerts");
   });
 
+  it("sets a block's title apart from the words after it, so the two never read as one sentence", () => {
+    const text = "XDiscounts changed on the cart page";
+    const parts = [
+      { start: 0, end: 1, block: { v: 1, kind: "checklist", title: "Receipts", items: [] } },
+      { start: 1, end: text.length },
+    ] as unknown as NonNullable<ChatMessage["parts"]>;
+    expect(lineOf(message({ text, parts }))).toBe("Receipts · Discounts changed on the cart page");
+  });
+
   it("says what an open item asks, and names a picture with no words", () => {
     expect(lineOf(message({ item: { kind: "command_approval" } as NonNullable<ChatMessage["item"]> }))).toBe("Asks for your approval");
     expect(lineOf(message({ author: "human", attachments: [{ attachmentId: "a", bytes: 1, mime: "image/png", name: "x.png" }] }))).toBe("Photo");

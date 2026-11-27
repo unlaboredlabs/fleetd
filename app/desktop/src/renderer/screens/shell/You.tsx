@@ -136,7 +136,8 @@ export function You({ go }: Pick<YouProps, "go">) {
           <MenuTrigger asChild>
             <button type="button" className={s.me} aria-label={said} data-opens="you">
               <span className={s.meAvatar}>
-                <Avatar name={name} size={24} src={picture} />
+                {/* Until the workspace says who you are, a plain circle: not a "Y" for You in a colour that then changes. */}
+                {me === undefined ? <span className={s.meBlank} /> : <Avatar name={name} size={24} src={picture} />}
                 {/* This app's update to take, going on or not taken: a small mark, its words in the tooltip and its row in the menu. */}
                 {app === null ? null : <span className={s.meMark} data-tone="update" aria-hidden />}
               </span>

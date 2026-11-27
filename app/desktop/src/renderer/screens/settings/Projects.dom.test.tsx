@@ -11,6 +11,7 @@ import { UiProvider } from "../../ui";
 import { Instructions } from "./Instructions";
 import { ProjectSettings } from "./Projects";
 import { sectionRead } from "./projectReads.test-util";
+import { chooseFromAdd } from "./rowMenu.testing";
 import { PROJECT_TOOLS } from "../projects/model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -307,7 +308,7 @@ describe("Settings → Bots", () => {
 
   it("sends a new secret only through main's sealing, never as a hub call", async () => {
     await render();
-    await click(button("Add variable"));
+    await chooseFromAdd("Add variable", "New variable…");
     const name = dialog().querySelector("input");
     if (name === null) throw new Error("no name field");
     await type(name, "DB_PASSWORD");
@@ -736,7 +737,7 @@ describe("Settings → Bots → Repos", () => {
 
   it("says a plain folder has no repo, in one line", async () => {
     await renderRepos();
-    expect(section().textContent).toContain("No repo, a plain folder.");
+    expect(section().textContent).toContain("No repo, a plain folder");
     expect(section().querySelector('[role="list"]')).toBeNull();
     expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
   });

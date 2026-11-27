@@ -4,7 +4,7 @@
 // folded. What you unfolded stays so while the app runs, per project.
 import { ChevronRight } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
-import { cx, StateGlyph } from "../../ui";
+import { cx, EmptyState } from "../../ui";
 import s from "./folds.module.css";
 
 const open = new Map<string, boolean>();
@@ -45,9 +45,10 @@ export function FoldLine({ label, count, open: isOpen, onToggle, end }: { label:
   return (
     <div className={s.group} data-group-label="">
       <button type="button" className={s.fold} aria-expanded={isOpen} onClick={onToggle}>
-        <ChevronRight aria-hidden className={cx(s.chevron, isOpen && s.chevronOpen)} />
         <span className={s.label}>{label}</span>
         {count !== undefined && count > 0 ? <span className={s.count}>{count}</span> : null}
+        {/* After the words, as History's Decisions line has it: every label in the panel starts on one edge. */}
+        <ChevronRight aria-hidden className={cx(s.chevron, isOpen && s.chevronOpen)} />
       </button>
       {end === undefined ? null : <span className={s.end}>{end}</span>}
     </div>
@@ -63,16 +64,16 @@ export function ListNote({ children }: { children: ReactNode }) {
   );
 }
 
-/** A tab with nothing in it: one short line in the middle of it, and at most the one thing to do about it. */
-export function PanelEmpty({ title, actions }: { title: string; actions?: ReactNode }) {
+/**
+ * A tab with nothing in it, as every empty state in the app (EmptyState): its headline, a line of what will show here,
+ * and at most the one thing to do about it.
+ */
+export function PanelEmpty({ title, line, actions }: { title: string; line?: string | undefined; actions?: ReactNode }) {
   return (
     <div className={s.empty} data-panel-empty="">
-      {/* The list's own mark for nothing yet, on a tile: the open ring, still. */}
-      <span className={s.emptyMark} aria-hidden>
-        <StateGlyph state="queued" still />
-      </span>
-      <h2 className={s.emptyTitle}>{title}</h2>
-      {actions === undefined ? null : <div className={s.emptyActions}>{actions}</div>}
+      <EmptyState title={title} actions={actions}>
+        {line}
+      </EmptyState>
     </div>
   );
 }

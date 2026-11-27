@@ -195,7 +195,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       else setJumped(jump);
     }
   }
-  const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
+  // A chat known to hold nothing (a bot just made: its state says no message yet) is empty before its first read too,
+  // not "Loading the conversation…" for one that can't have anything.
+  const empty = (view !== undefined && view.items.length === 0 && !view.hasOlder) || (view === undefined && lastSeq === 0);
   // Who a search's from: can name: the hub's people, and you.
   const who = useMemo(() => ({ people: [...names].map(([personId, name]) => ({ personId, name })), me }), [names, me]);
   const title = data.title ?? "";
@@ -466,8 +468,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       }
     >
       <FrameTitle
-        // A removed bot has no name or picture to show: no empty pill in the top row.
-        glass={!data.missing}
+        // A removed bot, or one whose name isn't known yet (offline, before the chat loads), has nothing to show: no
+        // empty pill in the top row.
+        glass={!data.missing && (title !== "" || summary !== undefined)}
         title={title || undefined}
         lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={20} own={bot} />}
         press={
@@ -522,6 +525,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               Retry
             </Button>
           </div>
+        ) : empty ? (
+          <EmptyChat project={project} title={title} pictured={summary} />
         ) : rows === undefined && offline ? (
           <div className={s.loading} role="status">
             <Text tone="quiet">Offline. The conversation shows once you’re connected.</Text>
@@ -530,8 +535,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <div className={s.loading}>
             <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
           </div>
-        ) : empty ? (
-          <EmptyChat project={project} title={title} pictured={summary} />
         ) : (
           <BubbleActionsContext.Provider value={actions}>
             <ChatList

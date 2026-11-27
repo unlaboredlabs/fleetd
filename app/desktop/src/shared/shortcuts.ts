@@ -46,17 +46,18 @@ export type ShortcutId = keyof typeof SHORTCUTS;
 export const isShortcutId = (id: string): id is ShortcutId => Object.hasOwn(SHORTCUTS, id);
 
 /**
- * Keys a focused component handles itself. They are listed so the sheet shows them; nothing dispatches them
- * globally. A chord ("Mod+K") is shown in the platform's form.
+ * Keys a focused component handles itself. They are listed so the sheet shows them, a `where` that is also a section
+ * of SHORTCUTS among that section's rows; nothing dispatches them globally. A chord ("Mod+K") is shown in the
+ * platform's form. Titles in the menus' Title Case, as SHORTCUTS'.
  */
 export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: readonly string[]; readonly title: string }[] = [
-  { where: "Command palette", keys: ["↑", "↓"], title: "Move the selection" },
-  { where: "Command palette", keys: ["Enter"], title: "Run it" },
-  { where: "Command palette", keys: ["Mod+K"], title: "Show its other actions" },
-  { where: "Command palette", keys: ["Esc", "Backspace"], title: "Back from the actions" },
-  { where: "Composer", keys: ["Mod+↩"], title: "Stop the agent’s current step and send now" },
-  { where: "Sidebar", keys: ["Alt+↑", "Alt+↓"], title: "Move the bot up or down" },
-  { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
+  { where: "Command Palette", keys: ["↑", "↓"], title: "Move the Selection" },
+  { where: "Command Palette", keys: ["Enter"], title: "Run It" },
+  { where: "Command Palette", keys: ["Mod+K"], title: "Show Its Other Actions" },
+  { where: "Command Palette", keys: ["Esc", "Backspace"], title: "Back From the Actions" },
+  { where: "Composer", keys: ["Mod+Enter"], title: "Stop the Agent’s Step and Send Now" },
+  { where: "Sidebar", keys: ["Alt+↑", "Alt+↓"], title: "Move the Bot Up or Down" },
+  { where: "Anywhere", keys: ["Esc"], title: "Close the Menu, Panel or Sheet" },
 ];
 
 /**

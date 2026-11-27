@@ -56,7 +56,8 @@ export function TurnLine({ chatKey, writing, still }: { chatKey: Key; writing: b
   // nothing then.
   const waking = wakeShown(wakeIn(state, chatKey, writing));
   const view = running && !waking ? turnView(writing ? { kind: "writing" } : activity, since, 0) : undefined;
-  const worked = over && held !== seen ? workedFor(ended.until - ended.since) : undefined;
+  // A turn under a second says nothing: "Worked for 0s" reads as nothing having happened.
+  const worked = over && held !== seen && ended.until - ended.since >= 1000 ? workedFor(ended.until - ended.since) : undefined;
   const glyph = view?.glyph;
   const now = view?.now;
   const want = useMemo((): Words | undefined => {

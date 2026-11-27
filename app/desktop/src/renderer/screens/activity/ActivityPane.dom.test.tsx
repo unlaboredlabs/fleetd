@@ -234,7 +234,7 @@ it("stops asking for an older page that keeps failing, and offers Retry", async 
 
 it("says when nothing has happened, and when the hub can't list activity", async () => {
   await mount(() => page([]));
-  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing has happened yet");
+  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing has happened yetWhat happens in this bot shows here as it happens.");
   act(() => root.unmount());
   root = createRoot(host);
   await mount(() => ({ ok: false, error: { code: "not_found", message: "No tool events_list." } }));

@@ -9,7 +9,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { InviteRequest } from "../../../shared/cloud";
 import type { AccountsInvite } from "../../../shared/contracts";
 import type { PairFailure } from "../../../shared/pairing";
-import { Button, Input, Radio, RadioGroup, Text } from "../../ui";
+import { Button, Input, Select, Text } from "../../ui";
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { useLive } from "../settings/hub";
 import { HintLines, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
@@ -53,19 +53,19 @@ export function useEmailInvites(enabled: boolean, peopleReadAt: number) {
   });
 }
 
-/** Invite by email, opened by People's plus. */
-export function EmailInviteSection() {
+/** Invite by email, opened from People's title; Cancel closes it. */
+export function EmailInviteSection({ onClose }: { onClose: () => void }) {
   const ref = useReveal<HTMLDivElement>("hub.invite");
   return (
     <div ref={ref}>
       <SettingsSection title="Invite by email" hint="fleetd emails them an invite. They join by signing in with that address; it works for 7 days.">
-        <EmailInviteForm />
+        <EmailInviteForm onCancel={onClose} />
       </SettingsSection>
     </div>
   );
 }
 
-function EmailInviteForm() {
+function EmailInviteForm({ onCancel }: { onCancel: () => void }) {
   const hub = useHub();
   const several = useSeveralHubs();
   const client = useQueryClient();
@@ -121,24 +121,27 @@ function EmailInviteForm() {
               placeholder="alex@example.com"
               autoComplete="off"
               spellCheck={false}
+              autoFocus
               onChange={(e) => {
                 setEmail(e.target.value);
                 if (line?.refused === true) setLine(null);
               }}
             />
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
             <Button type="submit" variant="primary" disabled={busy}>
               {busy ? "Inviting…" : several ? `Invite to ${hub.label}` : "Invite"}
             </Button>
           </span>
         }
       />
-      <SettingsRow title="Role" titleId="email-invite-role" hint={<HintLines lines={ROLES.map((r) => [roleWord(r), ROLE_HELP[r]] as const)} />}>
-        <RadioGroup value={role} onValueChange={(v) => setRole(v === "admin" ? "admin" : "member")} aria-labelledby="email-invite-role">
-          {ROLES.map((r) => (
-            <Radio key={r} value={r} label={roleWord(r)} />
-          ))}
-        </RadioGroup>
-      </SettingsRow>
+      {/* The same choice as each person's row, so a role is picked one way on the page. */}
+      <SettingsRow
+        title="Role"
+        hint={<HintLines lines={ROLES.map((r) => [roleWord(r), ROLE_HELP[r]] as const)} />}
+        control={<Select aria-label="Role" className={a.role} value={role} options={ROLES.map((r) => ({ value: r, label: roleWord(r) }))} onValueChange={(v) => setRole(v === "admin" ? "admin" : "member")} />}
+      />
     </form>
   );
 }
@@ -201,7 +204,7 @@ function EmailInviteRow({ invite: i }: { invite: AccountsInvite }) {
       }
     >
       <Text size="sm" tone="quiet">
-        {`${expiresLine(i.expiresAt, now)}.`}
+        {expiresLine(i.expiresAt, now)}
       </Text>
       {error === undefined ? null : (
         <p role="alert" className={s.alertLine}>

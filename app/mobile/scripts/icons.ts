@@ -18,6 +18,8 @@
 // - The favicons: tab.svg as site/icon.svg (fleetd.sh), docs/site/public/favicon.svg and the web app's
 //   public/favicon.svg, and the .ico of it (16, 32 and 48 px) for the web app and fleetd.sh.
 // - site/apple-touch-icon.png: fleetd.sh's home-screen icon, the iOS icon at 180 px.
+// - The web app's install icons in app/desktop/src/web/public/: icon-192.png and icon-512.png (the tile) and
+//   icon-maskable-512.png (the iOS icon, full bleed).
 // - docs/site/src/assets/icon.svg, the docs' logo: the small master, cropped to its tile.
 //
 //   npm run icons
@@ -152,5 +154,9 @@ for (const path of ["site/icon.svg", "docs/site/public/favicon.svg", "app/deskto
 const favicon = ico([16, 32, 48].map((size) => [size, png(tab, size)] as const));
 for (const path of ["site/favicon.ico", "app/desktop/src/web/public/favicon.ico"]) write(path, favicon);
 write("site/apple-touch-icon.png", opaquePng(master("ios-light"), 180));
+// The web app's install icons (its manifest.webmanifest): the tile, as the desktop app's, for a dock or a taskbar; and
+// the iOS icon, full bleed, as the "maskable" one a phone's launcher crops to its own shape.
+for (const size of [192, 512]) write(`app/desktop/src/web/public/icon-${String(size)}.png`, tile(size));
+write("app/desktop/src/web/public/icon-maskable-512.png", opaquePng(master("ios-light"), 512));
 // The docs' logo: the small master's tile, edge to edge.
 write("docs/site/src/assets/icon.svg", macSmall.replace(/ width="1024" height="1024" viewBox="0 0 1024 1024"/u, ' viewBox="100 100 824 824"'));

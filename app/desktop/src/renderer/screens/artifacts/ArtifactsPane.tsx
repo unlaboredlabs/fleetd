@@ -80,7 +80,7 @@ export function ArtifactsPane({ project }: { project: ProjectKey }) {
   if (rows.length === 0 && files.length === 0) {
     return (
       <div className={s.screen} data-screen="artifacts.empty">
-        <PanelEmpty title="No artifacts yet" />
+        <PanelEmpty title="No artifacts yet" line="The reports and files the lead shares show here." />
       </div>
     );
   }

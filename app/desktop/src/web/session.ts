@@ -146,12 +146,15 @@ export const untilListed = async (read: () => Promise<SessionRead>, wait: (ms: n
 /**
  * Where Sign in goes: WorkOS's page, then back to `back` (this page's path and route), only ever a path of this origin.
  * `signUp`: Make an account's, which asks WorkOS for its sign-up form (WorkOS's own name for it, screen_hint).
+ * `email`: the account whose session ended here (ended.ts), filled in on WorkOS's page (the cloud passes it on as
+ * login_hint).
  */
-export const signInPath = (back: string, signUp = false): string => {
+export const signInPath = (back: string, signUp = false, email?: string): string => {
   const path = back.startsWith("/") && !back.startsWith("//") ? back : "/";
   const q = new URLSearchParams();
   if (path !== "/") q.set("return", path);
   if (signUp) q.set("screen_hint", "sign-up");
+  if (email !== undefined && email !== "") q.set("email", email);
   const query = q.toString();
   return query === "" ? "/web/sign-in" : `/web/sign-in?${query}`;
 };
@@ -196,7 +199,9 @@ export const teamFromAddress = (address: { readonly search: string; readonly has
   const rest = params.toString();
   const search = rest === "" ? "" : `?${rest}`;
   const hub = hubs.get(team);
-  if (hub === undefined) return { search, hash: address.hash };
+  // With one team its hub is the only one: the address names none, as a single-hub app's routes never do, rather than
+  // keep an id in it (Stripe's way back to Billing).
+  if (hub === undefined || hubs.size < 2) return { search, hash: address.hash };
   return { search, hash: toHash({ ...parseHash(address.hash), at: hub }) };
 };
 

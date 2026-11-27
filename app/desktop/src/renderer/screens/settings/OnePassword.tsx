@@ -44,7 +44,7 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
   const list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
   return {
     ok: false,
-    short: `Reads ${list}: it should read only fleetd's vault. Replace it with a service account that does.`,
+    short: `Reads ${list}, more than fleetd's vault. Use a service account limited to it.`,
     text: `Reads ${list} (${at}): an agent on a machine holding it could read every item in each. Make a service account that reads only fleetd's vault, paste its token here, and revoke this one in 1Password.`,
   };
 }

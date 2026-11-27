@@ -4,7 +4,7 @@
 // your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, proposal, requestWhat, rowSay, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary, type RowLine, type Waiting } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, proposal, requestWhat, rowSay, shellWord, tilde, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectChatState, type ProjectSummary, type RowLine, type Waiting } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -315,7 +315,10 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     // The reason is what a person approves on; the exact command, a shell blob as often as not, is one tap away.
     const words = r.gated.argv.map(shellWord);
     add("Command", words.join(" "), { mono: true, words, lines: true, more: true });
-    add("In", r.gated.cwd, { mono: true });
+    // The folder from its owner's home, and the machine, which the hub's own sentence (Asked) is otherwise the only
+    // one to say: that sentence repeats Why and In, so a command's card leaves it out.
+    add("In", r.gated.cwd === undefined ? undefined : tilde(r.gated.cwd), { mono: true });
+    add("On", r.projectRef.machineId);
     add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)));
   } else if (preview !== undefined) {
     // The hub words it to follow "<the project> wants to": "Use create_page on docs".

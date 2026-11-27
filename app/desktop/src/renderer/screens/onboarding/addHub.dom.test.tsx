@@ -109,7 +109,7 @@ it("Add a hub, while connected, opens the pairing form with a name and colour, a
   expect(screen()).toBe("onboarding");
   expect(host.querySelector("h1")?.textContent).toBe("Add a workspace");
   expect(host.textContent).toContain("Pairing code");
-  expect(host.querySelector('[role="radiogroup"][aria-label="Colour"]')).not.toBeNull();
+  expect(host.querySelector('[role="radiogroup"][aria-label="Color"]')).not.toBeNull();
   expect(forget).not.toHaveBeenCalled();
 });
 

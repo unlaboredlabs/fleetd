@@ -45,14 +45,14 @@ const openProviders = () => navigate({ id: "settings", tab: "hub.providers" });
  * A profile picker's options: the profiles by provider (one claude refused can't be picked, and says why), then Add
  * profile…, which a member sees greyed, with who makes one and where.
  */
-function profileOptions(view: ProfilesListOutput, admin: boolean, cloud: boolean, more: (p: Profile) => string = () => "") {
+function profileOptions(view: ProfilesListOutput, admin: boolean, cloud: boolean) {
   return [
     ...byProviderOf(view.profiles).map(({ profile: p, group }) => ({
       value: p.name,
       label: (
         <>
-          <Text mono>{p.name}</Text>
-          <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}${more(p)}`}</Text>
+          <Text>{p.name}</Text>
+          <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}`}</Text>
         </>
       ),
       textValue: p.name,
@@ -203,7 +203,9 @@ function ProfilePick({ view, kind, reveal, onDone }: { view: ProfilesListOutput;
           aria-label={words.title}
           value={current?.name ?? ""}
           disabled={busy}
-          options={profileOptions(view, true, cloud, (p) => (kind === "lead" && p.default ? " · default" : ""))}
+          // One width for both picks, so the two rows' controls start on one edge.
+          className={s.profilePick}
+          options={profileOptions(view, true, cloud)}
           onValueChange={pick}
         />
       }
@@ -214,7 +216,7 @@ function ProfilePick({ view, kind, reveal, onDone }: { view: ProfilesListOutput;
 function ProfileRow({ profile: p, lead, models, unusable, onEdit }: { profile: Profile; lead: boolean; models: ReadonlyArray<ProfileModel>; unusable: string | undefined; onEdit: () => void }) {
   return (
     <SettingsListRow
-      name={<Text mono>{p.name}</Text>}
+      name={<Text>{p.name}</Text>}
       label={p.name}
       data={{ "data-profile": p.name, ...(unusable === undefined ? {} : { "data-unusable": "" }) }}
       meta={[p.default ? "default" : null, lead ? "lead" : null].filter((w) => w !== null).join(" · ") || undefined}
@@ -271,7 +273,7 @@ function ProfileForm({ view, provider, saved, onDone }: { view: ProfilesListOutp
   return (
     <SettingsRow title={label}>
       <Field label="Name" description="The word the lead names it by: lowercase, no spaces." error={draft.name !== "" && wrong?.field === "name" ? wrong.text : undefined}>
-        <Input mono value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+        <Input value={draft.name} onChange={(e) => set({ name: e.target.value })} />
       </Field>
       <Field label="Use for" description="One line: the work the lead should run on it." error={wrong?.field === "note" ? wrong.text : undefined}>
         <Input value={draft.note} maxLength={NOTE_MAX} onChange={(e) => set({ note: e.target.value })} />
@@ -391,7 +393,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
           key={p.id}
           title={
             <span className={s.titleMeta}>
-              <Text mono>{p.name}</Text>
+              <Text>{p.name}</Text>
               <Text size="sm" tone="quiet">
                 {runsLine(view.models, p)}
               </Text>

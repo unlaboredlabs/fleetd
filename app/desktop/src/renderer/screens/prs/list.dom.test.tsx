@@ -129,7 +129,7 @@ it("still offers older PRs under a list with nothing open, since they may hold i
 
 it("is one short line while there are no PRs at all", async () => {
   await mount([]);
-  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("No pull requests yet");
+  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("No pull requests yetThe pull requests the agents open show here.");
   expect(host.querySelector("button")).toBeNull();
 });
 

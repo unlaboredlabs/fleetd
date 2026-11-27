@@ -189,16 +189,21 @@ ol {
   background: color-mix(in srgb, var(--focus) 24%, transparent);
 }
 
-/* Thin, quiet scrollbars that match the theme (Chromium). */
+/* Thin, quiet scrollbars that match the theme (Chromium), seen only while their list scrolls (data-scrolling) or the
+   pointer is on it, as macOS's overlay scrollbars are. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 18%, transparent);
+  background: transparent;
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
+}
+:hover::-webkit-scrollbar-thumb,
+[data-scrolling]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text) 18%, transparent);
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--text) 30%, transparent);
