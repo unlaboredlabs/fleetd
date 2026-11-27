@@ -6,7 +6,7 @@
 //
 // Merge order (`after`): a Change whose `after` PRs haven't all merged waits in line, held "waiting on" the first of
 // them. A PR stacked on a writer's open PR gets that PR in its `after` by itself (`stack`); one based on a branch that
-// landed goes into that branch's base (`restack`).
+// landed goes into that branch's base (restack.ts).
 import type { Change, ProjectRef } from "../../shared/contracts.ts";
 import { prNote } from "./events.ts";
 import { type CheckRun, GhError, jobOf, NEXT_LABEL, type Pull, workflowRun } from "./github.ts";
@@ -392,26 +392,6 @@ export async function stack(t: Train, change: Change, pull: Pull): Promise<Chang
     }
   }
   return addAfter(t, change, under);
-}
-
-/** A Change whose PR is based on a branch that already landed: its PR is pointed at that PR's base. Whether it was. */
-export async function restack(t: Train, change: Change, pull: Pull): Promise<boolean> {
-  const repo = change.repo;
-  const base = pull.base.ref;
-  if (base === (await defaultBase(t, repo))) return false;
-  const closed = await t.github.pullsFor(repo, base, "closed");
-  const landed = closed[0];
-  if (!landed || !(landed.merged_at != null || t.records.latestFor(repo, landed.number)?.state === "merged")) return false;
-  const url = `https://github.com/${repo}/pull/${landed.number}`;
-  const prefix = await t.host.branchPrefix(change.projectRef);
-  if (!(change.after ?? []).includes(url) && !(prefix !== undefined && landed.head.ref.startsWith(prefix))) return false;
-  const tip = await t.github.branchSha(repo, base);
-  if (tip.toLowerCase() !== landed.head.sha.toLowerCase()) return false;
-  const onto = landed.base.ref;
-  await t.github.editPull(repo, change.prNumber, [["base", onto]]);
-  console.info(`train: ${change.changeId}'s PR on a landed branch ${base} pointed at its base ${onto}`);
-  t.update(change.changeId, ["ready"], (c) => ({ ...c, lastError: errorText(`its base ${base} landed in #${landed.number}, so it now goes into ${onto}`) }));
-  return true;
 }
 
 /** The repo's default branch, read once. */

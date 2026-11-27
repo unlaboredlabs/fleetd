@@ -11,6 +11,7 @@ import * as person from "./person.ts";
 import { fixesFirst, fixesRed } from "./red_fix.ts";
 import { DRAFT, errorText, WAIT_OWN_RED } from "./records.ts";
 import { conflicted, earlyMigration, REGENERATING } from "./regen.ts";
+import { restack } from "./restack.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Between, Train } from "./service.ts";
 import { rerunStale } from "./stale.ts";
@@ -304,13 +305,8 @@ export async function candidates(t: Train, repo: string, ready: Change[]): Promi
     if (hold === PEOPLE || hold === HELD || hold === person.APPROVAL) await person.waits(t, change, pull, hold);
     if (hold !== undefined) continue;
     // Stacked on a PR's branch: once that PR merged, it goes into its base, never into the landed branch.
-    try {
-      if (await next.restack(t, change, pull)) {
-        settled = true;
-        continue;
-      }
-    } catch (error) {
-      readyError(t, change, (error as Error).message);
+    if (await restack(t, change, pull)) {
+      settled = true;
       continue;
     }
     // Regenerated first, or still being regenerated: its new head comes through as a push.

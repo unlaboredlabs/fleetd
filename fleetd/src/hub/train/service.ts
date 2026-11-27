@@ -28,6 +28,7 @@ import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
 import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, TERMINAL_STATES, WAIT_BACK, WAIT_BLOCKED, WAIT_OWN_RED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
+import { restack, waitsBelow } from "./restack.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
 import * as reverts from "./reverts.ts";
 import {
@@ -1713,8 +1714,13 @@ export class Train {
           this.warnHourly([`train: the close of ${change.changeId}'s PR not read`], ghMessage(error), `train: the close of ${change.changeId}'s PR not read: ${ghMessage(error)}`);
         });
       }
+      // On a branch that landed: pointed at its base and rebased onto it first, never bounced for the old branch's conflict.
+      else if (await restack(this, change, pull)) continue;
       else if (change.state === "queued" && pull.draft) this.holdDraft(change);
-      else if (inLine && conflicts(pull)) await conflicted(this, change, pull, `conflicts with ${pull.base.ref}, so GitHub runs no CI on it`);
+      else if (inLine && conflicts(pull)) {
+        // On the branch of a PR it waits on, which the train rebased: it moves onto that one's base once it lands.
+        if (!(await waitsBelow(this, change, pull))) await conflicted(this, change, pull, `conflicts with ${pull.base.ref}, so GitHub runs no CI on it`);
+      }
       else if (change.state === "ready") {
         // The train takes it from here, and reads a moved head then.
         if (inLine) await this.unstartedChecks(change, pull.base.ref);

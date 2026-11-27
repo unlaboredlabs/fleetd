@@ -760,6 +760,19 @@ export class TrainGitHub {
     return r.object.sha.toLowerCase();
   }
 
+  /** Where `branch` points now; undefined when it is gone. */
+  async branchTip(repo: string, branch: string): Promise<string | undefined> {
+    const path = `repos/${repo}/git/ref/heads/${branch}`;
+    const r = await this.call("GET", path);
+    if (!r.ok) {
+      if (r.status === 404) return undefined;
+      throw TrainGitHub.failed(path, r.status, r.message);
+    }
+    const sha = (r.value as { object?: { sha?: unknown } } | null)?.object?.sha;
+    if (typeof sha !== "string") throw GhError.failed(`gh api ${path} returned an unexpected shape`);
+    return sha.toLowerCase();
+  }
+
   async createBranch(repo: string, branch: string, sha: string): Promise<void> {
     await this.json("POST", `repos/${repo}/git/refs`, [
       ["ref", `refs/heads/${branch}`],
