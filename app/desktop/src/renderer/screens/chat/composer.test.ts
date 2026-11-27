@@ -142,6 +142,25 @@ describe("a bot's draft", () => {
     expect(done?.attached.map((a) => [a.name, a.file])).toEqual([["notes.txt", undefined]]);
   });
 
+  it("keeps a picture's square through Try again, uploading and done", async () => {
+    let fail = true;
+    const d = createDrafts(
+      layer(() => (fail ? Promise.resolve({ ok: false, error: { code: "unavailable", message: "The workspace's file store didn't answer." } }) : Promise.resolve({ ok: true, output: { attachmentId: "att-3", bytes: 3, sha256: "x" } }))),
+    );
+    const picture = new File(["png"], "shot.png", { type: "image/png" });
+    d.attach("devbox/api", [picture]);
+    await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached[0]?.upload?.ok).toBe(false));
+    // Its square, as the composer draws it once the picture decodes (no canvas here).
+    const thumb = { src: "data:image/png;base64,AA==", picture };
+    d.set("devbox/api", (x) => ({ ...x, attached: x.attached.map((a) => ({ ...a, thumb })) }));
+    fail = false;
+    d.retry("devbox/api", d.store.getState()["devbox/api"]?.attached[0]?.local ?? -1);
+    expect(d.store.getState()["devbox/api"]?.attached[0]).toMatchObject({ name: "shot.png", thumb });
+    expect(d.store.getState()["devbox/api"]?.attached[0]?.upload).toBeUndefined();
+    await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached[0]?.upload?.ok).toBe(true));
+    expect(d.store.getState()["devbox/api"]?.attached[0]?.thumb).toEqual(thumb);
+  });
+
   it("takes back a message that didn't go with its files, after words already in the box", () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
     d.set("devbox/api", (x) => ({ ...x, text: "and also" }));

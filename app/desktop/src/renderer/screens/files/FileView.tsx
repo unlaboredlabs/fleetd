@@ -13,6 +13,7 @@ import { onWeb } from "../../src/web";
 import { Button, Markdown, Text, toast, Tooltip } from "../../ui";
 import { fmtBytes } from "../chat/attachments";
 import { GLYPHS } from "../chat/blocks/FileCard";
+import { usePicture } from "../chat/picture";
 import type { ProjectKey } from "../shell/routes";
 import { parseDelimited, type Rows } from "./csv";
 import { JsonTree } from "./JsonTree";
@@ -116,6 +117,8 @@ export function FileView({ project, attachmentId }: { project: ProjectKey; attac
   }, [source]);
 
   const [busy, setBusy] = useState(false);
+  // Download, straight to the Downloads folder, as a picture's does (a PDF that can't be shown offers it).
+  const file = usePicture(ref, { attachmentId, name: head === undefined || "error" in head ? undefined : head.name });
   const act = async (what: "open" | "save") => {
     if (busy || head === undefined || "error" in head) return;
     setBusy(true);
@@ -189,7 +192,7 @@ export function FileView({ project, attachmentId }: { project: ProjectKey; attac
       </div>
     );
   }
-  if (show.as === "pdf") body = <PdfView source={source} size={head.size} first={head.first} />;
+  if (show.as === "pdf") body = <PdfView source={source} size={head.size} first={head.first} onDownload={() => void file.download()} onOpenInApp={web ? undefined : () => void act("open")} />;
   else if (show.as === "image") body = <Picture project={ref} attachmentId={attachmentId} name={head.name} />;
   else if (show.as === "app")
     body = (
