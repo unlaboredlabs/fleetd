@@ -59,9 +59,37 @@ test("every download into an image is checked against its pinned SHA-256, and ap
   }
   expect(DOCKERFILE).toMatch(/URIs: https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\d{8}T\d{6}Z\//u);
   // The sources the base image came with go before the first apt-get update reads the archive.
-  const first = DOCKERFILE.indexOf("&& apt-get update && apt-get install");
+  const first = DOCKERFILE.indexOf("&& apt-get update && tries apt-get install");
+  expect(first).toBeGreaterThan(0);
   expect(DOCKERFILE.indexOf("rm -f /etc/apt/sources.list.d/")).toBeLessThan(first);
   expect(DOCKERFILE.indexOf("snapshot.ubuntu.com")).toBeLessThan(first);
+});
+
+// The mirror served a broken .deb on 2026-11-27 (a hash mismatch, which apt never retries itself) and sank the build.
+test("every apt install is tried up to 3 times, and the last try's own error fails the step", () => {
+  const runs = DOCKERFILE.replace(/\\\n/gu, " ").split("\n").filter((l) => l.startsWith("RUN "));
+  const installs = runs.filter((l) => /apt-get install|install-deps/u.test(l));
+  expect(installs).toHaveLength(3);
+  const tries = /^RUN (tries\(\) \{.*?done; \})/u.exec(installs[0]!)?.[1];
+  expect(tries).toContain("for t in 1 2 3;");
+  for (const l of installs) {
+    expect(l.startsWith(`RUN ${tries} `)).toBe(true);
+    expect(l.replace(/tries (apt-get install|node \S+ install-deps)/gu, "")).not.toMatch(/apt-get install|install-deps/u);
+  }
+  // Run as the build runs a step (bash -c with set -e at fleetd's computers, sh -c in Docker), with no pause.
+  const step = (shell: string, rest: string) => {
+    const r = Bun.spawnSync([shell, "-c", `set -e; cd / && ${tries!.replace("sleep 15", "sleep 0")} && ${rest}`]);
+    return { code: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString().trim().split("\n") };
+  };
+  for (const shell of ["bash", "sh"]) {
+    const flaky = step(shell, `n=0 && flaky() { n=$((n + 1)); [ "$n" -ge 3 ]; } && tries flaky && echo "in after $n"`);
+    expect(flaky).toEqual({ code: 0, out: "in after 3\n", err: [1, 2].map((t) => `fleetd: an apt install failed (try ${t} of 3), trying again in 15 s`) });
+    const broken = step(shell, `tries sh -c 'echo "E: Unable to fetch some archives" >&2; exit 100' && echo past`);
+    expect(broken.code).toBe(100);
+    expect(broken.out).toBe("");
+    expect(broken.err).toHaveLength(5);
+    expect(broken.err.at(-1)).toBe("E: Unable to fetch some archives");
+  }
 });
 
 // scripts/check.sh desktop and site, which every writer runs before a push, pass in a box as on its machine.

@@ -15,10 +15,14 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 # What agents reach for on a plain Linux machine: git and gh, a C toolchain (native modules, cargo's linker), the
 # usual unpackers and network tools, `ss` and `script` (some of fleetd's own tests run them), and tini and socat for
 # the init.
-RUN { [ -s /etc/ssl/certs/ca-certificates.crt ] || { apt-get update && apt-get install -y --no-install-recommends ca-certificates; }; } \
+# Each apt install is tried up to 3 times (`tries`, in every step that installs): a .deb the mirror serves broken fails
+# its hash check, which apt doesn't retry itself; it sets the bad file aside (partial/*.FAILED) and fetches it afresh.
+# The last try's own error and exit code are what a failed build shows.
+RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return "$s"; echo "fleetd: an apt install failed (try $t of 3), trying again in 15 s" >&2; sleep 15; done; } \
+ && { [ -s /etc/ssl/certs/ca-certificates.crt ] || { apt-get update && tries apt-get install -y --no-install-recommends ca-certificates; }; } \
  && rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources && : > /etc/apt/sources.list \
  && printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' > /etc/apt/sources.list.d/ubuntu.sources \
- && apt-get update && apt-get install -y --no-install-recommends \
+ && apt-get update && tries apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl file git git-lfs gnupg iproute2 iputils-ping jq less locales make \
       netcat-openbsd openssh-client patch pkg-config procps python3 python3-venv ripgrep rsync socat sqlite3 sudo \
       tini tzdata unzip util-linux wget xz-utils zip zstd \
@@ -53,7 +57,8 @@ ENV CHROME=/usr/local/bin/chrome-headless-shell
 # binary (@pnpm/exe.linux-x64), Yarn 1 has no dependencies, and Playwright's builds (its 1.64.1 browsers.json:
 # chromium-headless-shell 1248 at Chrome for Testing 156.0.8078.4, ffmpeg 1013) are unpacked where its installer puts
 # them; only its own list of the system libraries they need runs (`install-deps`, from the archive above).
-RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz \
+RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return "$s"; echo "fleetd: an apt install failed (try $t of 3), trying again in 15 s" >&2; sleep 15; done; } \
+ && curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz \
  && echo "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb  /tmp/node.txz" | sha256sum -c - \
  && mkdir -p /opt/node /tmp/pw && tar -xJf /tmp/node.txz -C /opt/node --strip-components=1 \
  && ln -sf /opt/node/bin/node /usr/local/bin/node \
@@ -79,7 +84,7 @@ RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-l
  && unzip -q /tmp/pw/shell.zip -d /opt/ms-playwright/chromium_headless_shell-1248 \
  && unzip -q /tmp/pw/ffmpeg.zip -d /opt/ms-playwright/ffmpeg-1013 \
  && touch /opt/ms-playwright/chromium_headless_shell-1248/INSTALLATION_COMPLETE /opt/ms-playwright/ffmpeg-1013/INSTALLATION_COMPLETE \
- && node /tmp/pw/core/cli.js install-deps chromium-headless-shell ffmpeg \
+ && tries node /tmp/pw/core/cli.js install-deps chromium-headless-shell ffmpeg \
  && ln -s /opt/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME" \
  && chmod -R a+rX /opt/ms-playwright /opt/node \
  && cd / && rm -rf /tmp/pw /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
@@ -91,7 +96,8 @@ RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-l
 # GTK 3, which Electron links even headless (app/desktop's engine tests start it), with dbus-x11 as the session bus
 # dconf asks for, which keeps systemd out. Its icon themes go: nothing headless draws them, and they're most of its size.
 # Xvfb, openbox and xterm: a hosted agent's Linux desktop runs in its box (fleetd/src/node/place/box_screens.ts).
-RUN apt-get update && apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 openbox xterm xvfb \
+RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return "$s"; echo "fleetd: an apt install failed (try $t of 3), trying again in 15 s" >&2; sleep 15; done; } \
+ && apt-get update && tries apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 openbox xterm xvfb \
  && rm -rf /usr/share/icons/* /var/lib/apt/lists/*
 
 # An ffmpeg with x264 at the node's own pin (fleetd/src/node/device/pins.ts): a desktop's live view and video are
