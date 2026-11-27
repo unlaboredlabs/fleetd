@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { callerUnit, HELD, install, machineCpus, machineHere, memoryLeft, parseCpuList, quotaArgs, slotShare, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
+import { callerUnit, HELD, install, machineCpus, machineHere, memoryLeft, parseCpuList, quotaArgs, reservedCpus, slotShare, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
 
 const SRC = join(import.meta.dir, "../../src/main.ts");
 const ROOT = join(import.meta.dir, "../../..");
@@ -15,17 +15,20 @@ describe("how many", () => {
   const GB = 2 ** 30;
   // Linux's default ephemeral range, 32768–60999.
   const LINUX_PORTS = 28_232;
-  test("the fewest of cores left after builds, memory and ports, at least 1", () => {
-    // The devbox: 32 cores, 60 GB (59.5 reported), 3 build slots of 2 jobs, 4 test workers. Cores: (32 − 6) / 4 = 6;
-    // memory: 60 / 8 = 7; ports: 28,232 / 4,000 = 7.
-    expect(slotsFit({ cores: 32, buildSlots: 3, buildJobs: 2, testWorkers: 4, memTotal: 59.5 * GB, ports: LINUX_PORTS })).toBe(6);
+  test("the fewest of the cores past one in eight, memory and ports, at least 1", () => {
+    // The devbox: 32 cores, 60 GB (59.5 reported), 4 test workers. Cores: (32 − 4) / 4 = 7; memory: 60 / 8 = 7; ports:
+    // 28,232 / 4,000 = 7. Before: (32 − 3 build slots × 2 jobs) / 4 = 6, and with every slot held 10 to 14 cores idle.
+    expect(reservedCpus(32)).toBe(4);
+    expect(slotsFit({ cores: 32, buildSlots: 3, buildJobs: 2, testWorkers: 4, memTotal: 59.5 * GB, ports: LINUX_PORTS })).toBe(7);
+    // 24 cores, 64 GB: (24 − 3) / 4 = 5.
+    expect(slotsFit({ cores: 24, buildSlots: 4, buildJobs: 2, testWorkers: 4, memTotal: 64 * GB, ports: LINUX_PORTS })).toBe(5);
     // Memory: 16 cores, 16 GB: cores (16 − 2) / 4 = 3, memory 2.
     expect(slotsFit({ cores: 16, buildSlots: 1, buildJobs: 2, testWorkers: 4, memTotal: 16 * GB, ports: LINUX_PORTS })).toBe(2);
     // Ports: 128 cores, 512 GB, macOS's 16,384 ephemeral ports: 4.
     expect(slotsFit({ cores: 128, buildSlots: 8, buildJobs: 2, testWorkers: 4, memTotal: 512 * GB, ports: 16_384 })).toBe(4);
-    // A laptop the builds fill: 4 cores, 8 GB, 1 build slot of 4 jobs: none left, still 1.
+    // A 4-core laptop: (4 − 1) / 4 = 0, still 1.
     expect(slotsFit({ cores: 4, buildSlots: 1, buildJobs: 4, testWorkers: 4, memTotal: 8 * GB, ports: LINUX_PORTS })).toBe(1);
-    // Unknown memory doesn't limit it.
+    // Unknown memory doesn't limit it: 64 cores, (64 − 8) / 4 = 14, ports 7.
     expect(slotsFit({ cores: 64, buildSlots: 2, buildJobs: 2, testWorkers: 4, memTotal: undefined, ports: LINUX_PORTS })).toBe(7);
   });
   test("this machine's figures", () => {
@@ -207,14 +210,14 @@ describe("the slots", () => {
 });
 
 describe("each slot's share of the CPUs", () => {
-  test("past the build slots' jobs, an equal share each, at least one", () => {
-    // The devbox: 32 CPUs, 3 build slots of 2 jobs, 6 slots: 4 each, 24 in all.
-    expect(slotShare(32, 6, 6)).toBe(4);
-    // Fewer slots (memory fits fewer), each gets more: 16 CPUs, 2 build jobs, 2 slots.
+  test("past the reserve, an equal share each, at least one", () => {
+    // The devbox: 32 CPUs, 4 kept back, 7 slots: 4 each, 28 in all.
+    expect(slotShare(32, reservedCpus(32), 7)).toBe(4);
+    // Fewer slots (memory fits fewer), each gets more: 16 CPUs, 2 kept back, 2 slots.
     expect(slotShare(16, 2, 2)).toBe(7);
     // Slots set past the CPUs (node.json): one each.
     expect(slotShare(8, 6, 3)).toBe(1);
-    // Builds that fill the machine leave the slots every CPU.
+    // A reserve of the whole machine leaves the slots every CPU.
     expect(slotShare(4, 4, 1)).toBe(4);
   });
   test("Linux's CPU lists", () => {
@@ -281,7 +284,7 @@ describe("each slot's share of the CPUs", () => {
     m.release("a");
     expect(await a.proc.exited).toBe(0);
     const here = machineHere(m.home);
-    const share = slotShare(here.cores, here.buildSlots * here.buildJobs, 2);
+    const share = slotShare(here.cores, reservedCpus(here.cores), 2);
     const [quota, period, cpus] = readFileSync(join(m.home, "cpus"), "utf8").trim().split(" ");
     expect(Number(quota) / Number(period)).toBe(share);
     // The wrapper narrows no run's CPUs: it has every one its caller has.
