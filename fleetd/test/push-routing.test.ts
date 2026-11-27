@@ -183,7 +183,7 @@ test("removing a person hands what waited on them to the owner, and forgets thei
   expect(chat(hub).bySource(r, `item:${request.requestId}`)?.for).toEqual(sam);
   expect(chat(hub).page(r, undefined, undefined, 50).messages.find((m) => m.messageId === question.messageId)?.for).toEqual(sam);
   expect(chat(hub).state(r, false)).toMatchObject({ needsYou: true, needsYouFor: [sam.personId], openItems: [{ for: sam.personId }] });
-  expect(chat(hub).page(r, undefined, undefined, 50).messages.at(-1)?.text).toBe(`Dana Park was removed from the workspace, so what waited on them waits on ${sam.name} now.`);
+  expect(chat(hub).page(r, undefined, undefined, 50).messages.at(-1)?.text).toBe(`[Dana Park](person:${dana.personId}) was removed from the workspace, so what waited on them waits on [${sam.name}](person:${sam.personId}) now.`);
   expect(accounts(hub).subscription(dana.personId)).toBeUndefined();
   // A new card of her order goes to the owner too.
   const later = approvals(hub).create({
