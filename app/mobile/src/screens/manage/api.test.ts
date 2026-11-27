@@ -81,7 +81,8 @@ describe("A bot's screen", () => {
     const { hub, session, calls } = setup();
     const info = readInfo(session, SHOP, NOW, { skills: true, dms: true });
     const projectRef = REF;
-    expect(calls("agents_list").at(-1)?.input).toEqual({ projectRef });
+    // Those that ended in the last day too, each opening its record.
+    expect(calls("agents_list").at(-1)?.input).toEqual({ projectRef, endedSince: new Date(NOW - 86_400_000).toISOString() });
     expect(calls("checklist_get").at(-1)?.input).toEqual({ projectRef });
     expect(calls("orders_board").at(-1)?.input).toEqual({ projectRef });
     expect(calls("pr_list").at(-1)?.input).toEqual({ projectRef, closedSince: "2026-10-14T10:00:00.000Z" });

@@ -151,6 +151,8 @@ export type ChatInfoParams = {
   /** Its setup commands and the image its agents' computers start from, each repo's (Computer.tsx), and a failed build's log. */
   Computer: { key: Key };
   ComputerLog: { log: string };
+  /** One of its agents (screens/agent): at work, or once it ended, the record the workspace kept of it. */
+  Agent: { key: Key; laneId: string; taskId?: string | undefined; title: string };
 } & VaultParams;
 /**
  * The Vault's screens (screens/vault), in Settings for the team's logins, cards and addresses, and in a project's

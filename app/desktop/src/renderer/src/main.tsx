@@ -1,6 +1,5 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { sendKept } from "../screens/checklist/removal";
 import { addLaterFonts, afterShown, applySeeThrough, applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
 import { onWeb } from "./web";
 import { App } from "./App";
@@ -45,8 +44,12 @@ try {
 } catch {
   // Storage off: there is nothing kept to clear.
 }
-// Checklist removals the last run quit before sending, each to its own hub.
-sendKept((hub) => hubs.getState().hubs.find((h) => h.id === hub)?.layer);
+// Checklist removals the last run quit before sending, each to its own hub: a chunk of its own, the web's once the first
+// chat has shown, so it never shares its first load.
+const sendKeptRemovals = () =>
+  void import("../screens/checklist/removal").then((m) => m.sendKept((hub) => hubs.getState().hubs.find((h) => h.id === hub)?.layer));
+if (onWeb()) afterShown(sendKeptRemovals);
+else sendKeptRemovals();
 
 // The chat's messages are markdown. On the desktop its parser loads alongside the first render and the hub's first data
 // (from disk, at once), asked for before the render so it is handled first. On the web it loads once the first chat

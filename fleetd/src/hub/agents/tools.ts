@@ -6,6 +6,9 @@ import type { Registry } from "../api/registry.ts";
 import { executors } from "../executor/index.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { isoMs } from "../store/time.ts";
+import { ENDED_STATES, TaskRecords } from "../tasks/records.ts";
+import { keptPage } from "../tasks/kept_rules.ts";
+import { KeptSteps } from "../tasks/steps_kept.ts";
 import { AGENTS_MAX, rows } from "./index.ts";
 import { cursorOf, fitPage, parseCursor, stepOf, WORK_PAGE_MAX_BYTES } from "./paging.ts";
 
@@ -28,7 +31,6 @@ export { cursorOf, fitPage, parseCursor, stepOf, WORK_PAGE_MAX_BYTES } from "./p
 export function registerWork(tools: Registry): void {
   tools.add("agent_work", async (hub, caller, input) => {
     requireRole(caller, "read", input.machineId);
-    if (!executors(hub).isConnected(input.machineId)) throw offline(input.machineId);
     let before: [string, string] | undefined;
     if (input.before !== undefined) {
       before = parseCursor(input.before);
@@ -41,9 +43,20 @@ export function registerWork(tools: Registry): void {
       }
     }
     const limit = Math.max(1, input.limit ?? 20);
+    // An agent that has ended reads from the steps the workspace kept at its end: its node may be gone, or its box.
+    const thread = { machineId: input.machineId, threadId: input.threadId };
+    const task = TaskRecords.byThread(hub.db.conn, thread)?.task;
+    const kept = task !== undefined && ENDED_STATES.includes(task.state) ? KeptSteps.read(hub.db.conn, thread) : undefined;
+    if (kept !== undefined) {
+      const [steps, older] = keptPage(kept, before, limit);
+      const [page, cut] = fitPage([...steps].reverse(), WORK_PAGE_MAX_BYTES);
+      const oldest = page[0];
+      return { steps: page, ...(oldest && (older || cut) ? { before: cursorOf(oldest) } : {}), running: false };
+    }
+    if (!executors(hub).isConnected(input.machineId)) throw offline(input.machineId);
     let work;
     try {
-      work = await executors(hub).views.work({ machineId: input.machineId, threadId: input.threadId }, before, limit);
+      work = await executors(hub).views.work(thread, before, limit);
     } catch (error) {
       throw fromExecutor(error);
     }

@@ -34,6 +34,7 @@ import { Symbol } from "./parts";
 import { Artifact } from "../artifacts/Artifact";
 import { Artifacts } from "../artifacts/Artifacts";
 import { ArtifactVersions } from "../artifacts/ArtifactVersions";
+import { Agent } from "../agent/Agent";
 import { Dm } from "../dms/Dm";
 import { Dms } from "../dms/Dms";
 import { Vault } from "../vault/Vault";
@@ -152,6 +153,7 @@ function ChatInfo() {
       <InfoStack.Screen name="ArtifactVersions" component={ArtifactVersions} options={pushed(t, "Versions")} />
       <InfoStack.Screen name="Dms" component={Dms} options={pushed(t, "DMs Between Agents")} />
       <InfoStack.Screen name="Dm" component={Dm} options={pushed(t, "DM")} />
+      <InfoStack.Screen name="Agent" component={Agent} options={pushed(t, "Agent")} />
       <InfoStack.Screen name="Computer" component={Computer} options={pushed(t, "Computer")} />
       <InfoStack.Screen name="ComputerLog" component={ComputerLog} options={pushed(t, "Log")} />
       <InfoStack.Screen name="Vault" component={Vault} options={pushed(t, "Vault")} />

@@ -9,14 +9,14 @@ import type { WorkStep } from "../../../shared/contracts";
 import { actionLabel } from "../../../shared/steps";
 import { useAgentWork, useData, useDataLayer } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, profileLine, ROLE_WORD, Text, toast, Truncate, VirtualList } from "../../ui";
+import { Button, cx, Markdown, profileLine, ROLE_WORD, Text, toast, Truncate, VirtualList } from "../../ui";
 import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
 import { SteadyActivityLine } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { AgentSession } from "../sessions/AgentSession";
 import { DmCard } from "../dms/DmCard";
-import { FinishedAgent } from "./Finished";
+import { EndedAgent } from "./Finished";
 import { useAgentDms } from "../dms/hooks";
 import { withDms, type AgentMessage } from "../dms/model";
 import { describe, onOfflineMachine } from "../live/words";
@@ -104,22 +104,9 @@ export function AgentWork({ id }: { id: string }) {
       </div>
     );
   }
-  if (stoppedHere.has(id)) {
-    return (
-      <div className={s.workBody} data-screen="agents.work">
-        <EmptyState title="Stopped" />
-      </div>
-    );
-  }
-  if (agent === undefined || row === undefined) {
-    // A finished agent's link (a chip, a DM, the checklist) names its task: what it ended with, never an empty page.
-    const [machineId = "", projectId = "", lane = ""] = id.split("/");
-    if (/^T[1-9]\d*$/u.test(lane)) return <FinishedAgent project={{ machineId, projectId }} taskId={lane} />;
-    return (
-      <div className={s.workBody} data-screen="agents.work">
-        <EmptyState title="This agent isn’t running now">It finished, or was stopped. The chat says how it went.</EmptyState>
-      </div>
-    );
+  if (stoppedHere.has(id) || agent === undefined || row === undefined) {
+    // Stopped here, or ended: the record of what it did.
+    return <EndedAgent id={id} stopped={stoppedHere.has(id)} />;
   }
   const pr = row.pr;
   const thread = row.threadRef;

@@ -201,6 +201,9 @@ describe("threadRows", () => {
     // What the lead is doing is never a row; no turn seen to its end, no stamp.
     expect(threadRows(next).map((r) => r.t)).toEqual(["day", "item", "item", "item", "item"]);
     expect(stamps(threadRows(next))).toEqual([]);
+    // The reply that closed an order: the order's whole time, not the last turn's 4 s (the report's "Worked for 27s" on
+    // a three-minute order), as a duration the time column fits (reveal.test.ts lays those out).
+    expect(stamps(threadRows(turn, { ...worked, order: { ms: 190_000, agents: 3 } }))).toEqual(["b: 3m 10s"]);
   });
 });
 

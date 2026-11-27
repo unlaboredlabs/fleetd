@@ -106,6 +106,7 @@ export const CARRIED = [
   "slot_settings",
   "slot_shares",
   "steers",
+  "task_steps",
   "task_threads",
   "tasks",
   "thread_accounts",

@@ -16,6 +16,7 @@ import type {
   ThreadRef,
   UsageParked,
   WorkMatch,
+  WorkStep,
   WorkScope,
   Workstream,
   WorkstreamId,
@@ -32,6 +33,7 @@ import { chat } from "../chat/index.ts";
 import { ExecutorError, executors, READ_TIMEOUT_MS, STOP_TIMEOUT_MS } from "../executor/index.ts";
 import { launch as executorLaunch, send as executorSend, sendBrief, sendWith, startedRun as executorStartedRun } from "../executor/sessions.ts";
 import { pendingQuestionText } from "../executor/thread_view.ts";
+import { stepOf } from "../agents/paging.ts";
 import { deliverAtLaunch, refusal as githubRefusal } from "../github_app/sessions.ts";
 import { doneWhenText } from "../leads/digest.ts";
 import { decisions } from "../ledger/decisions.ts";
@@ -49,6 +51,7 @@ import { parkedOf as parkedOfEvent } from "../usage/classify.ts";
 import { usage } from "../usage/wire.ts";
 import { work } from "../work/index.ts";
 import type { CiGitHub, MergeReads } from "./ci_wait.ts";
+import { KEPT_STEPS } from "./kept_rules.ts";
 import { type BranchPrError, type BranchPull, githubRepo, hostError, openElseMerged } from "./pr.ts";
 import { PortError, portError, type LaunchRequest, workspaceOf } from "./launch.ts";
 
@@ -158,6 +161,8 @@ export interface TaskPorts {
    * Undefined when the node could not say; plain ports never can.
    */
   latestText?(thread: ThreadRef): Promise<string | undefined>;
+  /** The thread's newest KEPT_STEPS steps, newest first, as agent_work reads them; undefined when unread. */
+  workSteps?(thread: ThreadRef): Promise<WorkStep[] | undefined>;
   /** A node command (`cmd_check`); undefined when the node could not run it. */
   runCommand(machineId: MachineId, cwd: string, argv: string[], timeoutSec: number): Promise<CmdOutput | undefined>;
   workstream(id: WorkstreamId): Workstream | undefined;
@@ -367,6 +372,17 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
       return pending ? pendingQuestionText(pending) : undefined;
     },
     latestText: (thread) => ex().views.latestText(thread).catch(() => undefined),
+    workSteps: async (thread) => {
+      try {
+        const work = await ex().views.work(thread, undefined, KEPT_STEPS);
+        return work.rows.flatMap(([id, row]) => {
+          const step = stepOf(id, row);
+          return step ? [step] : [];
+        });
+      } catch {
+        return undefined;
+      }
+    },
     runCommand: async (m, cwd, argv, timeoutSec) => {
       try {
         const out = (await link(hub).commands.run(m, { cwd, argv, timeoutSec })) as { exitCode?: number | null; outputTail?: string };

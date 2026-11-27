@@ -42,6 +42,8 @@ export type Tone = "accent" | "warning" | "danger" | "quiet";
 
 export interface AgentLine {
   readonly id: string;
+  /** Its task, which its page opens by once it ended. */
+  readonly taskId?: string | undefined;
   readonly title: string;
   readonly role: string;
   readonly status: string;
@@ -50,13 +52,14 @@ export interface AgentLine {
 
 const statusTone = (s: AgentRow["status"]): Tone => (s === "working" || s === "starting" ? "accent" : s === "waiting" || s === "stalled" || s === "parked" ? "warning" : s === "failed" ? "danger" : "quiet");
 
-/** What runs now, the lead first, then the rest as the hub lists them; ended ones are left out. */
+/** What runs now, the lead first, then the rest as the hub lists them; ended ones are left out (recentlyEnded lists them). */
 export const agentLines = (agents: readonly AgentRow[]): AgentLine[] =>
   agents
     .filter((a) => !ENDED.has(a.status))
     .sort((a, b) => Number(b.role === "lead") - Number(a.role === "lead"))
     .map((a) => ({
       id: a.laneId,
+      taskId: a.taskId,
       title: a.role === "lead" ? "Lead" : a.title,
       role: a.role === "lead" ? (a.profile ?? "") : [ROLE[a.role], a.profile].filter((x) => x !== undefined && x !== "").join(" · "),
       status: a.statusReason !== undefined && a.status !== "working" ? `${STATUS[a.status]}: ${a.statusReason}` : STATUS[a.status],

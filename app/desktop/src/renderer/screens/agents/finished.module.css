@@ -1,0 +1,179 @@
+/* A finished agent's record (Finished.tsx): its groups under the head, each a quiet label over its rows, read down
+   one column; rows are space apart, never lined. */
+.record {
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+}
+.ran {
+  font-family: var(--meta-font);
+  font-variant-numeric: tabular-nums;
+}
+.group + .group {
+  margin-top: 0;
+}
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.count {
+  font-variant-numeric: tabular-nums;
+}
+.report {
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0;
+  list-style: none;
+}
+
+/* A changed file: its name in full voice, its folder quiet after it, its lines at the end. */
+.file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.file:hover {
+  background: var(--row-hover);
+}
+.file:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.still {
+  cursor: default;
+  padding-left: calc(var(--space-2) + 14px + var(--space-2));
+}
+.still:hover {
+  background: none;
+}
+.chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+  transition: transform var(--dur-quick) var(--ease-snap);
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+.fileName {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.fileName > :first-child {
+  flex: none;
+  max-width: 60%;
+}
+.dir {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+.stat {
+  flex: none;
+  display: flex;
+  gap: var(--space-2);
+  font-family: var(--meta-font);
+  font-size: var(--meta-size);
+  font-variant-numeric: tabular-nums;
+}
+.add {
+  color: var(--success);
+}
+.del {
+  color: var(--danger);
+}
+
+/* One file's diff under its row: the PR's lines in mono, added and removed on a faint wash of their colour. */
+.diff {
+  margin: 2px 0 var(--space-2) calc(var(--space-2) + 14px + var(--space-2));
+  padding: var(--space-1) 0;
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  min-height: 24px;
+}
+.diffNote {
+  display: block;
+  margin: 2px 0 var(--space-2) calc(var(--space-2) + 14px + var(--space-2));
+  padding: var(--space-1) var(--space-2);
+}
+.diff > .diffNote {
+  margin: 0;
+  font-family: var(--font-sans);
+}
+.hunk {
+  padding: 2px var(--space-2);
+  color: var(--faint);
+  white-space: pre;
+}
+.line {
+  display: flex;
+  min-width: max-content;
+  white-space: pre;
+}
+.lineAdd {
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.lineDel {
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+.sign {
+  flex: none;
+  width: 20px;
+  text-align: center;
+  color: var(--faint);
+  user-select: none;
+}
+.code {
+  padding-right: var(--space-2);
+}
+
+/* A commit: its short sha in the machine's voice, then its subject. */
+.commit {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 3px var(--space-2);
+}
+.sha {
+  flex: none;
+  font-family: var(--font-mono);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+}
+.earlier {
+  align-self: flex-start;
+  margin: 0 0 var(--space-2) calc(-1 * var(--space-2));
+}
+.stepsLoading {
+  min-height: 80px;
+}

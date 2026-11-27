@@ -269,6 +269,7 @@
     "./hub/tasks/breaker": "./fleetd/src/hub/tasks/breaker.ts",
     "./hub/tasks/ci_rules": "./fleetd/src/hub/tasks/ci_rules.ts",
     "./hub/tasks/duplicates": "./fleetd/src/hub/tasks/duplicates.ts",
+    "./hub/tasks/kept_rules": "./fleetd/src/hub/tasks/kept_rules.ts",
     "./hub/tasks/launch": "./fleetd/src/hub/tasks/launch.ts",
     "./hub/tasks/pr": "./fleetd/src/hub/tasks/pr.ts",
     "./hub/tasks/recovery": "./fleetd/src/hub/tasks/recovery.ts",

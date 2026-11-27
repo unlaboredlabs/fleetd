@@ -9833,6 +9833,13 @@ export type Task = {
   worktreePath?: string;
 };
 
+/** One commit of a writer's branch. */
+export type TaskCommit = {
+  /** Its short sha. */
+  sha: string;
+  subject: string;
+};
+
 /** A project's tasks by state, all time. */
 export type TaskCounts = {
   cancelled: number;
@@ -9853,6 +9860,14 @@ export type TaskEventData = {
   queuedReason?: string;
   taskId: TaskId;
   workstreamId?: WorkstreamId;
+};
+
+/** One file a writer changed, with its lines added and removed (0 and 0 for a binary file). */
+export type TaskFile = {
+  additions: number;
+  deletions: number;
+  /** Repo-relative; the new path of a rename. */
+  path: string;
 };
 
 export type TaskGetInput = {
@@ -9916,10 +9931,20 @@ export type TaskResult = {
   at: Timestamp;
   branch?: string;
   /**
+   * A writer's own commits on its branch, newest first (at most 20), read from its worktree once it ended; absent
+   * for readers and reviews, when it made none, and when the workspace couldn't read them.
+   */
+  commits?: TaskCommit[];
+  /**
    * Why its last run ended (the node stopped, the agent exited, a limit, context full, …); absent on results an
    * older hub recorded, and when it never ran.
    */
   endCause?: RunEnd;
+  /**
+   * The files a writer changed, from where its branch started to its worktree as it ended (uncommitted changes
+   * included), read once it ended; absent as `commits` is.
+   */
+  files?: TaskFile[];
   prUrl?: string;
   status: TaskResultStatus;
   /** The latest assistant message, trimmed to its last 2000 characters. */
