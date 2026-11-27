@@ -2221,11 +2221,13 @@ export class SessionService {
 
   /** A turn starts on a claude that runs between turns: when one of fleetd's tools it started with changed since (an
    * update), it is closed first, and the turn resumes it on the tools as they are now. Not while a Monitor may still
-   * fire or it holds a screen: a later turn does it. claude keeps a tool's first definition (tools.ts `toolsChanged`). */
+   * fire or it holds a screen: a later turn does it. claude keeps a tool's first definition (tools.ts `toolsChanged`).
+   * Not a hosted session: its box goes with its claude, and a box is never started for this. Its new tools reach it
+   * through tools/list_changed, a changed one at its box's next start. */
   #takeNewTools(id: string, runId: string): void {
     const live = this.#live.get(id);
     const row = this.store.session(id);
-    if (!live || live.closing || !row) return;
+    if (!live || live.closing || !row || hostedOf(row.local.hosted) !== undefined) return;
     const tools = toolsRole(row.local.role ?? "plain");
     if (!tools) return;
     // None: started by a node from before the marks, with tools unknown, so it starts again once.
