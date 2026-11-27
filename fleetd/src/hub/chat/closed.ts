@@ -65,3 +65,24 @@ export function stampClosed(hub: Hub, r: ProjectRef, thread: string, seq: number
   });
   if (out) c.announce(out);
 }
+
+/**
+ * Replies of the lead's thread landed later than their run's end (its machine couldn't be read then: a mirror once it's
+ * back): the lead's latest run that closed an order, the first of its runs to end after the project's newest
+ * workstream.done, stamps its reply as if it had just ended. Its run end gave no stamp then, its reply not in yet.
+ */
+export function stampLatest(hub: Hub, r: ProjectRef, thread: string): void {
+  const end = hub.db.all<{ seq: number }>(
+    `SELECT seq FROM events
+     WHERE type IN ('thread.completed', 'thread.failed', 'thread.interrupted') AND machine_id = $machine
+       AND seq > (SELECT MAX(seq) FROM events WHERE type = 'workstream.done' AND machine_id = $machine
+         AND json_extract(data, '$.projectId') = $project)
+       AND json_extract(data, '$.threadId') IN (
+         SELECT $thread UNION SELECT json_extract(data, '$.threadId') FROM events
+         WHERE type = 'lead.started' AND machine_id = $machine
+           AND json_extract(data, '$.projectId') = $project)
+     ORDER BY seq LIMIT 1`,
+    { machine: r.machineId, project: r.projectId, thread },
+  )[0];
+  if (end) stampClosed(hub, r, thread, end.seq);
+}
