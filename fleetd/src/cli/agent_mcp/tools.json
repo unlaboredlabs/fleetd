@@ -94,7 +94,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread.",
+   "description": "Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and a done or failed one continues in its own thread (a stopped one can't).",
    "inputSchema": {
     "properties": {
      "message": {
@@ -184,7 +184,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Stop a task: interrupts its thread and releases its slot.",
+   "description": "Stop a task for good: interrupts its thread and frees its slot; message_agent can't continue it. A writer's branch and PR stay for a new task to take on.",
    "inputSchema": {
     "properties": {
      "reason": {
