@@ -10,6 +10,17 @@ export const MAIN_CI_EVERY_MS = 60_000;
 export const NOT_THE_MERGES = ["workflow_dispatch", "schedule"];
 
 /**
+ * The workflow runs on a PR's head as `mergesOwn` reads them: a manual run of a workflow that also ran for the PR there
+ * is the PR's own CI. A push with a workflow's own token gets a pull_request run that waits for an approval and never
+ * starts, so the workflow that pushed starts CI itself (fleetd-cloud's pin bump: #1037 waited on CI over an hour while
+ * that run was red, 2026-11-27). A Nightly someone ran on the branch has no pull_request run, and stays left out.
+ */
+export function prRunEvents(runs: { id: number; event: string; workflow_id?: number }[]): [number, string][] {
+  const prs = new Set(runs.filter((r) => r.event.startsWith("pull_request") && r.workflow_id !== undefined).map((r) => r.workflow_id));
+  return runs.map((r) => [r.id, NOT_THE_MERGES.includes(r.event) && prs.has(r.workflow_id) ? "pull_request" : r.event]);
+}
+
+/**
  * The base's own checks among `runs` on its head: without those of the workflow runs a person or a schedule started
  * there (`events`, the commit's runs and their events), which check nothing the merges did.
  */

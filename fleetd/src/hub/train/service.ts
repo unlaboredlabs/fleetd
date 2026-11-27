@@ -18,7 +18,7 @@ import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
 import { decide, type MergeDecision, type MergeFile } from "./merge_rules.ts";
-import { ciState, GithubSync, type MainCi, mergesOwn } from "./main_ci.ts";
+import { ciState, GithubSync, type MainCi, mergesOwn, prRunEvents } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
 import * as lanes from "./lanes.ts";
 import { readFixes, redFixes } from "./red_fix.ts";
@@ -26,7 +26,7 @@ import { BEHIND, Lanes } from "./lanes.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
-import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, TERMINAL_STATES, WAIT_BACK, WAIT_BLOCKED, WAIT_OWN_RED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
+import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, TERMINAL_STATES, WAIT_BACK, WAIT_BLOCKED, WAIT_CI, WAIT_OWN_RED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { restack, waitsBelow } from "./restack.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
@@ -71,6 +71,7 @@ import {
   CI_FINISHED_LATE,
   CI_QUEUE_CEILING_MS,
   CI_RUNNING_TIMEOUT_MS,
+  CI_PR_LEFT,
   CI_SUPERSEDED,
   CI_TIMED_OUT,
   CI_WATCHED,
@@ -200,7 +201,7 @@ const REBASE_FIRST_WAIT_MS = 1000;
 /** How the wait for a re-review alongside CI ended. */
 export type ReviewWait = { kind: "clean"; reviews: ChangeReview[] } | { kind: "blocked" } | { kind: "waiting" };
 
-export type CiOutcome = { kind: "green" } | { kind: "red"; runs: CheckRun[]; own?: Flaky[] } | { kind: "timeout"; stall: Stall } | { kind: "moved" };
+export type CiOutcome = { kind: "green" } | { kind: "red"; runs: CheckRun[]; own?: Flaky[] } | { kind: "timeout"; stall: Stall } | { kind: "moved"; closed?: true };
 
 /** What a wait on CI does between its reads of the checks. */
 export type Between = () => Promise<void>;
@@ -909,7 +910,15 @@ export class Train {
     between?: Between,
   ): Promise<CiOutcome | undefined> {
     const earlier = new Map<string, string | undefined>();
-    const outcome = await this.pollCi(change, repo, sha, base, lone, noted, earlier, until, between);
+    let outcome: CiOutcome | undefined;
+    try {
+      outcome = await this.pollCi(change, repo, sha, base, lone, noted, earlier, until, between);
+    } catch (error) {
+      if (!this.stopped.signal.aborted) this.records.endWait(change.changeId, WAIT_CI);
+      throw error;
+    }
+    // Its CI's time ends with the wait; a wait cut short (`until`) goes on later.
+    if (outcome !== undefined) this.records.endWait(change.changeId, WAIT_CI);
     next.runnerNote(this, noted, undefined, earlier);
     return outcome;
   }
@@ -926,7 +935,14 @@ export class Train {
     between: Between | undefined,
   ): Promise<CiOutcome | undefined> {
     const lone = loneIn ? { ...loneIn } : undefined;
-    let start = this.nowMs();
+    // CI's time on this head goes on from where it was before a workspace restart: restarts come often (each update),
+    // and one that started it over kept fleetd-cloud #1037 waiting on checks that never started (2026-11-27).
+    this.records.startWait(change, WAIT_CI, sha, this.nowMs(), WAITING);
+    let start = this.records.wait(change.changeId, WAIT_CI)?.sinceMs ?? this.nowMs();
+    const restart = (ms: number) => {
+      start = ms;
+      this.records.restartWait(change.changeId, WAIT_CI, sha, ms);
+    };
     let last: CheckRun[] = [];
     let queuedSince: number | undefined;
     const reruns: next.Reruns = new Map();
@@ -992,7 +1008,7 @@ export class Train {
           next.runnerNote(this, noted, limitNote(reset), earlier);
           const waited = Math.max(reset - this.nowMs(), 0);
           await this.options.sleep(waited);
-          start += waited;
+          restart(start + waited);
           refreshed += waited;
           continue;
         }
@@ -1029,7 +1045,7 @@ export class Train {
       if (judged.kind === "red" && allCancelled(judged.runs)) {
         // A cancelled check is never a failure: the new head goes through instead, or the run is re-run (D191).
         if (await this.superseded(change, repo, sha, judged.runs, cancelRead)) return { kind: "moved" };
-        if ((await this.rerunCancelled(repo, judged.runs, all, reruns)) === true) start = this.nowMs();
+        if ((await this.rerunCancelled(repo, judged.runs, all, reruns)) === true) restart(this.nowMs());
         noteReruns(all);
       } else if (judged.kind === "red" && alone) {
         const now = await rerunFailed(this, repo, judged.runs, all, failedReruns, flaky, mine);
@@ -1040,7 +1056,7 @@ export class Train {
         }
         if (now) {
           // The re-run's time is its own, and it has had none yet.
-          start = this.nowMs();
+          restart(this.nowMs());
           await this.options.sleep(this.busyWait(start, CI_FIRST_WAIT_MS));
           continue;
         }
@@ -1096,13 +1112,13 @@ export class Train {
           }
           if (await this.superseded(change, repo, sha, cancelled, cancelRead)) return { kind: "moved" };
           // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
-          if ((await this.rerunCancelled(repo, cancelled, all, reruns)) === true) start = this.nowMs();
+          if ((await this.rerunCancelled(repo, cancelled, all, reruns)) === true) restart(this.nowMs());
           noteReruns(all);
         }
       } else if (judged.kind === "pending") {
         // A check GitHub left pending under a finished run never finishes by itself: its run goes again. The re-run's
         // time is its own.
-        if ((await rerunStale(this, repo, sha, judgedRuns))?.now) start = this.nowMs();
+        if ((await rerunStale(this, repo, sha, judgedRuns))?.now) restart(this.nowMs());
       }
       if (until !== undefined && this.nowMs() >= until) return undefined;
       const neverRan = unreported.filter((n) => !baseRequires.includes(n));
@@ -1129,7 +1145,8 @@ export class Train {
       // A push while the train waits on CI: the PRs waiting in line take their new heads now.
       if (now - refreshed >= this.github.spread(this.options.pollIntervalMs, repo)) {
         refreshed = now;
-        if (alone && (await this.headMoved(change, repo, sha))) return { kind: "moved" };
+        const moved = alone ? await this.headMoved(change, repo, sha) : false;
+        if (moved) return moved === "closed" ? { kind: "moved", closed: true } : { kind: "moved" };
         await this.refresh(repo);
       }
       // A pass waiting on CI is the train running: keep its source live and main CI read.
@@ -1179,13 +1196,18 @@ export class Train {
     const newest = cancelled.reduce((m, r) => Math.max(m, r.id), 0);
     if (change.headSha !== sha || newest <= read.n) return false;
     read.n = newest;
-    return this.headMoved(change, repo, sha);
+    return (await this.headMoved(change, repo, sha)) !== false;
   }
 
-  /** Whether the Change's PR has a head other than `sha` now. False when it can't be read. */
-  private async headMoved(change: Change, repo: string, sha: string): Promise<boolean> {
+  /**
+   * Whether the Change's PR has a head other than `sha` now, or is no longer open ("closed": closed or merged on GitHub
+   * while the train waited on its CI). False when it can't be read.
+   */
+  private async headMoved(change: Change, repo: string, sha: string): Promise<false | "head" | "closed"> {
     try {
-      return (await this.github.pull(repo, change.prNumber)).head.sha.toLowerCase() !== sha;
+      const pull = await this.github.pull(repo, change.prNumber);
+      if (pull.merged || pull.state !== "open") return "closed";
+      return pull.head.sha.toLowerCase() !== sha ? "head" : false;
     } catch (error) {
       this.warnHourly([`train: PR of ${change.changeId} not read`], ghMessage(error), `train: PR of ${change.changeId} not read: ${ghMessage(error)}`);
       return false;
@@ -1195,7 +1217,7 @@ export class Train {
   /**
    * `runs` on a PR's head without those of the workflow runs a person or a schedule started there (a Nightly tried on the
    * branch, W864): they check nothing of the PR's own CI, so the train neither waits on them nor re-runs them, as it
-   * leaves them on the base (mergesOwn). Read when a red run is of a workflow run whose event `events` doesn't hold yet,
+   * leaves them on the base (mergesOwn). A manual run of a workflow that also ran for the PR there counts (prRunEvents). Read when a red run is of a workflow run whose event `events` doesn't hold yet,
    * which keeps each one read; unread, every run counts.
    */
   private async prOwn(repo: string, sha: string, runs: CheckRun[], events: Map<number, string>): Promise<CheckRun[]> {
@@ -1205,7 +1227,7 @@ export class Train {
     };
     if (runs.some((r) => isRed(r) && unknown(r))) {
       try {
-        for (const [id, event] of await this.github.shaRunEvents(repo, sha)) events.set(id, event);
+        for (const [id, event] of prRunEvents(await this.github.shaRuns(repo, sha))) events.set(id, event);
         // A run GitHub didn't list among the head's is the PR's, as far as anyone knows: not asked about again.
         for (const r of runs) if (unknown(r)) events.set(workflowRun(r) ?? 0, "");
       } catch (error) {
@@ -1447,6 +1469,16 @@ export class Train {
     this.update(change.changeId, ["ready", "rebasing", "ci", "merging"], (c) => ({ ...c, state: "ready", lastError: errorText(why) }));
   }
 
+  /**
+   * A Change whose PR moved while the train waited on its CI: a new head goes back in line, and a PR closed or merged on
+   * GitHub leaves the train now (refresh), not after CI's time ran out: the cloud's train sat on a closed #1037.
+   */
+  private async leftCi(change: Change, moved: { closed?: true }): Promise<void> {
+    if (!moved.closed) return this.putBack(change, CI_SUPERSEDED);
+    this.putBack(change, CI_PR_LEFT);
+    await this.refresh(change.repo);
+  }
+
   /** The head of a ready Change moved: the same patch stays ready, a new one goes back to review. */
   async readyMoved(change: Change, pull: Pull): Promise<void> {
     const [headSha, patchId] = await this.seen(change, pull);
@@ -1578,7 +1610,7 @@ export class Train {
     if (failed) batch.dropBehind(this, chain, failed, base);
     if (outcome.kind === "red") return this.ciFailed(inCi, outcome.runs, undefined, outcome.own);
     if (outcome.kind === "timeout") return this.ciFailed(inCi, [], outcome.stall);
-    if (outcome.kind === "moved") return this.putBack(inCi, CI_SUPERSEDED);
+    if (outcome.kind === "moved") return this.leftCi(inCi, outcome);
     // CI passed: the merge also waits for a re-review still at work.
     const current = this.records.get(inCi.changeId);
     if (current && !batch.reviewed(current)) {
@@ -1657,7 +1689,7 @@ export class Train {
       const o = await this.waitCi(backInCi, repo, headSha, base, undefined, noted);
       if (o.kind === "red") return this.ciFailed(backInCi, o.runs, undefined, o.own);
       if (o.kind === "timeout") return this.ciFailed(backInCi, [], o.stall);
-      if (o.kind === "moved") return this.putBack(backInCi, CI_SUPERSEDED);
+      if (o.kind === "moved") return this.leftCi(backInCi, o);
       if (!this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "merging" }))) return;
     }
     // The rules may have changed since they were read: the next try reads them again.
@@ -1704,6 +1736,7 @@ export class Train {
     for (const id of [...this.lateReruns.keys()]) if (!ids.has(id)) this.lateReruns.delete(id);
     person.forget(this, repo, ids);
     const live = [...this.records.inTrain(repo, ["rebasing", "ci", "merging"]), ...changes].map((c) => c.changeId);
+    this.records.keepWaits(repo, [WAIT_CI], live);
     forgetRegens(this, repo, live);
     for (const change of changes) {
       let pull: Pull;

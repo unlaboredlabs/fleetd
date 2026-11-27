@@ -21,6 +21,7 @@ export {
   type Wait,
   WAIT_BACK,
   WAIT_BLOCKED,
+  WAIT_CI,
   WAIT_OWN_RED,
   WAIT_PERSON,
   WAIT_REGEN,
@@ -371,6 +372,11 @@ export class ChangeRecords {
   /** Moves the `kind` of wait on the Change at `head` to `state`; a wait at another head stays as it is. */
   setWait(changeId: ChangeId, kind: string, head: string, state: string): void {
     this.db.conn.query("UPDATE train_waits SET state = ?4 WHERE change_id = ?1 AND kind = ?2 AND head = ?3").run(changeId, kind, head, state);
+  }
+
+  /** Moves the `kind` of wait on the Change at `head` to start at `sinceMs`; a wait at another head stays as it is. */
+  restartWait(changeId: ChangeId, kind: string, head: string, sinceMs: number): void {
+    this.db.conn.query("UPDATE train_waits SET since_ms = ?4 WHERE change_id = ?1 AND kind = ?2 AND head = ?3").run(changeId, kind, head, sinceMs);
   }
 
   endWait(changeId: ChangeId, kind: string): void {

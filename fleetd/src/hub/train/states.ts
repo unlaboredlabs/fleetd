@@ -46,7 +46,8 @@ export type Watch = { repo: string; sha: string; base: string; projectRef: Proje
 /**
  * The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, its regeneration,
  * a person it waits on, told of at the patch id in its `head`, its writer told it is back with them (back.ts), and its
- * writer told of its own red head while it is ready (`tellOwnRed`).
+ * writer told of its own red head while it is ready (`tellOwnRed`), and since when the train waits on CI at a head, so
+ * a workspace restart doesn't start CI's time over.
  */
 export const WAIT_UNSTARTED = "unstarted";
 export const WAIT_BLOCKED = "blocked";
@@ -54,6 +55,7 @@ export const WAIT_REGEN = "regen";
 export const WAIT_PERSON = "person";
 export const WAIT_BACK = "back";
 export const WAIT_OWN_RED = "own_red";
+export const WAIT_CI = "ci";
 /** A wait's state before it came to anything. */
 export const WAITING = "waiting";
 
