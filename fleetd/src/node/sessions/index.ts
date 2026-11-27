@@ -1520,13 +1520,14 @@ export class SessionService {
     if (current) {
       await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
       stages.done("exit wait");
-      if (current.between) this.#takeSavedRequest(id);
     }
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
     const row = this.#session(id);
     const env = runnerEnv(this.config);
     // A profile on an Antigravity model runs `agy acp`; its conversation resumes from the id its host keeps.
     const agy = antigravity.agyModel(row.summary.model) !== undefined;
+    const tools = toolsRole(row.local.role ?? "plain");
+    const fresh = !tools || this.#freshTools(id, row, agy, current);
     let resume = false;
     try {
       if (!agy) resume = state.startMode(row.local, claude.configDir(env), id, existsSync);
@@ -1604,10 +1605,12 @@ export class SessionService {
     const live = this.#newLive(link, this.#secrets(row));
     this.#live.set(id, live);
     void this.#pump(id, live, undefined);
-    const tools = toolsRole(row.local.role ?? "plain");
+    // Marks only for a claude known to start on the tools as they are now; else none, so its next turn resumes it once.
     if (tools) {
+      const marks = join(this.home, "sessions", id, TOOLS_FILE);
       try {
-        writeAtomic(join(this.home, "sessions", id, TOOLS_FILE), JSON.stringify(toolMarks(tools)));
+        if (fresh) writeAtomic(marks, JSON.stringify(toolMarks(tools)));
+        else rmSync(marks, { force: true });
       } catch (error) {
         console.warn(`${nowIso()} WARN the marks of the session's fleetd tools were not kept {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
@@ -2228,7 +2231,7 @@ export class SessionService {
    * fire or it holds a screen: a later turn does it. claude keeps a tool's first definition (tools.ts `toolsChanged`).
    * Not a hosted session: its box goes with its claude, and a box is never started for this. Its new tools reach it
    * through tools/list_changed, a changed one at its box's next start. Nor one whose conversation doesn't hold claude's
-   * saved request as expected: the resume takes that out (`#spawn`), or claude would send its old tools again. */
+   * saved request as expected: the resume takes that out (`#freshTools`), or claude would send its old tools again. */
   #takeNewTools(id: string, runId: string): void {
     const live = this.#live.get(id);
     const row = this.store.session(id);
@@ -2272,20 +2275,30 @@ export class SessionService {
     live.link.send(shutdown(REAP_GRACE_MS));
   }
 
-  /** Claude's saved request out of the session's conversation, once its claude has exited and before it resumes for
-   * fleetd's updated tools (./saved_request.ts); said in the log either way. */
-  #takeSavedRequest(id: string): void {
-    const row = this.store.session(id);
-    const file = row ? claude.sessionFile(row.local.configDir, row.local.cwd, id) : undefined;
-    let taken: number | undefined;
-    try {
-      taken = file ? takeSavedRequest(file) : undefined;
-    } catch (error) {
-      console.warn(`${nowIso()} WARN couldn't take claude's saved request out of a session's conversation {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
-      return;
+  /** Whether a start of the session's claude gets fleetd's tools as they are now. A resume (any: after an idle reap, a
+   * crash, a node restart, or for updated tools) sends the tools its conversation saved, unless claude's saved request
+   * comes out of it first (./saved_request.ts), once no claude of the session runs; said in the log either way. A
+   * hosted session's conversation is its box's, and an Antigravity one keeps none of claude's. */
+  #freshTools(id: string, row: SessionRow, agy: boolean, before: Live | undefined): boolean {
+    if (agy || hostedOf(row.local.hosted) !== undefined) return true;
+    const file = claude.sessionFile(row.local.configDir, row.local.cwd, id);
+    if (!file || !existsSync(file)) return true;
+    let why: string | undefined;
+    if (before && this.#live.get(id) === before) why = "its last claude hasn't exited";
+    else {
+      try {
+        const taken = takeSavedRequest(file);
+        if (taken !== undefined) {
+          console.log(`${nowIso()} INFO claude's saved request came out of a session's conversation before it resumes {"sessionId":"${id}","records":${taken}}`);
+          return true;
+        }
+        why = savedRequestMissing(file) ?? "it changed while it was read";
+      } catch (error) {
+        why = String(error);
+      }
     }
-    if (taken !== undefined) console.log(`${nowIso()} INFO claude's saved request came out of a session's conversation for fleetd's updated tools {"sessionId":"${id}","records":${taken}}`);
-    else console.warn(`${nowIso()} WARN a session's conversation no longer held claude's saved request: it resumes on the tools it had {"sessionId":"${id}"}`);
+    console.warn(`${nowIso()} WARN a session's claude resumes on the tools its conversation saved: claude's saved request didn't come out {"sessionId":"${id}","why":${JSON.stringify(why)}}`);
+    return false;
   }
 
   /** Closes the processes idle for idleReapMs; one with a Monitor that may still fire waits for its deadline. */

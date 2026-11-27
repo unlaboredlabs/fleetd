@@ -1,10 +1,10 @@
 // Claude Code keeps its session's first request in its own copy of the conversation (`<id>.jsonl`): an
 // `api-request-shape` record and `attachment` records of type `prompt_snapshot`, its tools' definitions among them.
 // `claude --resume` sends those again rather than what tools/list says now (seen with 2.1.314: a session resumed after
-// a tool's description changed still sent the old one). So a resume for fleetd's updated tools takes them out of the
-// file first, relinking claude's chain of messages past them (`strip`), and every other byte stays; the resumed claude writes them again from what it now has. A
-// file that isn't JSON objects line by line, or holds none of them, is Claude Code's format changed under us: it is
-// never written, and its claude isn't resumed for this at all.
+// a tool's description changed still sent the old one). So every resume of a session with fleetd's tools takes them
+// out of the file first, relinking claude's chain of messages past them (`strip`), and every other byte stays; the
+// resumed claude writes them again from what it now has. A file that isn't JSON objects line by line, or holds none of
+// them, is Claude Code's format changed under us: it is never written, and its claude isn't resumed for updated tools.
 import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 
 const saved = (entry: Record<string, unknown>) =>

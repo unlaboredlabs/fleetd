@@ -149,6 +149,48 @@ test("after an update changes a tool it has, the next turn resumes it once, and 
   expect(resumes()).toHaveLength(1);
 });
 
+test("any resume takes claude's saved request out first; one whose conversation isn't as expected starts with no marks", async () => {
+  /** Its claude goes as an idle reap or a crash ends it: the next send resumes it. */
+  const gone = async () => {
+    const was = pid()!;
+    process.kill(was, "SIGTERM");
+    await until("its claude to go", () => !service.store.session(ID)?.local.pid);
+    return was;
+  };
+  writeFileSync(marksFile(), JSON.stringify(toolMarks("lead")));
+  putTranscript(TRANSCRIPT);
+  const first = await gone();
+  await send("r6a", "six a");
+  await done("r6a");
+  expect(pid()).not.toBe(first);
+  // Resumed on the tools as they are now: no saved one left to send, and marks that say so.
+  expect(readFileSync(transcript(), "utf8")).not.toContain("OLD-ALPHA");
+  expect(JSON.parse(readFileSync(marksFile(), "utf8"))).toEqual(toolMarks("lead"));
+  expect(resumes()).toHaveLength(1);
+
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warned.push(args.join(" "));
+  try {
+    const broken = `${TRANSCRIPT}not json\n`;
+    putTranscript(broken);
+    await gone();
+    await send("r6b", "six b");
+    await done("r6b");
+    expect(readFileSync(transcript(), "utf8")).toBe(broken);
+    expect(warned.filter((w) => w.includes("resumes on the tools its conversation saved") && w.includes(`"sessionId":"${ID}"`))).toHaveLength(1);
+    // What it got is unknown: no marks, so its next turn would resume it once, which the same conversation declines.
+    expect(() => readFileSync(marksFile())).toThrow();
+    const now = pid();
+    await send("r6c", "six c");
+    await done("r6c");
+    expect(pid()).toBe(now);
+    expect(resumes()).toHaveLength(1);
+  } finally {
+    console.warn = warn;
+  }
+});
+
 test("a hosted session isn't resumed for a changed tool: its box would go with its claude", async () => {
   const row = service.store.session(ID)!;
   row.local.hosted = "boat";
