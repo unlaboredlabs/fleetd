@@ -28,8 +28,8 @@ const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undef
  * The window: a sidebar flush down the left, its own soft tone (the macOS traffic lights sit in its first row), and
  * beside it the main area (which owns its own scrolling), with the top row floating over its top: no bar, just what the screen
  * puts there. `sidebarTop` is the sidebar's first row, beside the traffic lights; without a sidebar the top row starts
- * after them. `under` says the screen's content scrolls on under the top row (the chat), which then fades it as it
- * goes. `aside` is a panel on the right, from the very top too, as wide as its content says: its own first row sits
+ * after them. `under` says the screen's content scrolls on under the top row (the chat), up to the window's edge, under
+ * the row's glass. `aside` is a panel on the right, from the very top too, as wide as its content says: its own first row sits
  * beside the top row.
  *
  * The sidebar and the aside slide in from the window's edge as their toggle opens them and out to it as it closes
@@ -39,7 +39,8 @@ const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undef
  * sidebar's button, right of the traffic lights as in Finder and Notes: on macOS it stays put, in the sidebar's empty
  * first strip while it shows and before the top row's pill while it doesn't; elsewhere the sidebar's first row is its
  * own, so the button shows only while the sidebar is closed. Transparent until pointed at, over the see-through
- * sidebar as it slides.
+ * sidebar as it slides; once the sidebar has gone, the button and the traffic lights float on one glass island, as the
+ * pill beside them does.
  */
 export function AppFrame(props: {
   topBar: ReactNode;
@@ -84,6 +85,8 @@ export function AppFrame(props: {
           {/* After the top row: the edge reaches a few pixels over it, and a control under a drag box that comes after
               it loses its click (base.css). */}
           {props.sidebar && props.sidebarEdge ? <div className={s.sideEdge}>{props.sidebarEdge}</div> : null}
+          {/* The window's controls on glass once the sidebar has gone, under the button that comes after it. */}
+          {props.sidebarToggle && side.kept === null ? <div className={s.controls} aria-hidden /> : null}
           {props.sidebarToggle ? <SidebarToggle {...props.sidebarToggle} shown={Boolean(props.sidebar)} /> : null}
           {aside.kept === null ? null : (
             <div className={s.aside} {...aside.attrs}>

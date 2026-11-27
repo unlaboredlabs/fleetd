@@ -160,8 +160,9 @@
 }
 
 /* The top row: no bar, no line, nothing of its own but the window's drag region. Over a list that scrolls under it
-   (the chat, `under`), the page's colour and a soft blur fade in towards the window's top edge, as macOS 26's scroll edge
-   does, so what passes under the glass softens before it goes. data-floats tells the QA checks it is drawn over content by design. */
+   (the chat, `under`), what scrolls runs on up to the window's edge: only the glass that floats in the row (the pill,
+   the capsules, the window's controls) sets itself off it, as the composer's island does at the bottom. data-floats
+   tells the QA checks it is drawn over content by design. */
 .topBar {
   display: flex;
   align-items: center;
@@ -172,32 +173,32 @@
   -webkit-app-region: drag;
   user-select: none;
 }
-.under > .topBar::before {
+/* A banner under the row (the shell's, on glass) takes the row with it: one sheet of the same glass from the window's
+   top edge to the banner's foot, so the banner reads as hanging from the top and the row's own menus still open over
+   it. A class (AppFrame bannered), never a :has() on the frame: that tests the frame again on every change under it, a
+   key press in the composer included. */
+.under.bannered > .topBar::before {
   content: "";
   position: absolute;
   z-index: -1;
   /* Clear of the main area's hairline along the sidebar. */
-  inset: 0 0 calc(-1 * (var(--space-6) + var(--space-3))) 1px;
-  /* The sheet's own colour, solid through the top row and 12 px past the pill (60 of its 84 px), so nothing reads under
-     or just below it; then 24 px where what scrolls up dissolves into it, long enough that a dark bubble's edge fades
-     rather than showing as a hard lip. No blur: a blur drew what the solid part hides (a dark bubble just above its
-     edge) down into the fade, as a hard dark band across the chat (W791). */
-  background: linear-gradient(to bottom, var(--bg) 0, var(--bg) 71%, color-mix(in srgb, var(--bg) 55%, transparent) 86%, transparent);
+  inset: 0 0 0 1px;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
   pointer-events: none;
 }
-/* A banner under the row (the shell's) is the row's edge then: the fade stops at the row rather than run on over the
-   banner's first line, and the row's own menus still open over the banner. A class (AppFrame bannered), never a :has()
-   on the frame: that tests the frame again on every change under it, a key press in the composer included. */
-.under.bannered > .topBar::before {
-  bottom: 0;
-  background: var(--bg);
+@media (prefers-reduced-transparency: reduce) {
+  .under.bannered > .topBar::before {
+    background: var(--bg);
+    backdrop-filter: none;
+  }
 }
 /* With the sidebar hidden, the top row starts after the traffic lights, and after the sidebar's button where there is one. */
 .noSidebar > .topBar {
   padding-inline-start: max(var(--space-3), var(--traffic-lights-inset));
 }
 .noSidebar.withToggle > .topBar {
-  padding-inline-start: calc(var(--side-toggle-x) + var(--control) + var(--space-2));
+  padding-inline-start: calc(var(--side-toggle-x) + var(--control) + var(--controls-pad) + var(--space-2));
 }
 
 /* The sidebar's button (AppFrame's sidebarToggle), as Finder's and Notes' sit: on macOS its glyph as far after the
@@ -207,6 +208,45 @@
    is the sidebar's own, so the button is only there while the sidebar is closed. */
 .frame {
   --side-toggle-x: max(var(--space-2), calc(var(--traffic-lights-inset) + var(--space-1)));
+  /* The glass under the window's controls (.controls): as far past the button's round end as the button sits in from
+     its top, so the two ends are concentric. */
+  --controls-pad: calc((var(--top-bar-height) - 2 * var(--glass-inset) - var(--control)) / 2);
+}
+/* The window's controls once the sidebar has gone (AppFrame): the traffic lights and the sidebar's button on one glass
+   island, the composer's material, as tall as the pill beside it and on its centre line, so what scrolls under the
+   row never runs through the lights. Only after the sidebar has slid out, never over the see-through sidebar or while
+   it moves, where a backdrop over the window's material draws black; it comes up quickly, and goes at once when the
+   sidebar comes back over it. Without traffic lights it is the button's own round glass. Still the window's drag
+   region, around the lights too. */
+.controls {
+  position: absolute;
+  z-index: 3;
+  top: var(--glass-inset);
+  left: calc(var(--side-toggle-x) - var(--controls-pad));
+  width: calc(var(--control) + 2 * var(--controls-pad));
+  height: calc(var(--top-bar-height) - 2 * var(--glass-inset));
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+  -webkit-app-region: drag;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+:root[data-platform="darwin"]:not([data-shell="web"]) .controls {
+  left: var(--glass-inset);
+  width: calc(var(--side-toggle-x) + var(--control) + var(--controls-pad) - var(--glass-inset));
+}
+@media (prefers-reduced-transparency: reduce) {
+  .controls {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
 }
 .sideToggle {
   position: absolute;
@@ -227,6 +267,15 @@
 .sideToggle:hover {
   background: var(--hover);
   color: var(--text);
+}
+/* On the controls' glass: round, concentric with the island's end, in the text's colour as the pill's words are, and
+   pointed at it brightens as the pill does. */
+.noSidebar > .sideToggle {
+  border-radius: 999px;
+  color: var(--text);
+}
+.noSidebar > .sideToggle:hover {
+  background: var(--glass-hover);
 }
 .sideToggle:focus-visible {
   outline: 2px solid var(--focus);
@@ -330,6 +379,7 @@ button.frameTitle[data-glass]:active {
 button.frameTitle[data-glass][aria-pressed="true"] {
   box-shadow:
     inset 0 0 0 1px var(--glass-edge-open),
+    inset 0 1px 0 var(--glass-rim),
     inset 0 0 0 100px var(--glass-open),
     var(--glass-lift);
 }

@@ -97,10 +97,10 @@
   --glass-rim: #ffffff;
   --glass-lift: 0 1px 2px #0f17200a, 0 12px 32px -12px #0f172029;
   --glass-pressed: #0e142012;
-  /* A glass button (the chat's pill): a step brighter under the pointer, and a clear step deeper while what it opens
-     shows, its edge firmer too. Laid over the glass, so the material stays. */
+  /* A glass button (the chat's pill): a step brighter under the pointer, and a step deeper while what it opens shows,
+     its edge firmer too. Laid over the glass and kept light, so the material stays glass rather than a grey pill. */
   --glass-hover: #0e14200a;
-  --glass-open: #0e14201c;
+  --glass-open: #0e14200f;
   --glass-edge-open: #0e14202e;
   /* One restrained tint per agent role (live/chips.rs role_tint), clear of the accent and the status colours. */
   --role-implementer: #126c64;
@@ -192,7 +192,7 @@
   --glass-lift: 0 1px 2px #0000004d, 0 8px 22px -6px #00000080;
   --glass-pressed: #ffffff1a;
   --glass-hover: #ffffff0f;
-  --glass-open: #ffffff21;
+  --glass-open: #ffffff17;
   --glass-edge-open: #ffffff2e;
   --role-implementer: #6ccbc0;
   --role-reviewer: #bba8f5;
