@@ -1568,24 +1568,23 @@ function PreviewCard({ name, label, port }: { name: string; label: string | unde
   return (
     <Pressable accessibilityRole="link" accessibilityLabel={`Open preview: ${title}`} onPress={open} style={styles.blockCard}>
       {({ pressed }) => (
-        <Card style={[styles.pr, pressed && styles.pressed]}>
-          <View style={[styles.prIcon, { backgroundColor: t.blue }]}>
-            <Icon name="browser" size={18} color="#FFFFFF" weight="semibold" />
-          </View>
-          <View style={styles.grow}>
-            <Text style={[type.subhead, styles.strong, { color: t.label }]} numberOfLines={2}>
-              {title}
-            </Text>
-            <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={1}>
-              {busy ? "Opening…" : port === undefined ? "Open Preview" : `Port ${String(port)} · Open Preview`}
-            </Text>
-            {kept === undefined ? null : (
-              <Text style={[type.footnote, { color: t.secondary }]}>
-                {kept}
+        <Card style={[styles.previewCard, pressed && styles.pressed]}>
+          <View style={styles.previewRow}>
+            <View style={[styles.prIcon, { backgroundColor: t.blue }]}>
+              <Icon name="browser" size={18} color="#FFFFFF" weight="semibold" />
+            </View>
+            <View style={styles.grow}>
+              <Text style={[type.subhead, styles.strong, { color: t.label }]} numberOfLines={2}>
+                {title}
               </Text>
-            )}
+              <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={1}>
+                {busy ? "Opening…" : port === undefined ? "Open Preview" : `Port ${String(port)} · Open Preview`}
+              </Text>
+            </View>
+            {busy ? <ActivityIndicator color={t.tertiary} /> : <Icon name="external" size={14} color={t.tertiary} weight="semibold" />}
           </View>
-          {busy ? <ActivityIndicator color={t.tertiary} /> : <Icon name="external" size={14} color={t.tertiary} weight="semibold" />}
+          {/* Under the whole row, the card's full width, so it keeps to two lines. */}
+          {kept === undefined ? null : <Text style={[type.footnote, { color: t.secondary }]}>{kept}</Text>}
         </Card>
       )}
     </Pressable>
@@ -1926,6 +1925,8 @@ const styles = StyleSheet.create({
   blockCard: { alignSelf: "stretch", marginVertical: 2 },
   pr: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: space.md },
   prIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  previewCard: { paddingVertical: space.md, gap: space.sm },
+  previewRow: { flexDirection: "row", alignItems: "center", gap: space.md },
   grow: { flex: 1 },
   pressed: { opacity: 0.7 },
   cardHead: { flexDirection: "row", alignItems: "baseline" },

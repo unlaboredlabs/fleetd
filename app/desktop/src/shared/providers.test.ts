@@ -21,7 +21,7 @@ describe("the providers, as one model", () => {
 
 describe("a share link's computer", () => {
   it("says a link on fleetd's computers keeps its computer running, and one on the team's own machine says nothing", () => {
-    expect(keptRunning(RUNNER_ID)).toBe("Its computer keeps running, and uses computer time, up to 2 hours after the agent finishes or until the link ends. Renew to keep it longer.");
+    expect(keptRunning(RUNNER_ID)).toBe("Its computer keeps running up to 2\u00a0h after the agent finishes. Renew to keep it longer.");
     expect(keptRunning("devbox")).toBeUndefined();
   });
 });

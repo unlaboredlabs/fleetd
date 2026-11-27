@@ -340,8 +340,9 @@
 .fileGlyph[data-glyph="slides"] {
   --glyph-tint: var(--series-2);
 }
+/* Wide enough that a link on fleetd's computers keeps its line on how long its computer runs to two lines. */
 .fileCard[data-block="preview"] {
-  width: min(100%, 400px);
+  width: min(100%, 460px);
 }
 .fileGlyph[data-glyph="preview"] {
   --glyph-tint: var(--accent);
