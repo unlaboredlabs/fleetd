@@ -2,7 +2,9 @@
 // crates/fleetd/src/hub/train/tests.rs drives the Rust one: enqueue, review, rebase, CI, the `fleetd/train` status and
 // the pinned squash merge; red CI and conflicts back to their writers; batches; refusals; merges outside the train.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { httpError, Kit, PROJECT, REPO } from "./train_kit.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { git, GIT_ENV, httpError, Kit, PROJECT, REPO } from "./train_kit.ts";
 import { awaitsChecks, checks, closingRefs, unlinked } from "../src/hub/train/rules.ts";
 import { timedOut } from "../src/hub/train/notes.ts";
 import { batchSkipped, gatedName, jobChecks, labelGated, unprovenBatchSkips } from "../src/hub/train/next.ts";
@@ -167,7 +169,9 @@ test("a PR sent back while its writer is cancelled gets one fresh writer on its 
   const spawn = k.host.writerSpawns[0]!;
   expect(spawn).toMatchObject({ workstreamId: "W1", pr: `https://github.com/${REPO}/pull/10`, notDuplicateOf: ["X2", "T10"] });
   expect(spawn.prompt).toContain("from its writer T10, which was cancelled");
-  expect(spawn.prompt).toContain("git checkout -B fleetd/T10-b origin/fleetd/T10-b");
+  expect(spawn.prompt).toContain("git fetch origin fleetd/T10-b && git reset --hard FETCH_HEAD");
+  expect(spawn.prompt).toContain("git push origin HEAD:fleetd/T10-b");
+  expect(spawn.prompt).not.toContain("git checkout");
   expect(spawn.prompt).toContain("the merge train could not rebase it: it conflicts with main");
   // The fresh writer is the PR's writer now.
   expect(k.change(10).taskId).toBe("T70");
@@ -227,6 +231,43 @@ test("a cancelled writer's PR goes to the live writer already pointed at it, nev
   expect(sentTo(k, "T40")).toHaveLength(1);
   expect(sentTo(k, "T40")[0]).toContain("conflicts with main");
   expect(k.change(10).taskId).toBe("T40");
+  // Told as a running writer is: its turn ends with no push and nothing armed, and it is continued once.
+  k.host.tasks.get("T40")!.state = "done";
+  await k.settle();
+  await k.settle();
+  expect(sentTo(k, "T40")).toHaveLength(2);
+  expect(sentTo(k, "T40")[1]).toContain("still back with you");
+  expect(k.host.writerSpawns).toEqual([]);
+});
+
+test("a fresh writer's handoff moves the PR's branch while the cancelled writer's worktree still holds it", async () => {
+  const k = await sentBack("cancelled");
+  const prompt = k.host.writerSpawns[0]!.prompt;
+  const fetch = prompt.match(/`(git fetch origin [^`]+)`/)?.[1];
+  const push = prompt.match(/`(git push origin HEAD:[^`]+)`/)?.[1];
+  expect(fetch).toBeDefined();
+  expect(push).toBeDefined();
+  // As on the machine: the cancelled writer's worktree has its branch checked out, the fresh one its own from main.
+  const repo = join(k.dir, "machine");
+  git(k.dir, ["clone", "-q", k.origin, repo]);
+  git(repo, ["worktree", "add", "-q", join(k.dir, "old"), "fleetd/T10-b"]);
+  const fresh = join(k.dir, "fresh");
+  git(repo, ["worktree", "add", "-q", "-b", "fleetd/T70-fix", fresh, "origin/main"]);
+  // Checking the branch out there, as the first handoff said, is refused.
+  const checkout = Bun.spawnSync(["git", "checkout", "-B", "fleetd/T10-b", "origin/fleetd/T10-b"], { cwd: fresh, env: GIT_ENV, stderr: "pipe" });
+  expect(checkout.exitCode).not.toBe(0);
+  expect(checkout.stderr.toString()).toContain("already used by worktree");
+  const sh = (cmd: string) => {
+    const r = Bun.spawnSync(["sh", "-c", cmd], { cwd: fresh, env: GIT_ENV, stdout: "pipe", stderr: "pipe" });
+    expect(`${cmd}: ${r.exitCode} ${r.stderr}`).toBe(`${cmd}: 0 ${r.stderr}`);
+  };
+  sh(fetch!);
+  expect(git(fresh, ["rev-parse", "HEAD"])).toBe(k.gh.headOf("fleetd/T10-b")!);
+  writeFileSync(join(fresh, "fix.md"), "fixed\n");
+  git(fresh, ["add", "fix.md"]);
+  git(fresh, ["commit", "-q", "-m", "fix"]);
+  sh(push!);
+  expect(k.gh.headOf("fleetd/T10-b")).toBe(git(fresh, ["rev-parse", "HEAD"]));
 });
 
 /** PR 25, whose head GitHub ran no CI on (as #2236's on 2026-11-26): its CI times out with T25 in `state`. */

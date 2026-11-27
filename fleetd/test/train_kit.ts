@@ -16,7 +16,7 @@ export const REPO = "acme/storefront";
 export const PROJECT: ProjectRef = { machineId: "devbox", projectId: "storefront" };
 export const WS = "W1";
 
-const GIT_ENV: Record<string, string> = {
+export const GIT_ENV: Record<string, string> = {
   PATH: process.env.PATH ?? "/usr/bin:/bin",
   HOME: "/tmp",
   LANG: "C",

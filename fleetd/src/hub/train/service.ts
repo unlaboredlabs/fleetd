@@ -886,6 +886,10 @@ export class Train {
     // way it is its author's, as red CI is.
     const again = stall !== undefined && stall.kind !== "removed" ? `; ${PUSH_AGAIN}` : "";
     await this.tellAuthor(parked, `the merge train did not merge it: ${why}${again}`);
+    // A misnamed check in the bot's train settings, or a rule only a repo admin changes: its lead hears too.
+    if (stall?.kind === "never_ran" || stall?.kind === "removed") {
+      await this.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, `${why}; its author was told too`));
+    }
   }
 
   /** Polls the check runs of `sha` until all are done, one is red, or the timeout passes. */
