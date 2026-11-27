@@ -21,7 +21,11 @@ const hmr = new Set<import("bun").ServerWebSocket<unknown>>();
 const dev = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
-  fetch(req, server): Response | undefined {
+  // No idle cut of its own, as Vite has none.
+  idleTimeout: 0,
+  fetch(req, server): Response | Promise<Response> | undefined {
+    // A first compile that takes longer than Bun's 10 s idle cut (which lands 10 to 14 s in: its timer is coarse).
+    if (new URL(req.url).pathname === "/compile") return Bun.sleep(15_000).then(() => new Response("compiled"));
     if (new URL(req.url).pathname === "/hmr") {
       return server.upgrade(req, { headers: { "sec-websocket-protocol": "vite-hmr" } }) ? undefined : new Response("no", { status: 400 });
     }
@@ -209,6 +213,16 @@ test("a port with nothing on it is a page saying so; sharing it again renews it;
   expect(fleetdsOwn("http://127.0.0.1:4790", 4790)).toBe(true);
   expect(fleetdsOwn("https://ws.example.com", 4790)).toBe(false);
 });
+
+test("a dev server's first compile, slower than Bun's idle cut, still reaches the visitor", async () => {
+  const { link } = await agentShares();
+  const cookie = await signIn(link, t.owner);
+  const page = await at(link, "/compile", { cookie }).then(
+    (r) => r.text(),
+    (e: unknown) => String(e),
+  );
+  expect(page).toBe("compiled");
+}, 25_000);
 
 test("a boxed agent's link reaches the port inside its box, never this machine's", async () => {
   // The box serves the app on its port 4000; this machine has nothing there.

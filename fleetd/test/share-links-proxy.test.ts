@@ -1,7 +1,7 @@
 // Share links' pure parts: the HTTP/1.1 proxy and WebSocket bridge over a byte stream, the cookie, the rules.
 import { afterAll, expect, test } from "bun:test";
 import net from "node:net";
-import type { Duplex } from "node:stream";
+import { Duplex } from "node:stream";
 import { COOKIE, cookieEnd, header, read, refreshDue, sign, strip, verify } from "../src/hub/share_links/cookie.ts";
 import { bridge, Upstream, upgradeToDev } from "../src/hub/share_links/proxy.ts";
 import {
@@ -17,7 +17,9 @@ import {
   safePath,
 } from "../src/hub/share_links/rules.ts";
 
-// A dev server: echoes what it was sent, redirects, streams, and an HMR socket that names its subprotocol.
+// A dev server: echoes what it was sent, redirects, streams, and an HMR socket that names its subprotocol. `/slow*`
+// answers only when the test lets it: headers and a first piece, then the rest.
+const held: { headers: (() => void)[]; rest: (() => void)[] } = { headers: [], rest: [] };
 const seen: { host?: string; origin?: string | null; cookie?: string | null }[] = [];
 const dev = Bun.serve<{ protocol: string }>({
   port: 0,
@@ -32,6 +34,20 @@ const dev = Bun.serve<{ protocol: string }>({
     }
     if (url.pathname === "/go") return Response.redirect(`http://localhost:${server.port}/there`, 302);
     if (url.pathname === "/post") return new Response(`got ${(await req.arrayBuffer()).byteLength}`);
+    if (url.pathname.startsWith("/slow")) {
+      await new Promise<void>((r) => held.headers.push(r));
+      let c!: ReadableStreamDefaultController<Uint8Array>;
+      const body = new ReadableStream<Uint8Array>({ start: (x) => void (c = x) });
+      c.enqueue(new TextEncoder().encode("first "));
+      held.rest.push(() => {
+        // The proxy may have hung up already.
+        try {
+          c.enqueue(new TextEncoder().encode("rest"));
+          c.close();
+        } catch {}
+      });
+      return new Response(body);
+    }
     if (url.pathname === "/big") return new Response("x".repeat(300_000));
     return new Response(`hello ${url.pathname}${url.search}`, { headers: { "set-cookie": "dev=1; Path=/" } });
   },
@@ -94,6 +110,74 @@ test("HTTP: a dev server that isn't there is a 503 page", async () => {
   expect(r.status).toBe(503);
   expect(await r.text()).toContain("Nothing answered on port 1");
   up.close();
+});
+
+/** Waits until `ok()`, a few seconds at most. */
+const until = async (ok: () => boolean) => {
+  for (let i = 0; i < 300 && !ok(); i++) await Bun.sleep(10);
+};
+const within = <T>(p: Promise<T>, ms: number) => Promise.race([p, Bun.sleep(ms).then(() => "still waiting" as const)]);
+
+test("HTTP: visitors who give up before the answer free their streams for the next", async () => {
+  // A long idleMs, as a workspace's: a stream kept by a visitor who left would stay taken all that time.
+  const up = new Upstream(open, { ...limits, idleMs: 60_000 }, { port: DEV_PORT, origin: ORIGIN });
+  try {
+    held.headers.length = 0;
+    const gaveUp = Array.from({ length: 10 }, (_, i) => {
+      const a = new AbortController();
+      return { a, answer: up.fetch(new Request(`${ORIGIN}/slow${i}`, { signal: a.signal })) };
+    });
+    await until(() => held.headers.length >= 8);
+    for (const v of gaveUp) v.a.abort();
+    for (const v of gaveUp) void v.answer.catch(() => undefined);
+    const next = await within(up.fetch(new Request(`${ORIGIN}/fast`)), 3000);
+    expect(next === "still waiting" ? next : await next.text()).toBe("hello /fast");
+  } finally {
+    for (const r of held.headers.splice(0)) r();
+    for (const r of held.rest.splice(0)) r();
+    up.close();
+  }
+});
+
+test("HTTP: an answer that comes after its visitor left throws nothing", async () => {
+  const thrown: unknown[] = [];
+  const onError = (e: unknown) => void thrown.push(e);
+  process.on("uncaughtException", onError);
+  const up = new Upstream(open, limits, { port: DEV_PORT, origin: ORIGIN });
+  try {
+    // The visitor is gone as the answer lands: its body is cancelled unread, in the same tick, its bytes already in.
+    // The whole answer comes in one piece, from a promise, as a stream fed by another fetch's body (the cloud's) does.
+    const oneChunk = async (): Promise<Duplex> => {
+      const d: Duplex = new Duplex({
+        read() {},
+        write(_c, _e, cb) {
+          cb();
+          void Bun.sleep(5).then(() => d.push(Buffer.from(`HTTP/1.1 200 OK\r\ncontent-length: 1000\r\n\r\n${"x".repeat(1000)}`)));
+        },
+      });
+      return d;
+    };
+    const late = new Upstream(oneChunk, limits, { port: DEV_PORT, origin: ORIGIN });
+    for (let i = 0; i < 3; i++) await late.fetch(new Request(`${ORIGIN}/`)).then((r) => r.body!.cancel());
+    late.close();
+    // And gone mid-answer, the rest of it still to come.
+    held.headers.length = 0;
+    held.rest.length = 0;
+    const answer = up.fetch(new Request(`${ORIGIN}/slow`));
+    await until(() => held.headers.length === 1);
+    held.headers.shift()!();
+    const reader = (await answer).body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe("first ");
+    await reader.cancel();
+    await until(() => held.rest.length === 1);
+    held.rest.shift()!();
+    await Bun.sleep(100);
+    expect(thrown).toEqual([]);
+    expect(await (await up.fetch(new Request(`${ORIGIN}/after`))).text()).toBe("hello /after");
+  } finally {
+    process.off("uncaughtException", onError);
+    up.close();
+  }
 });
 
 test("WebSocket: a dev server whose handshake doesn't match is a 503 page, which the cloud's front passes on", async () => {
