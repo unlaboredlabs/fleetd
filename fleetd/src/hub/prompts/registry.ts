@@ -158,7 +158,7 @@ export const ENTRIES: RegistryEntry[] = [
     title: "Chat: the human",
     sentWhen: "with each chat message the human sends the lead",
     default: d7,
-    placeholders: "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the workspace has more than one person, with where it came from when not an app or the CLI (via Shortcuts, via the share sheet); about=nothing, or while the bot's chat tags are on \" about <order title> (W12)\" or \", not about an order\"; when=when they wrote it, on their clock: \"Tue 3 Nov 2026, 18:05 Europe/Berlin\" (their device's zone, else policy.tz, else the workspace's machine's, which it then names)",
+    placeholders: "text!=the human's words; files=the attached files' paths, or nothing; writer=\"the human\", or the writer's name when the workspace has more than one person, on one line, with where it came from when not an app or the CLI (via Shortcuts, via the share sheet); about=nothing, or while the bot's chat tags are on \" about <order title> (W12)\" or \", not about an order\"; when=when they wrote it, on their clock: \"Tue 3 Nov 2026, 18:05 Europe/Berlin\" (their device's zone, else policy.tz, else the workspace's machine's, which it then names)",
     rules: [],
   },
   {

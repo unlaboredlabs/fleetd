@@ -79,7 +79,7 @@ test("with the switch off nothing changes: no tags, markers stay, no prompt line
   expect(off.system).not.toContain("A question rings only the person it is for");
   expect(off.system).not.toContain("{{tags}}");
   const human = { author: "human", text: "hi", createdAt: "2026-11-08T10:00:00Z" } as ChatMessage;
-  expect(forLead(set, human, undefined, "", "Dana Park", "Sun 8 Nov")).toStartWith("Dana Park writes in your chat (Sun 8 Nov):");
+  expect(forLead(set, human, undefined, "", "Dana Park", "Sun 8 Nov")).toStartWith("A person (Dana Park) writes in your chat (Sun 8 Nov):");
   done();
 });
 
@@ -240,9 +240,9 @@ test("switch on: the lead's prompt carries the design's lines, and a person's me
   }
   const human = { author: "human", text: "hi", createdAt: "2026-11-08T10:00:00Z" } as ChatMessage;
   expect(forLead(set, { ...human, about: { workstreamId: "W12", title: "Apple Pay" } }, undefined, "", "Alice Chen", "Sun 8 Nov", true)).toStartWith(
-    "Alice Chen writes in your chat about Apple Pay (W12) (Sun 8 Nov):",
+    "A person (Alice Chen) writes in your chat about Apple Pay (W12) (Sun 8 Nov):",
   );
-  expect(forLead(set, human, undefined, "", "Alice Chen", "Sun 8 Nov", true)).toStartWith("Alice Chen writes in your chat, not about an order (Sun 8 Nov):");
+  expect(forLead(set, human, undefined, "", "Alice Chen", "Sun 8 Nov", true)).toStartWith("A person (Alice Chen) writes in your chat, not about an order (Sun 8 Nov):");
   done();
 });
 

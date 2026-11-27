@@ -204,9 +204,9 @@ export function roster(db: HubDb): Person[] {
   }
 }
 
-/** Who wrote a human message, as the lead reads it: "The human" on a one-person hub, else the writer's name. */
+/** Who wrote a human message, as the lead reads it: "the human" on a one-person hub, else the writer's name. */
 export const writer = (db: HubDb, person: PersonRef | undefined) =>
-  person !== undefined && roster(db).length > 0 ? person.name : "The human";
+  person !== undefined && roster(db).length > 0 ? person.name : "the human";
 
 /** `lead.start`'s `{{people}}`: nothing on a one-person hub; else who shares the chat, with their roles. */
 export function leadPeople(db: HubDb): string {
