@@ -216,6 +216,7 @@
     "./hub/orders/cards": "./fleetd/src/hub/orders/cards.ts",
     "./hub/orders/phase": "./fleetd/src/hub/orders/phase.ts",
     "./hub/outage/rules": "./fleetd/src/hub/outage/rules.ts",
+    "./hub/people/mention": "./fleetd/src/hub/people/mention.ts",
     "./hub/people/roles": "./fleetd/src/hub/people/roles.ts",
     "./hub/policy/file": "./fleetd/src/hub/policy/file.ts",
     "./hub/project_lead/asks": "./fleetd/src/hub/project_lead/asks.ts",
