@@ -16,6 +16,7 @@ import type { LeadCaller } from "../lead_calls/types.ts";
 import { people } from "../people/store.ts";
 import { administrator } from "../people/tools.ts";
 import { checkPreviewUrl, CODE_MS, enterUrl, isPort, lifeMinutes, MAX_MINUTES, MAX_OPEN, NAME, newToken } from "./rules.ts";
+import { sendKept } from "./kept.ts";
 import { codes, cut } from "./serve.ts";
 import { type Held, isOpen, shareLinks, shown } from "./store.ts";
 
@@ -88,6 +89,7 @@ export function share(hub: Hub, s: Share): ShareLink {
   if (already) {
     const renewed = sl.renew(already.name, Math.max(expiresMs, already.expiresMs), label)!;
     audit(hub, "share_link.renew", s.actor, renewed, `Renewed the share link of ${where(renewed)}`, ref);
+    sendKept(hub, renewed.machineId);
     return shown(renewed, at);
   }
   if (sl.open().length >= MAX_OPEN) {
@@ -103,6 +105,7 @@ export function share(hub: Hub, s: Share): ShareLink {
     expiresMs,
   });
   audit(hub, "share_link.create", s.actor, made, `Shared ${where(made)} for ${minutes} minutes`, ref);
+  sendKept(hub, made.machineId);
   return shown(made, at);
 }
 
@@ -133,7 +136,8 @@ function agentShare(hub: Hub, caller: LeadCaller, call: Record<string, unknown>)
     block,
     next:
       "Put the block in your message (a lead) or your result (a task) as a ```fleetd-block fence: the chat shows it as an Open preview card. " +
-      `Only the workspace's signed-in members open it, until ${link.expiresAt}; share_port again renews it.`,
+      `Only the workspace's signed-in members open it, until ${link.expiresAt}; share_port again renews it. ` +
+      "The dev server keeps running after you end, until the link ends; then fleetd stops it.",
   };
 }
 
@@ -157,6 +161,7 @@ export function register(tools: Registry): void {
     if (minutes === undefined) throw badMinutes();
     const renewed = shareLinks(hub).renew(l.name, hub.clock.now() + minutes * 60_000)!;
     audit(hub, "share_link.renew", actorOf(hub, caller), renewed, `Renewed the share link of ${where(renewed)} for ${minutes} minutes`);
+    sendKept(hub, renewed.machineId);
     return { link: shown(renewed, base(hub)) };
   });
   tools.add("share_link_revoke", (hub, caller, input) => {
@@ -164,6 +169,7 @@ export function register(tools: Registry): void {
     shareLinks(hub).revoke(l.name);
     cut(hub, l.name);
     audit(hub, "share_link.revoke", actorOf(hub, caller), l, `Stopped the share link of ${where(l)}`);
+    sendKept(hub, l.machineId);
     return {};
   });
   tools.add("share_link_open", (hub, caller, input) => {
@@ -192,6 +198,7 @@ export function register(tools: Registry): void {
     if (input.enabled !== undefined && input.enabled !== sl.enabled()) {
       sl.set("enabled", input.enabled ? "1" : "0");
       if (!input.enabled) for (const l of sl.open()) cut(hub, l.name);
+      for (const machineId of new Set(sl.open().map((l) => l.machineId))) sendKept(hub, machineId);
       auditLog(hub).record({ kind: "share_link.switch", actor, target: "Share links", summary: input.enabled ? "Turned share links on" : "Turned share links off" });
     }
     const url = sl.setting("preview_url");

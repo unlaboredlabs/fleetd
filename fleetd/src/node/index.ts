@@ -30,6 +30,7 @@ import { BOX_CLAUDE, boxWork, hasBox, HOSTED_NO_MAC, hostedBackend } from "./pla
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
+import { keepIn } from "./runner/kept.ts";
 import { pinSelf } from "./self_exe.ts";
 import { deliverSecret, type SecretsContext } from "./secrets/index.ts";
 import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
@@ -453,6 +454,8 @@ export async function startNode(
   // machine isn't on the tailnet itself (actions/mcp_tailnet.ts): off until the hub says it is on.
   setNodeTailnet(new NodeTailnet(config.hub, config.machineId, identity));
   await startMcpTailnet();
+  // Before the sessions' sweeps of what a node before this one left: a dev server a share link keeps stays (share/keep.ts).
+  keepIn(join(home, "hosts"));
   const sessions = await SessionService.start(sessionConfig);
   // A hosted box whose work didn't come back: the server it links to (fleetd's cloud) tells the task's lead.
   boxWork.said = (e) => sessions.boxWork(e);

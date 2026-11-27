@@ -47,6 +47,7 @@ export const HUB_TO_NODE = [
   "screen_control",
   "relay_dial",
   "preview_dial",
+  "share_kept",
   "session_step",
   "session_end",
 ] as const;

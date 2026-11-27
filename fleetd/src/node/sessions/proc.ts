@@ -3,7 +3,7 @@
 // start time, so a pid the kernel has since reused is never signalled.
 import { join, sep } from "node:path";
 import { SESSION_MARKER } from "../runner/claude.ts";
-import { argsAndEnv, dedupe, descendants, gone, signal, statOf, table, type Proc } from "../runner/procs.ts";
+import { argsAndEnv, dedupe, descendants, gone, signal, statOf, table, unkept, type Proc } from "../runner/procs.ts";
 
 /** After SIGTERM, how long a leftover gets to go before SIGKILL. */
 const ORPHAN_GRACE_MS = 2_000;
@@ -51,13 +51,16 @@ export async function killOrphans(
     const marker = env.find((v) => v.startsWith(prefix));
     return marker !== undefined && adopted.sessions.has(markerSession(marker.slice(prefix.length)) ?? "");
   };
-  const found = procs.filter((p) => {
-    if (p.zombie) return false;
-    const [args, env] = argsAndEnv(p.pid);
-    return !spared(p, env) && orphaned(args, env, roots);
-  });
+  // A dev server a share link keeps outlives its node too (../runner/kept.ts).
+  const found = unkept(
+    procs.filter((p) => {
+      if (p.zombie) return false;
+      const [args, env] = argsAndEnv(p.pid);
+      return !spared(p, env) && orphaned(args, env, roots);
+    }),
+  );
   const count = found.length;
-  const all = dedupe([...found, ...found.flatMap((p) => descendants(procs, p.pid))]).filter((p) => !spared(p, argsAndEnv(p.pid)[1]));
+  const all = unkept(dedupe([...found, ...found.flatMap((p) => descendants(procs, p.pid))]).filter((p) => !spared(p, argsAndEnv(p.pid)[1])));
   if (!all.length) return 0;
   signal(all, "SIGTERM");
   if (!(await gone(all, graceMs))) signal(all, "SIGKILL");
@@ -93,7 +96,7 @@ function spawnedFor(procs: Proc[], session: string, nodeSock: string): Proc[] {
  * orphaned when claude died. */
 function sweep(root: number | undefined, session: string, nodeSock: string): Proc[] {
   const procs = table();
-  return dedupe([...(root ? descendants(procs, root) : []), ...spawnedFor(procs, session, nodeSock).filter((p) => p.pid !== root)]);
+  return unkept(dedupe([...(root ? descendants(procs, root) : []), ...spawnedFor(procs, session, nodeSock).filter((p) => p.pid !== root)]));
 }
 
 /** Stops what session `session` left running when the node at `nodeSock` went away: SIGTERM to claude's process group (claude

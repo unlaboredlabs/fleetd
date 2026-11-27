@@ -196,7 +196,7 @@ test("a port with nothing on it is a page saying so; sharing it again renews it;
   const first = await agentShares(1);
   const cookie = await signIn(first.link, t.owner);
   const down = await at(first.link, "/", { cookie });
-  expect(down.status).toBe(502);
+  expect(down.status).toBe(503);
   expect(await down.text()).toContain("Nothing answered on port 1");
   t.clock.advance(60 * 60_000);
   const again = await agentShares(1);
@@ -224,5 +224,5 @@ test("a boxed agent's link reaches the port inside its box, never this machine's
   boxed = { up: false, ports: {} };
   const shared = await agentShares(DEV);
   const down = await at(shared.link, "/x", { cookie: await signIn(shared.link, t.owner) });
-  expect(down.status).toBe(502);
+  expect(down.status).toBe(503);
 });
