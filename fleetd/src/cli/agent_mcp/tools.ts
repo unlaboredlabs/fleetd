@@ -1,6 +1,9 @@
 // agent-mcp's tools: which role sees each, the lead or browser call it makes, and what tools/list shows. tools.json
 // holds each tool's description and input schema, the call's contract as LeadCall.json has it, and how a bad value at
-// each field is refused; it is kept by hand, in step with AGENT_MCP_TOOLS (agent_mcp.test.ts checks both).
+// each field is refused; it is kept by hand, in step with AGENT_MCP_TOOLS (agent_mcp.test.ts checks both). A running
+// agent-mcp serves the node's tools.json rather than its own once the node gives it (`useSnapshot`): the node may run a
+// newer build than the one the session started from.
+import { createHash } from "node:crypto";
 import snapshotJson from "./tools.json" with { type: "json" };
 
 export type Role = "lead" | "worker";
@@ -40,7 +43,18 @@ export interface Snapshot {
   probes: Record<string, Record<string, Probe>>;
 }
 
-export const SNAPSHOT = snapshotJson as Snapshot;
+/** This build's tools.json. */
+export const BUILT_IN = snapshotJson as Snapshot;
+
+/** The tools served now: this build's, or the node's since it gave them. */
+export let SNAPSHOT = BUILT_IN;
+
+export function useSnapshot(snapshot: Snapshot): void {
+  SNAPSHOT = snapshot;
+}
+
+/** What a node and an agent-mcp compare to tell whether their tools differ. */
+export const snapshotHash = (snapshot: Snapshot) => createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
 
 /** The server's name in a session's `--mcp-config`; claude shows its tools as `mcp__fleetd__<name>`. */
 export const SERVER_NAME = "fleetd";

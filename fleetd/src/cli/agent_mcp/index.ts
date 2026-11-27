@@ -2,7 +2,8 @@
 // message per line) the node puts in every lead's and task's `--mcp-config`. Each tool is one lead-side call, sent
 // through the node's socket with the session's `FLEETD_THREAD_ID`; the hub decides who may make it. The role only
 // picks which tools are listed. Results that take time (a task's result, an answer, an approval) arrive in a later
-// wake, never by polling.
+// wake, never by polling. The tools listed are the node's: a node updated since the session started runs a newer
+// build, whose tools this server takes and announces with `notifications/tools/list_changed` (`serve`).
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +15,7 @@ import { at, isObject, rustJson } from "./json.ts";
 import { browserResult, errorResult, toolResult, type ToolResult } from "./results.ts";
 import { callerCwd, NODE_RESTARTING, nodeSocketPath, osError, sendToNode } from "./socket.ts";
 import { storeSecret } from "./store.ts";
-import { toolList, toolsFor, SNAPSHOT, type Role } from "./tools.ts";
+import { snapshotHash, toolList, toolsFor, SNAPSHOT, useSnapshot, type Role, type Snapshot } from "./tools.ts";
 
 export { SERVER_NAME } from "./tools.ts";
 
@@ -22,9 +23,13 @@ const PROTOCOL_VERSION = "2025-06-18";
 /** contracts' artifacts.rs `ARTIFACT_TEXT_CAP`, in UTF-16 units as the app counts. */
 const ARTIFACT_TEXT_CAP = 2_000_000;
 const NODE_TIMEOUT_MS = 90_000;
+/** How often a running server asks the node whether its tools changed. */
+export const TOOLS_EVERY_MS = 15_000;
+/** How long the first tools/list waits for the node's tools before it lists this build's. */
+const FIRST_TOOLS_WAIT_MS = 3_000;
 
 type Call = Record<string, unknown>;
-const BROWSER_OPS = new Set(SNAPSHOT.tools.filter((t) => t.browser).map((t) => t.op));
+const isBrowserOp = (op: unknown) => SNAPSHOT.tools.some((t) => t.browser && t.op === op);
 
 /** The lead call a `tools/call` makes, or (thrown, a string) why its arguments are not one. */
 export function callOf(role: Role, name: string, args: unknown): Call {
@@ -93,7 +98,7 @@ export const envDeps = (): LeadDeps => ({
  * be asked. Each call has its own id, so one sent again after a cut is answered once (../../shared/lead_once.ts). */
 export function sendCall(call: Call, deps: LeadDeps): Promise<Record<string, unknown>> {
   const frame: Call = {
-    t: BROWSER_OPS.has(String(call.op)) ? "browser_call" : "lead_call",
+    t: isBrowserOp(call.op) ? "browser_call" : "lead_call",
     id: newCallId(process.pid, randomUUID()),
     cwd: callerCwd(deps.pwd, deps.cwd),
     call,
@@ -185,7 +190,7 @@ export async function handle(role: Role, message: unknown, deps: LeadDeps): Prom
       const asked = at(message.params, "protocolVersion");
       result = {
         protocolVersion: typeof asked === "string" ? asked : PROTOCOL_VERSION,
-        capabilities: { tools: {} },
+        capabilities: { tools: { listChanged: true } },
         serverInfo: { name: "fleetd", version: VERSION },
         instructions: "fleetd's own tools: every agent is a fleetd task, started, steered and stopped here.",
       };
@@ -226,6 +231,75 @@ async function* lines(input: ReadableStream<Uint8Array>): AsyncGenerator<string>
   if (pending.length > 0) yield decode(pending);
 }
 
+/** The node's tools, taken in place of the ones served (`served.hash`) when they differ: whether `role`'s tools/list
+ * changed with them. A node that can't be asked, or is from before `agent_tools`, leaves them as they are. */
+export async function takeNodeTools(role: Role, deps: LeadDeps, served: { hash: string }): Promise<boolean> {
+  let answer: Record<string, unknown>;
+  try {
+    answer = await deps.send(nodeSocketPath(deps.sock), { t: "agent_tools", have: served.hash });
+  } catch {
+    return false;
+  }
+  if (answer.t !== "agent_tools" || typeof answer.hash !== "string" || answer.hash === served.hash) return false;
+  const next = answer.snapshot;
+  if (!isObject(next) || !Array.isArray(next.tools) || !isObject(next.probes)) return false;
+  const before = JSON.stringify(toolList(role));
+  useSnapshot(next as unknown as Snapshot);
+  served.hash = answer.hash;
+  return JSON.stringify(toolList(role)) !== before;
+}
+
+/** Serves `input`'s messages until it ends, each answer a line to `write`. The node's tools are asked for as it starts
+ * (the first tools/list waits for them a little) and every `everyMs`; once claude has listed tools, a change is
+ * announced, and claude lists them again. */
+export async function serve(
+  role: Role,
+  input: ReadableStream<Uint8Array>,
+  write: (line: string) => Promise<unknown>,
+  deps: LeadDeps,
+  everyMs = TOOLS_EVERY_MS,
+): Promise<void> {
+  const served = { hash: snapshotHash(SNAPSHOT) };
+  let listed = false;
+  let asking: Promise<void> | undefined;
+  const ask = () =>
+    (asking ??= takeNodeTools(role, deps, served)
+      .then((changed) => {
+        if (changed && listed) return write(rustJson({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }));
+      })
+      .catch(() => {})
+      .finally(() => {
+        asking = undefined;
+      }));
+  const first = ask();
+  const timer = setInterval(ask, everyMs);
+  timer.unref();
+  try {
+    for await (const line of lines(input)) {
+      if (line.trim() === "") continue;
+      let message: unknown;
+      let answer: Call | undefined;
+      try {
+        message = JSON.parse(line);
+      } catch (error) {
+        answer = { jsonrpc: "2.0", id: null, error: { code: -32700, message: `parse error: ${(error as Error).message}` } };
+      }
+      if (answer === undefined) {
+        if (isObject(message) && message.method === "tools/list") {
+          await Promise.race([first, Bun.sleep(FIRST_TOOLS_WAIT_MS)]);
+          // In the same tick as the list is read: a change after this is announced.
+          listed = true;
+        }
+        answer = await handle(role, message, deps);
+      }
+      if (answer === undefined) continue;
+      await write(`${rustJson(answer)}\n`);
+    }
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 export const AGENT_MCP_USAGE = "usage: fleetd agent-mcp --role lead|worker";
 
 /** `fleetd agent-mcp --role lead|worker`: serves stdin until it closes. */
@@ -237,20 +311,10 @@ export async function agentMcp(argv: string[], deps: LeadDeps = envDeps()): Prom
   }
   const out = Bun.stdout.writer();
   try {
-    for await (const line of lines(Bun.stdin.stream())) {
-      if (line.trim() === "") continue;
-      let message: unknown;
-      let answer: Call | undefined;
-      try {
-        message = JSON.parse(line);
-      } catch (error) {
-        answer = { jsonrpc: "2.0", id: null, error: { code: -32700, message: `parse error: ${(error as Error).message}` } };
-      }
-      if (answer === undefined) answer = await handle(role, message, deps);
-      if (answer === undefined) continue;
-      out.write(`${rustJson(answer)}\n`);
+    await serve(role, Bun.stdin.stream(), async (line) => {
+      out.write(line.endsWith("\n") ? line : `${line}\n`);
       await out.flush();
-    }
+    }, deps);
   } catch (error) {
     // Invalid UTF-8 on stdin, or stdout gone: the Rust server stops reading too.
     if (!(error instanceof TypeError) && (error as { code?: string }).code !== "EPIPE") throw error;

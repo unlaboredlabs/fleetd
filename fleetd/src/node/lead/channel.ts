@@ -1,4 +1,4 @@
-// A node.sock call answered: one `lead_call` line (or `browser_call`, `hold`) in, one result line back, from a process on
+// A node.sock call answered: one `lead_call` line (or `browser_call`, `hold`, `agent_tools`) in, one result line back, from a process on
 // this machine or a box's channel (`leadChannel`), sent on over whichever link to the hub is up (`LeadRelay`). Box side
 // (docs/CONTRIBUTING.md "The package"): the socket itself and the kernel's word on who called are ./index.ts and
 // ./peer.ts, so a service with no node answers a box's node.sock calls with it too.
@@ -7,6 +7,7 @@ import type { Masker } from "../mask.ts";
 import { isCallId, LEAD_CALL_ONCE } from "../../shared/lead_once.ts";
 import type { NodeFrame } from "../../shared/node_link.ts";
 import { headUtf16 } from "../text.ts";
+import { BUILT_IN, snapshotHash } from "../../cli/agent_mcp/tools.ts";
 
 export type PeerSession = { kind: "session"; session: string } | { kind: "detached"; session: string } | { kind: "outside" };
 
@@ -154,6 +155,14 @@ export function attribute(frame: LeadCallFrame, peer: PeerSession | undefined): 
 
 const isResult = (v: LeadCallFrame | LeadResultFrame): v is LeadResultFrame => !("call" in v);
 
+let builtInHash: string | undefined;
+/** `agent_tools`: the tools this build's agent-mcp serves, for a running one started from an older build to serve
+ * instead (cli/agent_mcp/index.ts `serve`); only their hash when `have` is it already. */
+export function agentTools(have: unknown): Record<string, unknown> {
+  builtInHash ??= snapshotHash(BUILT_IN);
+  return have === builtInHash ? { t: "agent_tools", hash: builtInHash } : { t: "agent_tools", hash: builtInHash, snapshot: BUILT_IN };
+}
+
 export type LeadSocketHooks = {
   relay: LeadRelay;
   /** Which session a calling process runs in. */
@@ -177,6 +186,7 @@ export async function answerLine(line: string, caller: Caller, hooks: LeadSocket
     return bad(`not a lead_call frame: ${(error as Error).message}`);
   }
   const peer = () => identify(caller, hooks.identify);
+  if (frame.t === "agent_tools") return agentTools(frame.have);
   if (frame.t === "hold") {
     const who = peer();
     if (who?.kind !== "outside") return bad("only a person's shell holds the node's agents, never a session");
@@ -192,7 +202,7 @@ export async function answerLine(line: string, caller: Caller, hooks: LeadSocket
       return { t: "browser_result", ...(await hooks.browser(who.session, frame)) };
     return refuse("a browser session belongs to an agent's session, and this call comes from none", "use the browser tools of a fleetd agent");
   }
-  if (frame.t !== "lead_call") return bad('not a lead_call frame: expected t: "lead_call", "browser_call" or "hold"');
+  if (frame.t !== "lead_call") return bad('not a lead_call frame: expected t: "lead_call", "browser_call", "hold" or "agent_tools"');
   const call = frame as unknown as LeadCallFrame;
   if (typeof call.id !== "string" || typeof call.call?.op !== "string") return bad("not a lead_call frame: it has no id or call");
   const op = call.call.op;
