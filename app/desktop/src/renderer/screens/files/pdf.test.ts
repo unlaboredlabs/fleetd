@@ -12,6 +12,10 @@ import { blankForPictures, pdfOptions } from "./pdfOptions";
 /** One 200 × 100 page: a CCITT G4 image of a black box on white, as a scanner writes it. */
 const SCAN = "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMTAwXSAvUmVzb3VyY2VzIDw8IC9YT2JqZWN0IDw8IC9JbTAgNCAwIFIgPj4gPj4gL0NvbnRlbnRzIDUgMCBSID4+CmVuZG9iago0IDAgb2JqCjw8IC9UeXBlIC9YT2JqZWN0IC9TdWJ0eXBlIC9JbWFnZSAvV2lkdGggMjAwIC9IZWlnaHQgMTAwIC9CaXRzUGVyQ29tcG9uZW50IDEgL0NvbG9yU3BhY2UgL0RldmljZUdyYXkgL0ZpbHRlciAvQ0NJVFRGYXhEZWNvZGUgL0RlY29kZVBhcm1zIDw8IC9LIC0xIC9Db2x1bW5zIDIwMCAvUm93cyAxMDAgL0JsYWNrSXMxIHRydWUgPj4gL0xlbmd0aCA1MCA+PgpzdHJlYW0KJqGSL//////yGiQ3///////////////////////////////////////4//////8AEAEKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9MZW5ndGggMzAgPj4Kc3RyZWFtCnEgMjAwIDAgMCAxMDAgMCAwIGNtIC9JbTAgRG8gUQplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0NSAwMDAwMCBuIAowMDAwMDAwNTMwIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNjEwCiUlRU9GCg==";
 
+/** One page of a good fax scan and a damaged JPEG 2000 picture, no words. */
+const MIXED = "JVBERi0xLjUKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9YT2JqZWN0IDw8IC9JbTAgNSAwIFIgL0ltMSA2IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA2OSA+PgpzdHJlYW0KcSA0MDAgMCAwIDIwMCAxMDAgNTAwIGNtIC9JbTAgRG8gUSBxIDQwMCAwIDAgMzAwIDEwMCAxMDAgY20gL0ltMSBEbyBRCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvWE9iamVjdCAvU3VidHlwZSAvSW1hZ2UgL1dpZHRoIDIwMCAvSGVpZ2h0IDEwMCAvQml0c1BlckNvbXBvbmVudCAxIC9Db2xvclNwYWNlIC9EZXZpY2VHcmF5IC9GaWx0ZXIgL0NDSVRURmF4RGVjb2RlIC9EZWNvZGVQYXJtcyA8PCAvSyAtMSAvQ29sdW1ucyAyMDAgL1Jvd3MgMTAwIC9CbGFja0lzMSB0cnVlID4+IC9MZW5ndGggNTAgPj4Kc3RyZWFtCiahki//////8hokN///////////////////////////////////////+P//////ABABCmVuZHN0cmVhbQplbmRvYmoKNiAwIG9iago8PCAvVHlwZSAvWE9iamVjdCAvU3VidHlwZSAvSW1hZ2UgL1dpZHRoIDQwMCAvSGVpZ2h0IDMwMCAvQml0c1BlckNvbXBvbmVudCA4IC9Db2xvclNwYWNlIC9EZXZpY2VSR0IgL0ZpbHRlciAvSlBYRGVjb2RlIC9MZW5ndGggMjEyID4+CnN0cmVhbQoAAAAMalAgIA0Khwr//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////wplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA3CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI1NiAwMDAwMCBuIAowMDAwMDAwMzc1IDAwMDAwIG4gCjAwMDAwMDA2NjAgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA3IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgoxMDM5CiUlRU9GCg==";
+/** One page of a stroked line, a filled box and a damaged JPEG 2000 picture, no words. */
+const VECTOR = "JVBERi0xLjUKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9YT2JqZWN0IDw8IC9JbTAgNSAwIFIgPj4gPj4gL0NvbnRlbnRzIDQgMCBSID4+CmVuZG9iago0IDAgb2JqCjw8IC9MZW5ndGggMTAxID4+CnN0cmVhbQpxIDEgMCAwIFJHIDQgdyA1MCA1MCBtIDUwMCA3MDAgbCBTIDAgMCAxIHJnIDEwMCA0MDAgMjAwIDEwMCByZSBmIFEgcSA0MDAgMCAwIDMwMCAxMDAgMTAwIGNtIC9JbTAgRG8gUQplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL1hPYmplY3QgL1N1YnR5cGUgL0ltYWdlIC9XaWR0aCA0MDAgL0hlaWdodCAzMDAgL0JpdHNQZXJDb21wb25lbnQgOCAvQ29sb3JTcGFjZSAvRGV2aWNlUkdCIC9GaWx0ZXIgL0pQWERlY29kZSAvTGVuZ3RoIDIxMiA+PgpzdHJlYW0KAAAADGpQICANCocK//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8KZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDUgMDAwMDAgbiAKMDAwMDAwMDM5NyAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjc3NgolJUVPRgo=";
 /** One page whose only picture is a JPEG 2000 image with damaged data, and no words. */
 const DAMAGED = "JVBERi0xLjUKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9YT2JqZWN0IDw8IC9JbTAgNCAwIFIgPj4gPj4gL0NvbnRlbnRzIDUgMCBSID4+CmVuZG9iago0IDAgb2JqCjw8IC9UeXBlIC9YT2JqZWN0IC9TdWJ0eXBlIC9JbWFnZSAvV2lkdGggNDAwIC9IZWlnaHQgMzAwIC9CaXRzUGVyQ29tcG9uZW50IDggL0NvbG9yU3BhY2UgL0RldmljZVJHQiAvRmlsdGVyIC9KUFhEZWNvZGUgL0xlbmd0aCAyMTIgPj4Kc3RyZWFtCgAAAAxqUCAgDQqHCv//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvTGVuZ3RoIDMzID4+CnN0cmVhbQpxIDUwMCAwIDAgMzc1IDU2IDMwMCBjbSAvSW0wIERvIFEKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDUgMDAwMDAgbiAKMDAwMDAwMDYyNCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjcwNwolJUVPRgo=";
 
@@ -62,18 +66,26 @@ const blank = async (b64: string) => {
   try {
     const page = await (await task.promise).getPage(1);
     const ops = await page.getOperatorList();
-    // As after drawing: the page's pictures have resolved, decoded or not.
-    const args = ops.argsArray[ops.fnArray.indexOf(OPS.paintImageXObject)] as readonly unknown[];
-    await new Promise((done) => {
-      page.objs.get(String(args[0]), done);
-    });
+    // As after drawing: every picture on the page has resolved, decoded or not.
+    const names = ops.fnArray.flatMap((fn, i) => (fn === OPS.paintImageXObject ? [String((ops.argsArray[i] as readonly unknown[])[0])] : []));
+    await Promise.all(
+      names.map(
+        (name) =>
+          new Promise((done) => {
+            page.objs.get(name, done);
+          }),
+      ),
+    );
     return await blankForPictures(page, OPS);
   } finally {
     await task.destroy();
   }
 };
 
-it("knows a page drawn blank for a damaged picture, and not one whose picture drew", async () => {
+it("knows a page drawn blank for its only, damaged picture, and not one with anything else drawn on it", async () => {
   expect(await blank(DAMAGED)).toBe(true);
   expect(await blank(SCAN)).toBe(false);
+  // A broken picture beside one that decoded, or beside paths, leaves a page worth showing.
+  expect(await blank(MIXED)).toBe(false);
+  expect(await blank(VECTOR)).toBe(false);
 });
