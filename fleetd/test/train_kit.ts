@@ -362,8 +362,11 @@ export class FakeGh implements GhRunner {
           p.state = v;
           p.closer = undefined;
           this.log.push(`${v === "open" ? "reopen" : "close"} #${b}`);
-        } else if (k === "base") p.base = v;
-        else if (k === "title") p.title = v;
+        } else if (k === "base") {
+          p.base = v;
+          // GitHub works out again whether it merges into its new base.
+          p.mergeable = undefined;
+        } else if (k === "title") p.title = v;
         else if (k === "body") p.body = v;
       }
       return ok({});
@@ -702,9 +705,13 @@ export class FakeHost implements TrainHost {
   repoProjects(): ProjectRef[] {
     return [];
   }
+  /** A clone of the origin the train's node commands run in for real; unset, the node runs none. */
+  checkout?: string;
   async nodeRun(_checkout: ProjectRef, _cwd: string, argv: string[]): Promise<NodeRun> {
     this.nodeRuns.push(argv);
-    throw new Error("no checkout");
+    if (this.checkout === undefined) throw new Error("no checkout");
+    const r = Bun.spawnSync(argv, { cwd: this.checkout, env: GIT_ENV, stdout: "pipe", stderr: "pipe" });
+    return { exitCode: r.exitCode, outputTail: `${r.stdout}${r.stderr}` };
   }
   async wakeLead(_r: ProjectRef, line: string) {
     this.wakes.push(line);
