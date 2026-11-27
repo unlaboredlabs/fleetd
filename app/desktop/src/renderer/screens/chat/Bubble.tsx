@@ -4,7 +4,7 @@
 // lead's, Reply; right-clicking one copies it, and on the lead's replies to it too. A reply of yours
 // shows the bubble it answers above it.
 import { Check, Paperclip, Pin, PinOff, Reply, Send, Tag } from "lucide-react";
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
@@ -41,6 +41,9 @@ import { Message } from "./text";
 import { TagLine } from "./lens/Lens";
 import { aboutOf, partAbout } from "./lens/tags";
 import s from "./view.module.css";
+
+// A turn's stamp and its list, loaded with the first reply that has one: the chat's first load stays as it was.
+const TurnStamp = lazy(() => import("./TurnList"));
 
 /**
  * An attachment as a chip. A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to
@@ -143,6 +146,7 @@ function BubbleLine(props: {
   worked?: string | undefined;
 }) {
   const { item, bubble, first, last, lead, mine } = props;
+  const time = <span className={s.time}>{shortClock(item.at)}</span>;
   const actions = useBubbleActions();
   const enter = useEnter(props.enter, props.step);
   const block = bubble.kind === "block";
@@ -233,7 +237,15 @@ function BubbleLine(props: {
       {props.worked !== undefined ? (
         // Beside the bubble's last line, over the room its actions keep: it takes none, so nothing moves as it comes.
         <span className={s.workedSlot}>
-          <span className={s.worked}>{props.worked}</span>
+          <span className={s.worked}>
+            {actions !== undefined ? (
+              <Suspense fallback={props.worked}>
+                <TurnStamp project={actions.project} worked={props.worked} />
+              </Suspense>
+            ) : (
+              props.worked
+            )}
+          </span>
         </span>
       ) : null}
       <span className={s.aside}>
@@ -246,7 +258,14 @@ function BubbleLine(props: {
             </Tooltip>
           </>
         ) : null}
-        <span className={s.time}>{shortClock(item.at)}</span>
+        {props.worked !== undefined && actions !== undefined ? (
+          // Under the pointer a turn's stamp stands in its time's place, and opens what the turn did; the time until it loads.
+          <Suspense fallback={time}>
+            <TurnStamp project={actions.project} worked={props.worked} time={time} />
+          </Suspense>
+        ) : (
+          time
+        )}
       </span>
     </div>
   );

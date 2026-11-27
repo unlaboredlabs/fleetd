@@ -12,6 +12,7 @@ import { registerLeadCalls } from "./calls.ts";
 import { run as ciWaits } from "./ci_wait.ts";
 import { tasks } from "./index.ts";
 import { taskHooks } from "./ports.ts";
+import { KeptSteps } from "./steps_kept.ts";
 import { clockTime } from "./sweep.ts";
 import { run as worktrees } from "./worktrees.ts";
 
@@ -88,6 +89,8 @@ export function start(hub: Hub): void {
   sweep(hub).register({ name: "unreachable-tasks", run: () => t.unreachable() });
   // Orphaned tasks, sessions nobody owns, and breakers whose quiet spell is over.
   sweep(hub).register({ name: "tasks", run: () => t.sweep() });
+  // A finished agent's kept steps go KEPT_FOR_MS after its end.
+  sweep(hub).register({ name: "kept-steps", run: () => void hub.db.transaction((c) => KeptSteps.prune(c, hub.clock.now())) });
   void t.run().catch((error) => console.error("tasks: the follower stopped:", error));
   void ciWaits(hub, t, sleep(hub)).catch((error) => console.error("tasks: the CI waits stopped:", error));
   void worktrees(hub, t, sleep(hub)).catch((error) => console.error("tasks: the worktree sweep stopped:", error));

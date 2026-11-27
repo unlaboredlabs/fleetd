@@ -295,6 +295,48 @@
       ],
       "type": "object"
     },
+    "TaskCommit": {
+      "description": "One commit of a writer's branch.",
+      "properties": {
+        "sha": {
+          "description": "Its short sha.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha",
+        "subject"
+      ],
+      "type": "object"
+    },
+    "TaskFile": {
+      "description": "One file a writer changed, with its lines added and removed (0 and 0 for a binary file).",
+      "properties": {
+        "additions": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deletions": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Repo-relative; the new path of a rename.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "additions",
+        "deletions"
+      ],
+      "type": "object"
+    },
     "TaskId": {
       "pattern": "^T[1-9][0-9]*$",
       "type": "string"
@@ -383,9 +425,25 @@
           "minLength": 1,
           "type": "string"
         },
+        "commits": {
+          "description": "A writer's own commits on its branch, newest first (at most 20), read from its worktree once it ended; absent\nfor readers and reviews, when it made none, and when the workspace couldn't read them.",
+          "items": {
+            "$ref": "#/$defs/TaskCommit"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
         "endCause": {
           "$ref": "#/$defs/RunEnd",
           "description": "Why its last run ended (the node stopped, the agent exited, a limit, context full, …); absent on results an\nolder hub recorded, and when it never ran."
+        },
+        "files": {
+          "description": "The files a writer changed, from where its branch started to its worktree as it ended (uncommitted changes\nincluded), read once it ended; absent as `commits` is.",
+          "items": {
+            "$ref": "#/$defs/TaskFile"
+          },
+          "maxItems": 200,
+          "type": "array"
         },
         "prUrl": {
           "type": "string"

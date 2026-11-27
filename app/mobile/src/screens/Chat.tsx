@@ -33,7 +33,7 @@ import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
 import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendStays, sentSays, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, holds, orderStamp, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { openPreview } from "../preview";
 import { onHome } from "../split";
@@ -46,7 +46,7 @@ import { useCanStop } from "../stopProbe";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { DraftReply } from "../drafts";
 import { changeDraft } from "../draftsStore";
-import { openingChat, refOf, type Key } from "../store";
+import { openingChat, refOf, type Key, type TurnWorked } from "../store";
 import { waitsOnMe } from "../lists";
 import { parseInline } from "../markdown";
 import { space, type, useTheme, type Palette } from "../theme";
@@ -201,7 +201,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const lastAtOpen = useRef<number | undefined>(undefined);
   if (lastAtOpen.current === undefined && chatState !== undefined) lastAtOpen.current = chatState.lastSeq;
   const unreadFrom = readAtOpen !== undefined && (lastAtOpen.current ?? 0) > readAtOpen ? readAtOpen : undefined;
-  const worked = state.turnWorked[chatKey];
+  const worked = useClosedOrder(state.turnWorked[chatKey]);
   // The tagged chat (chatTags.ts): off, the thread is as it always was.
   const tagsOn = project?.chatTags === true;
   const openOrders = useMemo(() => (tagsOn ? openOrdersOf(state.orders, chatKey) : NO_ORDERS), [tagsOn, state.orders, chatKey]);
@@ -1907,3 +1907,28 @@ const styles = StyleSheet.create({
   sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingLeft: space.lg, paddingRight: space.sm, paddingVertical: space.sm },
   selectable: { flex: 1, paddingHorizontal: space.lg, paddingTop: space.sm },
 });
+
+/**
+ * The lead's latest turn as its reply is stamped: with the order it closed, read once (order_get), its whole time and
+ * its agents, so that reply says "Done in 3m 10s · 3 agents" rather than the closing turn's seconds.
+ */
+function useClosedOrder(turn: TurnWorked | undefined): (TurnWorked & { readonly order?: { readonly ms: number; readonly agents: number } }) | undefined {
+  const { session } = useHub();
+  const closed = turn?.closed;
+  const [order, setOrder] = useState<{ readonly id: string; readonly ms: number; readonly agents: number }>();
+  useEffect(() => {
+    if (closed === undefined) return;
+    let live = true;
+    void session.call("order_get", { workstreamId: closed.workstreamId }).then((r) => {
+      const stamp = r.ok ? orderStamp(closed.at, r.output) : undefined;
+      if (live && stamp !== undefined) setOrder({ id: closed.workstreamId, ...stamp });
+    });
+    return () => {
+      live = false;
+    };
+  }, [session, closed]);
+  return useMemo(() => {
+    if (turn === undefined || order === undefined || order.id !== closed?.workstreamId) return turn;
+    return { ...turn, order: { ms: order.ms, agents: order.agents } };
+  }, [turn, order, closed]);
+}

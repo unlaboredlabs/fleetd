@@ -14,6 +14,7 @@ import type {
   Task,
   TaskId,
   TaskRecovery,
+  TaskFile,
   TaskResult,
   TaskResultStatus,
   TaskState,
@@ -37,6 +38,7 @@ import { unreadLines } from "../steer/dm.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
+import { OUTPUT_TAIL_MAX } from "../work/landing_rules.ts";
 import * as baseOf from "./base.ts";
 import { Breakers, type Opened, type Paused, QUIET_MS, WINDOW_MS } from "./breaker.ts";
 import * as duplicates from "./duplicates.ts";
@@ -51,7 +53,9 @@ import {
   type Rebuilt,
   type TaskPorts,
 } from "./ports.ts";
+import { commitsArgv, commitsOf, filesArgv, filesOf, pathBatches } from "./kept_rules.ts";
 import { numberOf, type StoredTask, type TaskFilter, TaskRecords } from "./records.ts";
+import { KeptSteps } from "./steps_kept.ts";
 import * as recovery from "./recovery.ts";
 import {
   branchFor,
@@ -117,6 +121,10 @@ const COMPACT = "/compact";
 const HANDOFF_TAIL = 1500;
 /** The most each node read for a handoff may take. */
 const HANDOFF_STEP_TIMEOUT_MS = 20_000;
+/** How long a writer's end waits for its files and commits (readWork): a node that doesn't answer leaves them out. */
+const KEEP_READ_MS = 15_000;
+/** The characters of numstat lines one command is given, under the node's OUTPUT_TAIL_MAX of output. */
+const KEPT_ROOM = 1_800;
 /** How long the event follower waits on ending threads' whole replies before applying their ends without them. */
 const WHOLE_READ_GRACE_MS = 1_000;
 /** The thread events that may end a task, whose whole reply the follower reads before taking the lock. */
@@ -1007,9 +1015,11 @@ export class Tasks {
       ...(endCause !== undefined ? { endCause } : {}),
       at,
     };
-    const next: Task = { ...task, state: status === "done" ? "done" : "failed", result, endedAt: at };
+    let next: Task = { ...task, state: status === "done" ? "done" : "failed", result, endedAt: at };
     if (branch !== undefined) next.branch = branch;
     if (changes?.worktreePath !== undefined) next.worktreePath = changes.worktreePath;
+    // Its files and commits are in the result before the end is said: a page that reads it then has them.
+    if (write) next = { ...next, result: { ...result, ...(await this.readWork(next, threadRef, changes?.paths)) } };
     // The PR lookup is marked pending in the same write, so no crash between them loses it.
     TaskRecords.putEnded(this.db, { task: next }, write, fullResult);
     this.releaseAll(task);
@@ -1018,6 +1028,7 @@ export class Tasks {
       const read = whole?.read ?? this.ports.latestText(threadRef);
       spawnInBackground(`${task.taskId}'s whole result`, this.fill(next, text, read, [error, escalation]));
     }
+    spawnInBackground(`what ${task.taskId} did`, this.keep(next));
     // Last, so whoever waits on it sees the slot and the wake already settled.
     const [type, verb]: [HubEventType, string] = status === "done" ? ["task.completed", "completed"] : ["task.failed", "failed"];
     this.emit(next, type, `${task.taskId} ${verb}: ${task.title}`, escalated !== undefined ? { escalated } : {});
@@ -1042,6 +1053,46 @@ export class Tasks {
       const tail = [whole.trim(), ...after].filter((s) => s !== "").join("\n\n");
       TaskRecords.putResult(this.db, { ...stored, task: { ...stored.task, result: { ...result, tail: resultText(tail, TAIL_MAX) } } }, fullResultText(tail));
     });
+  }
+
+  /**
+   * What the workspace keeps of `ended`, read off the lock: its thread's newest steps (agent_work reads them once its
+   * node, box or worktree is gone), and a writer's changed files and own commits on its result, unless it ended again
+   * since. Each read is bounded; one the node can't answer leaves its part out.
+   */
+  private async keep(ended: Task): Promise<void> {
+    const thread = ended.threadRef;
+    if (!thread) return;
+    const steps = this.ports.workSteps ? await this.bounded(this.ports.workSteps(thread)) : undefined;
+    if (steps !== undefined && steps.length > 0) this.tryDb(() => KeptSteps.save(this.db, thread, ended.taskId, steps, this.now()));
+  }
+
+  /**
+   * A writer's changed files and own commits as it ends, read from its worktree: every one of `paths` (the node's
+   * `changes`), a batch per command, as its output keeps only its last OUTPUT_TAIL_MAX. Within KEEP_READ_MS in all,
+   * as the end waits for it; a part the node can't give in time is left out.
+   */
+  private async readWork(ended: Task, thread: ThreadRef, paths: string[] | undefined): Promise<Pick<TaskResult, "files" | "commits">> {
+    const path = ended.worktreePath;
+    if (path === undefined) return {};
+    const git = async (argv: string[]) => {
+      const out = await this.ports.runCommand(thread.machineId, path, argv, 30);
+      return out?.exitCode === 0 ? out.outputTail : undefined;
+    };
+    const read = async (): Promise<Pick<TaskResult, "files" | "commits">> => {
+      const base = ended.base;
+      const files: TaskFile[] = [];
+      if (base !== undefined) {
+        for (const batch of pathBatches(paths ?? [], KEPT_ROOM)) {
+          const numstat = (await git(filesArgv(base, batch))) ?? (await git(filesArgv({ sha: base.sha }, batch)));
+          if (numstat !== undefined) files.push(...filesOf(numstat, OUTPUT_TAIL_MAX));
+        }
+      }
+      const log = ended.branch === undefined ? undefined : await git(commitsArgv(ended.branch));
+      const commits = log === undefined ? [] : commitsOf(log, OUTPUT_TAIL_MAX);
+      return { ...(files.length > 0 ? { files } : {}), ...(commits.length > 0 ? { commits } : {}) };
+    };
+    return (await within(KEEP_READ_MS, read())) ?? {};
   }
 
   /**
@@ -2094,6 +2145,11 @@ export class Tasks {
       };
       const { queuedReason: _q, ...rest } = task;
       next = { ...rest, state: "cancelled", result, endedAt: at };
+      // A stopped writer's files and commits too, before its stop is said.
+      if (task.kind === "write" && task.threadRef) {
+        const paths = (await within(OBSERVE_TIMEOUT_MS, this.ports.changes(task.threadRef)))?.paths;
+        next = { ...next, result: { ...result, ...(await this.readWork(next, task.threadRef, paths)) } };
+      }
       try {
         this.put({ task: next });
         this.releaseAll(task);
@@ -2101,6 +2157,7 @@ export class Tasks {
       } catch (error) {
         throw storeError(error);
       }
+      spawnInBackground(`what ${taskId} did`, this.keep(next));
       if (task.kind !== "write") this.removeWorktree(next);
       await this.retryQueue();
     } finally {

@@ -29,6 +29,7 @@ import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, withPart, type Info as InfoRead } from "./api";
+import { recentlyEnded } from "../agent/model";
 import { agentLines, checklist, deleteBlocked, deleteWords, leadValue, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useBotLocked } from "./parts";
 import { skillsShown } from "./skillsModel";
@@ -187,6 +188,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
     );
   }
   const agents = agentLines(v?.agents ?? []);
+  const ended = recentlyEnded(v?.agents ?? [], now.nowMs);
   const orders = orderLines(v?.orders ?? []);
   const list = checklist(v?.checklist ?? []);
   const merged = merges(v?.prs ?? []);
@@ -280,8 +282,27 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         ) : agents.length === 0 ? (
           <ListRow title="Nothing running" valueColor={t.secondary} />
         ) : (
-          agents.map((a) => <ListRow key={a.id} title={a.title} detail={a.role === "" ? undefined : a.role} value={a.status} valueColor={toneColor(t, a.tone)} />)
+          agents.map((a) => (
+            <ListRow
+              key={a.id}
+              title={a.title}
+              detail={a.role === "" ? undefined : a.role}
+              value={a.status}
+              valueColor={toneColor(t, a.tone)}
+              {...(a.title === "Lead" ? {} : { onPress: () => navigation.navigate("Agent", { key, laneId: a.id, taskId: a.taskId, title: a.title }) })}
+            />
+          ))
         )}
+        {ended.map((a) => (
+          <ListRow
+            key={a.laneId}
+            title={a.title}
+            detail={a.endedAt === undefined ? undefined : `Ended ${listTime(a.endedAt, now)}`}
+            value={a.status === "done" ? "Finished" : a.status === "failed" ? "Failed" : "Stopped"}
+            valueColor={a.status === "failed" ? t.danger : t.secondary}
+            onPress={() => navigation.navigate("Agent", { key, laneId: a.laneId, taskId: a.taskId, title: a.title })}
+          />
+        ))}
         {dms ? <ListRow key="dms" title="DMs Between Agents" value={countValue(v?.dms)} onPress={() => navigation.navigate("Dms", { key })} /> : null}
       </ListSection>
 

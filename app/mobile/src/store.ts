@@ -45,6 +45,14 @@ import {
   type TurnSpan,
 } from "./desktop";
 
+
+/** A lead's turn that is over, as its chat's reply is stamped (chatView.ts threadRows). */
+export type TurnWorked = {
+  readonly since: number;
+  readonly until: number;
+  readonly ms?: number;
+  readonly closed?: { readonly workstreamId: string; readonly at: string };
+};
 export type Machine = FleetStatus["machines"][number];
 
 export { keyOf, refOf, type Key } from "./projectKey";
@@ -133,8 +141,13 @@ export interface State {
   readonly skewMs?: number | undefined;
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
   readonly turnSince: Readonly<Record<Key, number>>;
-  /** Each lead's latest turn seen to its end (hub epoch ms at each end): how long it took, kept with its reply's time (chatView.ts). */
-  readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number; readonly ms?: number }>>;
+  /**
+   * Each chat's lead's latest turn seen to its end, epoch ms at each end; `ms` how long it worked toward its reply;
+   * `closed` the order it closed and when (a workstream.done while it ran): its reply says the order's whole time.
+   */
+  readonly turnWorked: Readonly<Record<Key, TurnWorked>>;
+  /** The order the lead's turn now running has closed, by chat, until the turn ends. */
+  readonly turnClosed?: Readonly<Record<Key, { readonly workstreamId: string; readonly at: string }>> | undefined;
   /** Each lead's last turns seen to their end, `cut` when the bot's last thread end before it went idle failed or was
    * interrupted: "Worked for" counts those the lead carried on toward its reply (the desktop's workedToward). */
   readonly turnSpans?: Readonly<Record<Key, readonly TurnSpan[]>> | undefined;
@@ -525,6 +538,13 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     const key = keyOf({ machineId: event.machineId, projectId: event.projectId });
     return { ...s, turnLastEnd: { ...s.turnLastEnd, [key]: event.type } };
   }
+  // An order closed while its bot's lead works: that turn's reply is the one that closes it.
+  if (event.type === "workstream.done" && !replayed && event.machineId !== undefined && event.projectId !== undefined) {
+    const key = keyOf({ machineId: event.machineId, projectId: event.projectId });
+    const workstreamId = (event.data as { workstreamId?: unknown } | undefined)?.workstreamId;
+    if (s.turnSince[key] === undefined || typeof workstreamId !== "string") return s;
+    return { ...s, turnClosed: { ...s.turnClosed, [key]: { workstreamId, at: event.at } } };
+  }
   if (event.type === "chat.waiting") {
     // What a chat waits for, missed while the link was down: the snapshot before it says it as it is now.
     if (replayed) return s;
@@ -543,12 +563,16 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     // How long it worked toward its reply: this turn, and the cut ones right before it since your message.
     const asked = ended ? s.chats[key]?.messages.findLast((m) => m.author === "human" && Date.parse(m.createdAt) < since) : undefined;
     const ms = ended && spans !== undefined ? workedToward(spans, asked === undefined ? undefined : Date.parse(asked.createdAt)) : undefined;
-    const turnWorked = ended ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at), ...(ms === undefined ? {} : { ms }) } } : s.turnWorked;
+    const closed = ended ? s.turnClosed?.[key] : undefined;
+    const turnWorked = ended
+      ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at), ...(ms === undefined ? {} : { ms }), ...(closed === undefined ? {} : { closed }) } }
+      : s.turnWorked;
+    const turnClosed = began || ended ? without(s.turnClosed ?? {}, key) : s.turnClosed;
     const turnSpans = spans === undefined ? s.turnSpans : { ...s.turnSpans, [key]: spans };
     const turnLastEnd = began ? without(s.turnLastEnd ?? {}, key) : s.turnLastEnd;
     const stopped = !state.leadWorking && s.chatStates[key]?.leadWorking === true && !Number.isNaN(Date.parse(event.at));
     const turnEnded = stopped ? { ...s.turnEnded, [key]: Date.parse(event.at) } : s.turnEnded;
-    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked, turnEnded, turnSpans, turnLastEnd };
+    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked, turnClosed, turnEnded, turnSpans, turnLastEnd };
   }
   if (event.type !== "chat.message") return s;
   const data = event.data as ChatMessageEventData | undefined;

@@ -134,7 +134,8 @@ export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, has: { re
     });
   const failed = (r: { ok: false; error: HubError }): Info => ({ error: r.error });
   await Promise.all([
-    land(hub.call("agents_list", { projectRef }), (r) => (r.ok ? { agents: r.output.agents } : failed(r))),
+    // Those that ended in the last day too: each opens the record the workspace kept of it.
+    land(hub.call("agents_list", { projectRef, endedSince: new Date(nowMs - 86_400_000).toISOString() }), (r) => (r.ok ? { agents: r.output.agents } : failed(r))),
     land(hub.call("checklist_get", { projectRef }), (r) => (r.ok ? { checklist: r.output.items } : failed(r))),
     land(hub.call("orders_board", { projectRef }), (r) => (r.ok ? { orders: r.output.orders } : failed(r))),
     land(hub.call("pr_list", { projectRef, closedSince: since }), (r) => (r.ok ? { prs: r.output.prs } : failed(r))),

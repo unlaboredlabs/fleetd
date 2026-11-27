@@ -59,6 +59,7 @@ export const MACHINE_TABLES = [
   "threads",
   "thread_accounts",
   "task_threads",
+  "task_steps",
   "session_prompts",
   "queued_writes",
   "wakes",

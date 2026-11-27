@@ -40,10 +40,36 @@ const AGENTS = [
   row("T3", "waiting", "W2", { role: "reader" }),
 ];
 
+/** T9, an agent that has ended: the record the workspace kept of it. */
+const ENDED = {
+  attempt: 1,
+  createdAt: "2026-10-17T10:00:00.000Z",
+  startedAt: "2026-10-17T10:00:00.000Z",
+  endedAt: "2026-10-17T10:12:40.000Z",
+  kind: "write",
+  projectRef: project,
+  prompt: "p",
+  state: "done",
+  taskId: "T9",
+  title: "Dark mode follows the system",
+  workstreamId: "W1",
+  threadRef: { machineId: "devbox", threadId: "s-T9" },
+  result: {
+    at: "2026-10-17T10:12:40.000Z",
+    status: "done",
+    tail: "Dark mode follows the system now.",
+    files: [
+      { path: "src/theme.ts", additions: 12, deletions: 3 },
+      { path: "src/screens/Settings.tsx", additions: 4, deletions: 0 },
+    ],
+    commits: [{ sha: "a1b2c3d", subject: "Follow the system's dark mode" }],
+  },
+};
+
 /** Live work on the same repo from another project, for Also on this repo; none unless a test sets it. */
 let elsewhere: unknown[] = [];
 
-const answer = (tool: string): unknown => {
+const answer = (tool: string, input?: unknown): unknown => {
   switch (tool) {
     case "orders_board":
       return { at: AT, trains: [], orders: [card("W1", { title: "Dark mode" }), card("W2", { title: "Receipts in the store's zone" })] };
@@ -63,6 +89,19 @@ const answer = (tool: string): unknown => {
         text: "use the store's zone",
         thread: { machineId: "devbox", threadId: "s-T1" },
         workstreamId: "W1",
+      };
+    case "task_get":
+      // T9 has ended; the others are still at work, as a stop's first read finds them.
+      return { task: (input as { taskId?: string } | undefined)?.taskId === "T9" ? ENDED : { ...ENDED, taskId: "T1", state: "running", result: undefined } };
+    case "order_get":
+      return { order: card("W1", { title: "Dark mode" }), doneLanes: [], requests: [] };
+    case "agent_work":
+      return {
+        steps: [
+          { kind: "action", id: "i1", at: AT, action: { at: AT, kind: "file_change", status: "completed", failed: false, summary: "src/theme.ts" } },
+          { kind: "message", id: "m1", at: AT, role: "assistant", text: "Dark mode follows the system now." },
+        ],
+        running: false,
       };
     case "work_list":
       return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: elsewhere, recentLandings: [] };
@@ -132,7 +171,7 @@ const mount = async (features?: readonly string[]) => {
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
-      return Promise.resolve({ ok: true, output: answer(tool) });
+      return Promise.resolve({ ok: true, output: answer(tool, input) });
     },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -355,4 +394,30 @@ it("holds an agent's line through a burst of tool calls under 100 ms each, then 
   act(() => frame());
   step(2000);
   expect(shown()).toBe("thinking | thinking");
+});
+
+it("keeps an agent's page after it ends: how it ended and ran, its report, files, commits and steps, read-only", async () => {
+  const go = await mount();
+  await go(toHash(panelRoute(project, { tab: "agents", agent: "T9" })));
+  const page = host.querySelector("[data-screen='agents.work.finished']");
+  if (page === null) throw new Error("no finished page");
+  const text = page.textContent;
+  expect(text).toContain("Finished");
+  expect(text).toContain("ran 12m 40s");
+  expect(text).toContain("Dark mode");
+  expect(page.querySelector("[aria-label='Report']")?.textContent).toContain("Dark mode follows the system now.");
+  // Files by name, their folder quiet after, their lines; with no PR there is no diff to open.
+  const files = page.querySelector("[aria-label='Files changed']");
+  expect(files?.textContent).toContain("Files changed2 · +16 \u22123");
+  expect(files?.textContent).toContain("theme.ts");
+  expect(files?.querySelector("button")).toBeNull();
+  expect(page.querySelector("[aria-label='Commits']")?.textContent).toContain("a1b2c3dFollow the system's dark mode");
+  // Its steps read from the workspace's copy; its last words are the report, not said twice. Nothing to steer or stop.
+  const steps = page.querySelector("[aria-label='Steps']")?.textContent ?? "";
+  // In plain words (the labeller): the file's name, its path on a click.
+  expect(steps).toContain("Edited theme.ts");
+  expect(steps).not.toContain("Dark mode follows the system now.");
+  expect(calls.find((c) => c.tool === "agent_work")?.input).toMatchObject({ machineId: "devbox", threadId: "s-T9" });
+  expect(page.querySelector("textarea")).toBeNull();
+  expect([...page.querySelectorAll("button")].some((b) => b.textContent === "Stop")).toBe(false);
 });

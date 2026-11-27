@@ -343,7 +343,7 @@ const REPLY_SLACK_MS = 2_000;
  */
 export const threadRows = (
   items: readonly ChatItem[],
-  worked?: { readonly since: number; readonly until: number; readonly ms?: number },
+  worked?: { readonly since: number; readonly until: number; readonly ms?: number; readonly order?: { readonly ms: number; readonly agents: number } | undefined },
   readSeq?: number,
   clock: Pick<Clock, "timeZone"> = {},
   tagOf?: (item: ChatItem) => Tag | undefined,
@@ -354,7 +354,9 @@ export const threadRows = (
       ? -1
       : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
   // How long it worked toward the reply, the cut runs it carried on from included (store.ts turnWorked.ms).
-  const stamp = worked === undefined ? undefined : workedFor(worked.ms ?? worked.until - worked.since);
+  // The reply that closed an order says the order's whole time, never the last turn's seconds. A duration, as every
+  // stamp in the time column is: the column is as wide as "12:59 PM" (reveal.ts), too narrow for the desktop's words.
+  const stamp = worked === undefined ? undefined : workedFor(worked.order?.ms ?? worked.ms ?? worked.until - worked.since);
   let prev: ChatItem | undefined;
   let prevTag: Tag | undefined;
   let prevDay = 0;
