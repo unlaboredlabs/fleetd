@@ -94,16 +94,29 @@ test("a tool that is only new needs no resume", async () => {
   expect(resumes()).toHaveLength(0);
 });
 
-test("a conversation not as claude writes it, or without its saved request, keeps its claude on a changed tool", async () => {
+test("a conversation not as claude writes it, or without its saved request, keeps its claude on a changed tool, and the log says why once", async () => {
   writeFileSync(marksFile(), JSON.stringify({ ...toolMarks("lead"), checklist: "the older checklist" }));
   const before = pid();
-  for (const [runId, text] of [["r3a", `${TRANSCRIPT}not json\n`], ["r3b", TRANSCRIPT.split("\n").filter((l) => !l.includes('"prompt_snapshot"') && !l.includes('"api-request-shape"')).join("\n")]]) {
-    putTranscript(text!);
-    await send(runId!, runId!);
-    await done(runId!);
-    expect(pid()).toBe(before);
-    expect(readFileSync(transcript(), "utf8")).toBe(text!);
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warned.push(args.join(" "));
+  const declined = () => warned.filter((w) => w.includes("isn't resumed for fleetd's updated tools"));
+  try {
+    // What a Claude Code that renamed its saved request's records would write.
+    for (const [runId, text] of [["r3a", TRANSCRIPT.split("\n").filter((l) => !l.includes('"prompt_snapshot"') && !l.includes('"api-request-shape"')).join("\n")], ["r3b", `${TRANSCRIPT}not json\n`]]) {
+      putTranscript(text!);
+      await send(runId!, runId!);
+      await done(runId!);
+      expect(pid()).toBe(before);
+      expect(readFileSync(transcript(), "utf8")).toBe(text!);
+      // Said once for this claude, with the session and why: never again on its later turns.
+      expect(declined()).toHaveLength(1);
+    }
+  } finally {
+    console.warn = warn;
   }
+  expect(declined()[0]).toContain(`"sessionId":"${ID}"`);
+  expect(declined()[0]).toContain(`"why":"it holds no api-request-shape or prompt_snapshot record"`);
   expect(resumes()).toHaveLength(0);
 });
 

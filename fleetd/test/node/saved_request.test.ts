@@ -5,7 +5,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { chmodSync, copyFileSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { holdsSavedRequest, takeSavedRequest, withoutSavedRequest } from "../../src/node/sessions/saved_request.ts";
+import { holdsSavedRequest, savedRequestMissing, takeSavedRequest, withoutSavedRequest } from "../../src/node/sessions/saved_request.ts";
 import { tempHome } from "../helpers.ts";
 
 const FIXTURE = join(import.meta.dir, "../fixtures/claude-sessions/2.1.314-tool-changed.jsonl");
@@ -55,6 +55,9 @@ test("a transcript that isn't as expected is never written", () => {
     expect([why, takeSavedRequest(file)]).toEqual([why, undefined]);
     expect([why, readFileSync(file, "utf8") === text]).toEqual([why, true]);
   }
+  expect(savedRequestMissing(copy(stripped))).toBe("it holds no api-request-shape or prompt_snapshot record");
+  expect(savedRequestMissing(copy(`${real}["api-request-shape"]\n`))).toBe(`its line ${real.split("\n").length} isn't a JSON object`);
+  expect(savedRequestMissing(join(home.dir, "missing.jsonl"))).toBe("it can't be read");
   expect(holdsSavedRequest(join(home.dir, "missing.jsonl"))).toBe(false);
   expect(takeSavedRequest(join(home.dir, "missing.jsonl"))).toBeUndefined();
 });

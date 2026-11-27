@@ -11,12 +11,12 @@ const saved = (entry: Record<string, unknown>) =>
   entry.type === "api-request-shape" ||
   (entry.type === "attachment" && typeof entry.attachment === "object" && entry.attachment !== null && (entry.attachment as { type?: unknown }).type === "prompt_snapshot");
 
-/** `text` without the saved request's records and how many went; undefined when a line isn't a JSON object or none
- * of them is there. */
-export function withoutSavedRequest(text: string): { text: string; taken: number } | undefined {
+/** `text` without the saved request's records and how many went, or why it isn't as expected: a line that isn't a
+ * JSON object, or none of them there. */
+function strip(text: string): { text: string; taken: number } | { why: string } {
   const kept: string[] = [];
   let taken = 0;
-  for (const line of text.split("\n")) {
+  for (const [i, line] of text.split("\n").entries()) {
     if (line.trim() === "") {
       kept.push(line);
       continue;
@@ -25,13 +25,19 @@ export function withoutSavedRequest(text: string): { text: string; taken: number
     try {
       entry = JSON.parse(line);
     } catch {
-      return undefined;
+      entry = undefined;
     }
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return { why: `its line ${i + 1} isn't a JSON object` };
     if (saved(entry as Record<string, unknown>)) taken++;
     else kept.push(line);
   }
-  return taken === 0 ? undefined : { text: kept.join("\n"), taken };
+  return taken === 0 ? { why: "it holds no api-request-shape or prompt_snapshot record" } : { text: kept.join("\n"), taken };
+}
+
+/** `text` without the saved request's records and how many went; undefined when it isn't as expected. */
+export function withoutSavedRequest(text: string): { text: string; taken: number } | undefined {
+  const out = strip(text);
+  return "why" in out ? undefined : out;
 }
 
 const read = (file: string) => {
@@ -42,11 +48,16 @@ const read = (file: string) => {
   }
 };
 
-/** Whether the conversation at `file` holds the saved request as expected, so a resume can take it out. */
-export function holdsSavedRequest(file: string): boolean {
+/** Why the conversation at `file` doesn't hold the saved request as expected, so a resume can't take it out;
+ * undefined when it does. */
+export function savedRequestMissing(file: string): string | undefined {
   const text = read(file);
-  return text !== undefined && withoutSavedRequest(text) !== undefined;
+  if (text === undefined) return "it can't be read";
+  const out = strip(text);
+  return "why" in out ? out.why : undefined;
 }
+
+export const holdsSavedRequest = (file: string) => savedRequestMissing(file) === undefined;
 
 /** Takes the saved request out of the conversation at `file`: how many records went, or undefined when the file
  * isn't as expected (then it is left as it is). */

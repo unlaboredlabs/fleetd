@@ -22,7 +22,7 @@ import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import { scrubTranscript } from "./scrub.ts";
-import { holdsSavedRequest, takeSavedRequest } from "./saved_request.ts";
+import { savedRequestMissing, takeSavedRequest } from "./saved_request.ts";
 import * as claude from "../runner/claude.ts";
 import * as antigravity from "../runner/antigravity.ts";
 import { current as currentScope } from "../runner/scope.ts";
@@ -410,6 +410,8 @@ type Live = {
   /** Closed between turns for fleetd's updated tools (`#takeNewTools`): the run that asked waits for the next start,
    * as does any recorded meanwhile, so its exit ends none. */
   between?: boolean;
+  /** Its resume for fleetd's updated tools was declined, and the log said why (`#takeNewTools`). */
+  declined?: boolean;
   exited: Promise<void>;
   markExited: () => void;
   secrets: [string, string][];
@@ -2242,8 +2244,16 @@ export class SessionService {
     if ([...live.watching.values()].some((until) => until > this.#now())) return;
     if ((row.local.monitors ?? []).some((m) => m.untilMs > this.#now())) return;
     if (this.screens?.holdsScreen(id)) return;
+    // Said once per claude: a Claude Code that writes its conversation differently shows in the log, not as resumes that
+    // quietly stopped.
     const file = claude.sessionFile(row.local.configDir, row.local.cwd, id);
-    if (!file || !holdsSavedRequest(file)) return;
+    const missing = file ? savedRequestMissing(file) : "it has no conversation file";
+    if (missing !== undefined) {
+      if (!live.declined)
+        console.warn(`${nowIso()} WARN a session's claude isn't resumed for fleetd's updated tools: its conversation doesn't hold claude's saved request as expected {"sessionId":"${id}","why":${JSON.stringify(missing)}}`);
+      live.declined = true;
+      return;
+    }
     console.log(`${nowIso()} INFO resuming a session's claude for fleetd's updated tools {"sessionId":"${id}"}`);
     this.update(id, (c) =>
       this.#putItem(c, {
