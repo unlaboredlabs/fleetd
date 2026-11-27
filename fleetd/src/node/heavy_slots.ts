@@ -51,11 +51,17 @@ export const PORTS_PER_RUN = 4_000;
 
 export type Machine = { cores: number; buildSlots: number; buildJobs: number; testWorkers: number; memTotal: number | undefined; ports: number };
 
-/** The heavy runs `m` fits at once, the fewest of: the cores left once every build slot runs its build's jobs, at one
- * run's test workers each; memory (as sold) at MEM_PER_RUN_GB a run; ephemeral ports at PORTS_PER_RUN a run. At least
- * one. Unknown memory doesn't limit it. */
+/** The CPUs of `cores` heavy runs leave to everything else (the agents themselves, their own small runs, the workspace):
+ * one in eight, as the agents a machine fits are counted (load/index.ts agentsFit). */
+export const reservedCpus = (cores: number) => Math.ceil(cores / 8);
+
+/** The heavy runs `m` fits at once, the fewest of: the cores past reservedCpus at one run's test workers each, each run
+ * held to that share (slotShare); memory (as sold) at MEM_PER_RUN_GB a run; ephemeral ports at PORTS_PER_RUN a run. At
+ * least one. Unknown memory doesn't limit it. Since every run is capped at its share, a slot no longer also leaves room
+ * for every build slot's jobs: on Nov 26, with 6 slots, all held and 4 runs queued, 10 to 14 of the devbox's 32 cores
+ * sat idle. */
 export function slotsFit(m: Machine): number {
-  const cpu = Math.floor((m.cores - m.buildSlots * m.buildJobs) / Math.max(1, m.testWorkers));
+  const cpu = Math.floor((m.cores - reservedCpus(m.cores)) / Math.max(1, m.testWorkers));
   const mem = m.memTotal === undefined ? Infinity : Math.floor(Math.ceil(m.memTotal / 2 ** 30) / MEM_PER_RUN_GB);
   const ports = Math.floor(m.ports / PORTS_PER_RUN);
   return Math.max(1, Math.min(cpu, mem, ports));
@@ -98,15 +104,15 @@ export function machineCpus(): number[] | undefined {
   return undefined;
 }
 
-/** The CPUs each of `slots` slots may use, of `cores`: an equal share of those past the build slots' jobs (`reserved`,
- * as slotsFit leaves them), at least one; every CPU when the builds fill the machine. */
+/** The CPUs each of `slots` slots may use, of `cores`: an equal share of those past `reserved` (reservedCpus, as
+ * slotsFit leaves them), at least one; every CPU when the reserve is the whole machine. */
 export function slotShare(cores: number, reserved: number, slots: number): number {
   const free = cores > reserved ? cores - reserved : cores;
   return Math.max(1, Math.floor(free / Math.max(1, slots)));
 }
 
 /** This machine as slotsFit reads it, from its own CPUs (machineCpus), never this process's: a run started inside a
- * pinned one (`check.sh --background`) must size the slots, and the build jobs they leave out, as every other run
+ * pinned one (`check.sh --background`) must size the slots, and the CPUs they leave out, as every other run
  * does, or its slot's CPUs would overlap another's. Builds with no turns (`buildSlots` 0) count as the slots memory
  * fits. */
 export function machineHere(home: string): Machine {
@@ -265,7 +271,7 @@ function capped(home: string, slots: number): string[] | undefined {
   const unit = callerUnit(path);
   let why = "";
   for (const shortPeriod of [true, false]) {
-    const r: RunScope = { cpus: slotShare(m.cores, m.buildSlots * m.buildJobs, slots), shortPeriod, ...(memory ? { memory } : {}), ...(unit ? { unit } : {}) };
+    const r: RunScope = { cpus: slotShare(m.cores, reservedCpus(m.cores), slots), shortPeriod, ...(memory ? { memory } : {}), ...(unit ? { unit } : {}) };
     const args = [systemdRun, ...quotaArgs(r)];
     const probe = Bun.spawnSync([...args, "true"], { stdout: "ignore", stderr: "pipe", timeout: 5_000 });
     if (probe.exitCode === 0) return args;
