@@ -116,8 +116,11 @@ export type BrokerHost = {
   idleMinutes?: () => number;
   /** A session changed in what its `snapshot` holds (it started, filled a value, changed hands, ended). */
   changed?: (thread: string) => void;
-  /** Where a session's browser on this machine saves what it downloads, and their list (downloads.ts); none: Chrome's own folder. */
-  downloads?: (sessionId: string) => DownloadList;
+  /**
+   * Where a session's browser saves what it downloads, and their list (downloads.ts): `box`, the hosted box its Chrome
+   * runs in, if it runs in one. None: Chrome's own folder (the node's own gives none for a box).
+   */
+  downloads?: (sessionId: string, box?: ScreenBox) => DownloadList | undefined;
   /** Removes the downloads of ended sessions once they are a day old. */
   sweepDownloads?: (live: string[], now: number) => void;
 };
@@ -350,9 +353,9 @@ export class BrowserBroker {
         await entry.release?.().catch(() => {});
         throw new ToolError("failed", `The browser didn't start: ${(e as Error).message}`);
       }
-      // A browser on this machine saves its downloads where the person can have them put in the chat; a hosted box's
-      // keeps them in the box.
-      const downloads = inside ? undefined : this.host.downloads?.(session.id);
+      // A browser saves its downloads where the person can have them put in the chat: the host says where, in its box
+      // for a hosted one.
+      const downloads = this.host.downloads?.(session.id, inside);
       if (downloads !== undefined) {
         session.onDownload = () => void this.report(session, "live");
         await session.downloadTo(downloads).catch((e: unknown) => console.warn(`browser ${session.id}: its downloads aren't kept: ${(e as Error).message}`));

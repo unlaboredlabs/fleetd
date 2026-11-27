@@ -9,7 +9,7 @@ import { findFfmpeg, readMeta, recordingsDir, VideoSink } from "../src/node/brow
 import { TAKING_OVER } from "../src/node/browser/broker.ts";
 import { NO_SESSION } from "../src/node/browser/cdp_proxy.ts";
 import { Proxy } from "../src/node/browser/proxy.ts";
-import { PAUSED, cdpInput } from "../src/node/browser/session.ts";
+import { PAUSED, Session, cdpInput } from "../src/node/browser/session.ts";
 import { downloadsDir } from "../src/node/browser/downloads.ts";
 import { playwrightDirs } from "./browser_rig.ts";
 import { tempHome } from "./helpers.ts";
@@ -190,6 +190,24 @@ test("a session's browser saves its downloads in a folder of its own, and the hu
   // The end's reports leave it out; the hub keeps the list it had (hub-browser-downloads.test.ts).
   await local.call("session_end", {}, "t1");
   expect(existsSync(join(dir, "dummy.pdf"))).toBe(true);
+});
+
+test("a download list its host makes elsewhere (a hosted box's) has its folder ready before Chrome is told to save there", async () => {
+  const browser = fakeBrowser();
+  const session = new Session("B1", "t1", new Cdp(browser));
+  const order: string[] = [];
+  await session.downloadTo({
+    dir: "/box/downloads/B1",
+    list: () => [],
+    began: () => {},
+    progress: () => false,
+    ready: async () => {
+      await Bun.sleep(5);
+      order.push(`ready, then ${String(browser.got.filter((m) => m.method === "Browser.setDownloadBehavior").length)} told`);
+    },
+  });
+  expect(order).toEqual(["ready, then 0 told"]);
+  expect(browser.got.find((m) => m.method === "Browser.setDownloadBehavior")).toMatchObject({ params: { downloadPath: "/box/downloads/B1" } });
 });
 
 const chrome = playwrightDirs.map(findChrome).find((c) => c !== undefined);
