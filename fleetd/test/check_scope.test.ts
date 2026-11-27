@@ -39,6 +39,14 @@ describe("the parts a change reaches, in this repo", () => {
     for (const path of ["fleetd/bun.lock", "fleetd/package.json", "fleetd/test/preload.ts"]) expect(testsFor([path])).toBe("all");
     // A deleted file: who read it can't be told.
     expect(testsFor(["fleetd/src/hub/gone_since.ts"])).toBe("all");
+    // Fixtures read by a name built at run time (golden.ts's join(FIXTURES, `${name}.json`)), not named by any test,
+    // even though a test elsewhere holds a string ("B1/..") that resolves to fleetd/test, the folder they're in.
+    // Built here too: a string holding their path would name them, and pick this test.
+    for (const name of ["fleetd/test/cli/fixtures/hub-time-order", "fleetd/test/cli/fixtures/chat-empty"]) {
+      expect(testsFor([`${name}.json`])).toBe("all");
+    }
+    // One a test names whole (join(import.meta.dir, "sealed_box_libsodium.json")) runs that test.
+    expect(testsFor(["fleetd/test/sealed_box_libsodium.json"])).toContain("test/sealed_box.test.ts");
   });
 
   test("the site's own files build it; the renderer's run desktop and its screens", () => {

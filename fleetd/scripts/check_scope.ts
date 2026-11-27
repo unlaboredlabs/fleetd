@@ -96,13 +96,15 @@ function named(file: string, repo: string): string[] {
     .replace(/(^|\s)\/\/.*$/gm, "$1");
   const out = new Set<string>();
   for (const [, spec] of text.matchAll(/["'`]([\w@+./-]*[./][\w@+./-]*)["'`]/g)) {
-    if (!spec || /^\.+$/.test(spec)) continue;
+    if (!spec || /^[./]+$/.test(spec)) continue;
     for (const from of [dirname(file), fleetd, repo]) {
       const at = resolve(from, spec);
-      if (!at.startsWith(`${repo}/`) || at.includes("/node_modules/")) continue;
+      if (!at.startsWith(`${repo}/`) || at.split("/").includes("node_modules")) continue;
       const hit = [at, `${at}.ts`, `${at}.tsx`, join(at, "index.ts")].find(isFile);
       if (hit) out.add(hit);
-      else if (isDir(at) && at !== fleetd && !at.endsWith("/.git")) for (const f of filesIn(at)) out.add(f);
+      // A folder that holds the source itself isn't one it reads by name: "B1/.." in a test under fleetd/test would
+      // otherwise name every fixture there, and a fixture read by a name built at run time must run every test.
+      else if (isDir(at) && at !== fleetd && !file.startsWith(`${at}/`) && !at.endsWith("/.git")) for (const f of filesIn(at)) out.add(f);
     }
   }
   out.delete(file);
