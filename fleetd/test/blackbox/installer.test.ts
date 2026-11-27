@@ -641,6 +641,68 @@ test.skipIf(process.platform !== "linux")("as root without a terminal it stops b
   expect(existsSync(join(r.home, ".fleetd"))).toBe(false);
 });
 
+/**
+ * Root with a user fleetd already on the machine: `id` says root (uid 0) and knows fleetd, linger can't be turned on
+ * (a warning), chown does nothing, and `su [--pty] - fleetd -c <command>` runs the command as this user, with none of
+ * this stand-in on its PATH and no FLEETD_JOIN_CODE, as `su -` starts a login. suArgs() is what su was given.
+ */
+function asRootWithSu(r: ReturnType<typeof release>) {
+  const stand = join(r.dir, "root-su");
+  mkdirSync(stand, { recursive: true });
+  const id = Bun.which("id");
+  script(
+    join(stand, "id"),
+    `if [ "$1" = -u ] && [ "$#" = 1 ]; then echo 0; elif [ "$1" = fleetd ]; then echo "uid=1001(fleetd)"; elif [ "$*" = "-u fleetd" ]; then echo 1001; else exec ${id} "$@"; fi\n`,
+  );
+  script(join(stand, "chown"), "exit 0\n");
+  script(join(stand, "loginctl"), "exit 1\n");
+  script(
+    join(stand, "su"),
+    `if [ "$1" = --help ]; then echo "  --pty  create a new pseudo-terminal"; exit 0; fi\n` +
+      `for a in "$@"; do printf '%s\\n' "$a"; done >>"${join(r.dir, "su-args")}"\n` +
+      `while [ "$1" != -c ]; do shift; done\n` +
+      `exec env -u FLEETD_JOIN_CODE PATH='${process.env.PATH}' sh -c "$2"\n`,
+  );
+  const suArgs = () => (existsSync(join(r.dir, "su-args")) ? readFileSync(join(r.dir, "su-args"), "utf8") : "");
+  return { path: `PATH=${stand}:$PATH`, suArgs };
+}
+
+// Get started's "Your own machine" line, pasted as root on a fresh server, made the user fleetd and then stopped with
+// "--join and its code go together": the code stayed behind with root. It goes on to fleetd now, in a file only fleetd
+// reads, never in su's arguments.
+test.skipIf(process.platform !== "linux" || !Bun.which("script"))("as root on a terminal a join goes on as the user fleetd, with its code", async () => {
+  const r = release(STUB_ENV);
+  const root = asRootWithSu(r);
+  const out = await r.sh(`${root.path} FLEETD_JOIN_CODE=abc123 script -qec 'sh "$INSTALLER" --join http://devbox.example:4790' /dev/null`);
+  expect(out.code, out.stdout).toBe(0);
+  expect(out.stdout).toContain("Make the user fleetd and install fleetd as it?");
+  expect(out.stdout).not.toContain("go together");
+  expect(r.fleetdArgs(), "fleetd ran as the user fleetd, the code in its environment").toEqual(["init", "--join", "http://devbox.example:4790", "env:abc123"]);
+  expect(root.suArgs()).toContain("--join");
+  expect(root.suArgs(), "the code in no command's arguments").not.toContain("abc123");
+});
+
+// Without a terminal it prints the commands instead, and the line it prints for a join brings the code too, on su's
+// stdin rather than in its arguments: run here as printed, with the installer read from disk.
+test.skipIf(process.platform !== "linux")("as root without a terminal the printed line joins as the user fleetd, with its code", async () => {
+  const r = release(STUB_ENV);
+  const root = asRootWithSu(r);
+  const out = await r.sh(`${root.path} FLEETD_JOIN_CODE=abc123 sh "$INSTALLER" --join http://devbox.example:4790 </dev/null`);
+  expect(out.code, out.stdout).toBe(1);
+  expect(out.stderr).toContain("fleetd doesn't install for root");
+  expect(existsSync(join(r.home, ".fleetd")), "nothing installed").toBe(false);
+  const steps = out.stderr.split("\n").find((l) => l.startsWith("  useradd "));
+  expect(steps, out.stderr).toBeDefined();
+  const line = steps!.slice(steps!.indexOf("printf "));
+  expect(line).toStartWith(`printf '%s\\n' 'abc123' | su - fleetd -c `);
+  const local = line.replace("curl -fsSL https://fleetd.sh |", 'cat "$INSTALLER" |');
+  expect(local).not.toBe(line);
+  const ran = await r.sh(`export ${root.path}; ${local}`);
+  expect(ran.code, ran.stderr).toBe(0);
+  expect(r.fleetdArgs(), "fleetd ran as the user fleetd, the code in its environment").toEqual(["init", "--join", "http://devbox.example:4790", "env:abc123"]);
+  expect(root.suArgs(), "the code in no command's arguments").not.toContain("abc123");
+});
+
 // fleetd's own computers run as root and tell claude they are a sandbox: there it installs as it always did.
 test.skipIf(process.platform !== "linux")("as root in a sandbox (IS_SANDBOX) it installs", async () => {
   const r = release();
