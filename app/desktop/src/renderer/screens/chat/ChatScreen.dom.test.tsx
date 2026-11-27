@@ -212,8 +212,10 @@ it("keeps the closing reply's stamp after the chat is read again, and it opens w
     { messageId: "m2", projectRef: project, seq: 2, author: "lead", state: "final", text: "Search is fast now.", createdAt: "2026-10-19T10:03:09.000Z", closed },
   ];
   await mount({ state: "idle" }, undefined, { working: false, open: true, messages });
-  const stamp = host.querySelector<HTMLButtonElement>("button[aria-label='Done in 3m 8s · 2 agents: what it did']");
-  expect(stamp?.textContent).toBe("Done in 3m 8s · 2 agents");
+  // The stamp's button comes with its lazily loaded list (Bubble.tsx), which may take a few more ticks.
+  const find = () => host.querySelector<HTMLButtonElement>("button[aria-label='Done in 3m 8s · 2 agents: what it did']");
+  await vi.waitFor(() => expect(find()?.textContent).toBe("Done in 3m 8s · 2 agents"));
+  const stamp = find();
   await act(async () => {
     stamp?.click();
     await new Promise((done) => setTimeout(done, 0));

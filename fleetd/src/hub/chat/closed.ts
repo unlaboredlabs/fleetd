@@ -5,7 +5,7 @@ import type { ChatClosed, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { readWorkstream } from "../leads/records.ts";
 import { runWindow } from "../leads/requested.ts";
-import { isoMs, parseMs } from "../store/time.ts";
+import { isoMs, nowMs, parseMs } from "../store/time.ts";
 import { chat } from "./index.ts";
 
 const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
@@ -13,7 +13,7 @@ const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId &&
 /**
  * The order the lead's run of `thread` closed, the run ending at `endMs` (when the hub logged its end): the last
  * workstream.done of `r`'s orders logged inside it, with the order's whole time and its agents (the tasks its lead
- * started, never the train's reviews). Undefined when it closed none.
+ * started, its QA reviews among them, never the train's reviews). Undefined when it closed none.
  */
 export function runClosed(hub: Hub, r: ProjectRef, thread: string, endMs: number): ChatClosed | undefined {
   const { floor, since } = runWindow(hub.db, r, thread, endMs);
@@ -29,7 +29,8 @@ export function runClosed(hub: Hub, r: ProjectRef, thread: string, endMs: number
     const start = parseMs(w?.createdAt ?? "");
     if (w === undefined || !sameRef(w.projectRef, r) || start === undefined || done.created_ms < start) continue;
     const agents = hub.db.all<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM tasks WHERE workstream_id = ?1 AND json_extract(data, '$.kind') IS NOT 'review'",
+      `SELECT COUNT(*) AS n FROM tasks WHERE workstream_id = ?1
+         AND NOT (json_extract(data, '$.kind') IS 'review' AND COALESCE(json_extract(data, '$.qa'), 0) = 0)`,
       [w.workstreamId],
     )[0];
     return { workstreamId: w.workstreamId, ms: done.created_ms - start, agents: agents?.n ?? 0, since: isoMs(floor), until: isoMs(since) };
@@ -58,6 +59,8 @@ export function stampClosed(hub: Hub, r: ProjectRef, thread: string, seq: number
   const out = c.update(`m${reply.n}`, (m) => {
     if (m.closed !== undefined) return false;
     m.closed = closed;
+    // Newer than the copy an open chat already holds (mirror announced it as it landed), so the apps take this one.
+    m.updatedAt = isoMs(nowMs(hub.clock));
     return true;
   });
   if (out) c.announce(out);

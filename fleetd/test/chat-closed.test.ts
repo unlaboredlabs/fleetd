@@ -1,4 +1,4 @@
-// The lead reply that closes an order keeps its stamp, "Done in 3m 8s · 2 agents" (chat/closed.ts): the hub writes it
+// The lead reply that closes an order keeps its stamp, "Done in 3m 8s · 3 agents" (chat/closed.ts): the hub writes it
 // onto the reply as the run ends, so a chat read again later (a reload, the phone) shows it as the live one did.
 import { expect, test } from "bun:test";
 import { stampClosed } from "../src/hub/chat/closed.ts";
@@ -17,9 +17,9 @@ function rig() {
     PROJECT.projectId,
     JSON.stringify({ workstreamId: "W7", projectRef: PROJECT, title: "Search speed", state: "open", createdAt: new Date(START).toISOString() }),
   ]);
-  // Two agents the lead started, and the train's review, which isn't one of them.
-  for (const kind of ["write", "read", "review"]) {
-    c.run("INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) VALUES (?1, ?2, 'W7', 'completed', ?3)", [PROJECT.machineId, PROJECT.projectId, JSON.stringify({ kind })]);
+  // Three agents the lead started (a QA review among them), and the train's review, which isn't one of them.
+  for (const task of [{ kind: "write" }, { kind: "read" }, { kind: "review", qa: true }, { kind: "review" }]) {
+    c.run("INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) VALUES (?1, ?2, 'W7', 'completed', ?3)", [PROJECT.machineId, PROJECT.projectId, JSON.stringify(task)]);
   }
   const at = () => new Date(t.clock.ms).toISOString();
   const runEnd = () =>
@@ -49,9 +49,13 @@ test("the reply whose run closed an order is stored with the order's whole time 
   });
   const ended = runEnd();
   stampClosed(hub, PROJECT, "lead-1", ended.seq);
-  const stamp = { workstreamId: "W7", ms: 188_000, agents: 2, since: new Date(floor).toISOString(), until: new Date(clock.ms).toISOString() };
+  const stamp = { workstreamId: "W7", ms: 188_000, agents: 3, since: new Date(floor).toISOString(), until: new Date(clock.ms).toISOString() };
   // As stored: what the chat reads after a reload.
-  expect(chat(hub).byId(closing.messageId)?.closed).toEqual(stamp);
+  const stamped = chat(hub).byId(closing.messageId);
+  expect(stamped?.closed).toEqual(stamp);
+  // Newer than the copy announced as it landed, so an open chat takes the stamped one over it.
+  expect(stamped?.updatedAt).toBe(new Date(clock.ms).toISOString());
+  expect(Date.parse(stamped?.updatedAt ?? "")).toBeGreaterThan(Date.parse(closing.updatedAt ?? closing.createdAt));
   expect(chat(hub).byId(before.messageId)?.closed).toBeUndefined();
   // And told live, so an open chat shows it at once.
   expect(JSON.stringify(seen)).toContain('"closed"');
