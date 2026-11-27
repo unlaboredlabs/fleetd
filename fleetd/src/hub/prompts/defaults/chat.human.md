@@ -1,3 +1,3 @@
-{{writer}} writes in your chat{{about}} ({{when}}):
+A person ({{writer}}) writes in your chat{{about}} ({{when}}):
 
 {{text}}{{files}}
