@@ -52,7 +52,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { stampClosed } from "./closed.ts";
+import { stampClosed, stampLatest } from "./closed.ts";
 import { completedRuns, leadMessages, leadSource, leadText, madeUpAt, madeUpLine, order, question, steer, type ThreadMessage } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
@@ -763,6 +763,7 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
   const messages = read?.messages;
   const c = chat(hub);
   const since = c.historyMs(r) ?? 0;
+  let landed = false;
   for (const m of leadMessages(thread.threadId, messages ?? [], read?.completed ?? new Set())) {
     try {
       const existing = c.bySource(r, m.source ?? "");
@@ -773,9 +774,20 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
       const old = (m.createdMs ?? 0) < since;
       const { history: _, ...fresh } = m;
       const added = c.add(r, old ? { ...fresh, history: "lead_message" } : fresh);
-      if (added.created && !old && added.message.author === "lead") unshown(hub, r, added.message.text);
+      if (added.created && !old && added.message.author === "lead") {
+        landed = true;
+        unshown(hub, r, added.message.text);
+      }
     } catch (error) {
       console.warn("chat: lead message not added:", error);
+    }
+  }
+  // A reply that lands after its run's end (the machine back) still gets the "Done in…" stamp its run end couldn't give.
+  if (landed) {
+    try {
+      stampLatest(hub, r, thread.threadId);
+    } catch (error) {
+      console.warn("chat: the closing reply not stamped:", error);
     }
   }
   // The lead is told of a turn it made up in any text its session holds, posted or not: its next turn reads them all.

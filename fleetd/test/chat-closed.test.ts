@@ -1,8 +1,12 @@
 // The lead reply that closes an order keeps its stamp, "Done in 3m 8s · 3 agents" (chat/closed.ts): the hub writes it
-// onto the reply as the run ends, so a chat read again later (a reload, the phone) shows it as the live one did.
+// onto the reply as the run ends, so a chat read again later (a reload, the phone) shows it as the live one did. A reply
+// that lands only later (its machine asleep at the run's end) gets it as it lands.
 import { expect, test } from "bun:test";
 import { stampClosed } from "../src/hub/chat/closed.ts";
+import { landMissed, mirror } from "../src/hub/chat/flow.ts";
+import type { ThreadMessage } from "../src/hub/chat/history.ts";
 import { chat } from "../src/hub/chat/index.ts";
+import { executors } from "../src/hub/executor/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { PROJECT, testHub } from "./hub-helpers.ts";
 
@@ -67,5 +71,47 @@ test("the reply whose run closed an order is stored with the order's whole time 
   stampClosed(hub, PROJECT, "lead-1", runEnd().seq);
   expect(chat(hub).byId(next.messageId)?.closed).toBeUndefined();
   expect(chat(hub).byId(closing.messageId)?.closed).toEqual(stamp);
+  done();
+});
+
+test("a closing reply that lands only once its machine is back (no run end with it) is stamped, once", async () => {
+  const { hub, clock, at, runEnd, done } = rig();
+  await chat(hub).readHistory(PROJECT, () => []);
+  // The lead's machine sleeps right after the turn: its session can't be read as the run ends.
+  let session: ThreadMessage[] | undefined;
+  Object.assign(executors(hub).views, {
+    messages: async () => session ?? Promise.reject(new Error("machine away")),
+    runs: async () => (session ? [{ id: "r1", status: "completed" }] : Promise.reject(new Error("machine away"))),
+  });
+  clock.ms += 60_000;
+  runEnd();
+  const floor = clock.ms;
+  clock.ms = START + 188_000;
+  events(hub).append({ at: at(), type: "workstream.done", machineId: PROJECT.machineId, projectId: PROJECT.projectId, summary: "W7 is done", data: { workstreamId: "W7", reason: "shipped", by: "lead" } } as never);
+  clock.ms += 2000;
+  const said = { id: "b", runId: "r1", role: "assistant" as const, text: "Search is fast now.", createdAt: at() };
+  clock.ms += 1000;
+  const ended = runEnd();
+  const until = clock.ms;
+  // What the run's end does: nothing lands, so nothing is stamped.
+  await mirror(hub, PROJECT, { machineId: PROJECT.machineId, threadId: "lead-1" });
+  stampClosed(hub, PROJECT, "lead-1", ended.seq);
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toBeUndefined();
+  // The machine is back: the reply lands through the later mirror, stamped as its run's end would have.
+  clock.ms += 600_000;
+  session = [said];
+  await landMissed(hub, PROJECT.machineId);
+  const landed = chat(hub).bySource(PROJECT, "lead:lead-1:b");
+  expect(landed?.closed).toEqual({ workstreamId: "W7", ms: 188_000, agents: 3, since: new Date(floor).toISOString(), until: new Date(until).toISOString() });
+  expect(landed?.updatedAt).toBe(new Date(clock.ms).toISOString());
+  // A second pass changes nothing.
+  clock.ms += 5000;
+  const seen: unknown[] = [];
+  events(hub).subscribe((e) => {
+    if (e.type === "chat.message") seen.push(e.data);
+  });
+  await landMissed(hub, PROJECT.machineId);
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toEqual(landed);
+  expect(seen).toEqual([]);
   done();
 });
