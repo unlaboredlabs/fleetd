@@ -172,11 +172,16 @@ export function SettingsSection(props: {
   intro?: ReactNode | undefined;
   aside?: ReactNode | undefined;
   bare?: boolean | undefined;
+  /**
+   * A reveal lands on the section itself, at the top, never on its first control: for a section whose first control
+   * acts at once on all it holds (the memory changes' Keep all), where a stray Enter would do too much.
+   */
+  revealWhole?: boolean | undefined;
   children?: ReactNode | undefined;
   /** Marks for tests and the QA screens (`data-…`). */
   data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
 }) {
-  const ref = useReveal<HTMLElement>(props.reveal ?? "");
+  const ref = useReveal<HTMLElement>(props.reveal ?? "", props.revealWhole === true);
   const hintId = useId();
   const hinted = props.title !== undefined && said(props.hint);
   const head = props.title !== undefined || (props.intro !== undefined && props.intro !== null) || props.aside !== undefined;

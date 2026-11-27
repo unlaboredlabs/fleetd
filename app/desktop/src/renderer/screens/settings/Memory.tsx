@@ -6,7 +6,7 @@
 // menu), and undoes a delete from its toast. A bot's change that loosens what asks or merges, from someone who isn't an
 // admin, waits on top until an admin keeps it or not. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
 // memory_set, a human key's write.
-import { MessageSquareText, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquareText, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import type { MemoryFile, MemoryHeld, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenu, ContextMenuItem, cx, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
@@ -523,14 +523,15 @@ function EntryCard(props: {
           >
             <div className={m.cardBody}>
               {/* One line until opened: a long memory scans as a list. Open, its whole words and who taught it. */}
-              <button type="button" className={m.entryText} aria-expanded={open} onClick={() => setOpen(!open)}>
+              <Disclosure open={open} label={line.text} onToggle={() => setOpen(!open)} />
+              <div className={m.entryText}>
                 <Text className={open ? undefined : m.oneLine}>{line.text}</Text>
                 {line.by !== undefined && open ? (
                   <Text size="xs" tone="quiet" className={m.author}>
                     From {line.by}
                   </Text>
                 ) : null}
-              </button>
+              </div>
               {line.by !== undefined && line.by !== "the lead" && !open ? (
                 <Text size="xs" tone="quiet" className={m.byline}>
                   {line.by}
@@ -644,6 +645,7 @@ function HeldLines({ project, held }: { project: ProjectRef; held: ReadonlyArray
     <SettingsSection
       title="Waiting for an admin"
       reveal="memory-held"
+      revealWhole
       hint={hint}
       intro={plural(held.length, "change")}
       aside={
@@ -692,12 +694,13 @@ function HeldLine({ held: h, locked, busy, onAnswer }: { held: MemoryHeld; locke
   return (
     <li className={m.card}>
       <div className={m.cardBody}>
-        <button type="button" className={m.entryText} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Disclosure open={open} label={h.text} onToggle={() => setOpen(!open)} />
+        <div className={m.entryText}>
           <Text className={open ? undefined : m.twoLines}>{h.text}</Text>
           <Text size="xs" tone="quiet" className={open ? m.author : cx(m.author, m.oneLine)}>
             {detail}
           </Text>
-        </button>
+        </div>
         {locked ? null : (
           <div className={m.heldActions}>
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => onAnswer(true)}>
@@ -710,6 +713,19 @@ function HeldLine({ held: h, locked, busy, onAnswer }: { held: MemoryHeld; locke
         )}
       </div>
     </li>
+  );
+}
+
+/**
+ * The chevron at an entry's left edge, the one thing that opens or closes it: its words stay plain text, to select and
+ * copy.
+ */
+function Disclosure({ open, label, onToggle }: { open: boolean; label: string; onToggle: () => void }) {
+  const Chevron = open ? ChevronDown : ChevronRight;
+  return (
+    <button type="button" className={m.disclosure} aria-expanded={open} aria-label={`${open ? "Close" : "Open"} “${label}”`} onClick={onToggle}>
+      <Chevron aria-hidden />
+    </button>
   );
 }
 

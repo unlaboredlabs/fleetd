@@ -11,6 +11,7 @@ import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { HeldMemory, Memory } from "./Memory";
+import { revealNext } from "./reveal";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "linux", fixture: null }));
@@ -172,4 +173,32 @@ it("folds each topic to one row with its count, opened in place", async () => {
   expect(row?.textContent).not.toContain("Staging first.");
   act(() => row?.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
   expect(row?.textContent).toContain("Staging first.");
+});
+
+it("lands from the chat's Review on the list itself, never on Keep all, so a stray Enter keeps nothing", async () => {
+  revealNext("memory-held");
+  const hub = await mount("admin", { held: heldOf(4) });
+  expect(document.activeElement).toBe(held());
+  expect(document.activeElement?.textContent).toContain("Keep all 4");
+  expect(document.activeElement?.tagName).not.toBe("BUTTON");
+  // Enter on the focused list presses nothing.
+  act(() => {
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  await settle();
+  expect(hub.calls.some((c) => c.tool === "memory_hold_answer")).toBe(false);
+});
+
+it("keeps each entry's words plain text to select and copy; only its chevron opens it", async () => {
+  await mount("member", { held: heldOf(1) });
+  for (const list of ["[aria-label='Entries of MEMORY.md']", "[aria-label='Waiting for an admin']"]) {
+    const li = host.querySelector(`${list} li`);
+    const words = [...(li?.querySelectorAll("span, p") ?? [])].find((e) => e.textContent.startsWith("Use pnpm.") || e.textContent.startsWith("Never ask"));
+    expect(words?.closest("button")).toBeNull();
+    const chevron = li?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    act(() => (words as HTMLElement | undefined)?.click());
+    expect(chevron?.getAttribute("aria-expanded")).toBe("false");
+    act(() => chevron?.click());
+    expect(chevron?.getAttribute("aria-expanded")).toBe("true");
+  }
 });
