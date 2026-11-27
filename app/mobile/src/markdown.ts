@@ -3,11 +3,15 @@
 // *emphasis*, ~~strikes~~ and links, written or bare. A link opens only on the web or in mail: any other scheme stays
 // text. Anything else is text as written. Pure, so it is unit-tested.
 
+import { mentionAt } from "../../desktop/src/shared/refs";
+
 export type Inline =
   | { readonly t: "text"; readonly text: string }
   | { readonly t: "code"; readonly text: string }
   | { readonly t: "strong" | "em" | "del"; readonly children: readonly Inline[] }
-  | { readonly t: "link"; readonly url: string; readonly children: readonly Inline[] };
+  | { readonly t: "link"; readonly url: string; readonly children: readonly Inline[] }
+  // A person fleetd names in its line (`[Ada](person:p_1)`): their name, as written, never read for ids.
+  | { readonly t: "person"; readonly text: string };
 
 export type Block =
   | { readonly t: "p"; readonly inline: readonly Inline[] }
@@ -172,6 +176,13 @@ export const parseInline = (source: string): Inline[] => {
         continue;
       }
     }
+    const person = c === "[" ? mentionAt(rest) : undefined;
+    if (person !== undefined) {
+      flush();
+      out.push({ t: "person", text: person.name });
+      i += person.length;
+      continue;
+    }
     if (c === "[") {
       const link = /^\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/u.exec(rest);
       if (link !== null) {
@@ -212,7 +223,7 @@ export const parseInline = (source: string): Inline[] => {
 
 /** The inline tree as plain text: a chats list's preview. */
 export const plainText = (inline: readonly Inline[]): string =>
-  inline.map((n) => (n.t === "text" || n.t === "code" ? n.text : plainText(n.children))).join("");
+  inline.map((n) => (n.t === "text" || n.t === "code" || n.t === "person" ? n.text : plainText(n.children))).join("");
 
 /** The words for a lead's block that didn't show (it broke a limit, or this build can't draw it): never its JSON. */
 export const UNSHOWN = "Couldn't show this";

@@ -104,7 +104,7 @@ export const useSpoken = (text: string): string => {
   const runs = useMemo(() => namedRuns(text), [text]);
   const refs = useMemo(() => runs.filter(isRef), [runs]);
   const titles = useTitles(refs);
-  if (refs.length === 0) return text;
+  if (refs.length === 0) return runs.join("");
   let i = 0;
   return runs.map((r) => (typeof r === "string" ? r : (titles[i++] ?? refWord(r)))).join("");
 };
@@ -121,7 +121,7 @@ export function Name({ of, plain = false }: { of: Ref; plain?: boolean }) {
 /** Words with fleetd's ids in them by name (inside a Text). */
 export function Names({ text, plain = false }: { text: string; plain?: boolean }) {
   const runs = useMemo(() => namedRuns(text), [text]);
-  if (runs.every((r) => typeof r === "string")) return <>{text}</>;
+  if (runs.every((r) => typeof r === "string")) return <>{runs.join("")}</>;
   return (
     <>
       {runs.map((r, i) => (typeof r === "string" ? <Fragment key={i}>{r}</Fragment> : <Name key={i} of={r} plain={plain} />))}

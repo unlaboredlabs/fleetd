@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fenceView, parseInline, parseMarkdown, previewText } from "./markdown";
+import { fenceView, parseInline, parseMarkdown, plainText, previewText } from "./markdown";
 
 describe("parseInline", () => {
   it("reads code, strong, emphasis and strikes", () => {
@@ -41,6 +41,14 @@ describe("parseInline", () => {
       { t: "text", text: "see " },
       { t: "link", url: "artifact:build-times@2", children: [{ t: "text", text: "Build times" }] },
     ]);
+  });
+
+  it("reads a person fleetd names as their name, never a link or an id", () => {
+    expect(parseInline("[Check T6168](person:p_ffffffff) asked for it.")).toEqual([
+      { t: "person", text: "Check T6168" },
+      { t: "text", text: " asked for it." },
+    ]);
+    expect(plainText(parseInline("By [Ada \\[ops\\]](person:p_1)."))).toBe("By Ada [ops].");
   });
 
   it("keeps a link of another scheme as its text", () => {

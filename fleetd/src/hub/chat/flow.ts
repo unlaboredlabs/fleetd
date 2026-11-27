@@ -14,6 +14,7 @@ import type {
   HubEventType,
   LeadText,
   MachineId,
+  PersonRef,
   ProjectChatState,
   ProjectRef,
   ProjectStopInput,
@@ -40,6 +41,7 @@ import { requireHuman } from "../leads/seams.ts";
 import { ofPerson, setZone, stamp } from "../leads/zone.ts";
 import { automations } from "../automations/index.ts";
 import { allowPasted } from "../project_lead/tools.ts";
+import { mention } from "../people/mention.ts";
 import { writer as writerName } from "../people/store.ts";
 import { prompts } from "../prompts/store.ts";
 import { writeQueue } from "../queue/index.ts";
@@ -590,14 +592,19 @@ export async function showRequest(hub: Hub, id: string): Promise<void> {
   }
 }
 
-/** A project's max-agents change is one quiet line in its chat, its event's summary; a fleet-wide change says nothing. */
+/**
+ * A project's max-agents change is one quiet line in its chat, its event's summary with the person who made it as a
+ * mention; a fleet-wide change says nothing.
+ */
 export async function capLine(hub: Hub, seq: number, data: unknown, summary: string): Promise<void> {
-  const p = (data as { projectRef?: ProjectRef } | undefined)?.projectRef;
+  const { projectRef: p, by } = (data as { projectRef?: ProjectRef; by?: PersonRef } | undefined) ?? {};
   if (typeof p?.machineId !== "string" || typeof p.projectId !== "string") return;
   const r = { machineId: p.machineId, projectId: p.projectId };
+  const named = by === undefined ? "" : ` By ${by.name}.`;
+  const text = by !== undefined && summary.endsWith(named) ? `${summary.slice(0, -named.length)} By ${mention(by)}.` : summary;
   try {
     await ensure(hub, r);
-    chat(hub).add(r, { author: "system", text: summary, source: `cap:${seq}` });
+    chat(hub).add(r, { author: "system", text, source: `cap:${seq}` });
   } catch (error) {
     console.warn("chat: max agents line not added:", error);
   }
