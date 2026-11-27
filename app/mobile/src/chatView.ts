@@ -337,13 +337,13 @@ const REPLY_SLACK_MS = 2_000;
 /**
  * The rows to draw, oldest first. What the lead is doing is no row: it is a line over the composer (screens/TurnLine.tsx),
  * so the thread never moves for it. `worked`: the lead's latest turn seen to its end, whose reply (its newest message
- * written in it) wears how long it took. `readSeq`: what was read when the chat opened; the unread bar goes before the
+ * written in it) wears how long it took; a reply whose run closed an order wears the order's whole time instead. `readSeq`: what was read when the chat opened; the unread bar goes before the
  * first message from the other side after it. A day line goes where a new day starts, in the clock's zone, as chat
  * apps' date chips.
  */
 export const threadRows = (
   items: readonly ChatItem[],
-  worked?: { readonly since: number; readonly until: number; readonly ms?: number; readonly order?: { readonly ms: number; readonly agents: number } | undefined },
+  worked?: { readonly since: number; readonly until: number; readonly ms?: number },
   readSeq?: number,
   clock: Pick<Clock, "timeZone"> = {},
   tagOf?: (item: ChatItem) => Tag | undefined,
@@ -354,9 +354,7 @@ export const threadRows = (
       ? -1
       : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
   // How long it worked toward the reply, the cut runs it carried on from included (store.ts turnWorked.ms).
-  // The reply that closed an order says the order's whole time, never the last turn's seconds. A duration, as every
-  // stamp in the time column is: the column is as wide as "12:59 PM" (reveal.ts), too narrow for the desktop's words.
-  const stamp = worked === undefined ? undefined : workedFor(worked.order?.ms ?? worked.ms ?? worked.until - worked.since);
+  const stamp = worked === undefined ? undefined : workedFor(worked.ms ?? worked.until - worked.since);
   let prev: ChatItem | undefined;
   let prevTag: Tag | undefined;
   let prevDay = 0;
@@ -373,13 +371,18 @@ export const threadRows = (
     // A new tag starts a run of its own, its line over its first bubble.
     // Compared with the line as the message before left it: its last bubble's order.
     const first = i === firstUnread || !joins(prev, item) || tag?.key !== prevTag?.endKey;
+    // The reply that closed an order, whenever it was: the order's whole time, as the hub stored it with the message, never
+    // the last turn's seconds. A duration, as every stamp in the time column is: the column is as wide as "12:59 PM"
+    // (reveal.ts), too narrow for the desktop's words.
+    const closed = item.message?.closed;
+    const worn = closed !== undefined ? workedFor(closed.ms) : i === reply ? stamp : undefined;
     rows.push({
       t: "item",
       id: item.clientRequestId ?? item.id,
       item,
       side,
       first,
-      ...(i === reply && stamp !== undefined ? { worked: stamp } : {}),
+      ...(worn !== undefined ? { worked: worn } : {}),
       ...(first && tag !== undefined ? { tag } : {}),
     });
     prev = item;

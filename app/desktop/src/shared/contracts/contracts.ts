@@ -1945,6 +1945,19 @@ export type ChatAbout = {
   workstreamId: WorkstreamId;
 };
 
+/**
+ * The order a lead reply's run closed, as the hub stamped the reply when the run ended: the order's whole time (its start
+ * to its close) and the agents its lead started, and the run itself (from the run before's end to its own), which the
+ * stamp opens.
+ */
+export type ChatClosed = {
+  agents: number;
+  ms: number;
+  since: Timestamp;
+  until: Timestamp;
+  workstreamId: WorkstreamId;
+};
+
 export type KnownChatAuthor = "human" | "lead" | "agent" | "system";
 /** KnownChatAuthor, or a value from a newer hub. */
 export type ChatAuthor = KnownChatAuthor | (string & {});
@@ -2130,6 +2143,8 @@ export type ChatMessage = {
   client?: ChatClient;
   /** A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy. */
   clientRequestId?: string;
+  /** A lead reply whose run closed an order: its stamp, "Done in 3m 10s · 3 agents", kept with it. */
+  closed?: ChatClosed;
   createdAt: Timestamp;
   /** A human message: how it reached the lead. */
   delivery?: ChatDelivery;

@@ -44,6 +44,14 @@ describe("chat messages", () => {
     ]);
   });
 
+  it("takes the closing reply's stamp the hub adds after the reply landed", () => {
+    // The reply as it landed, then again with its "Done in…" stamp (fleetd's chat/closed.ts), a moment newer.
+    let chat = mergeLive(emptyChat, msg(4));
+    const closed = { workstreamId: "W7", ms: 188_000, agents: 2, since: "2026-10-19T09:57:00.000Z", until: "2026-10-19T10:00:05.000Z" };
+    chat = mergeLive(chat, msg(4, { closed, updatedAt: "2026-10-19T10:00:06.000Z" }));
+    expect(chat.messages.find((m) => m.seq === 4)?.closed).toEqual(closed);
+  });
+
   it("pages older history in and keeps the newest CHAT_KEEP", () => {
     let chat = applyHistory(emptyChat, page([msg(100)], true), "latest");
     chat = applyHistory({ ...chat, loadingOlder: true }, page([msg(99)]), "older");

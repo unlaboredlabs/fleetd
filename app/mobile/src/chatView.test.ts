@@ -201,9 +201,19 @@ describe("threadRows", () => {
     // What the lead is doing is never a row; no turn seen to its end, no stamp.
     expect(threadRows(next).map((r) => r.t)).toEqual(["day", "item", "item", "item", "item"]);
     expect(stamps(threadRows(next))).toEqual([]);
-    // The reply that closed an order: the order's whole time, not the last turn's 4 s (the report's "Worked for 27s" on
-    // a three-minute order), as a duration the time column fits (reveal.test.ts lays those out).
-    expect(stamps(threadRows(turn, { ...worked, order: { ms: 190_000, agents: 3 } }))).toEqual(["b: 3m 10s"]);
+  });
+
+  // T6171's find (2026-11-27): the closing reply's stamp showed live and was gone once the chat was read again.
+  it("stamps the reply that closed an order with the order's whole time from the message itself, after a reload too", () => {
+    const closed = { workstreamId: "W7", ms: 190_000, agents: 3, since: "2026-10-28T10:00:00Z", until: "2026-10-28T10:03:10Z" };
+    const stamps = (rows: ThreadRow[]) => rows.flatMap((r) => (r.t === "item" && r.worked !== undefined ? [`${r.id}: ${r.worked}`] : []));
+    const reply = item("b", "lead", "2026-10-28T10:03:09Z", { message: { ...message("b"), author: "lead", closed } });
+    const chat = [item("a", "human", "2026-10-28T10:00:00Z"), reply, item("c", "human", "2026-10-28T10:05:00Z"), item("d", "lead", "2026-10-28T10:05:04Z")];
+    // Read again with no turn seen: the order's whole time, not the last turn's seconds (the report's "Worked for 27s"
+    // on a three-minute order), as a duration the time column fits (reveal.test.ts lays those out).
+    expect(stamps(threadRows(chat))).toEqual(["b: 3m 10s"]);
+    // And it stays beside its reply while a later turn's stamp goes on that turn's.
+    expect(stamps(threadRows(chat, { since: Date.parse("2026-10-28T10:05:00Z"), until: Date.parse("2026-10-28T10:05:04Z") }))).toEqual(["b: 3m 10s", "d: 4s"]);
   });
 });
 

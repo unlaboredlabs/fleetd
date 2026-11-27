@@ -228,7 +228,7 @@ export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, ty
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor, workedToward, type TurnSpan } from "../../desktop/src/shared/turnWords";
 export { lineWords, requestWhat, rowLine as rowSay, type RowLine, type Waiting } from "../../desktop/src/shared/rowLine";
-export { changeStat, changeTotals, endedWord, fileParts, orderStamp, ranFor } from "../../desktop/src/shared/finished";
+export { changeStat, changeTotals, endedWord, fileParts, ranFor } from "../../desktop/src/shared/finished";
 export {
   askedAt,
   ColdTurns,
