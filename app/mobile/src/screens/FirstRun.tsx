@@ -1,7 +1,8 @@
 // A new fleetd cloud team's first run, in the chats list's place while it has no bots (firstRun.ts): where agents
 // run, Claude, then a bot, each a row that ticks once the team has it. Where agents run is open right under its row
 // while it isn't done: the team's own computer, free (the join line to run there, Copy and Share, ticking live when it
-// connects), fleetd's computers (Billing), and Tailscale's Connect for a machine or services on a tailnet. Claude and
+// connects), or fleetd's computers (Billing) with Tailscale's Connect, so their agents reach private services on a
+// tailnet (a computer of the team's own dials out to the workspace and needs no Tailscale here). Claude and
 // a bot open where they're done (Providers › Anthropic, +). Read again on coming back to the list and to the app, so a
 // step done in Settings or on the web shows ticked.
 import { useFocusEffect } from "@react-navigation/native";
@@ -93,7 +94,7 @@ export function FirstRun({ open }: { open: (step: FirstRunId) => void }) {
 
 /**
  * Where agents run, while nothing does: the team's own computer by the line to run on it (renewed before its code runs
- * out), fleetd's computers once they're on for the team, and Tailscale. The step above ticks once the computer joins.
+ * out), and fleetd's computers once they're on for the team, with Tailscale. The step above ticks once the computer joins.
  */
 function Where({ computers, onBilling }: { computers: ComputersChoice | null; onBilling: () => void }) {
   const t = useTheme();
@@ -134,6 +135,7 @@ function Where({ computers, onBilling }: { computers: ComputersChoice | null; on
     return () => clearInterval(timer);
   }, [waitingOn, reread]);
   const { line } = join;
+  const tailscale = ts !== undefined && !(ts.status === "off" && ts.problem !== undefined);
   return (
     <>
       <ListSection header="Your Own Machine · Free" footer="Run it in a terminal on a Mac or Linux computer of yours. It installs fleetd and joins this workspace.">
@@ -166,13 +168,9 @@ function Where({ computers, onBilling }: { computers: ComputersChoice | null; on
         )}
       </ListSection>
       {computers === null ? null : (
-        <ListSection header="fleetd's Computers">
+        <ListSection header="fleetd's Computers" {...(tailscale && (ts.status === "off" || ts.status === "failed") ? { footer: "Private services on a tailnet? Connect Tailscale to let agents on fleetd's computers reach them." } : {})}>
           <ListRow title={computers.title} detail={computers.message ?? "fleetd starts a computer for each bot while its agents work."} {...(computers.message === undefined ? {} : { detailColor: t.warning })} onPress={onBilling} />
-        </ListSection>
-      )}
-      {ts === undefined || (ts.status === "off" && ts.problem !== undefined) ? null : (
-        <ListSection footer="Machine or services on a tailnet? Connect Tailscale, before or while the computer joins.">
-          <TailscaleRow state={ts} admin={state.admin === true} reload={tailnet.reload} />
+          {tailscale ? <TailscaleRow state={ts} admin={state.admin === true} reload={tailnet.reload} /> : null}
         </ListSection>
       )}
     </>
