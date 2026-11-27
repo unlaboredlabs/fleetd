@@ -1,9 +1,10 @@
 // `browser_download_send`: a person puts a file a screen's browser downloaded in the bot's chat, from the screen's card.
 // The session lists what its browser downloaded (`downloads`, from its node: node/browser/downloads.ts); the hub reads
 // the one named from the machine the screen ran on, a piece at a time (`read_download`, which reads only that session's
-// own downloads folder and only a file the chat takes), stores it as the lead's (`lead:<project>`) and posts it in a
-// lead message as a file card (an image inline), which makes it the project's. The node keeps the files a day after the
-// screen ends; past that, or with its machine away, the call says so.
+// own downloads folder and only a file the chat takes), stores it as the person's own upload and sends it in the chat
+// as theirs (`chat_send`, with the file attached and no words), exactly as if they had attached it: the lead gets it as
+// any file of theirs. The node keeps the files a day after the screen ends; past that, or with its machine away, the
+// call says so.
 import { appendFile } from "node:fs/promises";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -13,13 +14,11 @@ import type { Hub } from "../api/hub.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { chat } from "../chat/index.ts";
-import { BLOCK_FENCE } from "../chat/parts.ts";
+import { send } from "../chat/flow.ts";
 import { ExecutorError, executors } from "../executor/index.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { dir, safeName, store } from "../intake/attachments.ts";
-import { fits, isImage } from "../intake/mime.ts";
-import { leadBy } from "../lead_calls/index.ts";
+import { fits } from "../intake/mime.ts";
 import { runsOn } from "./live.ts";
 import { get } from "./store.ts";
 
@@ -73,11 +72,10 @@ export async function browserDownloadSend(hub: Hub, caller: Caller, input: Brows
         break;
       }
     }
-    const stored = await store(hub, { path: tmp }, safeName(listed.name), mime, leadBy(r));
-    const block = JSON.stringify({ v: 1, kind: isImage(mime) ? "image" : "file", attachmentId: stored.attachmentId });
-    const text = `Downloaded on the screen “${session.purpose}”:\n\n\`\`\`${BLOCK_FENCE}\n${block}\n\`\`\``;
-    const message = chat(hub).add(r, { author: "lead", text, source: `download:${id}:${listed.name}` }).message;
-    return { attachmentId: stored.attachmentId, messageId: message.messageId };
+    // The person's upload, as attachment_put makes it, sent as their message: one send per screen and file.
+    const stored = await store(hub, { path: tmp }, safeName(listed.name), mime, caller.keyId);
+    const sent = await send(hub, caller, { projectRef: r, text: "", attachments: [stored.attachmentId], clientRequestId: `download:${id}:${listed.name}` });
+    return { attachmentId: stored.attachmentId, messageId: sent.message.messageId };
   } finally {
     rmSync(tmp, { force: true });
   }

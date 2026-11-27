@@ -74,19 +74,25 @@ test("a session's downloads are kept across the node's reports, the ones it leav
   expect(get(t.hub, S1)?.downloads).toEqual([dummy, later]);
 });
 
-test("a person puts a download in the chat: read from the screen's machine in pieces, posted as the lead's file card", async () => {
+test("a person puts a download in the chat as their own message with the file attached, read from the screen's machine in pieces", async () => {
   setup();
   await t.calls.call(agent("devbox", "p1"), report("live", { downloads: [dummy] }));
   const reads = fakeNode({ "dummy.pdf": PDF });
-  const out = await send();
+  const ada = caller("operate", { kind: "human", name: "ada" });
+  const out = await send(ada);
   expect(out.error).toBeUndefined();
   const { attachmentId, messageId } = out.output as { attachmentId: string; messageId: string };
   expect(attachmentId).toMatch(/^F\d+$/u);
   expect(reads).toEqual([`${S1}:dummy.pdf:0`, `${S1}:dummy.pdf:16`, `${S1}:dummy.pdf:32`, `${S1}:dummy.pdf:48`]);
-  const message = chat(t.hub).page({ machineId: "devbox", projectId: "p1" }, undefined, undefined, 50).messages.find((m) => m.messageId === messageId);
-  expect(message?.author).toBe("lead");
-  expect(message?.text).toContain("Downloaded on the screen “Read the Web browser article”");
-  expect(message?.parts?.find((p) => p.block)?.block).toMatchObject({ kind: "file", attachmentId, name: "dummy.pdf", mime: "application/pdf", bytes: PDF.length });
+  const page = () => chat(t.hub).page({ machineId: "devbox", projectId: "p1" }, undefined, undefined, 50).messages;
+  const message = page().find((m) => m.messageId === messageId);
+  // Theirs, as if they had attached it: no words of the lead's, the file on it as any attachment.
+  expect(message).toMatchObject({ author: "human", by: "ada", text: "", attachments: [{ attachmentId, name: "dummy.pdf", mime: "application/pdf", bytes: PDF.length }] });
+  expect(page().some((m) => m.author === "lead")).toBe(false);
+  // Pressed again: the same message, no second one.
+  const again = await send(ada);
+  expect((again.output as { messageId: string }).messageId).toBe(messageId);
+  expect(page().filter((m) => m.attachments?.length).length).toBe(1);
 });
 
 test("only a listed download, by a person who may operate the machine; a file its machine no longer has says so", async () => {
