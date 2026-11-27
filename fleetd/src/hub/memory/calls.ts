@@ -191,8 +191,9 @@ export function hold(hub: Hub, r: ProjectRef, item: RememberedItem, by: PersonRe
   if (heldLines(hub.db, r).some((m) => m.remembered !== undefined && same(m.remembered))) return { file, held: true, next };
   const text = item.forgotten === true ? `Waiting for an admin's OK to forget: ${item.text}` : `Waiting for an admin's OK: ${item.text}`;
   chat(hub).add(r, { author: "system", text, remembered: { ...item, ...(by ? { by } : {}), hold: "waiting" } });
-  // It waits on the admins now: their needs-you changes with it.
+  // It waits on the admins now: their needs-you changes with it, and an open Instructions & memory lists it.
   state(hub, r);
+  changed(hub, r, item.topic, by?.name ?? "the lead");
   return { file, held: true, next };
 }
 

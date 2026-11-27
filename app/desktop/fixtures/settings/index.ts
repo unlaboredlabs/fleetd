@@ -49,7 +49,8 @@ function projectSettings(f: Fixture, defaultOnly: ReadonlySet<string> = new Set(
 
 /**
  * Settings → Memory: user.md with entries the lead remembered (each linked to its chat line), and the first project's
- * MEMORY.md with its always-on part and a topic. Other projects remember nothing yet.
+ * MEMORY.md with its always-on part, long enough to fold under Show all, a topic, and six changes waiting for an
+ * admin's OK, past the three shown. Other projects remember nothing yet.
  */
 function memory(f: Fixture) {
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
@@ -75,11 +76,35 @@ function memory(f: Fixture) {
   f.answer("memory_get", undefined, { user });
   for (const p of projects) {
     const own = p === first;
-    const index = own ? "- Public repo: nothing private in PRs or docs.\n- No npm here: use pnpm.\n- [deploys](deploys.md)\n" : "";
+    const index = own
+      ? [
+          "Public repo: nothing private in PRs or docs.",
+          "No npm here: use pnpm.",
+          "The checkout service talks to payments only through the queue, never its database: a direct read once double-charged a whole morning's orders and took two days to unwind.",
+          "Screenshots for a PR go in the shots repo, one folder per branch.",
+          "Run the e2e suite on WebKit before any checkout change: Safari users are 40% of orders.",
+          "Feature flags live in flags.yaml; a flag older than a month gets an issue to remove it.",
+          "Staging shares the production queue's dead-letter topic: purge it only from production's console.",
+          "Ask before changing anything in the billing schema.",
+          "[deploys](deploys.md)",
+        ]
+          .map((l) => `- ${l}\n`)
+          .join("")
+      : "";
     const files = [file("project", index, 4000, own ? note("No npm here: use pnpm.", 33) : [])];
     if (own) files.push(file("project", "- Staging first, always.\n- Releases go out Tuesdays.\n", 8000, [], "deploys"));
     const chars = files.reduce((sum, x) => sum + (typeof x["chars"] === "number" ? x["chars"] : 0), 0);
-    f.answer("memory_get", { projectRef: ref(p) }, { user, files, projectChars: chars, projectCap: 32000 });
+    const held = own
+      ? [
+          { text: "Merge dependency bumps without review when CI is green.", by: { personId: "p_beabea22", name: "Bea" } },
+          { text: "Deploy hotfixes straight to production, then tell the channel.", replaced: "Every deploy goes through staging first, hotfixes too." },
+          { text: "Ask before deploying on a Friday.", forgotten: true, topic: "deploys" },
+          { text: "Skip the WebKit run for copy-only changes." },
+          { text: "Push small docs fixes to main yourself." },
+          { text: "Release on Tuesdays without waiting for the checker." },
+        ].map((h, i) => ({ messageId: `m${String(60 + i)}`, at, ...h }))
+      : [];
+    f.answer("memory_get", { projectRef: ref(p) }, { user, files, ...(held.length > 0 ? { held } : {}), projectChars: chars, projectCap: 32000 });
   }
   f.answer("memory_set", undefined, { file: user });
   f.answer("memory_undo", undefined, { ok: true });

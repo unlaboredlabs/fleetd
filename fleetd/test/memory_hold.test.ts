@@ -167,6 +167,27 @@ test("an admin keeps a held line or not; a member can't; kept, it's written with
   expect(core()).toBe("- Never ask before deploying.\n");
 });
 
+test("an open Instructions & memory hears of every change to the waiting list: held, kept, not kept, its ask taken back", async () => {
+  const { hub, turnFor, leadCall, ok, lines } = setup();
+  // The app reads memory_get again on memory.changed only; a held line is a chat line, so it says so itself.
+  const told = () => events(hub).page(0, ["memory.changed"]).events.length;
+  turnFor(BEA);
+  leadCall("remember", { scope: "project", effect: "loosens", text: "Merge docs PRs unreviewed." });
+  leadCall("remember", { scope: "project", effect: "loosens", text: "Deploy hotfixes straight away." });
+  leadCall("remember", { scope: "project", effect: "loosens", text: "Release on Fridays unasked." });
+  expect(told()).toBe(3);
+  // Held twice is one, and says nothing new.
+  leadCall("remember", { scope: "project", effect: "loosens", text: "Merge docs PRs unreviewed." });
+  expect(told()).toBe(3);
+  const [kept, dropped, undone] = lines();
+  await ok(admin, "memory_hold_answer", { projectRef: PROJECT, messageId: kept!.messageId, keep: true });
+  expect(told()).toBe(4);
+  await ok(admin, "memory_hold_answer", { projectRef: PROJECT, messageId: dropped!.messageId, keep: false });
+  expect(told()).toBe(5);
+  await ok(member, "memory_undo", { projectRef: PROJECT, messageId: undone!.messageId });
+  expect(told()).toBe(6);
+});
+
 test("a member taking out a line that names a gate is held, by forget, by remember in its place, and by an edit", async () => {
   const { turnFor, leadCall, ok, core, got, lines } = setup();
   turnFor(ADA);

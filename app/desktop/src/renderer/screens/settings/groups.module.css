@@ -178,6 +178,17 @@
 .listRow > .control {
   flex-wrap: nowrap;
 }
+/* A memory topic unfolded in place: its chevron stays on the name's line (its 20 px line, under the row's 10 px top),
+   not halfway down a whole file, and what it opened sits over the row's opener, so a press in it reaches its own
+   entries and buttons. */
+.listRow[data-memory-topic]:has(> .rowText > .name > .opener[aria-expanded="true"]) > .control {
+  align-self: start;
+  height: var(--leading-md);
+}
+.opens > .rowText > :not(.name) {
+  position: relative;
+  z-index: 1;
+}
 .withIcon {
   grid-template-columns: 28px minmax(0, 1fr) auto;
 }

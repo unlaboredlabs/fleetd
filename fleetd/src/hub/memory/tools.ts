@@ -311,6 +311,8 @@ export function register(tools: Registry): void {
     if (!input.keep) {
       chat(hub).setRemembered(message, { ...item, hold: "dropped" }, `Not kept by ${name}: ${item.text}`);
       state(hub, r);
+      // Memory is as it was, but its waiting list is shorter: an open Instructions & memory reads it again.
+      changed(hub, r, item.topic, caller.name);
       return { ok: true };
     }
     const memory = Memory.of(hub);
@@ -354,6 +356,7 @@ export function register(tools: Registry): void {
     if (item.hold === "waiting") {
       chat(hub).setRemembered(message, { ...item, hold: "dropped", undone: true });
       state(hub, r);
+      changed(hub, r, item.topic, caller.name);
       return { ok: true };
     }
     if (item.hold === "dropped") return { ok: true, next: "It was never kept." };
