@@ -7,6 +7,9 @@
 # service's environment doesn't have. The x64 builds are the baseline ones (no AVX2), which run on any x64 CPU, VMs
 # that hide AVX2 included. The binary for this machine is checked to start and say the version.
 #
+# Beside them, fleetd-NOTICE.txt: the open-source notices of what the binaries hold (notices.ts), from the first
+# build's list of the files it bundled. Every target bundles the same ones.
+#
 # Env: FLEETD_VERSION. Run from the repo's root after `bun install` in fleetd/.
 set -euo pipefail
 : "${FLEETD_VERSION:?}"
@@ -19,10 +22,12 @@ for pair in linux-x64:bun-linux-x64-baseline linux-arm64:bun-linux-arm64 darwin-
   # The entry points and flags of package.json's `compile`, for one target.
   bun build --compile --minify --bytecode --sourcemap --target="${pair#*:}" \
     --define "process.env.FLEETD_VERSION=\"$FLEETD_VERSION\"" \
+    --metafile="$work/$asset.meta.json" \
     --root . src/main.ts src/hub/store/read-worker.ts src/hub/projects/avatar-worker.ts --outfile "$work/$asset"
   cp "$work/$asset" "$root/dist/$asset"
 done
 cd "$root"
+bun .github/release/notices.ts "$work/fleetd-bun-linux-x64.meta.json" > dist/fleetd-NOTICE.txt
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) own=dist/fleetd-bun-linux-x64 ;;
   Linux-aarch64) own=dist/fleetd-bun-linux-arm64 ;;
@@ -39,4 +44,4 @@ if [ -n "$own" ]; then
   esac
 fi
 rm -rf "$work"
-ls -l dist/fleetd-bun-*
+ls -l dist/fleetd-bun-* dist/fleetd-NOTICE.txt

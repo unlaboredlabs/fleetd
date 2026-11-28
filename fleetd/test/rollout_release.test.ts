@@ -1,10 +1,11 @@
 // .github/release/rollout.ts run for real against a stand-in `gh` that keeps each release as a directory: a build
 // added by publish, its pass on fleetd's own hub and the first ring's gate (the cloud saying nothing), the desktop
-// app's stage feeds, and a halt, a pull and a resume, each read back from rollout.json as hubs read it.
+// app's stage feeds, and a halt, a pull and a resume, each read back from rollout.json as hubs read it; an urgent fix
+// sent to everyone at once, and launch day's drill: a dry-run halt, then a real halt and resume.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parseRollout, percentAt } from "../src/update/rollout.ts";
+import { parseRollout, percentAt, pick } from "../src/update/rollout.ts";
 import { tempHome } from "./helpers.ts";
 
 // Each write waits 3 s and reads rollout.json back.
@@ -162,3 +163,68 @@ test("a build number listed for one commit is never listed for another: the publ
   );
   expect(readFileSync(join(releases, "edge/rollout.json"), "utf8")).toBe(before);
 });
+
+test("launch day's commands: an urgent fix is everyone's at once; a dry-run halt says what would move and writes nothing; a halt takes a build off its stage and hubs, a resume puts it back", async () => {
+  rmSync(releases, { recursive: true, force: true });
+  mkdirSync(join(releases, "edge"), { recursive: true });
+  // Apps from before Edge's rename read the nightly release's copy of everyone's feed.
+  mkdirSync(join(releases, "nightly"), { recursive: true });
+  writeFileSync(join(releases, "edge/latest-mac.yml"), "version: 0.9.1\nfiles:\n  - url: app-old.zip\npath: app-old.zip\n");
+  const sha = "f".repeat(64);
+  /** Publishes a build that built its own app, as publish.sh leaves it. */
+  const publish = async (build: string, commit: string) => {
+    mkdirSync(join(releases, `build-${build}`), { recursive: true });
+    writeFileSync(join(releases, `build-${build}/latest-mac.yml`), `version: ${build}\nfiles:\n  - url: app-${build}.zip\npath: app-${build}.zip\n`);
+    const dist = join(home.dir, `dist-${build}`);
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "release.json"), JSON.stringify({ sha256: { "fleetd-bun-linux-x64": sha }, appVersion: `${build}+20261128.${commit.slice(0, 7)}` }));
+    await rollout(["add"], dist, { BUILD: build, VERSION: `${build}+20261128.${commit.slice(0, 7)}`, RELEASE_SHA: commit });
+  };
+  const feed = (stage: string) => readFileSync(join(releases, `edge/${stage}-mac.yml`), "utf8").match(/build-([\d.]+)\//)?.[1];
+  const edge = () => Object.fromEntries(["rollout.json", "stage10-mac.yml", "stage50-mac.yml", "latest-mac.yml", ".notes"].map((n) => [n, readFileSync(join(releases, "edge", n), "utf8")]));
+  const hub = (running: string) => pick({ builds: listed() }, { ring: "everyone", bucket: 5, speed: "fast" }, running, Date.now());
+
+  // A security fix, sent straight to everyone: no wait on fleetd's own hub, the cloud or the stages.
+  await publish("0.9.20", "2".repeat(40));
+  const urgent = await rollout(["urgent", "0.9.20"]);
+  expect(urgent).toContain("0.9.20: sent to everyone at once");
+  let [b] = listed();
+  expect(b!.urgentAt).toBeDefined();
+  expect(b!.cloud).toBe("skipped: sent to everyone at once, as an urgent fix");
+  // A hub from before urgentAt reads its share from passedAt alone: 100% there too.
+  expect(percentAt(b!, Date.now())).toBe(100);
+  expect([feed("stage10"), feed("stage50"), feed("latest")]).toEqual(["0.9.20", "0.9.20", "0.9.20"]);
+  expect(readFileSync(join(releases, "edge/.notes"), "utf8")).toMatch(/### 0\.9\.20 · \w+ \d+ \(sent to everyone at once\)/);
+  // Nothing left to move: the ticker ends.
+  await expect(rollout(["moving"])).rejects.toThrow();
+
+  // The next build, the usual way: its first stage only.
+  await publish("0.9.21", "3".repeat(40));
+  await rollout(["pass", "0.9.21"]);
+  expect([feed("stage10"), feed("stage50"), feed("latest")]).toEqual(["0.9.21", "0.9.20", "0.9.20"]);
+  expect(hub("0.9.20+20261128.2222222")).toMatchObject({ kind: "move", build: { build: "0.9.21" } });
+
+  // The drill: a dry-run halt reads edge as it is, says each write it would make, and changes nothing.
+  const was = edge();
+  const dry = await rollout(["halt", "0.9.21"], ROOT, { ROLLOUT_DRY_RUN: "1" });
+  expect(dry).toContain("0.9.21: halted");
+  expect(dry).toContain("dry run, not written: rollout.json");
+  // The halted build's stage goes back to the one before, as a real halt would.
+  expect(dry).toContain("stage10-mac.yml: 0.9.20");
+  expect(dry).toContain("dry run, not done: gh release upload edge");
+  expect(edge()).toEqual(was);
+
+  // The real halt: nobody new takes it, its stage serves the build before, and a hub on it keeps it.
+  await rollout(["halt", "0.9.21"]);
+  expect(listed()[0]!.haltedAt).toBeDefined();
+  expect(feed("stage10")).toBe("0.9.20");
+  expect(hub("0.9.20+20261128.2222222")).toMatchObject({ kind: "stay" });
+  expect(hub("0.9.21+20261128.3333333")).toMatchObject({ kind: "stay" });
+  // A halted build can't be sent to everyone before it's resumed.
+  await expect(rollout(["urgent", "0.9.21"])).rejects.toThrow("0.9.21 is halted: resume it first");
+  // The resume: its stage gets it again, and the hubs in it move on.
+  await rollout(["resume", "0.9.21"]);
+  expect(listed()[0]).not.toHaveProperty("haltedAt");
+  expect(feed("stage10")).toBe("0.9.21");
+  expect(hub("0.9.20+20261128.2222222")).toMatchObject({ kind: "move", build: { build: "0.9.21" } });
+}, 180_000);

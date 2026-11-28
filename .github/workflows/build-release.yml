@@ -246,7 +246,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cli
-          path: dist/fleetd-bun-*
+          # It replaces the Linux job's artifact: the notices beside the binaries go with them.
+          path: |
+            dist/fleetd-bun-*
+            dist/fleetd-NOTICE.txt
           if-no-files-found: error
           overwrite: true
 

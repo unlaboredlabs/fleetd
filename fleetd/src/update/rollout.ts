@@ -44,6 +44,9 @@ export type RolloutBuild = {
   wasHalted?: boolean;
   /** Everyone on it goes back to the build before. */
   pulledAt?: string;
+  /** Sent to everyone at once, an urgent fix (.github/release/rollout.ts `urgent`): its `passedAt` is set back past
+   * the last stage, so every hub, one from before this field too, finds it at 100%. */
+  urgentAt?: string;
 };
 
 export type Rollout = { builds: RolloutBuild[] };

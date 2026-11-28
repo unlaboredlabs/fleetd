@@ -51,7 +51,8 @@ set -euo pipefail
 : "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${RELEASE_SHA:=${GITHUB_SHA:?}}" "${BUILD:=}"
 here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
-if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-*; fi
+# The CLI's notices (bun-build.sh) go with its builds.
+if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-* fleetd-NOTICE.txt; fi
 shopt -s nullglob
 # The CLI's builds are fleetd-bun-<os>-<arch> (bun-build.sh). They also go up under the names the Rust builds had,
 # fleetd-<os>-<arch> and its .lzma (`xz --format=lzma`, which the Rust build's `fleetd update` takes when SHA256SUMS

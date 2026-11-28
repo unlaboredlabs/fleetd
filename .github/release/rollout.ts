@@ -12,12 +12,18 @@
 //   rollout.ts halt <build>     nobody new takes <build>
 //   rollout.ts pull <build>     everyone on <build> goes back to the build before it
 //   rollout.ts resume <build>   undoes a halt or a pull
+//   rollout.ts urgent <build>   an urgent fix: <build> goes to everyone at once, without the first ring or the stages
+//                               (hubs on Update speed Steady still wait their 2 days)
 //   rollout.ts moving           exits 0 while a build waits on the gate or hasn't reached everyone yet, or a phone
 //                               update hasn't
 //   rollout.ts phone-add <tar>  mobile-release.yml's update job: lists the phone update the package holds (RELEASE_SHA,
 //                               its commit) and serves its first stage
-//   rollout.ts phone-halt|phone-pull|phone-resume <update id>
+//   rollout.ts phone-halt|phone-pull|phone-resume|phone-urgent <update id>
 //                               the same flags for a phone update (phone-rollout.ts says what each serves)
+//
+// With ROLLOUT_DRY_RUN=1 it reads edge as it is and writes nothing: each write is said instead, and read back by the
+// rest of the run as if made, so `halt` then `resume` show which feeds and stages would move, a drill on the real
+// rollout that nobody notices.
 //
 // The first ring: a build passes once fleetd's own hub passed on it and the cloud runs it (its public /version names a
 // fleetd commit that holds the build's, with every instance settled). A stale cloud never holds everyone back: when the
@@ -33,7 +39,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { parseRollout, percentAt, STAGES, type Rollout, type RolloutBuild } from "../../fleetd/src/update/rollout.ts";
 import { httpStatus, transient } from "../../fleetd/src/hub/train/github.ts";
 import { cloudPulls, packageOf, parsePhoneRollout, phoneMoving, PLATFORMS as PHONE_PLATFORMS, prunePhone, served, servedText, updateOf, writeServed, type CloudErrors, type PhoneRollout, type PhoneUpdate } from "./phone-rollout.ts";
@@ -53,6 +59,10 @@ export const CLOUD_WAIT_MS = 2 * HOUR;
 /** The CLI's builds hubs and nodes download, each under its pinned name in the build's release. */
 const CLI = /^fleetd-bun-(linux|darwin)-[a-z0-9]+$/;
 const REPO = process.env.GITHUB_REPOSITORY ?? "unlaboredlabs/fleetd";
+/** A drill: edge read as it is, nothing written (the header). */
+const DRY = process.env.ROLLOUT_DRY_RUN === "1";
+/** What a dry run would have written to edge, by name: the rest of the run reads it in place of edge's. */
+const dryWritten = new Map<string, string>();
 /** A build's own release. */
 export const releaseOf = (build: string) => `build-${build}`;
 
@@ -236,7 +246,9 @@ export function releaseNotes(r: Rollout, now: number): string {
             ? b.hubPassedAt === undefined
               ? "on fleetd's own hub"
               : "waiting on the cloud"
-            : `${percentAt(b, now)}% of hubs`;
+            : b.urgentAt !== undefined
+              ? "sent to everyone at once"
+              : `${percentAt(b, now)}% of hubs`;
     lines.push("", `### ${heading(b)} (${state})`, "");
     const notes = b.notes ?? [];
     for (const n of notes.slice(0, 30)) lines.push(`- ${n}`);
@@ -265,6 +277,10 @@ export const ghTransient = (stderr: string) => transient(httpStatus(stderr), std
  * asked: on Nov 25 an edit of edge's notes got HTTP 500 twice through an incident. Any other failure ends at once.
  */
 function runGh(args: string[], input?: string): { status: number; stdout: string; stderr: string; transient: boolean } {
+  if (DRY && args[0] === "release" && ["upload", "edit", "delete-asset", "create", "delete"].includes(args[1] ?? "")) {
+    console.log(`dry run, not done: gh ${args.slice(0, 4).map((a) => (a.startsWith("/") ? basename(a) : a.length > 60 ? `${a.slice(0, 60)}…` : a)).join(" ")}`);
+    return { status: 0, stdout: "", stderr: "", transient: false };
+  }
   for (let attempt = 1; ; attempt++) {
     const r = spawnSync("gh", args, { encoding: "utf8", input, maxBuffer: 64 << 20, timeout: GH_TRY_MS });
     const stderr = r.error ? `${r.stderr ?? ""}${String(r.error)}` : (r.stderr ?? "");
@@ -285,6 +301,8 @@ function gh(args: string[], input?: string): string {
 
 /** A JSON file on the edge release (`none` while there is none). */
 function readJson<T>(name: string, parse: (text: string) => T, none: T): T {
+  const dry = dryWritten.get(name);
+  if (dry !== undefined) return parse(dry);
   const dir = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-"));
   const r = runGh(["release", "download", TAG, "-p", name, "-D", dir]);
   if (r.status !== 0 || !existsSync(join(dir, name))) {
@@ -297,7 +315,13 @@ function readJson<T>(name: string, parse: (text: string) => T, none: T): T {
 function writeJson(name: string, value: unknown): void {
   const dir = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-"));
   const path = join(dir, name);
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  const text = `${JSON.stringify(value, null, 2)}\n`;
+  if (DRY) {
+    dryWritten.set(name, text);
+    console.log(`dry run, not written: ${name}`);
+    return;
+  }
+  writeFileSync(path, text);
   gh(["release", "upload", TAG, path, "--clobber"]);
 }
 
@@ -309,7 +333,7 @@ function updateJson<T>(read: () => T, name: string, change: (r: T) => boolean, h
     if (!change(r)) return r;
     writeJson(name, r);
     // A write that crossed this one lands within seconds of it.
-    Bun.sleepSync(3000);
+    if (!DRY) Bun.sleepSync(3000);
     const back = read();
     if (holds(back)) return back;
     if (attempt >= 5) throw new Error("another write kept crossing this one; run it again");
@@ -462,8 +486,12 @@ function add(): void {
   console.log(`rollout.json: added ${build}; ${r.builds.length} builds listed`);
 }
 
-function flag(kind: "halt" | "pull" | "resume" | "pass", build: string): Rollout {
-  const now = iso(Date.now());
+/** How long after its pass a build reaches everyone. */
+const LAST_STAGE_MS = STAGES[STAGES.length - 1]!.afterMs;
+
+function flag(kind: "halt" | "pull" | "resume" | "pass" | "urgent", build: string): Rollout {
+  const at = Date.now();
+  const now = iso(at);
   const r = update(
     (r) => {
       const b = r.builds.find((b) => b.build === build);
@@ -479,6 +507,14 @@ function flag(kind: "halt" | "pull" | "resume" | "pass", build: string): Rollout
       } else if (kind === "pass") {
         if (b.hubPassedAt !== undefined) return false;
         b.hubPassedAt = now;
+      } else if (kind === "urgent") {
+        if (b.haltedAt !== undefined || b.pulledAt !== undefined) throw new Error(`${build} is ${b.pulledAt !== undefined ? "pulled" : "halted"}: resume it first, or send the fix in a newer build`);
+        if (b.urgentAt !== undefined) return false;
+        b.urgentAt = now;
+        // Every hub reads its share from passedAt alone (fleetd/src/update/rollout.ts percentAt), those from before
+        // urgentAt too: set back past the last stage, it is everyone's now.
+        if (b.passedAt === undefined) b.cloud = "skipped: sent to everyone at once, as an urgent fix";
+        b.passedAt = iso(at - LAST_STAGE_MS);
       } else {
         if (b.haltedAt === undefined && b.pulledAt === undefined) return false;
         delete b.haltedAt;
@@ -492,10 +528,12 @@ function flag(kind: "halt" | "pull" | "resume" | "pass", build: string): Rollout
       if (kind === "halt") return b.haltedAt !== undefined;
       if (kind === "pull") return b.pulledAt !== undefined;
       if (kind === "pass") return b.hubPassedAt !== undefined;
+      if (kind === "urgent") return b.urgentAt !== undefined;
       return b.haltedAt === undefined && b.pulledAt === undefined;
     },
   );
-  console.log(`${build}: ${kind === "resume" ? "resumed" : kind === "pass" ? "passed on fleetd's own hub" : `${kind === "halt" ? "halted" : "pulled"}`}`);
+  const words = { resume: "resumed", pass: "passed on fleetd's own hub", halt: "halted", pull: "pulled", urgent: "sent to everyone at once" } as const;
+  console.log(`${build}: ${words[kind]}`);
   return r;
 }
 
@@ -530,7 +568,8 @@ async function servePhone(p: PhoneRollout, now: number, work: string, edge: Set<
   edge.add("mobile-updates.tar.gz");
   console.log(`mobile-updates.tar.gz:\n${text}`);
   const hook = process.env.SITE_DEPLOY_HOOK;
-  if (hook) await fetch(hook, { method: "POST" }).catch((e: unknown) => console.log(`the site's deploy hook failed: ${String(e)}`));
+  if (DRY) console.log("dry run, not done: fleetd.sh's deploy");
+  else if (hook) await fetch(hook, { method: "POST" }).catch((e: unknown) => console.log(`the site's deploy hook failed: ${String(e)}`));
   else console.log("::notice::No SITE_DEPLOY_HOOK secret: fleetd.sh serves these from its next deploy.");
 }
 
@@ -566,7 +605,7 @@ async function phoneAdd(path: string): Promise<void> {
   await servePhone(r, now, mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-")), new Set(assets(TAG)));
 }
 
-function phoneFlag(kind: "halt" | "pull" | "resume", id: string): void {
+function phoneFlag(kind: "halt" | "pull" | "resume" | "urgent", id: string): void {
   const now = iso(Date.now());
   // By its iOS id or either platform's: fleetd's own workspace pulls by the id a phone reported (hub/app_errors/pull.ts).
   const find = (r: PhoneRollout) => r.updates.find((u) => u.id === id || Object.values(u.platforms).some((p) => p?.id === id));
@@ -580,6 +619,10 @@ function phoneFlag(kind: "halt" | "pull" | "resume", id: string): void {
       } else if (kind === "pull") {
         if (u.pulledAt !== undefined) return false;
         u.pulledAt = now;
+      } else if (kind === "urgent") {
+        if (u.haltedAt !== undefined || u.pulledAt !== undefined) throw new Error(`${id} is ${u.pulledAt !== undefined ? "pulled" : "halted"}: resume it first, or send the fix in a newer update`);
+        if (u.urgentAt !== undefined) return false;
+        u.urgentAt = now;
       } else {
         if (u.haltedAt === undefined && u.pulledAt === undefined) return false;
         delete u.haltedAt;
@@ -592,10 +635,12 @@ function phoneFlag(kind: "halt" | "pull" | "resume", id: string): void {
       if (!u) return false;
       if (kind === "halt") return u.haltedAt !== undefined;
       if (kind === "pull") return u.pulledAt !== undefined;
+      if (kind === "urgent") return u.urgentAt !== undefined;
       return u.haltedAt === undefined && u.pulledAt === undefined;
     },
   );
-  console.log(`phone update ${id}: ${kind === "resume" ? "resumed" : kind === "halt" ? "halted" : "pulled"}`);
+  const words = { resume: "resumed", halt: "halted", pull: "pulled", urgent: "sent to everyone at once" } as const;
+  console.log(`phone update ${id}: ${words[kind]}`);
 }
 
 async function tick(): Promise<void> {
@@ -660,15 +705,17 @@ if (import.meta.main) {
     // Exits 0 while something is still moving (`moving`), 1 once nothing is.
     else if (command === "moving") process.exit(moving(readRollout(), Date.now()) || phoneMoving(readPhone(), Date.now()) ? 0 : 1);
     else if (command === "phone-add" && build) await phoneAdd(build);
-    else if ((command === "phone-halt" || command === "phone-pull" || command === "phone-resume") && build) {
-      phoneFlag(command.slice("phone-".length) as "halt" | "pull" | "resume", build);
+    else if ((command === "phone-halt" || command === "phone-pull" || command === "phone-resume" || command === "phone-urgent") && build) {
+      phoneFlag(command.slice("phone-".length) as "halt" | "pull" | "resume" | "urgent", build);
       await tick();
     }
-    else if ((command === "halt" || command === "pull" || command === "resume" || command === "pass") && build) {
+    else if ((command === "halt" || command === "pull" || command === "resume" || command === "pass" || command === "urgent") && build) {
       flag(command, build);
       await tick();
     } else {
-      console.error("usage: rollout.ts add | tick | pass <build> | halt <build> | pull <build> | resume <build> | phone-add <package> | phone-halt <id> | phone-pull <id> | phone-resume <id>");
+      console.error(
+        "usage: rollout.ts add | tick | pass <build> | halt <build> | pull <build> | resume <build> | urgent <build> | phone-add <package> | phone-halt <id> | phone-pull <id> | phone-resume <id> | phone-urgent <id>",
+      );
       process.exit(2);
     }
   } catch (e) {

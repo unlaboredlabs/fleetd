@@ -10,7 +10,7 @@
 // A halted update reaches nobody new: each stage serves the newest update before it that reached it. A pulled one
 // also takes back those who have it: every stage serves its back copy, the update everyone had when it was published
 // signed again as a newer one (or expo-updates' rollBackToEmbedded directive when there was none), which its package
-// carries (app/mobile/scripts/updates.ts --served).
+// carries (app/mobile/scripts/updates.ts --served). An urgent one (`rollout.ts phone-urgent`) is everyone's from then.
 //
 // An update's package, phone-update-<id>.tar.gz on the edge release: <runtime version>/<platform> (its signed
 // manifests), back/<runtime version>/<platform>, and assets/ (its files and its back copy's).
@@ -32,6 +32,8 @@ export type PhoneUpdate = {
   publishedAt: string;
   haltedAt?: string;
   pulledAt?: string;
+  /** Sent to everyone at once, an urgent fix. */
+  urgentAt?: string;
 };
 
 /** Newest first. */
@@ -61,6 +63,7 @@ export function parsePhoneRollout(text: string): PhoneRollout {
 
 /** The share of installs `u` has reached at `now`. */
 export function phonePercentAt(u: PhoneUpdate, now: number): number {
+  if (u.urgentAt !== undefined && now >= Date.parse(u.urgentAt)) return 100;
   const since = now - Date.parse(u.publishedAt);
   let percent = 0;
   for (const s of PHONE_STAGES) if (since >= s.afterMs) percent = s.percent;

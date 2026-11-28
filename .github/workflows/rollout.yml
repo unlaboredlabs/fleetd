@@ -8,8 +8,12 @@
 #
 #   gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=0.9.4
 #
-# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) A phone update
-# the same way, by its iOS update id: action=phone-halt, phone-pull or phone-resume with build=<update id>. A flag has no
+# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) An urgent fix,
+# a security one, goes to everyone at once, without fleetd's own hub, the cloud or the stages: action=urgent (hubs on
+# Update speed Steady still wait their 2 days). A phone update the same way, by its iOS update id: action=phone-halt,
+# phone-pull, phone-resume or phone-urgent with build=<update id>. With dry_run, a flag reads the rollout as it is,
+# says what each write would be and which feeds and stages would move, and changes nothing: a drill before launch
+# day, `-f action=halt -f build=<the newest build> -f dry_run=true`. A flag has no
 # concurrency group: a queued run would cancel a waiting one and drop its halt; each write reads rollout.json back
 # instead. Only the ticker has one, which never cancels the ticker running.
 name: Rollout
@@ -24,14 +28,18 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "tick, or for one build: pass, halt, pull or resume; for one phone update: phone-halt, phone-pull or phone-resume"
+        description: "tick, or for one build: pass, halt, pull, resume or urgent (everyone now); for one phone update: phone-halt, phone-pull, phone-resume or phone-urgent"
         type: choice
-        options: [tick, pass, halt, pull, resume, phone-halt, phone-pull, phone-resume]
+        options: [tick, pass, halt, pull, resume, urgent, phone-halt, phone-pull, phone-resume, phone-urgent]
         default: tick
       build:
         description: The build's number, as 0.9.4, or the phone update's id (not for tick)
         type: string
         default: ""
+      dry_run:
+        description: Say what the flag would change, and change nothing (a drill)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -54,12 +62,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ACTION: ${{ inputs.action }}
           BUILD: ${{ inputs.build }}
+          ROLLOUT_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
           SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: bun .github/release/rollout.ts "$ACTION" "$BUILD"
 
   ticker:
     needs: flag
-    if: always() && github.repository == 'unlaboredlabs/fleetd' && needs.flag.result != 'failure'
+    # A drill wrote nothing: nothing new to tick for.
+    if: always() && github.repository == 'unlaboredlabs/fleetd' && needs.flag.result != 'failure' && inputs.dry_run != true
     # One ticker at a time; a newer start waits, and runs once the one ticking ends.
     concurrency:
       group: rollout-ticker

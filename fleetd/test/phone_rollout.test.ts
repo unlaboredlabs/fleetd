@@ -70,6 +70,14 @@ test("only the newest update advances: a revert stops a bad update from going on
   expect(phoneMoving({ updates }, T0 + 3 * HOUR)).toBe(false);
 });
 
+test("an urgent update is everyone's at once, and the ticker has nothing left to move", () => {
+  const old = u("old", 10 * HOUR);
+  expect(ios([u("fix", 0, "f1", { urgentAt: at(0) }), old])).toEqual({ everyone: "fix", stage50: "fix", stage10: "fix" });
+  expect(phoneMoving({ updates: [u("fix", 0, "f1", { urgentAt: at(0) }), old] }, T0)).toBe(false);
+  // Before it was sent at once, it had its stages as any update.
+  expect(ios([u("fix", 30 * 60_000, "f1", { urgentAt: at(HOUR) }), old])).toEqual({ everyone: "old", stage50: "old", stage10: "fix" });
+});
+
 test("a pulled update takes back everyone who has it: every stage serves its back copy until a newer one", () => {
   const pulled = u("bad", 2 * HOUR, "f1", { pulledAt: at(0) });
   expect(ios([pulled, u("good", 10 * HOUR)])).toEqual({ everyone: "bad back", stage50: "bad back", stage10: "bad back" });
