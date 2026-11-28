@@ -26,10 +26,10 @@
 //
 // The desktop app reads its feed on edge by its bucket (app/desktop/src/main/update-stage.ts): stage10-*.yml below 10,
 // stage50-*.yml below 50, latest-*.yml otherwise, and apps from before stages read latest. Each is the feed of the
-// newest build that reached that share (a build that didn't change the app has none: the nearest older build's), its
-// files named by their full address in that build's release. The phone's over-the-air updates go out after each merge
-// (mobile-release.yml, D800) through stages of their own, by install (phone-rollout.ts): every tick writes what each
-// serves into edge's mobile-updates.tar.gz, and fleetd.sh deploys it.
+// newest build that reached that share (a build that didn't change the app has none: the build that built its app's,
+// listed while it is, `feedBuild`), its files named by their full address in that build's release. The phone's
+// over-the-air updates go out after each merge (mobile-release.yml, D800) through stages of their own, by install
+// (phone-rollout.ts): every tick writes what each serves into edge's mobile-updates.tar.gz, and fleetd.sh deploys it.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -102,7 +102,8 @@ export function plainNotes(subjects: string[]): string[] {
 }
 
 /** The builds to keep, newest first: every build up to the newest that reached everyone, one good build before that to
- * go back to, and for Steady, the newest passed build of each 6 hours of the last 3 days; MAX_BUILDS at most. */
+ * go back to, and for Steady, the newest passed build of each 6 hours of the last 3 days; MAX_BUILDS at most. And the
+ * build that built each kept build's desktop app, its feed's files (`feedBuild`), whether it passed itself or not. */
 export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
   const good = (b: RolloutBuild) => b.haltedAt === undefined && b.pulledAt === undefined;
   // A day-numbered build (2026.11.23.x, eleven of them) stays listed for good: a hub on one, from before 0.MINOR.PATCH,
@@ -124,7 +125,11 @@ export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
     slots.add(slot);
     return true;
   });
-  return kept.filter((b, i) => i < MAX_BUILDS || dayNumbered(b));
+  const capped = kept.filter((b, i) => i < MAX_BUILDS || dayNumbered(b));
+  // A build that didn't change the app has no app files of its own. On Nov 28, 0.9.61 came out 7 minutes after 0.9.60
+  // built the app and passed instead of it; dropping 0.9.60 took its app's files, and every feed went back to 0.9.42.
+  const apps = new Set(capped.map((b) => b.appVersion));
+  return builds.filter((b) => capped.includes(b) || apps.has(b.version));
 }
 
 /** What the cloud says it runs. */
@@ -181,11 +186,21 @@ export function stageSources(r: Rollout, now: number, hasFeed: (build: string) =
 /** A feed as the nightly copy serves it: its version nightly-named, which apps from before Edge's rename compare. */
 export const nightlyFeed = (feed: string) => feed.replace(/^(version: .*)-edge\./m, "$1-nightly.");
 
-/** The newest build that reached `percent` of hubs and has a desktop feed (its own or the nearest older build's). */
+/**
+ * The build whose desktop feed `percent` of hubs get: the one that built the app of the newest build that reached them
+ * (listed with its `appVersion` as its version; for a build that doesn't say, the nearest older build with a feed).
+ * When that app's build isn't listed with its files, or was halted or pulled (newer builds that carry its app go on
+ * carrying it), the next older build that reached them: so a feed never offers an app that didn't come with a build
+ * that reached them, like a pulled one in between, and pulling a bad app takes it off the feeds.
+ */
 export function feedBuild(r: Rollout, percent: number, now: number, hasFeed: (build: string) => boolean): string | undefined {
-  const at = r.builds.findIndex((b) => b.haltedAt === undefined && b.pulledAt === undefined && percentAt(b, now) >= percent);
-  if (at < 0) return undefined;
-  return r.builds.slice(at).find((b) => hasFeed(b.build))?.build;
+  const good = (b: RolloutBuild) => b.haltedAt === undefined && b.pulledAt === undefined;
+  for (const [i, b] of r.builds.entries()) {
+    if (!good(b) || percentAt(b, now) < percent) continue;
+    const app = b.appVersion === undefined ? r.builds.slice(i).find((x) => hasFeed(x.build)) : r.builds.find((x) => x.version === b.appVersion);
+    if (app !== undefined && good(app) && hasFeed(app.build)) return app.build;
+  }
+  return undefined;
 }
 
 /**
