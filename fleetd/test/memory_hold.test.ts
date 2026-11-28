@@ -360,3 +360,66 @@ test("the nightly upkeep's rewrites and merges save at once; one that adds a loo
   expect(leadCall("remember", { scope: "project", effect: "none", text: hers, replaces: "in Helsinki" }).held).toBe(true);
   expect(core()).toContain(reworded);
 });
+
+/** A plain line of 100 characters ("- " and its newline make 103), which holds for no one. */
+const plain = (n: number) => `Note ${String(n).padStart(2, "0")}: ${"x".repeat(90)}.`;
+
+test("an admin's Keep saves a held line that takes MEMORY.md past its cap; the lead's next write past it is refused", async () => {
+  const { hub, turnFor, leadCall, call, ok, core, lines } = setup();
+  hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('index', 1000)").run();
+  turnFor(BEA);
+  expect(leadCall("remember", { scope: "project", effect: "none", text: "Never ask before deploying." }).held).toBe(true);
+  // While it waits, the lead fills the file to just under its cap.
+  turnFor(ADA);
+  for (let n = 0; n < 9; n += 1) leadCall("remember", { scope: "project", effect: "none", text: plain(n) });
+  leadCall("remember", { scope: "project", effect: "none", text: "Use pnpm for every package in this repo, and keep its lockfile." });
+  expect(core().length).toBe(993);
+  const [waiting] = lines().filter((m) => m.remembered?.hold === "waiting");
+  await ok(admin, "memory_hold_answer", { projectRef: PROJECT, messageId: waiting!.messageId, keep: true });
+  expect(core()).toEndWith("- Never ask before deploying.\n");
+  expect(core().length).toBe(1023);
+  // Past the cap now, the lead's next growing write is refused as before; one that shrinks the file goes.
+  expect(() => leadCall("remember", { scope: "project", effect: "none", text: plain(9) })).toThrow("past its cap of 1000");
+  leadCall("forget", { scope: "project", entry: "Note 00" });
+  expect(core().length).toBe(920);
+  // A person's own edit past the cap is refused in a person's words, never the lead's.
+  const refused = await call(admin, "memory_set", { scope: "project", projectRef: PROJECT, text: `${core()}- ${plain(10)}\n- ${plain(11)}\n` });
+  expect(refused.error?.error?.message).toContain("past its cap of 1000");
+  expect(JSON.stringify(refused.error)).not.toContain("remember with replaces");
+});
+
+test("a held line is refused when it and the changes already waiting would take MEMORY.md past its cap", () => {
+  const { hub, turnFor, leadCall, core, lines } = setup();
+  hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('index', 1000)").run();
+  turnFor(ADA);
+  for (let n = 0; n < 7; n += 1) leadCall("remember", { scope: "project", effect: "none", text: plain(n) });
+  expect(core().length).toBe(721);
+  turnFor(BEA);
+  const loose = (n: number) => `Never ask before deploying ${String(n).padStart(2, "0")}: ${"y".repeat(68)}.`;
+  expect(leadCall("remember", { scope: "project", effect: "none", text: loose(1) }).held).toBe(true);
+  expect(leadCall("remember", { scope: "project", effect: "none", text: loose(2) }).held).toBe(true);
+  // Alone it would fit (824); with the two waiting it would be 1030, so the lead makes room now.
+  expect(() => leadCall("remember", { scope: "project", effect: "none", text: loose(3) })).toThrow(
+    "MEMORY.md would be 1030 characters with the 2 changes already waiting for an admin, past its cap of 1000. Nothing was held.",
+  );
+  expect(lines().filter((m) => m.remembered?.hold === "waiting").length).toBe(2);
+  // One that replaces a line, so grows it by nothing, still waits.
+  expect(leadCall("remember", { scope: "project", effect: "none", text: loose(3), replaces: "Note 06" }).held).toBe(true);
+  expect(core().length).toBe(721);
+});
+
+test("Keep all saves several held lines that together take MEMORY.md past its cap", async () => {
+  const { hub, turnFor, leadCall, ok, core, lines, got } = setup();
+  hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('index', 1000)").run();
+  turnFor(BEA);
+  const held = ["Never ask before deploying.", "Merge docs PRs without review.", "Release on Fridays unasked."];
+  for (const text of held) expect(leadCall("remember", { scope: "project", effect: "loosens", text }).held).toBe(true);
+  turnFor(ADA);
+  for (let n = 0; n < 9; n += 1) leadCall("remember", { scope: "project", effect: "none", text: plain(n) });
+  // Keep all answers each in turn, as the apps do.
+  for (const h of (await got()).held ?? []) await ok(admin, "memory_hold_answer", { projectRef: PROJECT, messageId: h.messageId, keep: true });
+  expect(core().length).toBeGreaterThan(1000);
+  for (const text of held) expect(core()).toContain(`- ${text}\n`);
+  expect(lines().filter((m) => m.remembered?.hold === "waiting")).toEqual([]);
+  expect((await got()).held).toBeUndefined();
+});

@@ -3,9 +3,10 @@
 // topics; a hub from before people keeps one shared `user.md` (topics in `user/`). `<machine>/<project>/MEMORY.md` and
 // its topic files belong to one project and are never read for another. A core is the always-on part, then one
 // `- [topic](topic.md)` line per topic. The hub is the only writer: a lead's `remember` or `forget` (`calls`; the nightly
-// `refresh` and `tidy` make them too) or a person's edit in the app (`tools`). A project write past a cap is refused,
-// never truncated; a person's own write is never refused for size: it lands, and asks for a tidy of their memory
-// (tidy_store `askTidy`). Every write here is synchronous, so writes never interleave.
+// `refresh` and `tidy` make them too) or a person's edit in the app (`tools`). A project write that grows a file past a
+// cap is refused, never truncated, except an admin's Keep of a change held for them, which is their call: the lead
+// makes room at its next write. A person's own write is never refused for size: it lands, and asks for a tidy of their
+// memory (tidy_store `askTidy`). Every write here is synchronous, so writes never interleave.
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -60,6 +61,12 @@ function writeAtomic(path: string, text: string): void {
 }
 
 const invalid = (message: string, fix?: string) => new ToolError("invalid", message, fix);
+
+/** A write past a cap, refused: the lead is told how to make room, a person (an edit, an Undo) in their own words. */
+const capRefusal = (message: string, fix: string) =>
+  new ToolError("invalid", message, fix, undefined, "Merge entries that overlap, or delete ones that no longer hold, then try again.");
+const ENTRY_ROOM = "Merge or replace: fold this into an entry it overlaps (remember with replaces), or drop one that no longer holds.";
+const PROJECT_ROOM = "Merge or replace: fold topics together, or drop entries that no longer hold.";
 
 function secretRefusal(text: string): void {
   if (redact(text) !== text) {
@@ -184,27 +191,24 @@ export class Memory {
 
   /**
    * Writes `text` to `t`, or deletes the file when it is empty, after the secret and cap checks. A person's own file
-   * past its cap is written, and asks for a tidy of their memory.
+   * past its cap is written, and asks for a tidy of their memory. A project write that grows a file, or the bot's
+   * memory, past its cap is refused, unless it is an admin's Keep (`kept`); one that shrinks a file already past it
+   * goes.
    */
-  private put(t: Target, text: string): void {
+  private put(t: Target, text: string, kept: boolean): void {
     this.root();
     secretRefusal(text);
-    const [len, cap] = [chars(text), this.cap(t)];
+    const [len, cap, was] = [chars(text), this.cap(t), chars(this.read(t))];
     if (personal(t) && t.person !== this.tidying) noteOutsideWrite(this.db, t.person as PersonId);
     if (len > cap && personal(t)) askTidy(this.db, t.person as PersonId, this.now());
-    else if (len > cap) {
-      throw invalid(
-        `${nameOf(t)} would be ${len} characters, past its cap of ${cap}. Nothing was written.`,
-        "Merge or replace: fold this into an entry it overlaps (remember with replaces), or drop one that no longer holds.",
-      );
+    else if (len > cap && len > was && !kept) {
+      throw capRefusal(`${nameOf(t)} would be ${len} characters, past its cap of ${cap}. Nothing was written.`, ENTRY_ROOM);
     }
-    if (t.project) {
-      const total = this.projectChars(t.project) - chars(this.read(t)) + len;
-      if (total > this.caps.project) {
-        throw invalid(
-          `This bot's memory would be ${total} characters, past its cap of ${this.caps.project}. Nothing was written.`,
-          "Merge or replace: fold topics together, or drop entries that no longer hold.",
-        );
+    if (t.project && !kept) {
+      const now = this.projectChars(t.project);
+      const total = now - was + len;
+      if (total > this.caps.project && total > now) {
+        throw capRefusal(`This bot's memory would be ${total} characters, past its cap of ${this.caps.project}. Nothing was written.`, PROJECT_ROOM);
       }
     }
     const path = this.path(t) as string;
@@ -255,10 +259,49 @@ export class Memory {
   }
 
   /**
-   * A lead's `remember` in project `r`, user scope in `person`'s memory: the entry appended, or put in place of the
-   * one that contains `replaces`. `item` undefined when the file already says exactly that.
+   * Refuses a lead's change held for an admin (`item`) that, written with the changes already waiting in project `r`
+   * (`waiting`), would grow a file it writes, or the bot's memory, past its cap: the lead makes room now, so an admin's
+   * Keep never meets the cap. Lines waiting to be taken out free nothing, as an admin may not keep them.
    */
-  remember(r: ProjectRef, person: PersonId | undefined, call: RememberCall): { target: Target; item?: RememberedItem; chars: number } {
+  roomForHeld(r: ProjectRef, item: RememberedItem, waiting: readonly RememberedItem[]): void {
+    const growth = new Map<string | undefined, number>();
+    const add = (topic: string | undefined, n: number) => growth.set(topic, (growth.get(topic) ?? 0) + n);
+    const opened = new Set<string>();
+    const grows = (i: RememberedItem): boolean => {
+      if (i.forgotten === true) return false;
+      const t = projectTarget(r, i.topic);
+      const lines = linesOf(this.read(t)).map((l) => l.trimEnd());
+      if (lines.includes(entryLine(i.text))) return false;
+      const gone = i.replaced !== undefined && lines.includes(entryLine(i.replaced)) ? chars(entryLine(i.replaced)) + 1 : 0;
+      const n = chars(entryLine(i.text)) + 1 - gone;
+      add(i.topic, n);
+      if (i.topic !== undefined && !opened.has(i.topic) && this.indexWith(coreOf(t), i.topic, true) !== undefined) {
+        opened.add(i.topic);
+        add(undefined, chars(indexLine(i.topic)) + 1);
+      }
+      return n > 0;
+    };
+    for (const w of waiting) grows(w);
+    if (!grows(item)) return;
+    const others = waiting.filter((w) => w.forgotten !== true).length;
+    const counted = others === 0 ? "" : ` with the ${others === 1 ? "change" : `${others} changes`} already waiting for an admin`;
+    for (const topic of new Set([item.topic, ...(item.topic !== undefined && opened.has(item.topic) ? [undefined] : [])])) {
+      const t = projectTarget(r, topic);
+      const len = chars(this.read(t)) + (growth.get(topic) ?? 0);
+      if (len > this.cap(t)) throw capRefusal(`${nameOf(t)} would be ${len} characters${counted}, past its cap of ${this.cap(t)}. Nothing was held.`, ENTRY_ROOM);
+    }
+    const total = this.projectChars(r) + [...growth.values()].reduce((a, b) => a + b, 0);
+    if (total > this.caps.project) {
+      throw capRefusal(`This bot's memory would be ${total} characters${counted}, past its cap of ${this.caps.project}. Nothing was held.`, PROJECT_ROOM);
+    }
+  }
+
+  /**
+   * A lead's `remember` in project `r`, user scope in `person`'s memory: the entry appended, or put in place of the
+   * one that contains `replaces`. `item` undefined when the file already says exactly that. `kept`: an admin's Keep,
+   * which no cap refuses.
+   */
+  remember(r: ProjectRef, person: PersonId | undefined, call: RememberCall, kept = false): { target: Target; item?: RememberedItem; chars: number } {
     this.root();
     const t = targetFor(call.scope, r, person, call.topic);
     const lines = linesOf(this.read(t));
@@ -279,18 +322,15 @@ export class Memory {
     const text = joinLines(lines);
     // The index line is in the cap check of the topic write: both go, or neither.
     const index = t.topic !== undefined ? this.indexWith(coreOf(t), t.topic, true) : undefined;
-    if (index !== undefined && t.project) {
+    if (index !== undefined && t.project && !kept) {
       const it = projectTarget(t.project);
       const room = Math.max(this.caps.project - (this.projectChars(t.project) - chars(this.read(t)) - chars(this.read(it))), 0);
       if (chars(index) > this.cap(it) || chars(index) + chars(text) > room) {
-        throw invalid(
-          "This bot's memory is at its cap. Nothing was written.",
-          "Merge or replace: fold topics together, or drop entries that no longer hold.",
-        );
+        throw capRefusal("This bot's memory is at its cap. Nothing was written.", PROJECT_ROOM);
       }
     }
-    this.put(t, text);
-    if (index !== undefined) this.put(coreOf(t), index);
+    this.put(t, text, kept);
+    if (index !== undefined) this.put(coreOf(t), index, kept);
     const item: RememberedItem = {
       scope: call.scope,
       ...(t.person === undefined ? {} : { person: t.person }),
@@ -302,7 +342,7 @@ export class Memory {
   }
 
   /** A lead's `forget`: the one entry that contains `call.entry` goes. A topic left empty goes with its index line. */
-  forget(r: ProjectRef, person: PersonId | undefined, call: ForgetCall): { target: Target; item: RememberedItem; chars: number } {
+  forget(r: ProjectRef, person: PersonId | undefined, call: ForgetCall, kept = false): { target: Target; item: RememberedItem; chars: number } {
     this.root();
     const t = targetFor(call.scope, r, person, call.topic);
     const lines = linesOf(this.read(t));
@@ -311,7 +351,7 @@ export class Memory {
     if (whole.length < 1) throw invalid(`That line of ${nameOf(t)} is empty.`, "Quote words of an entry.");
     lines.splice(i, 1);
     const now = joinLines(lines);
-    this.putDroppingEmptyTopic(t, now);
+    this.putDroppingEmptyTopic(t, now, kept);
     const item: RememberedItem = {
       scope: call.scope,
       ...(t.person === undefined ? {} : { person: t.person }),
@@ -323,11 +363,11 @@ export class Memory {
     return { target: t, item, chars: chars(now) };
   }
 
-  private putDroppingEmptyTopic(t: Target, text: string): void {
-    this.put(t, text);
+  private putDroppingEmptyTopic(t: Target, text: string, kept: boolean): void {
+    this.put(t, text, kept);
     if (t.topic !== undefined && !text.trim()) {
       const index = this.indexWith(coreOf(t), t.topic, false);
-      if (index !== undefined) this.put(coreOf(t), index);
+      if (index !== undefined) this.put(coreOf(t), index, kept);
     }
   }
 
@@ -343,15 +383,15 @@ export class Memory {
     if (i < 0) throw invalid(`${nameOf(t)} no longer has that entry; it was changed since.`, "Edit it in Settings > Memory.");
     if (item.replaced !== undefined) lines[i] = entryLine(item.replaced);
     else lines.splice(i, 1);
-    this.putDroppingEmptyTopic(t, joinLines(lines));
+    this.putDroppingEmptyTopic(t, joinLines(lines), false);
   }
 
   /** A person's edit in the app: the whole file. Empty deletes it, and a topic's index line with it. */
   set(t: Target, text: string): void {
-    this.put(t, text);
+    this.put(t, text, false);
     if (t.topic !== undefined) {
       const index = this.indexWith(coreOf(t), t.topic, text.trim() !== "");
-      if (index !== undefined) this.put(coreOf(t), index);
+      if (index !== undefined) this.put(coreOf(t), index, false);
     }
   }
 
