@@ -187,6 +187,28 @@ test("each stage feed is the newest build that reached it with an app, its files
   );
 });
 
+test("an app build a build without app changes overtook before it passed stays listed, and every feed keeps offering it", () => {
+  // Nov 28: 0.9.60 built the app, 0.9.61 (no app change) came out 7 minutes later and passed instead, and once 0.9.61
+  // reached everyone the list dropped 0.9.60 and its files, so every feed went back to 0.9.42.
+  const app = (n: number, more: Partial<RolloutBuild>, appOf = n) => ({ ...b(n, more), build: `0.9.${n}`, version: `0.9.${n}+20261127.abc1234`, appVersion: `0.9.${appOf}+20261127.abc1234` });
+  const builds = [
+    app(61, { publishedAt: ago(14), passedAt: ago(11) }, 60),
+    app(60, { publishedAt: ago(14.12) }),
+    app(59, { publishedAt: ago(15), passedAt: ago(14.5) }, 42),
+    app(42, { publishedAt: ago(40), passedAt: ago(39) }),
+  ];
+  const r: Rollout = { builds: prune(builds, NOW) };
+  expect(r.builds.map((x) => x.build)).toContain("0.9.60");
+  // Each feed reads the files of the build that built its app, which are there while that build is listed.
+  const hasFeed = (build: string) => r.builds.some((x) => x.build === build && x.appVersion === x.version);
+  for (const percent of [10, 50, 100]) expect(feedBuild(r, percent, NOW, hasFeed)).toBe("0.9.60");
+  // A build whose app's build isn't listed hands the feed to the next older build that reached it, never to a pulled
+  // app build in between.
+  const gone: Rollout = { builds: [app(61, { passedAt: ago(11) }, 60), app(50, { passedAt: ago(20), pulledAt: ago(19) }), app(42, { passedAt: ago(39) })] };
+  const own = (build: string) => gone.builds.some((x) => x.build === build && x.appVersion === x.version);
+  expect(feedBuild(gone, 100, NOW, own)).toBe("0.9.42");
+});
+
 test("the ticker ticks on while a build waits on the gate or hasn't reached everyone, and stops once none does", () => {
   expect(moving({ builds: [b(2, { hubPassedAt: ago(0.5) })] }, NOW)).toBe(true);
   expect(moving({ builds: [b(2, { passedAt: ago(2) })] }, NOW)).toBe(true);
