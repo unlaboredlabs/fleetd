@@ -69,5 +69,9 @@ gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=0.9.
 - `halt`: no new workspace takes the build. Workspaces already on it keep it.
 - `pull`: every workspace on the build goes back to the newest earlier build that has reached it. Its machines go back too.
 - `resume`: undoes a halt or a pull. Workspaces on Steady still never take a build that was halted once.
+- `urgent`: an urgent fix, such as a security one, goes to every workspace at once, without the staged rollout.
+  Workspaces on Steady still wait their 2 days.
+
+Add `-f dry_run=true` to any of these to see what it would change, without changing anything.
 
 Workspaces see the change at their next check, within 2 minutes.
