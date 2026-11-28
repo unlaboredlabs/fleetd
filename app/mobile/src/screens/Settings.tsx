@@ -15,7 +15,7 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
 import { useCallback, useEffect, useState } from "react";
-import { ActionSheetIOS, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActionSheetIOS, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { linkTone, linkWords as statusOf } from "../chatsBar";
 import { WORKSPACE_DELETED, type HubRole } from "../desktop";
 import { useHub, type RootParams, type SettingsParams } from "../hubContext";
@@ -178,15 +178,17 @@ export function Settings() {
   const versionShown = hub.phase === "live" && hub.version !== undefined && paired.cloud !== true;
   // Up to date with nothing more to say: the Version row says so, rather than a section holding one row.
   const current = merelyCurrent(useUpdateStatus());
+  // At the accessibility text sizes the photo goes above the name and role, which get the card's whole width.
+  const big = useWindowDimensions().fontScale >= 1.35;
   const picture = <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />;
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
-      <View style={[styles.card, styles.me, { backgroundColor: t.cell }]}>
+      <View style={[styles.card, styles.me, big && styles.meStacked, { backgroundColor: t.cell }]}>
         {me === undefined || state.meName === undefined ? (
           <>
             {picture}
-            <View style={styles.meText} accessible accessibilityLabel={name}>
+            <View style={[styles.meText, big && styles.meTextStacked]} accessible accessibilityLabel={name}>
               <Text style={[styles.name, { color: t.label }]} numberOfLines={1}>
                 {name}
               </Text>
@@ -197,7 +199,7 @@ export function Settings() {
             <Pressable accessibilityRole="button" accessibilityLabel="Your photo" accessibilityHint="Chooses or removes your photo." hitSlop={8} onPress={onMe} style={({ pressed }) => pressed && styles.pressed}>
               {picture}
             </Pressable>
-            <MyName saved={state.meName} role={role} />
+            <MyName saved={state.meName} role={role} big={big} />
           </>
         )}
       </View>
@@ -278,7 +280,7 @@ export function Settings() {
  * keyboard still up takes the screen away before the field hears it was left, so going away saves what was typed too;
  * with no field left to say why the hub refused that, an alert does.
  */
-function MyName({ saved, role }: { saved: string; role: string | undefined }) {
+function MyName({ saved, role, big }: { saved: string; role: string | undefined; big: boolean }) {
   const t = useTheme();
   const { session } = useHub();
   const [edit, setEdit] = useState<NameEdit>(atRest);
@@ -300,7 +302,7 @@ function MyName({ saved, role }: { saved: string; role: string | undefined }) {
   useEffect(() => field.named(saved), [field, saved]);
   useEffect(() => () => field.gone(), [field]);
   return (
-    <View style={styles.meText}>
+    <View style={[styles.meText, big && styles.meTextStacked]}>
       <TextInput
         value={shownName(edit, saved)}
         onChangeText={(text) => field.typed(text)}
@@ -323,7 +325,7 @@ function MyName({ saved, role }: { saved: string; role: string | undefined }) {
           {edit.error}
         </Text>
       ) : role === undefined ? null : (
-        <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={2}>
+        <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={big ? 4 : 2}>
           {role}
         </Text>
       )}
@@ -334,9 +336,12 @@ function MyName({ saved, role }: { saved: string; role: string | undefined }) {
 const styles = StyleSheet.create({
   card: { marginHorizontal: space.lg, marginTop: space.sm, borderRadius: shape.group, borderCurve: "continuous", overflow: "hidden" },
   me: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: space.lg, paddingVertical: 14 },
+  meStacked: { flexDirection: "column", alignItems: "flex-start" },
   meText: { flex: 1, gap: 2 },
+  meTextStacked: { flex: 0, alignSelf: "stretch" },
   name: { fontSize: 20, lineHeight: 25, fontWeight: "600", letterSpacing: -0.2 },
-  // The name as a field: its line's height without a line height, which iOS would set a field's text low by.
-  nameField: { fontSize: 20, fontWeight: "600", letterSpacing: -0.2, height: 25, padding: 0 },
+  // The name as a field: no line height, which iOS would set a field's text low by, and no fixed height, which cut the
+  // name off at the larger text sizes: a one-line field is as tall as its text.
+  nameField: { fontSize: 20, fontWeight: "600", letterSpacing: -0.2, padding: 0 },
   pressed: { opacity: 0.6 },
 });

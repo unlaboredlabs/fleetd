@@ -279,7 +279,8 @@ export function ReviewSignIn({ onSignedIn }: { onSignedIn: OnSignedIn }) {
               value={code}
               onChangeText={setCode}
               placeholder="Review code"
-              // Masked, as a password is: a screenshot or a screen reader never shows it.
+              // Masked, as a password is: a screenshot or a screen reader never shows it. iOS then offers to save it as a
+              // password once typed (Not Now), which clearing the field before leaving doesn't stop.
               secureTextEntry
               textContentType="oneTimeCode"
               returnKeyType="go"

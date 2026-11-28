@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { packagesOf } from "../scripts/notices";
+import { flowed } from "./licences";
 import notices from "./notices.json";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -38,5 +39,12 @@ describe("packagesOf", () => {
       "@noble/hashes",
       "b",
     ]);
+  });
+});
+
+describe("flowed", () => {
+  it("rejoins a licence's wrapped lines into paragraphs, keeping blank lines, indented lines and list items", () => {
+    expect(flowed("Permission is hereby granted,\nfree of charge.\n\nTHE SOFTWARE\nIS PROVIDED")).toBe("Permission is hereby granted, free of charge.\n\nTHE SOFTWARE IS PROVIDED");
+    expect(flowed("conditions are met:\n  * Redistributions\n1. Keep this\n- or this")).toBe("conditions are met:\n  * Redistributions\n1. Keep this\n- or this");
   });
 });

@@ -2,6 +2,7 @@
 // pages list it. Each package by name, its version and licence; a tap shows its licence text whole (Licence). The native
 // libraries React Native builds in carry no text here: a tap opens their source, where theirs is.
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { flowed } from "../licences";
 import type { SettingsProps } from "../hubContext";
 import notices from "../notices.json";
 import { shape, space, type, useTheme } from "../theme";
@@ -38,11 +39,12 @@ export function Licence({ route }: SettingsProps<"Licence">) {
   const t = useTheme();
   const p = notices.packages.find((x) => x.name === route.params.name);
   const text = p === undefined ? undefined : notices.texts[p.text];
+  const shown = text === undefined ? undefined : flowed(text);
   return (
     <ScrollView style={{ backgroundColor: t.grouped }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
       <View style={[styles.card, { backgroundColor: t.cell }]}>
         <Text style={[type.footnote, { color: t.label }]} selectable>
-          {text ?? `${route.params.name} ships no licence text of its own. It is under the ${p?.license || "licence its authors state"}.`}
+          {shown ?? `${route.params.name} ships no licence text of its own. It is under the ${p?.license || "licence its authors state"}.`}
         </Text>
       </View>
     </ScrollView>
