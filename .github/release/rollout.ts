@@ -189,14 +189,16 @@ export const nightlyFeed = (feed: string) => feed.replace(/^(version: .*)-edge\.
 /**
  * The build whose desktop feed `percent` of hubs get: the one that built the app of the newest build that reached them
  * (listed with its `appVersion` as its version; for a build that doesn't say, the nearest older build with a feed).
- * When that app's build isn't listed with its files, the next older build that reached them, so a feed never offers an
- * app that didn't come with a build that reached them, like a pulled one in between.
+ * When that app's build isn't listed with its files, or was halted or pulled (newer builds that carry its app go on
+ * carrying it), the next older build that reached them: so a feed never offers an app that didn't come with a build
+ * that reached them, like a pulled one in between, and pulling a bad app takes it off the feeds.
  */
 export function feedBuild(r: Rollout, percent: number, now: number, hasFeed: (build: string) => boolean): string | undefined {
+  const good = (b: RolloutBuild) => b.haltedAt === undefined && b.pulledAt === undefined;
   for (const [i, b] of r.builds.entries()) {
-    if (b.haltedAt !== undefined || b.pulledAt !== undefined || percentAt(b, now) < percent) continue;
+    if (!good(b) || percentAt(b, now) < percent) continue;
     const app = b.appVersion === undefined ? r.builds.slice(i).find((x) => hasFeed(x.build)) : r.builds.find((x) => x.version === b.appVersion);
-    if (app !== undefined && hasFeed(app.build)) return app.build;
+    if (app !== undefined && good(app) && hasFeed(app.build)) return app.build;
   }
   return undefined;
 }

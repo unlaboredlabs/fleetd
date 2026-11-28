@@ -207,6 +207,12 @@ test("an app build a build without app changes overtook before it passed stays l
   const gone: Rollout = { builds: [app(61, { passedAt: ago(11) }, 60), app(50, { passedAt: ago(20), pulledAt: ago(19) }), app(42, { passedAt: ago(39) })] };
   const own = (build: string) => gone.builds.some((x) => x.build === build && x.appVersion === x.version);
   expect(feedBuild(gone, 100, NOW, own)).toBe("0.9.42");
+  // A halted or pulled app build leaves every feed, though newer builds that carry its app still reach everyone.
+  for (const flag of [{ haltedAt: ago(1) }, { pulledAt: ago(1) }]) {
+    const bad: Rollout = { builds: [app(62, { passedAt: ago(10) }, 60), app(61, { passedAt: ago(11) }, 60), app(60, flag), app(42, { passedAt: ago(39) })] };
+    const has = (build: string) => bad.builds.some((x) => x.build === build && x.appVersion === x.version);
+    for (const percent of [10, 50, 100]) expect(feedBuild(bad, percent, NOW, has)).toBe("0.9.42");
+  }
 });
 
 test("the ticker ticks on while a build waits on the gate or hasn't reached everyone, and stops once none does", () => {
