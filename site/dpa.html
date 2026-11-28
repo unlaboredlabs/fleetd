@@ -166,7 +166,7 @@
       <li><b>Encryption:</b> TLS in transit; secrets sealed in the apps before they’re sent; vault items and tokens sealed with AES-256-GCM under per-workspace keys; disk encryption at the database and storage providers; sealed backups.</li>
       <li><b>Separation:</b> each workspace’s data is kept apart by the database itself (row-level security), checked at every restore drill; on fleetd’s computers each bot has its own computer.</li>
       <li><b>Access control:</b> sign-in through WorkOS with re-authentication at each sign-in; an admin-set required sign-in method and joining by verified email domain <mark class="confirm">[confirm]</mark>; roles in each workspace; devices revoked at once when a member is removed; staff access only when needed, behind Cloudflare Access, with content downloads logged in the workspace’s audit log.</li>
-      <li><b>Availability:</b> backups every 6 hours kept 30 days, a restore drill that checks every row, a status page and alerts to a person.</li>
+      <li><b>Availability:</b> a full copy of the database every day and of files every 6 hours, sealed and kept 30 days, plus the database provider’s own backups every 12 hours, a restore drill that checks every row, a status page and alerts to a person.</li>
       <li><b>Incidents:</b> detection by continuous checks, containment, notice under section 7, and a public account of what happened.</li>
       <li><b>Deletion:</b> self-serve deletion; deleting a workspace deletes its keys, so its sealed vault items and tokens can’t be opened again; backups expire after 30 days.</li>
     </ul>

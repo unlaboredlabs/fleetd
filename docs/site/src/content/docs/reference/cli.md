@@ -393,7 +393,7 @@ fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|
 ## Running by hand {#running-by-hand}
 
 :::tip
-Run `fleetd init --no-service` before `fleetd workspace start`: it writes the setup the other commands read. The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).
+Run `fleetd init --no-service` before `fleetd workspace start`: it writes the setup the other commands read. The whole order is in [Run a second workspace on one machine](/docs/config-and-files#second-fleet).
 :::
 
 ### fleetd workspace start {#workspace-start}

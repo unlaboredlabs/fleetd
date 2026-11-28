@@ -63,7 +63,7 @@
   </nav>
   <article class="doc" aria-labelledby="h">
     <h1 id="h">Privacy Policy</h1>
-    <p class="when">Effective November 26, 2026</p>
+    <p class="when">Effective November 28, 2026</p>
     <p>This policy explains what personal data fleetd cloud (app.fleetd.dev), fleetd’s apps and fleetd.sh collect, why, and what you can do about it.</p>
 
     <h2 id="controller">Who is responsible</h2>
@@ -116,6 +116,7 @@
         <tr><th scope="row">GitHub</th><td>The GitHub App your bots reach your repositories with, and running our deploys and backups</td></tr>
         <tr><th scope="row">Blacksmith</th><td>The machines our builds and backups run on; a backup passes a copy of the database through them</td></tr>
         <tr><th scope="row">Vercel</th><td>Hosting the fleetd.sh website</td></tr>
+        <tr><th scope="row">Google</th><td>The mailbox that support emails reach</td></tr>
       </tbody>
     </table>
     <p>What each one gets and where is on <a href="/subprocessors">Subprocessors</a>.</p>
@@ -134,9 +135,10 @@
       <li><b>Account and workspace data</b> for as long as your account or workspace exists.</li>
       <li><b>Screen recordings</b> for 30 days by default. A workspace can change this in Settings.</li>
       <li><b>Deleted data.</b> When you delete a bot or a workspace, or we delete your account at your request, we delete its data from the live system. Copies in our <b>backups are kept for 30 days</b> and then deleted.</li>
+      <li><b>Your messages in other people’s workspaces.</b> When you delete your account, what you wrote in a workspace someone else owns stays there, shown as written by a deleted user, so its chats still make sense. The workspace’s owner can delete it, and so can we if you ask.</li>
       <li><b>Billing records</b> for as long as tax and accounting law requires, usually up to 10 years.</li>
       <li><b>Server logs</b> for 30 days.</li>
-      <li><b>Support emails</b> for as long as we need them to help you, and at most 2 years after the last message.</li>
+      <li><b>Support emails</b> for as long as we need them to help you with your request and anything that follows from it. Ask us and we delete them sooner, unless the law requires us to keep them.</li>
     </ul>
 
     <h2 id="rights">Your rights</h2>
@@ -165,11 +167,13 @@
     <p>fleetd isn’t meant for anyone under 18, and we don’t knowingly collect children’s data.</p>
 
     <h2 id="cookies">Cookies</h2>
-    <p>We don’t use tracking, advertising or analytics cookies, so we don’t show a cookie banner.</p>
+    <p>We don’t use tracking, advertising or analytics cookies. Every cookie fleetd sets is needed for the service to work, so we don’t show a cookie banner.</p>
     <ul>
-      <li><b>app.fleetd.dev</b> sets one cookie that keeps you signed in. It also sets a short-lived cookie (10 minutes) while you connect GitHub.</li>
+      <li><b>app.fleetd.dev</b> sets a cookie that keeps you signed in (<code>__Host-fleetd_web</code>, 7 days). While you sign in, it sets one more for up to 10 minutes (<code>__Host-fleetd_signin</code>), and another while you connect GitHub (<code>__Host-fleetd_github</code>, 10 minutes).</li>
+      <li><b>A share link</b> sets its own cookie on its own address once you open it (<code>__Host-fleetd_preview</code>, an hour, renewed while you use it).</li>
+      <li><b>The app in your browser</b> keeps your layout and choices, unsent drafts, and a copy of your bot list and recent chats in your browser’s local storage, so it opens quickly and works while offline. The copy is deleted when you sign out.</li>
       <li><b>fleetd.sh</b> stores only your light or dark theme choice, in your browser’s local storage.</li>
-      <li><b>Stripe’s</b> checkout and <b>WorkOS’s</b> sign-in pages set their own cookies for security and fraud prevention, under their own policies.</li>
+      <li><b>Stripe’s</b> checkout and <b>WorkOS’s</b> sign-in pages set their own cookies, under their own policies. They use them for security and fraud prevention, and WorkOS’s page also sets a Datadog cookie that it uses to monitor how its page works.</li>
     </ul>
 
     <h2 id="changes">Changes</h2>

@@ -80,7 +80,7 @@ export default defineConfig({
         },
       },
       sidebar: [
-        { label: "Get started", items: [{ label: "Home", link: "/" }, "quick-start", "install", "how-fleetd-works"] },
+        { label: "Get started", items: [{ label: "Home", link: "/" }, "quick-start", "install", "how-fleetd-works", "faq"] },
         {
           label: "Using a bot",
           items: [

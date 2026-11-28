@@ -14,6 +14,8 @@ or fleetd's computers, and lands checked pull requests.
 2. [Install](/docs/install): what the installer puts where, and its options.
 3. [How fleetd works](/docs/how-fleetd-works): the parts, and how work goes from a chat to a merge.
 
+Questions about billing, Claude keys, GitHub or where agents run? See the [FAQ](/docs/faq).
+
 ## Common tasks
 
 - Give a bot work: [Chat with the lead](/docs/chat)

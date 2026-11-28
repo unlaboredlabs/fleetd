@@ -62,14 +62,14 @@
   </nav>
   <article class="doc" aria-labelledby="h">
     <h1 id="h">Security</h1>
-    <p class="when">Updated November 26, 2026</p>
+    <p class="when">Updated November 28, 2026</p>
     <p>How fleetd cloud (app.fleetd.dev) is run and what protects your workspace: where it runs, how your data is encrypted, what fleetd’s staff can see, what agents can reach, and what we do when something goes wrong. If you run fleetd yourself, read <a href="/docs/security">Security in the docs</a> instead: your workspace then runs on your own machines and none of this applies.</p>
 
     <ul class="facts">
       <li><span>Hosting</span><span>Servers in Nuremberg, Germany. Database in Frankfurt, Germany. Files in Cloudflare R2’s EU jurisdiction.</span></li>
       <li><span>Way in</span><span>No SSH, no open inbound port. Only Cloudflare Tunnel reaches the servers.</span></li>
       <li><span>Encryption</span><span>TLS 1.2 or newer in transit. Vault items and stored tokens sealed with AES-256-GCM under your workspace’s own keys.</span></li>
-      <li><span>Backups</span><span>Every 6 hours, sealed, kept 30 days, with a restore drill that checks every row.</span></li>
+      <li><span>Backups</span><span>The database copied daily and files every 6 hours, sealed, kept 30 days, with a restore drill that checks every row.</span></li>
       <li><span>Your content</span><span>Never used to train AI models. Staff downloads of a workspace are logged in that workspace’s audit log.</span></li>
       <li><span>Breaches</span><span>We tell affected customers within 72 hours of becoming aware of a breach.</span></li>
       <li><span>Certifications</span><span>None yet: no SOC 2, ISO 27001 or external penetration test.</span></li>
@@ -107,7 +107,7 @@
 
     <h2 id="backups">Backups and restores</h2>
     <ul>
-      <li>A backup runs every 6 hours. The database is copied in full once a day, and files are mirrored at every run. The database provider keeps its own backups too, every 12 hours.</li>
+      <li>A backup runs every 6 hours: files are mirrored at every run, and the database is copied in full once a day. The database provider keeps its own backups too, every 12 hours.</li>
       <li>Copies are sealed and kept 30 days, in a separate bucket that only the backup job can write. A key that leaks from the service can’t delete them.</li>
       <li>A restore drill puts the newest copy into an empty database and fails unless every table holds every row and workspaces are still kept apart. It ran on the real backups on November 26, 2026, and passed.</li>
       <li>At worst, a full loss of the database host would lose up to a day of changes.</li>
@@ -133,6 +133,7 @@
     <h2 id="computers">Where agents run</h2>
     <ul>
       <li><b>On fleetd’s computers</b>, each bot gets a computer of its own, which no other bot or workspace shares. Before a computer goes to sleep, the logins fleetd put on it are removed, and a computer asleep too long is deleted. fleetd’s computers are run by a supplier, on machines in the EU (Germany, Finland and France). A sleeping computer’s saved disk, with the bot’s files and checkout, can be stored outside the EU.</li>
+      <li><b>Agents on fleetd’s computers hold your workspace’s Claude key.</b> To call Claude, each agent has the workspace’s Anthropic API key (or the Claude sign-in its bot uses) on its computer, and agents can reach the internet. An agent tricked by something it reads, such as a booby-trapped file, issue or web page, could send that key out. Give fleetd an API key made only for it, with a spend limit at Anthropic, and if you think it leaked, revoke it at Anthropic and add a new one in Settings › Workspace › Setup › Claude.</li>
       <li><b>On your own machines</b>, agents run as your own user, directly on the machine, with no sandbox. They can reach what that user can. Use a machine or user set aside for agents if that matters to you.</li>
     </ul>
 
