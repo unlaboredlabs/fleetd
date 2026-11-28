@@ -103,21 +103,27 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     for (const k of hosted.keys()) if (k.startsWith(`${id}:`)) hosted.delete(k);
   }
 
-  /** Runs `command` detached; with `wait`, until it ends (at most STEP_MS), failing on a non-zero exit, its error
-   * naming `step` (a recipe step's start) and the output's end, each without a URL's query (a signed link's). */
+  /** Runs `command` detached; with `wait`, until it ends (at most STEP_MS), failing on a non-zero exit or past the
+   * deadline, its error naming `step` (a recipe step's start) and the output's end, each without a URL's query (a
+   * signed link's): a step that hangs says where, as one that fails says why. */
   async function run(id: string, command: string, wait: boolean, signal?: AbortSignal, step?: string): Promise<void> {
     const started = await onBox("POST", `${box(id)}/commands`, { body: { command, detached: true }, signal });
     if (!wait) return;
     const pid = started.body?.processId;
     const until = now() + STEP_MS;
+    const tail = (body: any) => noQuery(String(body?.stderr || body?.stdout || "").trim().split("\n").slice(-3).join(" / ")).slice(0, 300);
+    let last: any;
     for (;;) {
-      if (now() > until) throw new ProviderError("unreachable", `a step of the sandbox build at ${NAME} didn't finish within ${STEP_MS / 60_000} minutes`);
+      if (now() > until) {
+        const end = tail(last);
+        throw new ProviderError("unreachable", `a step of the sandbox build at ${NAME} didn't finish within ${STEP_MS / 60_000} minutes${step ? `, ${step}` : ""}${end ? `: ${end}` : ""}`);
+      }
       await pause(pollMs, signal);
       const st = await http.call("GET", `${box(id)}/commands/${pid}`, { query: { tailBytes: "2000" }, signal });
+      last = st.body;
       if (st.body?.running) continue;
       if (st.body?.exitCode === 0) return;
-      const tail = noQuery(String(st.body?.stderr || st.body?.stdout || "").trim().split("\n").slice(-3).join(" / "));
-      throw new ProviderError("failed", `a step failed in the build box at ${NAME} (exit ${st.body?.exitCode ?? st.body?.status})${step ? `, ${step}` : ""}: ${tail.slice(0, 300)}`);
+      throw new ProviderError("failed", `a step failed in the build box at ${NAME} (exit ${st.body?.exitCode ?? st.body?.status})${step ? `, ${step}` : ""}: ${tail(st.body)}`);
     }
   }
 
