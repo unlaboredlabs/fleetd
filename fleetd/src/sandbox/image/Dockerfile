@@ -15,8 +15,9 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 # The snapshot is slow and uneven (0.4 to 2 MB/s from a hosted build box, slower on bad days: a build's first apt step
 # took 2 to over 15 minutes), so apt reads only the indexes there (the date's, signed), and fetches each .deb from
 # Ubuntu's own archive (20 MB/s), the same file checked against the snapshot's hash; one the archive dropped since
-# comes from the snapshot (/etc/apt/fleetd-mirrors, apt-transport-mirror). Index translations aren't fetched, and
-# the indexes stay until the last apt step, so later steps' `apt-get update` refetch nothing.
+# comes from the snapshot (/etc/apt/fleetd-mirrors, apt-transport-mirror). Index translations aren't fetched (the
+# setting read last, after a hosted provider's base image sets its own), and the indexes stay until the last apt
+# step, so later steps' `apt-get update` refetch nothing.
 # What agents reach for on a plain Linux machine: git and gh, a C toolchain (native modules, cargo's linker), the
 # usual unpackers and network tools, `ss` and `script` (some of fleetd's own tests run them), and tini and socat for
 # the init.
@@ -28,7 +29,7 @@ RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return 
  && rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources && : > /etc/apt/sources.list \
  && printf 'https://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\tpriority:1 type:index\nhttp://archive.ubuntu.com/ubuntu/\tpriority:1 type:deb\nhttps://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\tpriority:2 type:deb\n' > /etc/apt/fleetd-mirrors \
  && printf 'Types: deb\nURIs: mirror+file:/etc/apt/fleetd-mirrors\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' > /etc/apt/sources.list.d/ubuntu.sources \
- && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/99fleetd-languages \
+ && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/zz-fleetd-languages \
  && apt-get update && tries apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl file git git-lfs gnupg iproute2 iputils-ping jq less locales make \
       netcat-openbsd openssh-client patch pkg-config procps python3 python3-venv ripgrep rsync socat sqlite3 sudo \
