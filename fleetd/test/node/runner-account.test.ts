@@ -49,7 +49,9 @@ for await (const line of console) {
   try {
     let info = await service.reprobe();
     expect(info.login).toBe("logged_out");
-    expect(runnerProblem(info)).toContain("claude is not logged in");
+    expect(runnerProblem(info)).toBe(
+      "claude is not logged in. Fix: run `claude` on this machine and log in, or add the workspace's API key in Settings › Workspace › Setup › Claude",
+    );
 
     await secret({ sealed: Buffer.from(boxKey.seal(Buffer.from("sk-ant-api03-hub"))).toString("base64") });
     info = await service.reprobe();

@@ -499,9 +499,11 @@ function Hub({ paired, hubs, account, onForget, onRefused, onShow, onMade, onSig
         leaving.current = true;
         signOut();
       });
-    const forgetHub = () => {
+    const forgetHub = (why?: string) => {
+      // Gone already, by the close of its deletion (the refused effect below): a second forget would clear that line.
+      if (leaving.current) return;
       leaving.current = true;
-      onForget();
+      onForget(why);
     };
     // This hub's notifications stop before another's start: each hub shown gets its own key pair.
     const switchTo = (hub: KeptHub) => {

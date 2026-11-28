@@ -16,7 +16,7 @@ import * as Updates from "expo-updates";
 import { useCallback, useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { linkTone, linkWords as statusOf } from "../chatsBar";
-import type { HubRole } from "../desktop";
+import { WORKSPACE_DELETED, type HubRole } from "../desktop";
 import { useHub, type RootParams, type SettingsParams } from "../hubContext";
 import { atRest, MY_NAME_MAX, NameField, shownName, type NameEdit } from "../myName";
 import { askNotifications } from "../notifications";
@@ -146,7 +146,8 @@ export function Settings() {
             return;
           }
           haptics.success();
-          forget();
+          // The first screen, with no workspace left, says it was deleted, as when it was deleted elsewhere.
+          forget(WORKSPACE_DELETED);
         })
         .finally(() => setDeleting(false));
     };
@@ -194,7 +195,7 @@ export function Settings() {
       <ListSection header="Workspace">
         <ListRow title="Status" value={statusOf(hub.phase)} valueDot={{ live: t.success, busy: t.warning, down: t.tertiary }[linkTone(hub.phase)]} />
         {/* Refused (revoked on the workspace): its alert's Not Now leaves the way back here, as its Pair Again does. */}
-        {hub.phase === "refused" ? <ListRow title={pairAgainTitle(DEVICE)} onPress={forget} chevron={false} /> : null}
+        {hub.phase === "refused" ? <ListRow title={pairAgainTitle(DEVICE)} onPress={() => forget()} chevron={false} /> : null}
         <ListRow title="Address" value={paired.hub} selectable />
         {versionShown && hub.version !== undefined ? (
           <ListRow

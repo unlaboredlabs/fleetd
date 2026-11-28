@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { botStateOf } from "./bot";
 import type { Activity } from "./contracts";
 import {
@@ -358,6 +358,27 @@ describe("Claude not serving the lead's turn", () => {
     expect(wakeWords(w, T + 30_000, "Europe/Berlin")).toEqual({ words: "Claude is overloaded, retrying at 11:01" });
     // The try is on its way: no time behind the clock.
     expect(wakeWords(w, T + 64_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying…" });
+  });
+
+  // The Nov 27 re-check: "retrying at 15:41" beside "3:39 PM" in the same chat.
+  test("says when in the chat's own clock: 12-hour in a 12-hour locale", async () => {
+    const Real = Intl.DateTimeFormat;
+    vi.stubGlobal("Intl", { ...Intl, DateTimeFormat: class extends Real {
+      constructor(locales?: string | string[], options?: Intl.DateTimeFormatOptions) {
+        super(locales ?? "en-US", options);
+      }
+    } });
+    vi.resetModules();
+    try {
+      const fresh = await import("./wake");
+      const activity: Activity = { kind: "retrying", attempt: 2, of: 30, reason: "overloaded", retryAt: iso(64_000) };
+      const w = some({ working: true, waiting: true, asked, activity, activitySince: T + 1_000 });
+      expect(fresh.wakeWords(w, T + 30_000, "UTC")).toEqual({ words: "Claude is overloaded, retrying at 10:01 AM" });
+      expect((await import("./startsAgain")).startsAgain(T + 64_000, "UTC")).toBe("; they start again at 10:01 AM");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
   });
 
   // The second quality sweep: a turn parked at a usage limit read "Thinking 0:53" for the whole wait. The workspace
