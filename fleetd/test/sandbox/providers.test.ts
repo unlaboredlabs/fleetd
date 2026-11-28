@@ -175,14 +175,18 @@ describe("boat.dev's waits end", () => {
   };
   const clocked = (s: StandIn) => provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 1, now: minutes() });
 
-  test("a template build step that never ends fails as unreachable after STEP_MS, and its box goes", async () => {
+  test("a template build step that never ends fails as unreachable after STEP_MS, with its output's end, and its box goes", async () => {
     const s = boatStandIn();
     running.push(s);
-    s.fail({ path: /^GET \/api\/v1\/sandboxes\/[^/]+\/commands\/\d+$/, status: 200, body: { ok: true, running: true, status: "running" }, times: 1_000 });
+    const stdout = "Get:6 https://snapshot.ubuntu.com/ubuntu/20261119T000000Z noble/main amd64 Packages [1,401 kB]\nGet:7 https://devbox.example/pool/x.deb?token=s3cret [96.4 kB]\n";
+    s.fail({ path: /^GET \/api\/v1\/sandboxes\/[^/]+\/commands\/\d+$/, status: 200, body: { ok: true, running: true, status: "running", stdout }, times: 1_000 });
     const e = await clocked(s).build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
     expect(e).toBeInstanceOf(ProviderError);
     expect(e.reason).toBe("unreachable");
-    expect(e.message).toBe(`a step of the sandbox build at fleetd's computers didn't finish within ${STEP_MS / 60_000} minutes`);
+    // Where it hung, as a failed step says why, never a signed link's query.
+    expect(e.message).toBe(
+      `a step of the sandbox build at fleetd's computers didn't finish within ${STEP_MS / 60_000} minutes: Get:6 https://snapshot.ubuntu.com/ubuntu/20261119T000000Z noble/main amd64 Packages [1,401 kB] / Get:7 https://devbox.example/pool/x.deb?… [96.4 kB]`,
+    );
     // About a poll per minute of the step's deadline, not forever.
     const polls = s.calls.filter((c) => /\/commands\/\d+$/.test(c.path)).length;
     expect(polls).toBeLessThanOrEqual(STEP_MS / 60_000 + 1);

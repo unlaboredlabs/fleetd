@@ -57,7 +57,17 @@ test("every download into an image is checked against its pinned SHA-256, and ap
     // Nothing installed by a registry's or an installer's own latest word.
     for (const word of ["npx --", "npm install", "install.sh", "pip install", "add-apt-repository"]) expect(text).not.toContain(word);
   }
-  expect(DOCKERFILE).toMatch(/URIs: https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\d{8}T\d{6}Z\//u);
+  // The indexes come from the snapshot's date alone; a .deb from Ubuntu's archive first (checked against the index's
+  // hash), else from the snapshot.
+  const mirrors = /printf '([^']*)' > \/etc\/apt\/fleetd-mirrors/u.exec(DOCKERFILE)?.[1]?.split("\\n").filter(Boolean);
+  const snapshot = /^https:\/\/snapshot\.ubuntu\.com\/ubuntu\/\d{8}T\d{6}Z\/$/u;
+  expect(mirrors?.map((l) => l.split("\\t"))).toEqual([
+    [expect.stringMatching(snapshot), "priority:1 type:index"],
+    ["http://archive.ubuntu.com/ubuntu/", "priority:1 type:deb"],
+    [expect.stringMatching(snapshot), "priority:2 type:deb"],
+  ]);
+  expect(new Set(mirrors!.filter((l) => l.startsWith("https://")).map((l) => l.split("\\t")[0])).size).toBe(1);
+  expect(DOCKERFILE).toContain("URIs: mirror+file:/etc/apt/fleetd-mirrors\\n");
   // The sources the base image came with go before the first apt-get update reads the archive.
   const first = DOCKERFILE.indexOf("&& apt-get update && tries apt-get install");
   expect(first).toBeGreaterThan(0);

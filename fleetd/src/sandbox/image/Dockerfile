@@ -12,6 +12,12 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 # changes under a build or one the base image brought (a hosted provider's base adds PPAs): moving the date is a
 # change of this file, so a new image. snapshot.ubuntu.com is served over https, and Docker's ubuntu image has no CA
 # certificates yet: those alone come from the image's own Ubuntu sources first.
+# The snapshot is slow and uneven (0.4 to 2 MB/s from a hosted build box, slower on bad days: a build's first apt step
+# took 2 to over 15 minutes), so apt reads only the indexes there (the date's, signed), and fetches each .deb from
+# Ubuntu's own archive (20 MB/s), the same file checked against the snapshot's hash; one the archive dropped since
+# comes from the snapshot (/etc/apt/fleetd-mirrors, apt-transport-mirror). Index translations aren't fetched (the
+# setting read last, after a hosted provider's base image sets its own), and the indexes stay until the last apt
+# step, so later steps' `apt-get update` refetch nothing.
 # What agents reach for on a plain Linux machine: git and gh, a C toolchain (native modules, cargo's linker), the
 # usual unpackers and network tools, `ss` and `script` (some of fleetd's own tests run them), and tini and socat for
 # the init.
@@ -21,12 +27,13 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return "$s"; echo "fleetd: an apt install failed (try $t of 3), trying again in 15 s" >&2; sleep 15; done; } \
  && { [ -s /etc/ssl/certs/ca-certificates.crt ] || { apt-get update && tries apt-get install -y --no-install-recommends ca-certificates; }; } \
  && rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources && : > /etc/apt/sources.list \
- && printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' > /etc/apt/sources.list.d/ubuntu.sources \
+ && printf 'https://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\tpriority:1 type:index\nhttp://archive.ubuntu.com/ubuntu/\tpriority:1 type:deb\nhttps://snapshot.ubuntu.com/ubuntu/20261119T000000Z/\tpriority:2 type:deb\n' > /etc/apt/fleetd-mirrors \
+ && printf 'Types: deb\nURIs: mirror+file:/etc/apt/fleetd-mirrors\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' > /etc/apt/sources.list.d/ubuntu.sources \
+ && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/zz-fleetd-languages \
  && apt-get update && tries apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl file git git-lfs gnupg iproute2 iputils-ping jq less locales make \
       netcat-openbsd openssh-client patch pkg-config procps python3 python3-venv ripgrep rsync socat sqlite3 sudo \
-      tini tzdata unzip util-linux wget xz-utils zip zstd \
- && rm -rf /var/lib/apt/lists/*
+      tini tzdata unzip util-linux wget xz-utils zip zstd
 
 # bun 1.4.3 (fleetd's own), pinned and checked.
 RUN curl -fsSL -o /tmp/bun.zip https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip \
@@ -87,7 +94,7 @@ RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return 
  && tries node /tmp/pw/core/cli.js install-deps chromium-headless-shell ffmpeg \
  && ln -s /opt/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell "$CHROME" \
  && chmod -R a+rX /opt/ms-playwright /opt/node \
- && cd / && rm -rf /tmp/pw /tmp/node.txz /root/.npm /root/.cache /var/lib/apt/lists/* \
+ && cd / && rm -rf /tmp/pw /tmp/node.txz /root/.npm /root/.cache \
  && mkdir -p /etc/fleetd \
  && printf 'PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright\nCHROME=%s\n' "$CHROME" > /etc/fleetd/guest.env \
  && printf 'fleetd-box\n' > /etc/hostname \
@@ -96,6 +103,7 @@ RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return 
 # GTK 3, which Electron links even headless (app/desktop's engine tests start it), with dbus-x11 as the session bus
 # dconf asks for, which keeps systemd out. Its icon themes go: nothing headless draws them, and they're most of its size.
 # Xvfb, openbox and xterm: a hosted agent's Linux desktop runs in its box (fleetd/src/node/place/box_screens.ts).
+# The last apt step: the indexes go here.
 RUN tries() { for t in 1 2 3; do "$@" && return; s=$?; [ "$t" -lt 3 ] || return "$s"; echo "fleetd: an apt install failed (try $t of 3), trying again in 15 s" >&2; sleep 15; done; } \
  && apt-get update && tries apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 openbox xterm xvfb \
  && rm -rf /usr/share/icons/* /var/lib/apt/lists/*
