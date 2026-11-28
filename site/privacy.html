@@ -174,12 +174,13 @@
     <p>fleetd isn’t meant for anyone under 18, and we don’t knowingly collect children’s data.</p>
 
     <h2 id="cookies">Cookies</h2>
-    <p>We don’t use tracking, advertising or analytics cookies. Every cookie fleetd sets is needed for the service to work, so we don’t show a cookie banner.</p>
+    <p>fleetd itself doesn’t use tracking, advertising or analytics cookies. Every cookie fleetd sets is needed for the service to work, so we don’t show a cookie banner. The status page is the exception, below.</p>
     <ul>
       <li><b>app.fleetd.dev</b> sets a cookie that keeps you signed in (<code>__Host-fleetd_web</code>, 7 days). While you sign in, it sets one more for up to 10 minutes (<code>__Host-fleetd_signin</code>), and another while you connect GitHub (<code>__Host-fleetd_github</code>, 10 minutes).</li>
       <li><b>A share link</b> sets its own cookie on its own address once you open it (<code>__Host-fleetd_preview</code>, an hour, renewed while you use it).</li>
       <li><b>The app in your browser</b> keeps your layout and choices, unsent drafts, and a copy of your bot list and recent chats in your browser’s local storage, so it opens quickly and works while offline. The copy is deleted when you sign out.</li>
       <li><b>fleetd.sh</b> stores only your light or dark theme choice, in your browser’s local storage.</li>
+      <li><b>Our status page</b>, status.fleetd.dev, is hosted by Better Stack. Today it sets Google Analytics and Google Ads cookies (<code>_ga</code>, <code>_ga_…</code>, <code>_gcl_au</code>) and Better Stack’s own (<code>_bs</code>) for all of fleetd.dev, kept for up to about 13 months, so app.fleetd.dev receives them too once you’ve opened the status page.</li>
       <li><b>Stripe’s</b> checkout and <b>WorkOS’s</b> sign-in pages set their own cookies, under their own policies. They use them for security and fraud prevention, and WorkOS’s page also sets a Datadog cookie that it uses to monitor how its page works.</li>
     </ul>
 
