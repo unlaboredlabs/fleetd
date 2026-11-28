@@ -102,7 +102,7 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
         ? upkeepLoosens(call.text, call.effect as MemoryEffect, replaced)
         : changeLoosens(call.text, call.effect as MemoryEffect, replaced);
       if (holdsForAdmin(loosening, isAdmin(hub.db, taughtBy?.personId), anyAdmin(hub.db))) {
-        return hold(hub, r, { scope: "project", ...topicOf(remember.topic), text: call.text, ...(replaced === undefined ? {} : { replaced }) }, taughtBy);
+        return hold(hub, r, { scope: "project", ...topicOf(remember.topic), text: call.text, ...(replaced === undefined ? {} : { replaced }) }, taughtBy, memory);
       }
       const { target, item, chars } = memory.remember(r, undefined, remember);
       let next = "Already remembered, word for word.";
@@ -182,13 +182,17 @@ const topicOf = (topic: string | undefined) => (topic === undefined ? {} : { top
 /**
  * A change held for an admin's OK (hold_rules.ts), checked as its write would be: a chat line that waits on the
  * workspace's owners and admins, and nothing written to memory until one keeps it. The same change held twice is one.
+ * A lead's (`memory` given) is refused unless memory has room for it with every change already waiting, so the lead
+ * makes room now and an admin's Keep never meets the cap.
  */
-export function hold(hub: Hub, r: ProjectRef, item: RememberedItem, by: PersonRef | undefined): Record<string, unknown> {
+export function hold(hub: Hub, r: ProjectRef, item: RememberedItem, by: PersonRef | undefined, memory?: Memory): Record<string, unknown> {
   const file = nameOf(projectTarget(r, item.topic));
   const what = item.forgotten === true ? "Taking this line out" : "A line that loosens what asks or merges";
   const next = `Held for an admin's OK: ${what.toLowerCase()} waits until an owner or admin keeps it. Memory is as it was: act as it says until then.`;
   const same = (m: RememberedItem) => m.text === item.text && m.topic === item.topic && (m.forgotten === true) === (item.forgotten === true);
-  if (heldLines(hub.db, r).some((m) => m.remembered !== undefined && same(m.remembered))) return { file, held: true, next };
+  const waiting = heldLines(hub.db, r).flatMap((m) => (m.remembered === undefined ? [] : [m.remembered]));
+  if (waiting.some(same)) return { file, held: true, next };
+  memory?.roomForHeld(r, item, waiting);
   const text = item.forgotten === true ? `Waiting for an admin's OK to forget: ${item.text}` : `Waiting for an admin's OK: ${item.text}`;
   chat(hub).add(r, { author: "system", text, remembered: { ...item, ...(by ? { by } : {}), hold: "waiting" } });
   // It waits on the admins now: their needs-you changes with it, and an open Instructions & memory lists it.

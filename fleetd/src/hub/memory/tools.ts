@@ -315,13 +315,14 @@ export function register(tools: Registry): void {
       changed(hub, r, item.topic, caller.name);
       return { ok: true };
     }
+    // The admin's call, which no cap refuses: past one, the lead makes room at its next write.
     const memory = Memory.of(hub);
     if (item.forgotten === true) {
-      memory.forget(r, undefined, { scope: "project", ...topic, entry: item.text });
+      memory.forget(r, undefined, { scope: "project", ...topic, entry: item.text }, true);
     } else {
       // The entry it was to replace may have gone since: then it is added.
       const still = item.replaced !== undefined && linesOf(memory.read(projectTarget(r, item.topic))).some((l) => l.trimEnd() === `- ${item.replaced}`);
-      memory.remember(r, undefined, { scope: "project", ...topic, text: item.text, ...(still ? { replaces: item.replaced } : {}) });
+      memory.remember(r, undefined, { scope: "project", ...topic, text: item.text, ...(still ? { replaces: item.replaced } : {}) }, true);
       taught(hub.db, r, item.topic, item.text, item.by?.personId, nowMs(hub.clock));
     }
     changed(hub, r, item.topic, caller.name);
