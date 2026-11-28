@@ -1,0 +1,32 @@
+---
+// The header's way back to the site, beside GitHub: the docs are no dead end for a visitor who came to read them first.
+import Default from "@astrojs/starlight/components/SocialIcons.astro";
+---
+
+<nav class="site" aria-label="fleetd.sh">
+  <a href="/">fleetd.sh</a>
+  <a href="/pricing">Pricing</a>
+  <a href="https://app.fleetd.dev">Sign in</a>
+</nav>
+<Default />
+
+<style>
+  .site {
+    display: flex;
+    gap: 1rem;
+    margin-inline-end: 0.5rem;
+    font-size: var(--sl-text-sm);
+  }
+  .site a {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+  .site a:hover {
+    color: var(--sl-color-white);
+  }
+  @media (max-width: 50rem) {
+    .site {
+      display: none;
+    }
+  }
+</style>

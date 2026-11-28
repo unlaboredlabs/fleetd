@@ -1,5 +1,9 @@
 ---
 title: fleetd docs
+# The site title is "fleetd docs" too: without this, the tab reads "fleetd docs | fleetd docs".
+head:
+  - tag: title
+    content: fleetd docs
 description: Set up fleetd, give a bot work in its chat, and look up any setting, command or error.
 tableOfContents: false
 prev: false

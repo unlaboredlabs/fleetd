@@ -1,0 +1,13 @@
+---
+// The site's own rule (site/*.html, fleetdTheme): Dark unless the shared starlight-theme key says "light". Starlight
+// alone would follow the system when nothing is kept, so a first visit from the site in light mode flipped to light.
+// Nothing kept means Dark here too; a choice made in either place still wins.
+import Default from "@astrojs/starlight/components/ThemeProvider.astro";
+---
+
+<script is:inline>
+  try {
+    if (localStorage.getItem("starlight-theme") === null) localStorage.setItem("starlight-theme", "dark");
+  } catch (e) {}
+</script>
+<Default />

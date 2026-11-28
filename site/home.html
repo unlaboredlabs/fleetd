@@ -45,6 +45,12 @@
 <meta property="og:image:height" content="1260">
 <meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” with Download for Mac and the install line, curl -fsSL https://fleetd.sh | sh.">
 <meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"Organization","@id":"https://fleetd.sh/#org","name":"fleetd","legalName":"Unlabored Labs, Inc.","url":"https://fleetd.sh/","logo":"https://fleetd.sh/apple-touch-icon.png","email":"support@fleetd.dev","sameAs":["https://github.com/unlaboredlabs/fleetd"]},
+{"@type":"SoftwareApplication","name":"fleetd","url":"https://fleetd.sh/","applicationCategory":"DeveloperApplication","operatingSystem":"macOS, Linux","license":"https://opensource.org/licenses/MIT","publisher":{"@id":"https://fleetd.sh/#org"},"image":"https://fleetd.sh/card.jpg","description":"A software factory: one lead agent for the whole team, which runs coding agents on your own machines or fleetd's computers and lands checked pull requests."}
+]}
+</script>
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -64,7 +70,7 @@
   --tone:#1c1c1c;
   --ink:#ededeb;
   --grey:#a2a3a5;
-  --faint:#76787b;
+  --faint:#808285;
   --rule:#2c2c2e;
   --ring:rgba(255,255,255,.10);
   --drop:0 24px 48px -28px rgba(0,0,0,.95);
@@ -75,7 +81,7 @@
   --well-hover:rgba(255,255,255,.07);
   --well-press:rgba(255,255,255,.11);
   --soft:#b9b9b9;
-  --dim:rgba(162,163,165,.7);
+  --dim:rgba(162,163,165,.75);
   --floor:#161616;
   --floor-lit:rgba(255,255,255,.06);
   --floor-ring:rgba(255,255,255,.06);
@@ -91,7 +97,7 @@
   --tone:#e9e9e5;
   --ink:#17181a;
   --grey:#5b5d61;
-  --faint:#8a8c8f;
+  --faint:#6e7074;
   --rule:#d6d6d1;
   --ring:rgba(0,0,0,.12);
   --drop:0 24px 48px -30px rgba(0,0,0,.4);
@@ -102,7 +108,7 @@
   --well-hover:rgba(0,0,0,.055);
   --well-press:rgba(0,0,0,.09);
   --soft:#3d3f43;
-  --dim:#8a8c8f;
+  --dim:#6e7074;
   --floor:#ebebe7;
   --floor-lit:rgba(255,255,255,.55);
   --floor-ring:rgba(0,0,0,.06);
@@ -476,7 +482,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 <!-- What fleetd is, against what else there is: one lead for the whole team. -->
 <section class="w phil" aria-labelledby="phil">
   <h2 class="say" id="phil"><span class="then">Other tools give developers more threads.</span> <span>fleetd gives the whole team one lead agent.</span></h2>
-  <p><span class="then">fleetd puts one lead on each project.</span> It orchestrates thousands of agents, lands changes autonomously and learns from all requests, retaining all context of your work.</p>
+  <p><span class="then">fleetd puts one lead on each bot.</span> It orchestrates thousands of agents, lands changes autonomously and learns from all requests, retaining all context of your work.</p>
 </section>
 
 <!-- Each section's clip or still: `pnpm site:showcase` in app/desktop records them (site/README.md). Keep each alt text

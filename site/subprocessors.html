@@ -29,6 +29,12 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="fleetd">
 <meta property="og:url" content="https://fleetd.sh/subprocessors">
+<meta property="og:description" content="The companies that process personal data for fleetd cloud, what each gets and where.">
+<meta property="og:image" content="https://fleetd.sh/card.jpg">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” with Download for Mac and the install line, curl -fsSL https://fleetd.sh | sh.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -71,7 +77,7 @@
       <tbody>
         <tr><th scope="row">Hetzner Online</th><td data-label="What for">The servers fleetd cloud runs on, and the phone notification relay</td><td data-label="What it gets">Everything the service handles while it runs: requests, chats, files, sealed vault items</td><td data-label="Where">Germany (Nuremberg)</td></tr>
         <tr><th scope="row">PlanetScale</th><td data-label="What for">The database</td><td data-label="What it gets">Accounts, workspaces, chats, agents’ work, sealed vault items, usage, billing records</td><td data-label="Where">Germany (Frankfurt, on AWS)</td></tr>
-        <tr><th scope="row">Cloudflare</th><td data-label="What for">DNS, network protection, the tunnel in front of the servers, file storage (R2), server logs, backups, email to support@fleetd.dev, and email from fleetd cloud, such as spend warnings</td><td data-label="What it gets">All traffic to app.fleetd.dev (it ends TLS), files and recordings, server logs, sealed backups, support emails, and the recipient’s email address and the message, for email</td><td data-label="Where">Storage in the EU (R2’s EU jurisdiction); traffic and email pass its nearest data centre, worldwide</td></tr>
+        <tr><th scope="row">Cloudflare</th><td data-label="What for">DNS, network protection, the tunnel in front of the servers, file storage (R2), server logs, backups, email to support@fleetd.dev, and email from fleetd cloud, such as spend warnings</td><td data-label="What it gets">All traffic to app.fleetd.dev (it ends TLS), files and recordings, server logs, sealed backups, support emails, and the recipient’s email address and the message, for email</td><td data-label="Where">Storage in the EU (R2’s EU jurisdiction); traffic and email pass its nearest data center, worldwide</td></tr>
         <tr><th scope="row">WorkOS</th><td data-label="What for">Sign-in, sign-in codes and invite emails</td><td data-label="What it gets">Name, email address, sign-in method and history, IP address</td><td data-label="Where">United States</td></tr>
         <tr><th scope="row">Stripe</th><td data-label="What for">Payments, invoices and tax</td><td data-label="What it gets">Billing name, email and address, tax ID, card details (we never see the full number), what you bought</td><td data-label="Where">United States</td></tr>
         <tr><th scope="row">fleetd’s computer supplier</th><td data-label="What for">The computers agents run on, when a workspace uses fleetd’s computers</td><td data-label="What it gets">What a bot’s agents work on: its repositories, files, the variables and logins they use, their screens</td><td data-label="Where">Computers in the EU (Germany, Finland and France); a sleeping computer’s saved disk can be stored outside the EU</td></tr>

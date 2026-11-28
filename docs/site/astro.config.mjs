@@ -38,6 +38,8 @@ export default defineConfig({
       // Vercel serves site/404 for the whole site; a /docs/404 page would never be reached.
       disable404Route: true,
       customCss: ["./src/styles/theme.css"],
+      // The header links back to the site, and a first visit opens Dark as the site does (src/components/).
+      components: { SocialIcons: "./src/components/SocialIcons.astro", ThemeProvider: "./src/components/ThemeProvider.astro" },
       // Canonical links and og:url at the clean address, not the built .html file.
       routeMiddleware: "./src/route-data.ts",
       head: [
