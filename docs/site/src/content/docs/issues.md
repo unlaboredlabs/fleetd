@@ -3,7 +3,7 @@ title: Issues as orders
 description: Label a GitHub issue fleetd and the bot starts work on it.
 ---
 
-Hand a bot work by labelling a GitHub issue `fleetd`, the way you'd hand it to a teammate.
+Hand a bot work by labeling a GitHub issue `fleetd`, the way you'd hand it to a teammate.
 
 ## Start work from an issue {#start}
 
@@ -26,7 +26,7 @@ When the work lands:
 - Only labels put on after fleetd started watching the repo. Old labels don't start work.
 
 An issue starts at most one piece of work at a time. Removing and re-adding the label while it runs does nothing.
-Once it's finished or stopped, labelling the issue again starts new work.
+Once it's finished or stopped, labeling the issue again starts new work.
 
 If you close the issue before anything landed, the lead asks whether to stop the work.
 

@@ -251,7 +251,7 @@ export function cliPage(help: string = usageText()): string {
     if (group.id === "running-by-hand") {
       md +=
         ":::tip\nRun `fleetd init --no-service` before `fleetd workspace start`: it writes the setup the other commands read. " +
-        "The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).\n:::\n\n";
+        "The whole order is in [Run a second workspace on one machine](/docs/config-and-files#second-fleet).\n:::\n\n";
     }
     // The help gives forms of one command that share a description one description, after the last: they make one
     // entry. A command with no description of its own (`invite list`) stands alone.

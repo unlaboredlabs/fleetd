@@ -208,7 +208,8 @@ button.sl-menu-button,
   padding-block: 0.1875rem;
   color: var(--sl-color-gray-3);
   font-size: 0.8125rem;
-  line-height: 1.35;
+  /* 24 px a link at least, the smallest target WCAG's 2.5.8 allows. */
+  line-height: 1.4;
 }
 .right-sidebar-panel nav a:hover {
   color: var(--sl-color-white);

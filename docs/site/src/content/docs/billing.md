@@ -56,8 +56,8 @@ Each computer is billed by the second, only while it runs, with nothing rounded 
 ## Spend warnings {#warnings}
 
 Owners and admins get an email, and each bot on fleetd's computers a line in its chat, when this month's spend reaches
-50%, 80% and 100% of the spend cap, and when the credits left cover about a day. Each goes once a month. The latest
-also shows at the top of Billing.
+50%, 80% and 100% of the spend cap, and when the credits left cover about a day. Each spend cap warning goes once a
+month, and the credits warning once for each top-up or plan month. The latest also shows at the top of Billing.
 
 Warnings are on for every workspace. Turn them off with **Spend warnings** under the spend cap.
 

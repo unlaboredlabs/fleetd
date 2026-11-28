@@ -18,3 +18,6 @@ export async function GET() {
   const to = (await dmgThere()) ? DMG : RELEASES;
   return new Response(null, { status: 302, headers: { location: to, "cache-control": "public, max-age=0, s-maxage=300" } });
 }
+
+// The same redirect for HEAD, which link checkers and download managers try first (it answered 405).
+export const HEAD = GET;

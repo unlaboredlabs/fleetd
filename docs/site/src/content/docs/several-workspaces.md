@@ -10,17 +10,17 @@ another. Each workspace keeps its own machines, people and keys.
 
 1. On the new workspace's machine, run `fleetd pair` to print a pairing code.
 2. In the app, open Settings › Workspaces & devices and click **Add a workspace**.
-3. Enter a name (Personal, Acme, anything), pick a colour if you like, then the workspace's address and the code.
+3. Enter a name (Personal, Acme, anything), pick a color if you like, then the workspace's address and the code.
 4. Click **Connect**. Your other workspaces stay connected.
 
 Opening a `fleetd://pair` link adds a workspace the same way. A link for a workspace you already have pairs it again instead.
 
-## Rename, recolour or remove {#manage}
+## Rename, recolor or remove {#manage}
 
 Settings › Workspaces & devices lists each workspace.
 
 - **Rename:** edit its name and press Enter.
-- **Recolour:** click a swatch. The empty one means no colour.
+- **Recolor:** click a swatch. The empty one means no color.
 - **Pair again:** shown when the workspace refused this app's key.
 - **Remove…:** the app forgets that workspace's key. Agents on it keep running.
 
@@ -83,5 +83,5 @@ workspace directly, so a workspace only your company network reaches needs that 
 ## Where things are kept {#storage}
 
 Each workspace's key is stored like the first one, encrypted by the OS where it can be ([Security](/docs/security#keys)).
-The list of workspaces, with names and colours but no keys, is `desktop-hubs.json` in the app's folder. If that file
+The list of workspaces, with names and colors but no keys, is `desktop-hubs.json` in the app's folder. If that file
 breaks, the app finds each workspace again from its saved key.

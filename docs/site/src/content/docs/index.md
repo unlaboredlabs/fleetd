@@ -1,5 +1,9 @@
 ---
 title: fleetd docs
+# The site title is "fleetd docs" too: without this, the tab reads "fleetd docs | fleetd docs".
+head:
+  - tag: title
+    content: fleetd docs
 description: Set up fleetd, give a bot work in its chat, and look up any setting, command or error.
 tableOfContents: false
 prev: false
@@ -13,6 +17,8 @@ or fleetd's computers, and lands checked pull requests.
 1. [Quick start](/docs/quick-start): set up a workspace and send your first message.
 2. [Install](/docs/install): what the installer puts where, and its options.
 3. [How fleetd works](/docs/how-fleetd-works): the parts, and how work goes from a chat to a merge.
+
+Questions about billing, Claude keys, GitHub or where agents run? See the [FAQ](/docs/faq).
 
 ## Common tasks
 

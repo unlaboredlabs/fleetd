@@ -172,10 +172,10 @@ machine with `fleetd node restart`. Running agents carry on through either resta
 
 Change it with `fleetd init --listen <host:port> --url <url>`.
 
-## Run a second fleet on one machine {#second-fleet}
+## Run a second workspace on one machine {#second-fleet}
 
-To try fleetd next to the one you run, give the test fleet its own folder with `FLEETD_HOME` and its own port. Every
-command then keeps its files there and never touches `~/.fleetd`.
+To try fleetd next to the one you run, give the test workspace its own folder with `FLEETD_HOME` and its own port.
+Every command then keeps its files there and never touches `~/.fleetd`.
 
 1. Set up the test workspace. Run the `export` in every terminal you use for it.
 
@@ -191,12 +191,18 @@ command then keeps its files there and never touches `~/.fleetd`.
    fleetd workspace start --listen 127.0.0.1:4797
    ```
 
-3. In another terminal, add this machine to the test workspace:
+3. In another terminal, add this machine to the test workspace. `fleetd pair --worker` prints a `curl … --join` line
+   with a one-time code and your commit identity. Don't run that line here, since it would install fleetd over the
+   one you run: give its code and its `--git-identity` to `fleetd init --join` instead.
 
    ```sh
-   fleetd pair --worker test-1    # prints a join command with a one-time code
-   fleetd node join --workspace http://127.0.0.1:4797 --token <code> --machine test-1
+   fleetd pair --worker test-1
+   FLEETD_JOIN_CODE=<code> fleetd init --join http://127.0.0.1:4797 --machine-id test-1 \
+     --git-identity "Your Name <id+you@users.noreply.github.com>" --no-service
    ```
+
+   The join ends with "start test-1's node" and the line that starts it. Run that line, and keep its terminal open
+   too.
 
 4. Use it as usual:
 
@@ -205,5 +211,5 @@ command then keeps its files there and never touches `~/.fleetd`.
    fleetd project add ~/src/sandbox --machine test-1 --yes
    ```
 
-Stop both with Ctrl+C. Delete `$FLEETD_HOME` to remove the test fleet. Its services, if any, never touch the first
-fleet's. Start the desktop app with the same `FLEETD_HOME` to pair it with the test workspace.
+Stop each with Ctrl+C. Delete `$FLEETD_HOME` to remove the test workspace. Its services, if any, never touch the
+first workspace's. Start the desktop app with the same `FLEETD_HOME` to pair it with the test workspace.
