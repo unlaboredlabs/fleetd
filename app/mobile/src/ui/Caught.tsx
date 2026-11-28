@@ -2,9 +2,11 @@
 // one bad value in one row (a release build has no red screen) ended the whole app. Each navigator's screens are laid
 // out in one (StripRoom.tsx, Covered.tsx), and the app as a whole in another, for what fails outside a screen. What
 // failed goes to the person's workspace (appErrors.ts) with the screen's name; Reload draws the screen afresh, and Back
-// leaves it where there is a screen to go back to (the chat draws its own Back, which went with it).
+// leaves it where there is a screen to go back to (the chat draws its own Back, which went with it). Under them, a
+// quiet way to ask for help: fleetd.sh's Support page, in Safari as Settings opens it.
 import { Component, Fragment, type ErrorInfo, type ReactElement, type ReactNode } from "react";
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Linking, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { inAppPage, LEGAL_PAGES } from "../accountDelete";
 import { appErrors } from "../appErrorsDevice";
 import { space, type, useTheme } from "../theme";
 import { Button } from "./Button";
@@ -12,6 +14,8 @@ import { Icon } from "./Icon";
 
 export const FAILED_TITLE = "Something went wrong";
 export const FAILED_BODY = "This screen stopped. Details went to your workspace.";
+export const FAILED_HELP = "Keeps happening? Contact Support";
+const SUPPORT = LEGAL_PAGES.find((p) => p.id === "support")!.url;
 
 /** How a screen in a navigator goes back: undefined where there is nothing to go back to. */
 export interface Leave {
@@ -57,6 +61,9 @@ function Failed({ onReload, onBack }: { onReload: () => void; onBack: (() => voi
           {onBack === undefined ? null : <Button label="Back" kind="plain" size="small" onPress={onBack} />}
           <Button label="Reload" kind="tinted" size="small" onPress={onReload} />
         </View>
+        <Text style={[type.footnote, styles.center, styles.help, { color: t.accent }]} accessibilityRole="link" onPress={() => void Linking.openURL(inAppPage(SUPPORT))} suppressHighlighting={false}>
+          {FAILED_HELP}
+        </Text>
       </View>
     </View>
   );
@@ -75,4 +82,5 @@ const styles = StyleSheet.create({
   disc: { width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center", marginBottom: space.sm },
   center: { textAlign: "center" },
   actions: { flexDirection: "row", gap: space.md, marginTop: space.xs },
+  help: { marginTop: space.md },
 });

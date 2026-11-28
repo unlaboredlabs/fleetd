@@ -6,9 +6,10 @@
 // Providers (what agents run on: Anthropic, Google; Providers.tsx), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
 // hub that has one, Memory (the person's own, with Import Memory), this phone (its notifications, name and app), fleetd.sh's
-// Privacy Policy, Terms of Service and Support in Safari (App Store 5.1.1(i)), and Disconnect, which asks first, where it
+// Privacy Policy, Terms of Service and Support in Safari (App Store 5.1.1(i)) and the Open Source Licences, and Disconnect, which asks first, where it
 // does something the account's Sign Out doesn't (team.ts disconnectShown).
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
@@ -44,11 +45,21 @@ import { pairAgainTitle } from "../hub/pairLink";
 /** Settings' words for fleetd.sh's pages, in iOS's title case. */
 const LEGAL_TITLES = { privacy: "Privacy Policy", terms: "Terms of Service", support: "Support" } as const;
 
-/** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
+/** What the running JavaScript is: the build's own, or an update over the air, when it was made and its id's start
+ * (which the phone's error reports name). */
 const updateWords = (): string => {
   if (!Updates.isEnabled) return "Off";
   if (Updates.isEmbeddedLaunch || Updates.createdAt === null) return "Built in";
-  return Updates.createdAt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const made = Updates.createdAt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return Updates.updateId === null ? made : `${made} · ${Updates.updateId.slice(0, 8)}`;
+};
+
+/** The build, as TestFlight and the App Store name it, "0.9.214 (214)": from its own Info.plist, never the
+ * JavaScript's config, which an update over the air brings from where it was made. */
+const appVersion = (): string | undefined => {
+  const version = Application.nativeApplicationVersion ?? Constants.expoConfig?.version;
+  const build = Application.nativeBuildVersion;
+  return version === undefined || build === null || build === "" ? version : `${version} (${build})`;
 };
 
 /** A role as the person reads it; one a newer hub has that this app doesn't know reads as a member's. */
@@ -101,7 +112,6 @@ export function Settings() {
     }, [asksBilling, paired]),
   );
   const hub = state.hub;
-  const version = Constants.expoConfig?.version;
   // A tap shows the hub's whole version, as iOS's About shows its build.
   const [wholeVersion, setWholeVersion] = useState(false);
 
@@ -237,8 +247,8 @@ export function Settings() {
       <ListSection header={`This ${DEVICE}`}>
         <ListRow title="Notifications" detail={`Sealed so only this ${DEVICE} reads them`} value={notifications} onPress={onNotifications} />
         <ListRow title="Name" value={Device.deviceName ?? undefined} />
-        <ListRow title="App version" value={version} selectable />
-        <ListRow title="App update" value={updateWords()} />
+        <ListRow title="App version" value={appVersion()} selectable />
+        <ListRow title="App update" value={updateWords()} selectable />
       </ListSection>
       <ListSection>
         {LEGAL_PAGES.map((page) => (
@@ -250,6 +260,7 @@ export function Settings() {
             chevron={false}
           />
         ))}
+        <ListRow title="Open Source Licences" onPress={() => navigation.navigate("Licences")} />
       </ListSection>
       {disconnectShown(paired, cloud !== null && account !== null) ? (
         <ListSection footer={`Signs this ${DEVICE} out of ${paired.hubName} only. Pairing again takes a new code.`}>
@@ -312,7 +323,7 @@ function MyName({ saved, role }: { saved: string; role: string | undefined }) {
           {edit.error}
         </Text>
       ) : role === undefined ? null : (
-        <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={1}>
+        <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={2}>
           {role}
         </Text>
       )}

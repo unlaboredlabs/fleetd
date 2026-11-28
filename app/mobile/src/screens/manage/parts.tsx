@@ -9,12 +9,13 @@ import { botLocked, type HubError } from "../../desktop";
 import { useHub, useSession } from "../../hubContext";
 import { shape, space, type, useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
+import { UNSPOKEN } from "../../ui/Icon";
 import type { Hub } from "./api";
 import { addHttps, httpsLine } from "./namedApi";
 
-/** An SF Symbol, with its Material match for Android, for what the app's Icon set doesn't name. */
+/** An SF Symbol, with its Material match for Android, for what the app's Icon set doesn't name; unspoken, as an Icon. */
 export function Symbol({ ios, android, size = 20, color, weight = "regular" }: { ios: SFSymbol; android: AndroidSymbol; size?: number; color: string; weight?: "regular" | "medium" | "semibold" }) {
-  return <SymbolView name={{ ios, android, web: android }} size={size} tintColor={color} weight={weight} />;
+  return <SymbolView name={{ ios, android, web: android }} size={size} tintColor={color} weight={weight} {...UNSPOKEN} />;
 }
 
 /** A text field as a grouped list's row, as iOS Settings' Name. */

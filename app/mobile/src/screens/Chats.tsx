@@ -16,7 +16,7 @@ import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { NativeStackHeaderItem, NativeStackHeaderItemMenu, NativeStackNavigationOptions } from "@react-navigation/native-stack";
-import { Alert, PixelRatio, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, PixelRatio, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { filterChoices, filterLabel, meAvatar, meMark, meSymbol, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
@@ -63,6 +63,8 @@ import { useNow } from "./time";
 import { DEVICE } from "../device";
 
 const AVATAR = 52;
+/** From this text size on (iOS's accessibility sizes) a row's time goes under its name, as List.tsx stacks a value. */
+const STACKED_SCALE = 1.35;
 /** How long the line that says why a change to the sections was taken back stays. */
 const REFUSED_MS = 6000;
 /**
@@ -610,15 +612,16 @@ function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; s
   // A reply you haven't read: its bot is done.
   const bot = useBot(row.key, unread || row.markedUnread);
   const beside = useBeside() !== null;
+  const big = useWindowDimensions().fontScale >= STACKED_SCALE;
   return (
     <View style={styles.row}>
       {/* Open beside the list: a faint rounded box inset from the edges, not a slab across the row. */}
       {open ? <View pointerEvents="none" style={[styles.open, { backgroundColor: t.fillQuiet }]} /> : null}
       <Avatar name={row.project.title} size={AVATAR} picture={row.project} bot={bot} />
       <View style={styles.body}>
-        <View style={styles.top}>
-          <View style={styles.name}>
-            <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
+        <View style={[styles.top, big && styles.topStacked]}>
+          <View style={[styles.name, big && styles.nameStacked]}>
+            <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={big ? 2 : 1}>
               {row.project.title}
             </Text>
             {row.muted ? <Icon name="mute" size={13} color={t.tertiary} /> : null}
@@ -655,14 +658,15 @@ function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; 
   const now = useNow();
   const [from, to] = hit.match;
   const who = hit.author === "human" ? "You: " : "";
+  const big = useWindowDimensions().fontScale >= STACKED_SCALE;
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}, ${who}${hit.snippet}`}>
       {({ pressed }) => (
         <View style={[styles.row, styles.hitRow, pressed && { backgroundColor: t.fillQuiet }]}>
           <Avatar name={title} size={44} picture={picture} />
           <View style={[styles.body, styles.hitBody]}>
-            <View style={styles.top}>
-              <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
+            <View style={[styles.top, big && styles.topStacked]}>
+              <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={big ? 2 : 1}>
                 {title}
               </Text>
               <Text style={[type.footnote, { color: t.secondary }]}>{listTime(hit.at, now)}</Text>
@@ -700,7 +704,10 @@ const styles = StyleSheet.create({
   body: { flex: 1, alignSelf: "stretch", justifyContent: "center", gap: 1, paddingRight: space.lg, paddingVertical: 8 },
   hitBody: { paddingVertical: 8 },
   top: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
+  // At the accessibility text sizes the time goes under the name, as Messages does, rather than cut it to a few letters.
+  topStacked: { flexDirection: "column", alignItems: "flex-start", gap: 0 },
   name: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
+  nameStacked: { flex: 0, alignSelf: "stretch" },
   nameText: { flexShrink: 1 },
   // Two lines kept for every row, as chat apps do, so rows keep one rhythm whatever their preview.
   bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },

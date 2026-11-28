@@ -1,4 +1,6 @@
 // The ATS rules, and app.config.ts's settings under them: plain HTTP to a hub at any address, raw IPs included.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ConfigContext } from "expo/config";
 import { describe, expect, it } from "vitest";
 import config from "../app.config";
@@ -21,6 +23,8 @@ describe("app.config.ts", () => {
       "NSPrivacyCollectedDataTypePhysicalAddress",
       "NSPrivacyCollectedDataTypePaymentInfo",
       "NSPrivacyCollectedDataTypeEmailsOrTextMessages",
+      // The errors it sends the workspace's log (appErrors.ts).
+      "NSPrivacyCollectedDataTypeCrashData",
       "NSPrivacyCollectedDataTypePhotosorVideos",
       "NSPrivacyCollectedDataTypeOtherUserContent",
       "NSPrivacyCollectedDataTypeUserID",
@@ -29,6 +33,13 @@ describe("app.config.ts", () => {
     for (const d of manifest?.NSPrivacyCollectedDataTypes ?? []) {
       expect(d).toMatchObject({ NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"] });
     }
+  });
+});
+
+describe("the app's version", () => {
+  it("is 0.MINOR.<build>, MINOR fleetd's own; a build without a number is .0", () => {
+    const minor = readFileSync(resolve(process.cwd(), "../../.github/release/minor"), "utf8").trim();
+    expect(config({ projectRoot: process.cwd() } as ConfigContext).version).toBe(`${minor}.${process.env.FLEETD_BUILD_NUMBER ?? "0"}`);
   });
 });
 

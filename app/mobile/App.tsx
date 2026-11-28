@@ -48,6 +48,7 @@ import { cloud, ReviewSignIn, type OnSignedIn } from "./src/screens/Cloud";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { Devices } from "./src/screens/Devices";
+import { Licence, Licences } from "./src/screens/Licences";
 import { ShareLinks } from "./src/screens/ShareLinks";
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Memory } from "./src/screens/Memory";
@@ -831,6 +832,8 @@ function SettingsScreens() {
       <SettingsStack.Screen name="ProfileEdit" component={ProfileEdit} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Provider" component={Provider} options={({ route }) => ({ ...pushed(t, providerName(route.params.id)), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="Vault" component={Vault} options={large("Vault")} />
+      <SettingsStack.Screen name="Licences" component={Licences} options={{ ...pushed(t, "Open Source Licences"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="Licence" component={Licence} options={({ route }) => ({ ...pushed(t, route.params.name), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultEdit" component={VaultEdit} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultImport" component={VaultImport} layout={sheetRoom} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />

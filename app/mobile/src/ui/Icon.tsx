@@ -1,4 +1,6 @@
-// An SF Symbol on iOS, and its Material Symbols match on Android and the web (expo-symbols draws both).
+// An SF Symbol on iOS, and its Material Symbols match on Android and the web (expo-symbols draws both). Out of
+// VoiceOver's and TalkBack's reach: a symbol reads as its own name ("Checkmark in a shield, Approvals"), and the row or
+// button it sits in says what it does.
 import { SymbolView, type AndroidSymbol, type SymbolViewProps } from "expo-symbols";
 import type { ColorValue, StyleProp, ViewStyle } from "react-native";
 
@@ -117,6 +119,9 @@ const SYMBOLS = {
 
 export type IconName = keyof typeof SYMBOLS;
 
+/** A picture screen readers pass over: what it stands for is said by what holds it. */
+export const UNSPOKEN = { accessible: false, accessibilityElementsHidden: true, importantForAccessibility: "no-hide-descendants" } as const;
+
 /** The SF Symbol's name, for what iOS draws itself (the tab bar). */
 export const sfSymbol = (name: IconName): (typeof SYMBOLS)[IconName][0] => SYMBOLS[name][0];
 
@@ -134,5 +139,5 @@ export function Icon({
   style?: StyleProp<ViewStyle>;
 }) {
   const [ios, material] = SYMBOLS[name];
-  return <SymbolView name={{ ios, android: material, web: material }} size={size} tintColor={color} weight={weight} style={style} />;
+  return <SymbolView name={{ ios, android: material, web: material }} size={size} tintColor={color} weight={weight} style={style} {...UNSPOKEN} />;
 }

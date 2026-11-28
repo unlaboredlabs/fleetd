@@ -96,7 +96,7 @@ export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWi
   if (pairedWith !== null && link.ok && refusedHub !== null && sameHub(link.hub, refusedHub)) {
     return { t: "repair", hub: link.hub, code: link.code, title: `Pair Again with ${pairedWith}?`, message: `${pairedWith} refused this ${device}'s key. This code pairs it again.` };
   }
-  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "Disconnect it first to pair with another workspace." };
+  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another workspace, first disconnect from this one, or sign out, in Settings." };
   if (!link.ok) return { t: "refuse", failure: link.failure };
   if (from === "scanner") return { t: "pair", hub: link.hub, code: link.code };
   return {

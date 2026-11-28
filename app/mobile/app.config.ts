@@ -8,7 +8,10 @@
 // - FLEETD_APP_ID: the bundle id and Android package (default sh.fleetd.app). A self-built, signed app needs its own:
 //   an Apple team can't sign another's id.
 // - FLEETD_BUILD_NUMBER: the build's number (CFBundleVersion, versionCode), which each store upload must raise; the
-//   release workflow uses its run number.
+//   release workflow uses its run number. It is also the version's PATCH: the app is 0.MINOR.<build> (0.9.214), as
+//   fleetd's builds are 0.MINOR.PATCH, with MINOR fleetd's own (.github/release/minor), so each upload's version goes
+//   up too, as the App Store asks of a version after one it took. Without it, 0.MINOR.0. Neither is in the runtime
+//   version: the fingerprint leaves the version and build numbers out.
 // - FLEETD_UPDATES_CERT: a code signing certificate (PEM) for over-the-air updates (D219). Without it the app takes no
 //   updates at all: an unsigned bundle is never loaded. FLEETD_UPDATES_CHANNEL (edge or stable, default edge) is the
 //   expo-channel-name it asks FLEETD_UPDATES_URL (default https://fleetd.sh/updates; a fork with its own certificate
@@ -38,6 +41,7 @@
 //
 // fleetd's Shortcuts actions (Open Chat, Send Message and the rest, D289) are App Intents in the app's own target, from
 // plugins/app-intents: no extension, so no App ID or profile of their own.
+import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -47,6 +51,13 @@ const build = /^\d+$/u.test(process.env.FLEETD_BUILD_NUMBER ?? "") ? process.env
 const channel = process.env.FLEETD_UPDATES_CHANNEL === "stable" ? "stable" : "edge";
 const updatesUrl = process.env.FLEETD_UPDATES_URL || "https://fleetd.sh/updates";
 const googleServices = process.env.FLEETD_GOOGLE_SERVICES_FILE || undefined;
+
+/** 0.MINOR.<build>, MINOR from fleetd's `.github/release/minor` ("0.9"); a copy of app/mobile alone reads 0.0. */
+const versionOf = (projectRoot: string): string => {
+  const minorFile = resolve(projectRoot, "../../.github/release/minor");
+  const minor = existsSync(minorFile) ? readFileSync(minorFile, "utf8").trim() : "0.0";
+  return `${/^\d+\.\d+$/u.test(minor) ? minor : "0.0"}.${build ?? "0"}`;
+};
 
 /** Apple's names for the data the app collects (ios.privacyManifests). */
 const COLLECTED = [
@@ -59,6 +70,9 @@ const COLLECTED = [
   "NSPrivacyCollectedDataTypePaymentInfo",
   // Chats with bots and messages between people in a workspace.
   "NSPrivacyCollectedDataTypeEmailsOrTextMessages",
+  // What went wrong on a screen: the error's first words and stack, the screen, the build and update, the phone's model
+  // and iOS version (appErrors.ts), kept in the workspace's log, on fleetd's servers for a fleetd cloud workspace.
+  "NSPrivacyCollectedDataTypeCrashData",
   // Photos sent in a chat, and profile and project pictures.
   "NSPrivacyCollectedDataTypePhotosorVideos",
   // Files, shared text and links, memory, skills, vault logins and notes.
@@ -73,7 +87,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   name: "fleetd",
   slug: "fleetd",
   scheme: "fleetd",
-  version: "0.1.0",
+  version: versionOf(projectRoot),
   orientation: "portrait",
   icon: "./assets/icon.png",
   // Light and dark follow the phone's setting; App.tsx sets the root view's color to match (expo-system-ui).

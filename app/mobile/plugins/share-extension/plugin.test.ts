@@ -43,7 +43,7 @@ const GROUP = "$(AppIdentifierPrefix)sh.fleetd.app.push";
 /** app.config.ts's own plugins, in its order, on the fixture project; what each mod made, and where it wrote. */
 const prebuild = async () => {
   const base = appConfig({ projectRoot: process.cwd() } as ConfigContext);
-  let config: ExpoConfig & { mods?: Record<string, Record<string, Mod>> } = { ...base, ios: { ...base.ios, bundleIdentifier: "sh.fleetd.app", buildNumber: "42" } };
+  let config: ExpoConfig & { mods?: Record<string, Record<string, Mod>> } = { ...base, version: "0.9.42", ios: { ...base.ios, bundleIdentifier: "sh.fleetd.app", buildNumber: "42" } };
   for (const plugin of base.plugins ?? []) {
     if (typeof plugin === "string" && plugin.startsWith("./plugins/") && plugin !== "./plugins/android-signing") {
       config = (require(join("../..", plugin)) as (c: typeof config) => typeof config)(config);
@@ -132,7 +132,7 @@ describe("plugins/share-extension", () => {
     const info = plist.parse(readFileSync(join(root, "ios", TARGET, "Info.plist"), "utf8")) as Record<string, any>;
     expect(info).toMatchObject({
       CFBundleDisplayName: "fleetd",
-      CFBundleShortVersionString: "0.1.0",
+      CFBundleShortVersionString: "0.9.42",
       CFBundleVersion: "42",
       NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       NSExtension: {

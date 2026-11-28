@@ -33,7 +33,7 @@ export const sealEach = (key: string, boxes: ReadonlyArray<{ machineId: string; 
 /** The row's value on Settings, and the section's footer here: where the key is, through what. */
 export const keyWords = (api: ClaudeHubApi | undefined): { value: string; footer?: string } => {
   if (api === undefined) return { value: "Not Set" };
-  const on = api.sealedOn.map((s) => (s.machineId === "hosted" ? "hosted sandboxes" : s.machineId));
+  const on = api.sealedOn.map((s) => (s.machineId === "hosted" ? "fleetd's computers" : s.machineId));
   const sealed = on.length === 0 ? "On no machine yet." : `Sealed on ${on.join(", ")}.`;
   return { value: api.lastTest?.ok === false ? "Failed" : "Set", footer: api.endpoint === undefined ? sealed : `${sealed} Through ${api.endpoint}.` };
 };

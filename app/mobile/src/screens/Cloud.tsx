@@ -9,7 +9,8 @@
 // in place of the page, then the same questions and pairing. Signed in, Delete Account (App Store 5.1.1(v)) says what
 // goes (as the cloud reads it first: the workspaces that go and any plan that stops, those left) and asks for the
 // account's email typed back in one iOS prompt, or says what holds it back, then has the cloud delete it; the phone forgets its
-// workspaces and, with none of its own left, shows the first screen. Under the ways, Terms · Privacy opens fleetd.sh's.
+// workspaces and, with none of its own left, shows the first screen. Under the ways, the terms' age (18 or older), then
+// Terms · Privacy, which opens fleetd.sh's.
 import { getRandomBytes } from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
@@ -39,6 +40,9 @@ export const WAYS = {
   signIn: { name: "Sign In", line: "fleetd hosts your workspace. Agents run on fleetd's computers or your own." },
   own: { name: "Use Your Own Workspace", line: "A workspace you run yourself. No fleetd account." },
 } as const;
+
+/** fleetd's terms are for adults: the first screen says so above them. */
+export const AGE_LINE = "You must be 18 or older to use fleetd.";
 
 const ports = (config: CloudConfig): SignInPorts => ({
   config,
@@ -193,6 +197,8 @@ export function Ways({ onOwn, onReview, onSignedIn }: { onOwn: () => void; onRev
         <Button label={WAYS.own.name} kind="tinted" size="large" disabled={busy} onPress={onOwn} />
         <Text style={[type.footnote, styles.center, { color: t.secondary }]}>{WAYS.own.line}</Text>
       </View>
+      {/* The terms' age, said where people start (as the desktop's and the web's welcome say it). */}
+      <Text style={[type.footnote, styles.center, { color: t.secondary }]}>{AGE_LINE}</Text>
       <Legal onReview={busy ? undefined : onReview} />
     </View>
   );
@@ -273,6 +279,8 @@ export function ReviewSignIn({ onSignedIn }: { onSignedIn: OnSignedIn }) {
               value={code}
               onChangeText={setCode}
               placeholder="Review code"
+              // Masked, as a password is: a screenshot or a screen reader never shows it.
+              secureTextEntry
               textContentType="oneTimeCode"
               returnKeyType="go"
               onSubmitEditing={submit}

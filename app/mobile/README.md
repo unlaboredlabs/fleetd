@@ -5,7 +5,8 @@ GitHub, is in [docs/site/src/content/docs/mobile.md](../../docs/site/src/content
 
 In this directory, with Node 24: `npm ci`, then `npm run typecheck` and `npm test` (vitest), which CI's `mobile`
 job runs. The phone's JavaScript engine (Hermes) lacks some newer built-ins, such as
-`Array.prototype.toSorted`: check a new one before using it (`src/hermes.test.ts`).
+`Array.prototype.toSorted`: check a new one before using it (`src/hermes.test.ts`). After adding or moving a dependency,
+`npm run notices` writes the open-source notices Settings shows (`src/notices.json`); `npm test` fails until it has.
 
 ## On a simulator
 

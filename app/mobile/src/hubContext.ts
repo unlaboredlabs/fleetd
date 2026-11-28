@@ -201,6 +201,10 @@ export type SettingsParams = {
   Usage: undefined;
   /** One person's or bot's every figure over the period. */
   UsageDetail: { title: string; counts: WorkspaceUsageCounts; currency?: string; days: 7 | 30 | 90; person: boolean };
+  /** What the app is built from, each with its licence (Licences.tsx). */
+  Licences: undefined;
+  /** One package's licence text. */
+  Licence: { name: string };
 } & VaultParams;
 /** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;

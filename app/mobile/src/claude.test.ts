@@ -48,7 +48,7 @@ describe("the phone's Claude row", () => {
     expect(keyWords(undefined)).toEqual({ value: "Not Set" });
     expect(keyWords({ sealedOn: [{ machineId: "devbox", fingerprint: "ab" }, { machineId: "hosted", fingerprint: "ab" }], updatedAt: "2026-11-19T00:00:00Z", endpoint: "http://100.101.102.103:8317" })).toEqual({
       value: "Set",
-      footer: "Sealed on devbox, hosted sandboxes. Through http://100.101.102.103:8317.",
+      footer: "Sealed on devbox, fleetd's computers. Through http://100.101.102.103:8317.",
     });
     expect(keyWords({ sealedOn: [], updatedAt: "2026-11-19T00:00:00Z", lastTest: { at: "2026-11-19T00:00:00Z", machineId: "devbox", ok: false } }).value).toBe("Failed");
   });
