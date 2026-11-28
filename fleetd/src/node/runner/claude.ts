@@ -10,6 +10,7 @@ import { SUPPORTED, TESTED } from "./claude_pins.ts";
 import { AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, FLEETD_ENV_SOURCE } from "./claude_spec.ts";
 import { autoupdaterOff } from "./install.ts";
 import { accountOverrides, loginLabel, proxyOf } from "./claude/setup.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 import type { RunnerInfo } from "../sessions/types.ts";
 
 export { RECORDED, SUPPORTED, TESTED } from "./claude_pins.ts";
@@ -127,7 +128,7 @@ export async function probe(binary: string, env: Env): Promise<RunnerInfo> {
     const label = loginLabel(account);
     if (label) info.loginLabel = label;
     if (login === "logged_out")
-      problems.push(`claude is not logged in. Fix: ${info.proxy ? "log in with your proxy as you normally do" : "run `claude` on this machine and log in"}`);
+      problems.push(`claude is not logged in. Fix: ${info.proxy ? "log in with your proxy as you normally do" : `run \`claude\` on this machine and log in, or add the workspace's API key in ${settingsPath("Setup", "Claude")}`}`);
   } catch (error) {
     info.conformanceOk = false;
     problems.push(`${(error as Error).message} This claude's stream-json differs from the one fleetd was tested with. Fix: claude install ${TESTED}`);

@@ -33,7 +33,7 @@ interface Call {
  * this browser's localStorage, shared by the pages a test opens one after another.
  */
 const setup = (
-  answer: (path: string, init?: RequestInit) => Response = () => new Response(null, { status: 404 }),
+  answer: (path: string, init?: RequestInit) => Response | Promise<Response> = () => new Response(null, { status: 404 }),
   session: WebSession = SESSION,
   stored = new Map<string, string>(),
   /** The browser's storage quota, in characters: a write past it throws, as a full localStorage does. */
@@ -314,6 +314,25 @@ describe("the web shell", () => {
     expect(stored.get("fleetd.web.ended")).toBe(SESSION.email);
     // Signed in again, the app starts with nothing left to say.
     setup(undefined, SESSION, stored);
+    expect(stored.has("fleetd.web.ended")).toBe(false);
+  });
+
+  it("goes to the welcome page that says the account is deleted, though the cloud ends the session before it answers", async () => {
+    let answer: (r: Response) => void = () => undefined;
+    const { api, calls, sockets, went, stored } = setup((path) => {
+      if (path.endsWith("/account/delete")) return new Promise<Response>((resolve) => (answer = resolve));
+      return path === "/web/session" ? new Response(null, { status: 401 }) : new Response(null, { status: 404 });
+    });
+    api.hub.subscribe(ACME, () => undefined);
+    const deleting = api.cloud.deleteAccount(SESSION.email);
+    await vi.waitFor(() => expect(calls.some((c) => c.path.endsWith("/account/delete"))).toBe(true));
+    // fleetd cloud closes the workspace's sockets and ends the session first, then answers the delete.
+    sockets[0]?.events.onClose(4401, "This workspace was deleted.");
+    await vi.runAllTimersAsync();
+    answer(json({ deleted: SESSION.email, workspaces: ["acme"] }));
+    expect(await deleting).toEqual({ ok: true, workspaces: ["acme"] });
+    await vi.runAllTimersAsync();
+    expect(went).toEqual(["/?deleted=1"]);
     expect(stored.has("fleetd.web.ended")).toBe(false);
   });
 

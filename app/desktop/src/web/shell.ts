@@ -163,6 +163,9 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   // tab goes to Sign in; out of a team since, the page starts again with the teams as they are now.
   let checking = false;
   let checkedAt = 0;
+  // While Delete account runs: the cloud closes the sockets and ends the session before it answers, and a reload
+  // then would beat its own way to the welcome page, which says the account is deleted.
+  let deleting = false;
   const recheck = () => {
     const now = Date.now();
     if (checking || now - checkedAt < 10_000) return;
@@ -170,6 +173,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
     checkedAt = now;
     void readSession(deps.fetch).then((read) => {
       checking = false;
+      if (deleting) return;
       if (!read.ok && read.signedOut === true) {
         cache.clear();
         // The page starts again on the gate, which says the session ended and signs back in as this account.
@@ -434,12 +438,16 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       deleteAccount: async (email) => {
         const team = accountTeam();
         if (team === null) return notTeam;
-        const out = await (await invites()).deleteAccount(teamFetch, team, email);
+        deleting = true;
+        const out = await (await invites()).deleteAccount(teamFetch, team, email).catch((error: unknown) => {
+          deleting = false;
+          throw error;
+        });
         if (out.ok) {
           cache.clear();
           // The welcome page says the account is gone (main.tsx justDeleted).
           deps.go(`/?${DELETED_PARAM}=1`);
-        }
+        } else deleting = false;
         return out;
       },
       installGithub: (hub): Promise<InstallGithubOutcome> => {
